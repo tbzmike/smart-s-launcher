@@ -359,9 +359,4 @@
         <item name="android:displayOptions">homeAsUp|showTitle</item>
         <item name="android:background">?attr/colorPrimary</item>
     </style>
-<style name="Theme.SmartLauncher.AMOLED" parent="Theme.Material3.DayNight.NoActionBar">
-    <item name="android:windowBackground">#000000</item>
-    <item name="android:colorBackground">#000000</item>
-    <item name="android:windowAnimationStyle">@null</item>
-</style>
-</resources>
+</resour
