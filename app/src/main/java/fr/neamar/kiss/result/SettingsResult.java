@@ -4,8 +4,10 @@ import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 import android.os.Process;
 import android.view.View;
@@ -27,6 +29,7 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 public class SettingsResult extends Result<SettingPojo> {
     private static final String TAG = SettingsResult.class.getSimpleName();
     private static final int ANDROID_UID_USER_RANGE = 100000;
+    private static final String FEATURE_SCHEME = "feature://";
 
     SettingsResult(@NonNull SettingPojo pojo) {
         super(pojo);
@@ -37,6 +40,15 @@ public class SettingsResult extends Result<SettingPojo> {
     public View display(Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
         if (view == null)
             view = inflateFromId(context, R.layout.item_setting, parent);
+
+        TextView prefix = view.findViewById(R.id.item_setting_prefix);
+        if (pojo instanceof DisabledAppPojo) {
+            prefix.setText("Disabled app:");
+        } else if (pojo.id.startsWith(FEATURE_SCHEME)) {
+            prefix.setText("Feature:");
+        } else {
+            prefix.setText(R.string.settings_prefix);
+        }
 
         TextView settingName = view.findViewById(R.id.item_setting_name);
         displayHighlighted(pojo.normalizedName, pojo.getName(), fuzzyScore, settingName, context);
@@ -91,12 +103,31 @@ public class SettingsResult extends Result<SettingPojo> {
         setSourceBounds(intent, v);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
+        if (pojo.id.startsWith(FEATURE_SCHEME) && !isFeatureLaunchableNow(context, intent)) {
+            Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
+            return;
+        }
+
         try {
             context.startActivity(intent);
-        } catch (ActivityNotFoundException e) {
+        } catch (ActivityNotFoundException | SecurityException e) {
             Log.w(TAG, "Unable to launch activity", e);
             Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
         }
+    }
+
+    private boolean isFeatureLaunchableNow(Context context, Intent intent) {
+        PackageManager pm = context.getPackageManager();
+        ResolveInfo resolved = pm.resolveActivity(intent, 0);
+        if (resolved == null || resolved.activityInfo == null) return false;
+
+        ActivityInfo activity = resolved.activityInfo;
+        if (!activity.exported || !activity.enabled || activity.applicationInfo == null || !activity.applicationInfo.enabled) {
+            return false;
+        }
+        return activity.permission == null
+                || activity.permission.isEmpty()
+                || context.checkCallingOrSelfPermission(activity.permission) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void enableAndLaunch(Context context, DisabledAppPojo disabled) {
@@ -109,8 +140,6 @@ public class SettingsResult extends Result<SettingPojo> {
             return;
         }
 
-        // Android allocates UIDs in 100000-wide per-user ranges. Deriving the current user from
-        // our own UID avoids hidden UserHandle APIs and works on every API level supported here.
         int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
         boolean enabled = KissApplication.getApplication(context).getRootHandler()
                 .enableApp(disabled.targetPackage, userId);
