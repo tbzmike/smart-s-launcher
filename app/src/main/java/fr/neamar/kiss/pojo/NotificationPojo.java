@@ -2,8 +2,8 @@ package fr.neamar.kiss.pojo;
 
 import androidx.annotation.NonNull;
 
-public final class NotificationPojo extends Pojo {
-    public final String packageName;
+public final class NotificationPojo extends SettingPojo {
+    public final String notificationPackageName;
     public final String appName;
     public final String title;
     public final String text;
@@ -15,8 +15,8 @@ public final class NotificationPojo extends Pojo {
                             @NonNull String title,
                             @NonNull String text,
                             long postTime) {
-        super(id);
-        this.packageName = packageName;
+        super(id, "", -1);
+        this.notificationPackageName = packageName;
         this.appName = appName;
         this.title = title;
         this.text = text;
