@@ -1,7 +1,12 @@
 package fr.neamar.kiss.dataprovider.simpleprovider;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
+import android.telephony.PhoneNumberUtils;
 import android.webkit.URLUtil;
 
 import androidx.annotation.NonNull;
@@ -83,6 +88,11 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
     private List<Pojo> getResults(String query) {
         List<Pojo> records = new ArrayList<>();
 
+        addClipboardSuggestions(query, records);
+
+        SearchPojo resolvedAction = getResolvedIntentAction(query);
+        if (resolvedAction != null) records.add(resolvedAction);
+
         if (prefs.getBoolean("enable-search", true)) {
             SearchPojo chained = getChainedProviderSearch(query);
             if (chained != null) records.add(chained);
@@ -105,6 +115,104 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
             if (URLUtil.isValidUrl(guessedUrl)) records.add(createUrlQuerySearchPojo(guessedUrl));
         }
         return records;
+    }
+
+    /**
+     * Explicit clipboard commands keep clipboard access user-driven rather than reading it on every
+     * keystroke. Type "clip", "clipboard" or "paste" to surface useful actions for the current item.
+     */
+    private void addClipboardSuggestions(String query, List<Pojo> records) {
+        String command = query.trim().toLowerCase(Locale.ROOT);
+        if (!command.equals("clip") && !command.equals("clipboard") && !command.equals("paste")) return;
+
+        ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null || !clipboard.hasPrimaryClip()) return;
+
+        ClipData data = clipboard.getPrimaryClip();
+        if (data == null || data.getItemCount() == 0) return;
+
+        CharSequence value = data.getItemAt(0).coerceToText(context);
+        if (value == null) return;
+        String text = value.toString().trim();
+        if (text.isEmpty()) return;
+
+        if (URLUtils.matchesUrlPattern(text)) {
+            String url = URLUtil.isValidUrl(text) ? text : URLUtil.guessUrl(text);
+            if (URLUtil.isValidUrl(url)) {
+                SearchPojo pojo = createUrlQuerySearchPojo(url);
+                pojo.relevance = 500;
+                pojo.setName("Open clipboard URL", false);
+                records.add(pojo);
+                return;
+            }
+        }
+
+        String normalizedNumber = PhoneNumberUtils.normalizeNumber(text);
+        if (!normalizedNumber.isEmpty() && PhoneNumberUtils.isGlobalPhoneNumber(normalizedNumber)) {
+            SearchPojo call = createResolvedUriAction("clipboard-call", "Call clipboard number",
+                    Uri.fromParts("tel", normalizedNumber, null), Intent.ACTION_DIAL, 500);
+            if (call != null) records.add(call);
+
+            SearchPojo sms = createResolvedUriAction("clipboard-sms", "Message clipboard number",
+                    Uri.fromParts("smsto", normalizedNumber, null), Intent.ACTION_SENDTO, 490);
+            if (sms != null) records.add(sms);
+            return;
+        }
+
+        SearchPojo map = createResolvedUriAction("clipboard-map", "Map clipboard text",
+                Uri.parse("geo:0,0?q=" + Uri.encode(text)), Intent.ACTION_VIEW, 470);
+        if (map != null) records.add(map);
+
+        SearchPojo defaultSearch = getDefaultSearch(text, context, prefs);
+        if (defaultSearch != null) {
+            defaultSearch.relevance = 450;
+            defaultSearch.setName("Search clipboard text", false);
+            records.add(defaultSearch);
+        }
+    }
+
+    /** Searchable, resolve-checked verbs for common external actions. */
+    @Nullable
+    private SearchPojo getResolvedIntentAction(String query) {
+        String trimmed = query.trim();
+        int separator = trimmed.indexOf(' ');
+        if (separator <= 0 || separator == trimmed.length() - 1) return null;
+
+        String verb = trimmed.substring(0, separator).toLowerCase(Locale.ROOT);
+        String argument = trimmed.substring(separator + 1).trim();
+        switch (verb) {
+            case "call":
+            case "dial": {
+                String number = PhoneNumberUtils.normalizeNumber(argument);
+                if (number.isEmpty() || !PhoneNumberUtils.isGlobalPhoneNumber(number)) return null;
+                return createResolvedUriAction("dial", "Call " + argument,
+                        Uri.fromParts("tel", number, null), Intent.ACTION_DIAL, 420);
+            }
+            case "sms":
+            case "text": {
+                String number = PhoneNumberUtils.normalizeNumber(argument);
+                if (number.isEmpty() || !PhoneNumberUtils.isGlobalPhoneNumber(number)) return null;
+                return createResolvedUriAction("sms", "Message " + argument,
+                        Uri.fromParts("smsto", number, null), Intent.ACTION_SENDTO, 420);
+            }
+            case "map":
+            case "maps":
+                return createResolvedUriAction("map", "Map " + argument,
+                        Uri.parse("geo:0,0?q=" + Uri.encode(argument)), Intent.ACTION_VIEW, 420);
+            default:
+                return null;
+        }
+    }
+
+    @Nullable
+    private SearchPojo createResolvedUriAction(String id, String name, Uri uri, String action, int relevance) {
+        Intent intent = new Intent(action, uri);
+        if (context.getPackageManager().queryIntentActivities(intent, 0).isEmpty()) return null;
+
+        SearchPojo pojo = new SearchPojo("search://action/" + id, uri.toString(), "", SearchPojoType.URI_QUERY);
+        pojo.relevance = relevance;
+        pojo.setName(name, false);
+        return pojo;
     }
 
     /** Prefix chaining: "wol threefold", "yt music", "maps pretoria", etc. */
