@@ -3,7 +3,10 @@ package fr.neamar.kiss.dataprovider.simpleprovider;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.provider.Settings;
 
 import androidx.annotation.DrawableRes;
@@ -11,24 +14,31 @@ import androidx.preference.PreferenceManager;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
 public class SettingsProvider extends SimpleProvider<SettingPojo> {
-    private final static String SCHEME = "setting://";
+    private static final String SCHEME = "setting://";
+    private static final String DISABLED_APP_SCHEME = "disabled-app://";
+
     private final String settingName;
     private final List<SettingPojo> pojos;
+    private final List<DisabledAppPojo> disabledApps;
     private final WeakReference<Context> contextReference;
     private final InstalledFeatureProvider installedFeatureProvider;
 
     public SettingsProvider(Context context) {
         pojos = new ArrayList<>();
+        disabledApps = new ArrayList<>();
         PackageManager pm = context.getPackageManager();
 
         addIfResolvable(context, context.getString(R.string.settings_airplane), Settings.ACTION_AIRPLANE_MODE_SETTINGS, R.drawable.setting_airplane);
@@ -44,8 +54,6 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         if (pm.hasSystemFeature(PackageManager.FEATURE_NFC)) addIfResolvable(context, context.getString(R.string.settings_nfc), Settings.ACTION_NFC_SETTINGS, R.drawable.setting_nfc);
         addIfResolvable(context, context.getString(R.string.settings_dev), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, R.drawable.setting_dev);
 
-        // Additional public Android settings entry points. Every action is resolve-checked before
-        // being indexed, so OEMs that do not expose a screen simply won't show that result.
         addIfResolvable(context, "Wi‑Fi settings", Settings.ACTION_WIFI_SETTINGS, R.drawable.setting_wifi);
         addIfResolvable(context, "Bluetooth settings", Settings.ACTION_BLUETOOTH_SETTINGS, R.drawable.setting_wifi);
         addIfResolvable(context, "Mobile network settings", Settings.ACTION_DATA_ROAMING_SETTINGS, R.drawable.setting_wifi);
@@ -61,9 +69,52 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         addIfResolvable(context, "Modify system settings", Settings.ACTION_MANAGE_WRITE_SETTINGS, R.drawable.setting_apps);
         addIfResolvable(context, "App notification settings", Settings.ACTION_ALL_APPS_NOTIFICATION_SETTINGS, R.drawable.setting_apps);
 
+        buildDisabledAppIndex(context, pm);
+
         settingName = context.getString(R.string.settings_prefix).toLowerCase(Locale.ROOT);
         contextReference = new WeakReference<>(context);
         installedFeatureProvider = new InstalledFeatureProvider(context);
+    }
+
+    private void buildDisabledAppIndex(Context context, PackageManager pm) {
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+
+        Set<String> seen = new HashSet<>();
+        List<ResolveInfo> results = pm.queryIntentActivities(launcherIntent, PackageManager.MATCH_DISABLED_COMPONENTS);
+        for (ResolveInfo resolveInfo : results) {
+            ActivityInfo activity = resolveInfo.activityInfo;
+            if (activity == null || activity.applicationInfo == null) continue;
+            if (!isActuallyDisabled(pm, activity)) continue;
+
+            String componentKey = activity.packageName + "/" + activity.name;
+            if (!seen.add(componentKey)) continue;
+
+            CharSequence labelCs = resolveInfo.loadLabel(pm);
+            if (labelCs == null) labelCs = activity.applicationInfo.loadLabel(pm);
+            String label = labelCs == null ? activity.packageName : labelCs.toString().trim();
+            if (label.isEmpty()) label = activity.packageName;
+
+            DisabledAppPojo pojo = new DisabledAppPojo(
+                    DISABLED_APP_SCHEME + componentKey,
+                    activity.packageName,
+                    activity.name
+            );
+            pojo.setName(label, true);
+            disabledApps.add(pojo);
+        }
+    }
+
+    private boolean isActuallyDisabled(PackageManager pm, ActivityInfo activity) {
+        if (!activity.enabled || !activity.applicationInfo.enabled) return true;
+        try {
+            int state = pm.getApplicationEnabledSetting(activity.packageName);
+            return state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private void addIfResolvable(Context context, String name, String action, @DrawableRes int resId) {
@@ -83,10 +134,14 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
     private void assignName(SettingPojo pojo, String name) { pojo.setName(name, true); }
     private String getId(String settingName) { return SCHEME + settingName.toLowerCase(Locale.ENGLISH); }
     private SettingPojo createPojo(String name, String packageName, String settingName, @DrawableRes int resId) {
-        SettingPojo pojo = new SettingPojo(getId(settingName), settingName, packageName, resId); assignName(pojo, name); return pojo;
+        SettingPojo pojo = new SettingPojo(getId(settingName), settingName, packageName, resId);
+        assignName(pojo, name);
+        return pojo;
     }
     private SettingPojo createPojo(String name, String settingName, @DrawableRes int resId) {
-        SettingPojo pojo = new SettingPojo(getId(settingName), settingName, resId); assignName(pojo, name); return pojo;
+        SettingPojo pojo = new SettingPojo(getId(settingName), settingName, resId);
+        assignName(pojo, name);
+        return pojo;
     }
 
     @Override
@@ -100,17 +155,32 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
             MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
             boolean match = pojo.updateMatchingRelevance(matchInfo, false);
             if (!match) {
-                // Keep the localized generic "settings" prefix searchable for settings only.
                 matchInfo = fr.neamar.kiss.utils.fuzzy.TypoTolerance.match(context, query, settingName);
                 match = pojo.updateMatchingRelevance(matchInfo, match);
             }
             if (match && !searcher.addResult(pojo)) return;
         }
 
-        // App/system deep features are a separate cache but share the existing SettingPojo launch
-        // path. This keeps explicit activity launch resolve-checked and avoids a new result type.
+        PackageManager pm = context.getPackageManager();
+        for (DisabledAppPojo pojo : disabledApps) {
+            try {
+                ActivityInfo activity = pm.getActivityInfo(
+                        new android.content.ComponentName(pojo.targetPackage, pojo.activityName),
+                        PackageManager.MATCH_DISABLED_COMPONENTS
+                );
+                if (!isActuallyDisabled(pm, activity)) continue;
+            } catch (PackageManager.NameNotFoundException e) {
+                continue;
+            }
+
+            MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
+            if (pojo.updateMatchingRelevance(matchInfo, false) && !searcher.addResult(pojo)) return;
+        }
+
         installedFeatureProvider.requestResults(query, searcher);
     }
 
-    public boolean mayFindById(String id) { return id.startsWith(SCHEME); }
+    public boolean mayFindById(String id) {
+        return id.startsWith(SCHEME) || id.startsWith(DISABLED_APP_SCHEME);
+    }
 }
