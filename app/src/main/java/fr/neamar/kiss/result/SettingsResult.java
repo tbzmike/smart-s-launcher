@@ -26,6 +26,7 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class SettingsResult extends Result<SettingPojo> {
     private static final String TAG = SettingsResult.class.getSimpleName();
+    private static final int ANDROID_UID_USER_RANGE = 100000;
 
     SettingsResult(@NonNull SettingPojo pojo) {
         super(pojo);
@@ -57,7 +58,7 @@ public class SettingsResult extends Result<SettingPojo> {
             try {
                 ApplicationInfo info = context.getPackageManager().getApplicationInfo(
                         disabled.targetPackage,
-                        PackageManager.MATCH_DISABLED_COMPONENTS
+                        PackageManager.GET_DISABLED_COMPONENTS
                 );
                 Drawable icon = info.loadIcon(context.getPackageManager());
                 if (icon != null) {
@@ -108,7 +109,9 @@ public class SettingsResult extends Result<SettingPojo> {
             return;
         }
 
-        int userId = Process.myUserHandle().getIdentifier();
+        // Android allocates UIDs in 100000-wide per-user ranges. Deriving the current user from
+        // our own UID avoids hidden UserHandle APIs and works on every API level supported here.
+        int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
         boolean enabled = KissApplication.getApplication(context).getRootHandler()
                 .enableApp(disabled.targetPackage, userId);
         if (!enabled) {
