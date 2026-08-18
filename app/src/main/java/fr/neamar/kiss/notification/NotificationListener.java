@@ -78,7 +78,6 @@ public class NotificationListener extends NotificationListenerService {
 
         Map<String, Set<String>> notificationsByPackage = new HashMap<>();
         Set<String> activeIds = new HashSet<>();
-        Set<String> activeGroups = new HashSet<>();
         List<StatusBarNotification> timeline = new ArrayList<>();
         SharedPreferences.Editor detailEditor = details.edit().clear();
 
@@ -88,7 +87,6 @@ public class NotificationListener extends NotificationListenerService {
             notificationsByPackage.computeIfAbsent(packageKey, k -> new HashSet<>()).add(Integer.toString(sbn.getId()));
             String id = getTimelineId(sbn);
             activeIds.add(id);
-            activeGroups.add(packageKey);
             storeNotificationDetail(detailEditor, id, packageKey, sbn);
             timeline.add(sbn);
         }
