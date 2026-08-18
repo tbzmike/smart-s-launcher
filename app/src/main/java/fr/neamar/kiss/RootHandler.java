@@ -10,75 +10,61 @@ import java.nio.charset.StandardCharsets;
 import fr.neamar.kiss.utils.Log;
 
 public class RootHandler {
-
     private static final String TAG = RootHandler.class.getSimpleName();
-
     private Boolean isRootAvailable = null;
     private Boolean isRootActivated = null;
 
-    RootHandler(Context ctx) {
-        resetRootHandler(ctx);
-    }
-
-    public boolean isRootActivated() {
-        return this.isRootActivated;
-    }
-
-    void resetRootHandler(Context ctx) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
-        isRootActivated = prefs.getBoolean("root-mode", false);
-    }
+    RootHandler(Context ctx) { resetRootHandler(ctx); }
+    public boolean isRootActivated() { return this.isRootActivated; }
+    void resetRootHandler(Context ctx) { isRootActivated = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean("root-mode", false); }
 
     public boolean isRootAvailable() {
         if (isRootAvailable == null) {
-            try {
-                isRootAvailable = executeRootShell(null);
-            } catch (Exception e) {
-                isRootAvailable = false;
-            }
+            try { isRootAvailable = executeRootShell(null); }
+            catch (Exception e) { isRootAvailable = false; }
         }
         return isRootAvailable;
     }
 
     public boolean hibernateApp(String packageName) {
+        try { return executeRootShell("am force-stop " + packageName); }
+        catch (Exception e) { return false; }
+    }
+
+    public boolean enableApp(String packageName, int userId) {
+        if (!isSafeName(packageName)) return false;
+        try { return executeRootShell("pm enable --user " + userId + " " + packageName); }
+        catch (Exception e) { return false; }
+    }
+
+    public boolean enableComponent(String packageName, String className, int userId) {
+        if (!isSafeName(packageName) || !isSafeName(className)) return false;
         try {
-            return executeRootShell("am force-stop " + packageName);
+            return executeRootShell("pm enable --user " + userId + " " + packageName + "/" + className);
         } catch (Exception e) {
             return false;
         }
     }
 
-    public boolean enableApp(String packageName, int userId) {
-        if (packageName == null || !packageName.matches("[A-Za-z0-9_\\.]+")) {
-            return false;
-        }
-        try {
-            return executeRootShell("pm enable --user " + userId + " " + packageName);
-        } catch (Exception e) {
-            return false;
-        }
+    private boolean isSafeName(String value) {
+        return value != null && value.matches("[A-Za-z0-9_\\.$]+");
     }
 
     private boolean executeRootShell(String command) {
         Process p = null;
         try {
             p = Runtime.getRuntime().exec("su");
-            if (command != null && !command.trim().isEmpty()) {
-                p.getOutputStream().write((command + "\n").getBytes(StandardCharsets.UTF_8));
-            }
+            if (command != null && !command.trim().isEmpty()) p.getOutputStream().write((command + "\n").getBytes(StandardCharsets.UTF_8));
             p.getOutputStream().write("exit\n".getBytes(StandardCharsets.UTF_8));
             p.getOutputStream().flush();
             p.getOutputStream().close();
             int result = p.waitFor();
-            if (result != 0)
-                throw new Exception("Command execution failed " + result);
+            if (result != 0) throw new Exception("Command execution failed " + result);
             return true;
         } catch (Exception e) {
             Log.d(TAG, "Unable to execute root shell", e);
         } finally {
-            if (p != null) {
-                p.destroy();
-            }
+            if (p != null) p.destroy();
         }
         return false;
     }
