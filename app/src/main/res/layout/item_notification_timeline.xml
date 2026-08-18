@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    style="@style/ResultItem"
+    android:orientation="horizontal"
+    tools:layout_height="wrap_content">
+
+    <ImageView
+        android:id="@+id/item_notification_icon"
+        style="@style/ResultItemIcon"
+        android:layout_gravity="top"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingEnd="8dp">
+
+        <TextView
+            android:id="@+id/item_notification_app"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="?attr/resultColor"
+            android:textSize="?attr/resultSubtitleSize"
+            android:textStyle="bold"
+            tools:text="WhatsApp" />
+
+        <TextView
+            android:id="@+id/item_notification_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="?attr/resultColor"
+            android:textSize="?attr/resultTitleSize"
+            tools:text="New message" />
+
+        <TextView
+            android:id="@+id/item_notification_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="4"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="?attr/resultSubtitleSize"
+            tools:text="This is the notification body shown directly on the launcher." />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/item_notification_dismiss"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:minWidth="0dp"
+        android:text="@string/notification_mark_read" />
+</LinearLayout>
