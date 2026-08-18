@@ -20,20 +20,15 @@ public final class AppPojo extends PojoWithTags {
 
     private boolean excluded;
     private boolean excludedFromHistory;
-    /**
-     * Whether shortcuts are excluded for this app
-     */
     private boolean excludedShortcuts;
-    private final boolean disabled;
+    private boolean disabled;
 
     public AppPojo(String id, @NonNull String packageName, @NonNull String activityName, @NonNull UserHandle userHandle,
                    boolean isExcluded, boolean isExcludedFromHistory, boolean isExcludedShortcuts, boolean disabled) {
         super(id);
-
         this.packageName = packageName;
         this.activityName = activityName;
         this.userHandle = userHandle;
-
         this.excluded = isExcluded;
         this.excludedFromHistory = isExcludedFromHistory;
         this.excludedShortcuts = isExcludedShortcuts;
@@ -41,54 +36,17 @@ public final class AppPojo extends PojoWithTags {
         this.componentName = new ComponentName(packageName, activityName);
     }
 
-    public String getComponentName() {
-        return getComponentName(packageName, activityName, userHandle);
-    }
-
-    public boolean isExcluded() {
-        return excluded;
-    }
-
-    public void setExcluded(boolean excluded) {
-        this.excluded = excluded;
-    }
-
-    public boolean isExcludedFromHistory() {
-        return excludedFromHistory;
-    }
-
-    public void setExcludedFromHistory(boolean excludedFromHistory) {
-        this.excludedFromHistory = excludedFromHistory;
-    }
-
-    public boolean isExcludedShortcuts() {
-        return excludedShortcuts;
-    }
-
-    public void setExcludedShortcuts(boolean excludedShortcuts) {
-        this.excludedShortcuts = excludedShortcuts;
-    }
-
-    public String getPackageKey() {
-        return userHandle.getRealHandle().hashCode() + "|" + packageName;
-    }
-
-    @Override
-    public boolean isDisabled() {
-        return disabled;
-    }
-
-    @Override
-    public UserHandle getUserHandle() {
-        return userHandle;
-    }
-
-    public ComponentName getComponent() {
-        return componentName;
-    }
-
-    @Override
-    public String getCustomIconId() {
-        return getComponent().flattenToString();
-    }
+    public String getComponentName() { return getComponentName(packageName, activityName, userHandle); }
+    public boolean isExcluded() { return excluded; }
+    public void setExcluded(boolean excluded) { this.excluded = excluded; }
+    public boolean isExcludedFromHistory() { return excludedFromHistory; }
+    public void setExcludedFromHistory(boolean excludedFromHistory) { this.excludedFromHistory = excludedFromHistory; }
+    public boolean isExcludedShortcuts() { return excludedShortcuts; }
+    public void setExcludedShortcuts(boolean excludedShortcuts) { this.excludedShortcuts = excludedShortcuts; }
+    public String getPackageKey() { return userHandle.getRealHandle().hashCode() + "|" + packageName; }
+    @Override public boolean isDisabled() { return disabled; }
+    public void setDisabled(boolean disabled) { this.disabled = disabled; }
+    @Override public UserHandle getUserHandle() { return userHandle; }
+    public ComponentName getComponent() { return componentName; }
+    @Override public String getCustomIconId() { return getComponent().flattenToString(); }
 }
