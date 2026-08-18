@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.provider.Settings;
@@ -69,19 +68,19 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         addIfResolvable(context, "Modify system settings", Settings.ACTION_MANAGE_WRITE_SETTINGS, R.drawable.setting_apps);
         addIfResolvable(context, "App notification settings", Settings.ACTION_ALL_APPS_NOTIFICATION_SETTINGS, R.drawable.setting_apps);
 
-        buildDisabledAppIndex(context, pm);
+        buildDisabledAppIndex(pm);
 
         settingName = context.getString(R.string.settings_prefix).toLowerCase(Locale.ROOT);
         contextReference = new WeakReference<>(context);
         installedFeatureProvider = new InstalledFeatureProvider(context);
     }
 
-    private void buildDisabledAppIndex(Context context, PackageManager pm) {
+    private void buildDisabledAppIndex(PackageManager pm) {
         Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
         launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
 
         Set<String> seen = new HashSet<>();
-        List<ResolveInfo> results = pm.queryIntentActivities(launcherIntent, PackageManager.MATCH_DISABLED_COMPONENTS);
+        List<ResolveInfo> results = pm.queryIntentActivities(launcherIntent, PackageManager.GET_DISABLED_COMPONENTS);
         for (ResolveInfo resolveInfo : results) {
             ActivityInfo activity = resolveInfo.activityInfo;
             if (activity == null || activity.applicationInfo == null) continue;
@@ -166,7 +165,7 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
             try {
                 ActivityInfo activity = pm.getActivityInfo(
                         new android.content.ComponentName(pojo.targetPackage, pojo.activityName),
-                        PackageManager.MATCH_DISABLED_COMPONENTS
+                        PackageManager.GET_DISABLED_COMPONENTS
                 );
                 if (!isActuallyDisabled(pm, activity)) continue;
             } catch (PackageManager.NameNotFoundException e) {
