@@ -1,5 +1,6 @@
 package fr.neamar.kiss.result;
 
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
@@ -15,6 +16,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -22,9 +25,11 @@ import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import fr.neamar.kiss.KissApplication;
+import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationListener;
@@ -49,10 +54,10 @@ public class SettingsResult extends Result<SettingPojo> {
     @Override
     public View display(Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
         if (pojo instanceof NotificationPojo) {
-            return displayNotification(context, view, parent, (NotificationPojo) pojo);
+            return displayNotificationGroup(context, parent, (NotificationPojo) pojo);
         }
 
-        if (view == null || view.findViewById(R.id.item_setting_prefix) == null) {
+        if (view == null || view.findViewById(R.id.item_setting_name) == null) {
             view = inflateFromId(context, R.layout.item_setting, parent);
         }
 
@@ -70,32 +75,31 @@ public class SettingsResult extends Result<SettingPojo> {
         return view;
     }
 
-    private View displayNotification(Context context, View view, ViewGroup parent, NotificationPojo notification) {
-        if (view == null || view.findViewById(R.id.item_notification_app) == null) {
-            view = inflateFromId(context, R.layout.item_notification_timeline, parent);
-        }
-
+    private View displayNotificationGroup(Context context, ViewGroup parent, NotificationPojo notification) {
+        View view = inflateFromId(context, R.layout.item_notification_timeline, parent);
         TextView appName = view.findViewById(R.id.item_notification_app);
         TextView title = view.findViewById(R.id.item_notification_title);
         TextView text = view.findViewById(R.id.item_notification_text);
-        Button dismiss = view.findViewById(R.id.item_notification_dismiss);
+        Button markRead = view.findViewById(R.id.item_notification_dismiss);
         ImageView icon = view.findViewById(R.id.item_notification_icon);
 
         appName.setText(notification.appName);
-        title.setText(notification.getDisplayTitle());
-        title.setVisibility(notification.getDisplayTitle().isEmpty() ? View.GONE : View.VISIBLE);
-        text.setText(notification.getDisplayText());
-        text.setVisibility(notification.getDisplayText().isEmpty() ? View.GONE : View.VISIBLE);
+        title.setText(notification.getSummary());
+        String preview = notification.latestTitle;
+        if (!notification.latestText.isEmpty()) {
+            preview = preview.isEmpty() ? notification.latestText : preview + ": " + notification.latestText;
+        }
+        text.setText(preview);
+        text.setVisibility(preview.isEmpty() ? View.GONE : View.VISIBLE);
 
         if (!isHideIcons(context)) setAsyncDrawable(icon);
         else icon.setImageDrawable(null);
 
-        dismiss.setEnabled(true);
-        dismiss.setText(R.string.notification_mark_read);
-        dismiss.setOnClickListener(v -> {
-            if (NotificationListener.dismissNotification(context, notification.id)) {
-                dismiss.setEnabled(false);
-                dismiss.setText(R.string.notification_dismissed);
+        markRead.setText(R.string.notification_mark_read);
+        markRead.setOnClickListener(v -> {
+            if (NotificationListener.markGroupRead(context, notification.groupKey)) {
+                markRead.setEnabled(false);
+                context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
             } else {
                 Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
             }
@@ -107,7 +111,7 @@ public class SettingsResult extends Result<SettingPojo> {
     public Drawable getDrawable(Context context) {
         if (pojo instanceof NotificationPojo) {
             try {
-                return context.getPackageManager().getApplicationIcon(((NotificationPojo) pojo).notificationPackageName);
+                return context.getPackageManager().getApplicationIcon(((NotificationPojo) pojo).packageName);
             } catch (PackageManager.NameNotFoundException e) {
                 return null;
             }
@@ -131,7 +135,7 @@ public class SettingsResult extends Result<SettingPojo> {
     public void doLaunch(Context context, View v) {
         launchSucceeded = false;
         if (pojo instanceof NotificationPojo) {
-            launchNotification(context, (NotificationPojo) pojo);
+            showNotificationGroup(context, (NotificationPojo) pojo);
             return;
         }
         if (pojo instanceof DisabledAppPojo) {
@@ -160,29 +164,85 @@ public class SettingsResult extends Result<SettingPojo> {
         }
     }
 
-    private void launchNotification(Context context, NotificationPojo notification) {
-        if (NotificationListener.openNotification(context, notification.id)) {
-            launchSucceeded = true;
+    private void showNotificationGroup(Context context, NotificationPojo notification) {
+        List<NotificationListener.NotificationSnapshot> items = NotificationListener.getGroupNotifications(context, notification.groupKey);
+        if (items.isEmpty()) {
+            Toast.makeText(context, "No active notifications.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(notification.notificationPackageName);
-        if (launchIntent == null) {
-            Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
-            return;
+        LinearLayout list = new LinearLayout(context);
+        list.setOrientation(LinearLayout.VERTICAL);
+        int padding = dp(context, 16);
+        list.setPadding(padding, padding / 2, padding, padding / 2);
+
+        for (NotificationListener.NotificationSnapshot item : items) {
+            LinearLayout row = new LinearLayout(context);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(0, padding / 2, 0, padding / 2);
+
+            TextView title = new TextView(context);
+            title.setText(item.title.isEmpty() ? notification.appName : item.title);
+            title.setTextSize(16);
+            title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
+            row.addView(title);
+
+            if (!item.text.isEmpty()) {
+                TextView body = new TextView(context);
+                body.setText(item.text);
+                body.setMaxLines(2);
+                body.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                body.setTextSize(14);
+                row.addView(body);
+            }
+
+            row.setOnClickListener(v -> showNotificationDetail(context, notification, item));
+            list.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
-        try {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivity(launchIntent);
-            launchSucceeded = true;
-        } catch (ActivityNotFoundException | SecurityException e) {
-            Log.w(TAG, "Unable to open notification app", e);
-            Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
-        }
+
+        ScrollView scroll = new ScrollView(context);
+        scroll.addView(list);
+        new AlertDialog.Builder(context)
+                .setTitle(notification.appName + " · " + notification.getSummary())
+                .setView(scroll)
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void showNotificationDetail(Context context, NotificationPojo group, NotificationListener.NotificationSnapshot item) {
+        String title = item.title.isEmpty() ? group.appName : item.title;
+        String body = item.text.isEmpty() ? "No message text available." : item.text;
+        new AlertDialog.Builder(context)
+                .setTitle(title)
+                .setMessage(body)
+                .setPositiveButton("Open notification", (dialog, which) -> {
+                    if (!NotificationListener.openNotification(context, item.id)) {
+                        Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(group.packageName);
+                        if (launchIntent != null) {
+                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            context.startActivity(launchIntent);
+                        } else {
+                            Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                })
+                .setNeutralButton("Mark read", (dialog, which) -> {
+                    if (!NotificationListener.markNotificationRead(context, item.id)) {
+                        Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
+                    } else {
+                        context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private int dp(Context context, int value) {
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
     private void hideFailedTarget(Context context) {
-        if (pojo instanceof DisabledAppPojo || pojo instanceof NotificationPojo) return;
+        if (pojo instanceof DisabledAppPojo) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         Set<String> hidden = new HashSet<>(prefs.getStringSet(HIDDEN_TARGETS, java.util.Collections.emptySet()));
         hidden.add(pojo.id);
@@ -234,6 +294,7 @@ public class SettingsResult extends Result<SettingPojo> {
 
     @Override
     protected boolean canAddToHistory() {
+        if (pojo instanceof NotificationPojo) return false;
         return launchSucceeded;
     }
 

@@ -20,7 +20,6 @@ import java.util.Locale;
 import java.util.Set;
 
 import fr.neamar.kiss.R;
-import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
@@ -176,15 +175,17 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
             }
         }
         installedFeatureProvider.requestResults(query, searcher);
-        notificationProvider.requestResults(query, searcher);
+        if (prefs.getBoolean("enable-notification-history", false)) {
+            notificationProvider.requestResults(query, searcher);
+        }
     }
 
     @Override
     public boolean mayFindById(String id) {
         return id != null && (id.startsWith(SCHEME)
                 || id.startsWith(DISABLED_APP_SCHEME)
-                || id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
-                || installedFeatureProvider.mayFindById(id));
+                || installedFeatureProvider.mayFindById(id)
+                || notificationProvider.mayFindById(id));
     }
 
     @Override
@@ -192,11 +193,11 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         if (id == null) return null;
         for (SettingPojo pojo : pojos) if (pojo.id.equals(id)) return pojo;
         for (DisabledAppPojo pojo : disabledApps) if (pojo.id.equals(id)) return pojo;
-        if (id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
+        if (installedFeatureProvider.mayFindById(id)) return installedFeatureProvider.findById(id);
+        if (notificationProvider.mayFindById(id)) {
             NotificationPojo notification = notificationProvider.findById(id);
             if (notification != null) return notification;
         }
-        if (installedFeatureProvider.mayFindById(id)) return installedFeatureProvider.findById(id);
         return null;
     }
 }
