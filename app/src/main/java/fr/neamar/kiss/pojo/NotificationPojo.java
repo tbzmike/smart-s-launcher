@@ -3,7 +3,6 @@ package fr.neamar.kiss.pojo;
 import androidx.annotation.NonNull;
 
 public final class NotificationPojo extends SettingPojo {
-    public final String packageName;
     public final String appName;
     public final String groupKey;
     public final int notificationCount;
@@ -19,8 +18,7 @@ public final class NotificationPojo extends SettingPojo {
                             @NonNull String latestTitle,
                             @NonNull String latestText,
                             long postTime) {
-        super(id, "", -1);
-        this.packageName = packageName;
+        super(id, "", packageName, -1);
         this.appName = appName;
         this.groupKey = groupKey;
         this.notificationCount = notificationCount;
