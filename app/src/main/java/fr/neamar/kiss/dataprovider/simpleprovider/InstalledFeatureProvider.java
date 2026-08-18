@@ -18,22 +18,31 @@ import java.util.Locale;
 import java.util.Set;
 
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
-/**
- * Lightweight cache of meaningful, directly launchable exported activities exposed by installed
- * and system apps. Internal/helper activities, permission-gated activities, duplicate labels and
- * ordinary launcher activities are not exposed in normal search results.
- */
 public final class InstalledFeatureProvider extends SimpleProvider<SettingPojo> {
     private static final String SCHEME = "feature://";
+    private static final String HIDDEN_TARGETS = "hidden-launch-targets";
     private static final int MAX_FEATURES = 1200;
 
+    private static final class FeatureRecord {
+        final SettingPojo pojo;
+        final String label;
+        final StringNormalizer.Result normalizedLabel;
+
+        FeatureRecord(SettingPojo pojo, String label) {
+            this.pojo = pojo;
+            this.label = label;
+            this.normalizedLabel = StringNormalizer.normalizeWithResult(label, false);
+        }
+    }
+
     private final Context context;
-    private final List<SettingPojo> features = new ArrayList<>();
+    private final List<FeatureRecord> features = new ArrayList<>();
 
     public InstalledFeatureProvider(Context context) {
         this.context = context.getApplicationContext();
@@ -48,8 +57,8 @@ public final class InstalledFeatureProvider extends SimpleProvider<SettingPojo> 
         PackageManager pm = context.getPackageManager();
         Set<String> seenComponents = new HashSet<>();
         Set<String> seenLabels = new HashSet<>();
-
         List<PackageInfo> packages = pm.getInstalledPackages(PackageManager.GET_ACTIVITIES);
+
         for (PackageInfo pkg : packages) {
             if (pkg.activities == null || pkg.applicationInfo == null || !pkg.applicationInfo.enabled) continue;
 
@@ -77,7 +86,7 @@ public final class InstalledFeatureProvider extends SimpleProvider<SettingPojo> 
                 String id = SCHEME + componentKey;
                 SettingPojo pojo = new SettingPojo(id, activity.name, activity.packageName, R.drawable.setting_apps);
                 pojo.setName(label + " · " + appLabel, true);
-                features.add(pojo);
+                features.add(new FeatureRecord(pojo, label));
                 if (features.size() >= MAX_FEATURES) return;
             }
         }
@@ -88,37 +97,25 @@ public final class InstalledFeatureProvider extends SimpleProvider<SettingPojo> 
         if (label.equalsIgnoreCase(appLabel)) return false;
         if (label.equalsIgnoreCase(activity.packageName)) return false;
         if (label.equalsIgnoreCase(activity.name)) return false;
-
         int lastDot = activity.name.lastIndexOf('.');
-        if (lastDot >= 0 && label.equalsIgnoreCase(activity.name.substring(lastDot + 1))) return false;
-        return true;
+        return lastDot < 0 || !label.equalsIgnoreCase(activity.name.substring(lastDot + 1));
     }
 
     private boolean isLaunchableActivity(PackageManager pm, ActivityInfo activity) {
         if (activity == null || activity.applicationInfo == null) return false;
         if (!activity.exported || !activity.enabled || !activity.applicationInfo.enabled) return false;
-
         if (activity.permission != null && !activity.permission.isEmpty()
-                && context.checkCallingOrSelfPermission(activity.permission) != PackageManager.PERMISSION_GRANTED) {
-            return false;
-        }
+                && context.checkCallingOrSelfPermission(activity.permission) != PackageManager.PERMISSION_GRANTED) return false;
 
         ComponentName component = new ComponentName(activity.packageName, activity.name);
-        Intent probe = new Intent().setComponent(component);
-        ResolveInfo resolved = pm.resolveActivity(probe, 0);
-        return resolved != null
-                && resolved.activityInfo != null
+        ResolveInfo resolved = pm.resolveActivity(new Intent().setComponent(component), 0);
+        return resolved != null && resolved.activityInfo != null
                 && component.equals(new ComponentName(resolved.activityInfo.packageName, resolved.activityInfo.name));
     }
 
     private boolean isLaunchableNow(PackageManager pm, SettingPojo pojo) {
-        if (pojo.packageName.isEmpty() || pojo.settingName.isEmpty()) return false;
         try {
-            ActivityInfo activity = pm.getActivityInfo(
-                    new ComponentName(pojo.packageName, pojo.settingName),
-                    0
-            );
-            return isLaunchableActivity(pm, activity);
+            return isLaunchableActivity(pm, pm.getActivityInfo(new ComponentName(pojo.packageName, pojo.settingName), 0));
         } catch (PackageManager.NameNotFoundException e) {
             return false;
         }
@@ -127,12 +124,17 @@ public final class InstalledFeatureProvider extends SimpleProvider<SettingPojo> 
     @Override
     public void requestResults(String query, Searcher searcher) {
         if (query == null || query.trim().length() < 2) return;
-
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        Set<String> hidden = prefs.getStringSet(HIDDEN_TARGETS, java.util.Collections.emptySet());
         PackageManager pm = context.getPackageManager();
-        for (SettingPojo pojo : features) {
-            if (!isLaunchableNow(pm, pojo)) continue;
 
-            MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
+        for (FeatureRecord record : features) {
+            SettingPojo pojo = record.pojo;
+            if (hidden.contains(pojo.id) || !isLaunchableNow(pm, pojo)) continue;
+
+            // Deliberately match only the feature label. The appended app name is display-only,
+            // so searching "Instagram" returns Instagram's real launcher rather than its internals.
+            MatchInfo matchInfo = SmartMatcher.match(context, query, record.normalizedLabel, record.label);
             if (pojo.updateMatchingRelevance(matchInfo, false) && !searcher.addResult(pojo)) return;
         }
     }
@@ -140,5 +142,13 @@ public final class InstalledFeatureProvider extends SimpleProvider<SettingPojo> 
     @Override
     public boolean mayFindById(String id) {
         return id != null && id.startsWith(SCHEME);
+    }
+
+    @Override
+    public SettingPojo findById(String id) {
+        for (FeatureRecord record : features) {
+            if (record.pojo.id.equals(id)) return record.pojo;
+        }
+        return null;
     }
 }
