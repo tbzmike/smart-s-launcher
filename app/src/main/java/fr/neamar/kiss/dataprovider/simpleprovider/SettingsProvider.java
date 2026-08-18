@@ -47,9 +47,9 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         // Additional public Android settings entry points. Every action is resolve-checked before
         // being indexed, so OEMs that do not expose a screen simply won't show that result.
         addIfResolvable(context, "Wi‑Fi settings", Settings.ACTION_WIFI_SETTINGS, R.drawable.setting_wifi);
-        addIfResolvable(context, "Bluetooth settings", Settings.ACTION_BLUETOOTH_SETTINGS, R.drawable.setting_connectivity);
-        addIfResolvable(context, "Mobile network settings", Settings.ACTION_DATA_ROAMING_SETTINGS, R.drawable.setting_connectivity);
-        addIfResolvable(context, "Location settings", Settings.ACTION_LOCATION_SOURCE_SETTINGS, R.drawable.setting_connectivity);
+        addIfResolvable(context, "Bluetooth settings", Settings.ACTION_BLUETOOTH_SETTINGS, R.drawable.setting_wifi);
+        addIfResolvable(context, "Mobile network settings", Settings.ACTION_DATA_ROAMING_SETTINGS, R.drawable.setting_wifi);
+        addIfResolvable(context, "Location settings", Settings.ACTION_LOCATION_SOURCE_SETTINGS, R.drawable.setting_wifi);
         addIfResolvable(context, "Security settings", Settings.ACTION_SECURITY_SETTINGS, R.drawable.setting_apps);
         addIfResolvable(context, "Date & time settings", Settings.ACTION_DATE_SETTINGS, R.drawable.setting_info);
         addIfResolvable(context, "Keyboard & input settings", Settings.ACTION_INPUT_METHOD_SETTINGS, R.drawable.setting_apps);
