@@ -20,7 +20,9 @@ import java.util.Locale;
 import java.util.Set;
 
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
+import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
@@ -36,6 +38,7 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
     private final List<DisabledAppPojo> disabledApps;
     private final WeakReference<Context> contextReference;
     private final InstalledFeatureProvider installedFeatureProvider;
+    private final NotificationProvider notificationProvider;
 
     public SettingsProvider(Context context) {
         pojos = new ArrayList<>();
@@ -74,6 +77,7 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         settingName = context.getString(R.string.settings_prefix).toLowerCase(Locale.ROOT);
         contextReference = new WeakReference<>(context);
         installedFeatureProvider = new InstalledFeatureProvider(context);
+        notificationProvider = new NotificationProvider(context);
     }
 
     private void buildDisabledAppIndex(PackageManager pm) {
@@ -172,11 +176,15 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
             }
         }
         installedFeatureProvider.requestResults(query, searcher);
+        notificationProvider.requestResults(query, searcher);
     }
 
     @Override
     public boolean mayFindById(String id) {
-        return id != null && (id.startsWith(SCHEME) || id.startsWith(DISABLED_APP_SCHEME) || installedFeatureProvider.mayFindById(id));
+        return id != null && (id.startsWith(SCHEME)
+                || id.startsWith(DISABLED_APP_SCHEME)
+                || id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
+                || installedFeatureProvider.mayFindById(id));
     }
 
     @Override
@@ -184,6 +192,10 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         if (id == null) return null;
         for (SettingPojo pojo : pojos) if (pojo.id.equals(id)) return pojo;
         for (DisabledAppPojo pojo : disabledApps) if (pojo.id.equals(id)) return pojo;
+        if (id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
+            NotificationPojo notification = notificationProvider.findById(id);
+            if (notification != null) return notification;
+        }
         if (installedFeatureProvider.mayFindById(id)) return installedFeatureProvider.findById(id);
         return null;
     }
