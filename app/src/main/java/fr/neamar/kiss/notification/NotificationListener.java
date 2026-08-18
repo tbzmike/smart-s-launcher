@@ -4,14 +4,11 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.PendingIntent;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Base64;
-
-import androidx.preference.PreferenceManager;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -86,7 +83,7 @@ public class NotificationListener extends NotificationListenerService {
         }
         editor.apply();
 
-        if (seedTimeline && PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
+        if (seedTimeline) {
             timeline.sort(Comparator.comparingLong(StatusBarNotification::getPostTime));
             for (StatusBarNotification sbn : timeline) {
                 KissApplication.getApplication(this).getDataHandler().addToHistory(getTimelineId(sbn));
@@ -124,9 +121,7 @@ public class NotificationListener extends NotificationListenerService {
         storeNotificationDetail(detailEditor, id, packageKey, sbn);
         detailEditor.apply();
 
-        if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
-            KissApplication.getApplication(this).getDataHandler().addToHistory(id);
-        }
+        KissApplication.getApplication(this).getDataHandler().addToHistory(id);
     }
 
     private void storeNotificationDetail(SharedPreferences.Editor editor, String id, String packageKey, StatusBarNotification sbn) {
@@ -145,7 +140,6 @@ public class NotificationListener extends NotificationListenerService {
         editor.putString(id + "|text", textString);
         editor.putLong(id + "|post", sbn.getPostTime());
 
-        // Keep the existing per-app preview used by app rows and notification dots.
         String message = titleString;
         if (!textString.isEmpty()) message = message.isEmpty() ? textString : message + ": " + textString;
         editor.putString(packageKey + "|text", message);
@@ -174,7 +168,6 @@ public class NotificationListener extends NotificationListenerService {
                 .remove(id + "|post")
                 .apply();
 
-        // Rebuild package preview if other notifications from the package remain.
         if (!currentNotifications.isEmpty()) refreshAllNotifications(false);
         else details.edit().remove(packageKey + "|text").remove(packageKey + "|key").apply();
     }
@@ -242,23 +235,10 @@ public class NotificationListener extends NotificationListenerService {
         return sbn.getUser().hashCode() + "|" + sbn.getPackageName();
     }
 
+    /** All user-visible notification rows are kept. Only group summaries are omitted to avoid duplicates. */
     public boolean isNotificationTrivial(StatusBarNotification sbn) {
-        Notification notification = sbn.getNotification();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            final Ranking ranking = new Ranking();
-            if (getCurrentRanking().getRanking(sbn.getKey(), ranking)) {
-                if (!ranking.canShowBadge()) return true;
-                if (ranking.getChannel() != null
-                        && !ranking.getChannel().getId().equals(NotificationChannel.DEFAULT_CHANNEL_ID)) {
-                    return isGroupHeader(notification);
-                }
-            }
-        }
-        return notification.priority <= Notification.PRIORITY_MIN || isOngoing(notification) || isGroupHeader(notification);
-    }
-
-    private boolean isOngoing(Notification notification) {
-        return (notification.flags & Notification.FLAG_ONGOING_EVENT) != 0;
+        if (sbn == null || sbn.getNotification() == null) return true;
+        return isGroupHeader(sbn.getNotification());
     }
 
     private boolean isGroupHeader(Notification notification) {
