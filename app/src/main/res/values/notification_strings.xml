@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="notification_mark_read">Mark read</string>
-    <string name="notification_dismissed">Read</string>
-    <string name="notification_dismiss_failed">Unable to clear notification</string>
-</resources>
