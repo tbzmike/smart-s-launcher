@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compatibility alias for the AMOLED theme added before Material Components was present.
+         Keep Smart S Launcher on its existing AppCompat stack instead of pulling in Material 3. -->
+    <style name="Theme.Material3.DayNight.NoActionBar" parent="@style/Theme.AppCompat.DayNight.NoActionBar" />
+</resources>
