@@ -22,190 +22,144 @@ import fr.neamar.kiss.utils.UserHandle;
 public class NotificationListener extends NotificationListenerService {
     public static final String TAG = NotificationListener.class.getSimpleName();
     public static final String NOTIFICATION_PREFERENCES_NAME = "notifications";
+    private static final String DETAIL_PREFERENCES_NAME = "notification-details";
+    private static volatile NotificationListener instance;
 
     private SharedPreferences prefs;
+    private SharedPreferences details;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;
         prefs = getBaseContext().getSharedPreferences(NOTIFICATION_PREFERENCES_NAME, Context.MODE_PRIVATE);
+        details = getBaseContext().getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
+    }
+
+    @Override
+    public void onDestroy() {
+        if (instance == this) instance = null;
+        super.onDestroy();
     }
 
     @Override
     public void onListenerConnected() {
         super.onListenerConnected();
-        Log.i(TAG, "Notification listener connected");
-
         refreshAllNotifications();
     }
 
     private void refreshAllNotifications() {
-        // Build a map of notifications currently displayed,
-        // ordered per package
         StatusBarNotification[] sbns = getActiveNotifications();
         Map<String, Set<String>> notificationsByPackage = new HashMap<>();
+        SharedPreferences.Editor detailEditor = details.edit().clear();
         for (StatusBarNotification sbn : sbns) {
-            if (isNotificationTrivial(sbn)) {
-                continue;
-            }
-
+            if (isNotificationTrivial(sbn)) continue;
             String packageKey = getPackageKey(sbn);
-            if (!notificationsByPackage.containsKey(packageKey)) {
-                notificationsByPackage.put(packageKey, new HashSet<>());
-            }
-
-            notificationsByPackage.get(packageKey).add(Integer.toString(sbn.getId()));
+            notificationsByPackage.computeIfAbsent(packageKey, k -> new HashSet<>()).add(Integer.toString(sbn.getId()));
+            storeNotificationDetail(detailEditor, packageKey, sbn);
         }
+        detailEditor.apply();
 
-        // And synchronise this map with our SharedPreferences
-        // (an easier option would have been to .clear() the SharedPreferences,
-        // but then the listeners on SharedPreferences are not properly triggered)
         SharedPreferences.Editor editor = prefs.edit();
-        // allKeys contains all the package names either in preferences or in the current notifications
         Set<String> allKeys = new HashSet<>(prefs.getAll().keySet());
         allKeys.addAll(notificationsByPackage.keySet());
         for (String packageKey : allKeys) {
-            if (notificationsByPackage.containsKey(packageKey)) {
-                editor.putStringSet(packageKey, notificationsByPackage.get(packageKey));
-            } else {
-                editor.remove(packageKey);
-            }
+            if (notificationsByPackage.containsKey(packageKey)) editor.putStringSet(packageKey, notificationsByPackage.get(packageKey));
+            else editor.remove(packageKey);
         }
-
         editor.apply();
-
-        Log.v(TAG, "Refreshed all notifications for " + allKeys);
     }
 
     @Override
     public void onListenerDisconnected() {
-        Log.i(TAG, "Notification listener disconnected");
-
-        // Clean up everything we have in memory to ensure we don't keep displaying trailing dots.
-        // We don't use .clear() to ensure listeners are properly called.
-        SharedPreferences.Editor editor = prefs.edit();
-        Set<String> packages = prefs.getAll().keySet();
-
-        for (String packageKey : packages) {
-            editor.remove(packageKey);
-        }
-
-        editor.apply();
-
-        Log.v(TAG, "Removed all notifications for " + packages);
-
+        prefs.edit().clear().apply();
+        details.edit().clear().apply();
         super.onListenerDisconnected();
     }
 
-    @Override
-    public void onNotificationRankingUpdate(RankingMap rankingMap) {
-        super.onNotificationRankingUpdate(rankingMap);
-
-        refreshAllNotifications();
-    }
+    @Override public void onNotificationRankingUpdate(RankingMap rankingMap) { super.onNotificationRankingUpdate(rankingMap); refreshAllNotifications(); }
 
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
-        if (isNotificationTrivial(sbn)) {
-            return;
-        }
-
+        if (isNotificationTrivial(sbn)) return;
         String packageKey = getPackageKey(sbn);
         Set<String> currentNotifications = getCurrentNotificationsForPackage(packageKey);
-        if (currentNotifications.add(Integer.toString(sbn.getId()))) {
-            SharedPreferences.Editor editor = prefs.edit();
-            editor.putStringSet(packageKey, currentNotifications);
-            editor.apply();
+        currentNotifications.add(Integer.toString(sbn.getId()));
+        prefs.edit().putStringSet(packageKey, currentNotifications).apply();
+        SharedPreferences.Editor detailEditor = details.edit();
+        storeNotificationDetail(detailEditor, packageKey, sbn);
+        detailEditor.apply();
+        addNotificationToHistory(sbn);
+    }
 
-            Log.v(TAG, "Added notification for " + packageKey + ": " + currentNotifications);
-
-            addNotificationToHistory(sbn);
-        }
+    private void storeNotificationDetail(SharedPreferences.Editor editor, String packageKey, StatusBarNotification sbn) {
+        Notification n = sbn.getNotification();
+        CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
+        CharSequence text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
+        String message = "";
+        if (title != null && title.length() > 0) message = title.toString();
+        if (text != null && text.length() > 0) message = message.isEmpty() ? text.toString() : message + ": " + text;
+        editor.putString(packageKey + "|text", message);
+        editor.putString(packageKey + "|key", sbn.getKey());
     }
 
     private void addNotificationToHistory(StatusBarNotification sbn) {
         Context context = getBaseContext();
         if (PreferenceManager.getDefaultSharedPreferences(context).getBoolean("enable-notification-history", false)) {
-            UserHandle userHandle = getUserHandle(context, sbn);
-            KissApplication.getApplication(context).getDataHandler().addPackageToHistory(context, userHandle, sbn.getPackageName());
+            KissApplication.getApplication(context).getDataHandler().addPackageToHistory(context, new UserHandle(context, sbn.getUser()), sbn.getPackageName());
         }
-    }
-
-    private UserHandle getUserHandle(Context context, StatusBarNotification sbn) {
-        return new UserHandle(context, sbn.getUser());
     }
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
-        if (sbn == null) {
-            return;
-        }
-
+        if (sbn == null) return;
         String packageKey = getPackageKey(sbn);
-
         Set<String> currentNotifications = getCurrentNotificationsForPackage(packageKey);
-
-        if (currentNotifications.remove(Integer.toString(sbn.getId()))) {
-            SharedPreferences.Editor editor = prefs.edit();
-            if (currentNotifications.isEmpty()) {
-                // Clean up!
-                editor.remove(packageKey);
-            } else {
-                editor.putStringSet(packageKey, currentNotifications);
-            }
-            editor.apply();
-
-            Log.v(TAG, "Removed notification for " + packageKey + ": " + currentNotifications);
+        currentNotifications.remove(Integer.toString(sbn.getId()));
+        if (currentNotifications.isEmpty()) {
+            prefs.edit().remove(packageKey).apply();
+            details.edit().remove(packageKey + "|text").remove(packageKey + "|key").apply();
+        } else {
+            prefs.edit().putStringSet(packageKey, currentNotifications).apply();
+            refreshAllNotifications();
         }
     }
 
-    private String getPackageKey(StatusBarNotification sbn) {
-        return sbn.getUser().hashCode() + "|" + sbn.getPackageName();
-    }
+    private String getPackageKey(StatusBarNotification sbn) { return sbn.getUser().hashCode() + "|" + sbn.getPackageName(); }
 
     public Set<String> getCurrentNotificationsForPackage(String packageName) {
         Set<String> currentNotifications = prefs.getStringSet(packageName, null);
-        if (currentNotifications == null) {
-            return new HashSet<>();
-        } else {
-            // The set returned by getStringSet() should NOT be modified
-            // see https://developer.android.com/reference/android/content/SharedPreferences.html#getStringSet(java.lang.String,%2520java.util.Set%3Cjava.lang.String%3E)
-            return new HashSet<>(currentNotifications);
+        return currentNotifications == null ? new HashSet<>() : new HashSet<>(currentNotifications);
+    }
+
+    public static String getLatestMessage(Context context, String packageKey) {
+        return context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(packageKey + "|text", "");
+    }
+
+    public static boolean dismissLatest(Context context, String packageKey) {
+        String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(packageKey + "|key", null);
+        NotificationListener listener = instance;
+        if (listener == null || key == null) return false;
+        try {
+            listener.cancelNotification(key);
+            return true;
+        } catch (SecurityException e) {
+            Log.w(TAG, "Unable to dismiss notification", e);
+            return false;
         }
     }
 
-    /**
-     * Check for trivial notifications.
-     * <p>
-     * From Android O notification channels controls if badges should be displayed.
-     * For older versions and legacy notification channel low priority notifications, ongoing notifications
-     * and group summaries should not be displayed.
-     *
-     * @param sbn
-     * @return true if badge should not be displayed
-     */
     public boolean isNotificationTrivial(StatusBarNotification sbn) {
         Notification notification = sbn.getNotification();
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            final Ranking mTempRanking = new Ranking();
-            getCurrentRanking().getRanking(sbn.getKey(), mTempRanking);
-            if (!mTempRanking.canShowBadge()) {
-                return true;
-            }
-            if (!mTempRanking.getChannel().getId().equals(NotificationChannel.DEFAULT_CHANNEL_ID)) {
-                return isGroupHeader(notification);
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            final Ranking ranking = new Ranking();
+            getCurrentRanking().getRanking(sbn.getKey(), ranking);
+            if (!ranking.canShowBadge()) return true;
+            if (ranking.getChannel() != null && !ranking.getChannel().getId().equals(NotificationChannel.DEFAULT_CHANNEL_ID)) return isGroupHeader(notification);
         }
-
         return notification.priority <= Notification.PRIORITY_MIN || isOngoing(notification) || isGroupHeader(notification);
     }
 
-    private boolean isOngoing(Notification notification) {
-        return (notification.flags & Notification.FLAG_ONGOING_EVENT) != 0;
-    }
-
-    private boolean isGroupHeader(Notification notification) {
-        return (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
-    }
-
+    private boolean isOngoing(Notification notification) { return (notification.flags & Notification.FLAG_ONGOING_EVENT) != 0; }
+    private boolean isGroupHeader(Notification notification) { return (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0; }
 }
