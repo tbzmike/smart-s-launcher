@@ -30,7 +30,6 @@ public class RootHandler {
     }
 
     public boolean isRootAvailable() {
-
         if (isRootAvailable == null) {
             try {
                 isRootAvailable = executeRootShell(null);
@@ -38,7 +37,6 @@ public class RootHandler {
                 isRootAvailable = false;
             }
         }
-
         return isRootAvailable;
     }
 
@@ -50,15 +48,24 @@ public class RootHandler {
         }
     }
 
+    public boolean enableApp(String packageName, int userId) {
+        if (packageName == null || !packageName.matches("[A-Za-z0-9_\\.]+")) {
+            return false;
+        }
+        try {
+            return executeRootShell("pm enable --user " + userId + " " + packageName);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private boolean executeRootShell(String command) {
         Process p = null;
         try {
             p = Runtime.getRuntime().exec("su");
-            //put command
             if (command != null && !command.trim().isEmpty()) {
                 p.getOutputStream().write((command + "\n").getBytes(StandardCharsets.UTF_8));
             }
-            //exit from su command
             p.getOutputStream().write("exit\n".getBytes(StandardCharsets.UTF_8));
             p.getOutputStream().flush();
             p.getOutputStream().close();
@@ -75,5 +82,4 @@ public class RootHandler {
         }
         return false;
     }
-
 }
