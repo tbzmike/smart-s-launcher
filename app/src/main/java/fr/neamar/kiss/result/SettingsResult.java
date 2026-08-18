@@ -13,6 +13,7 @@ import android.graphics.drawable.Drawable;
 import android.os.Process;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -26,7 +27,9 @@ import java.util.Set;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
+import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
+import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
@@ -45,7 +48,13 @@ public class SettingsResult extends Result<SettingPojo> {
     @NonNull
     @Override
     public View display(Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
-        if (view == null) view = inflateFromId(context, R.layout.item_setting, parent);
+        if (pojo instanceof NotificationPojo) {
+            return displayNotification(context, view, parent, (NotificationPojo) pojo);
+        }
+
+        if (view == null || view.findViewById(R.id.item_setting_prefix) == null) {
+            view = inflateFromId(context, R.layout.item_setting, parent);
+        }
 
         TextView prefix = view.findViewById(R.id.item_setting_prefix);
         if (pojo instanceof DisabledAppPojo) prefix.setText("Disabled app:");
@@ -61,8 +70,48 @@ public class SettingsResult extends Result<SettingPojo> {
         return view;
     }
 
+    private View displayNotification(Context context, View view, ViewGroup parent, NotificationPojo notification) {
+        if (view == null || view.findViewById(R.id.item_notification_app) == null) {
+            view = inflateFromId(context, R.layout.item_notification_timeline, parent);
+        }
+
+        TextView appName = view.findViewById(R.id.item_notification_app);
+        TextView title = view.findViewById(R.id.item_notification_title);
+        TextView text = view.findViewById(R.id.item_notification_text);
+        Button dismiss = view.findViewById(R.id.item_notification_dismiss);
+        ImageView icon = view.findViewById(R.id.item_notification_icon);
+
+        appName.setText(notification.appName);
+        title.setText(notification.getDisplayTitle());
+        title.setVisibility(notification.getDisplayTitle().isEmpty() ? View.GONE : View.VISIBLE);
+        text.setText(notification.getDisplayText());
+        text.setVisibility(notification.getDisplayText().isEmpty() ? View.GONE : View.VISIBLE);
+
+        if (!isHideIcons(context)) setAsyncDrawable(icon);
+        else icon.setImageDrawable(null);
+
+        dismiss.setEnabled(true);
+        dismiss.setText(R.string.notification_mark_read);
+        dismiss.setOnClickListener(v -> {
+            if (NotificationListener.dismissNotification(context, notification.id)) {
+                dismiss.setEnabled(false);
+                dismiss.setText(R.string.notification_dismissed);
+            } else {
+                Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
+            }
+        });
+        return view;
+    }
+
     @Override
     public Drawable getDrawable(Context context) {
+        if (pojo instanceof NotificationPojo) {
+            try {
+                return context.getPackageManager().getApplicationIcon(((NotificationPojo) pojo).notificationPackageName);
+            } catch (PackageManager.NameNotFoundException e) {
+                return null;
+            }
+        }
         if (pojo instanceof DisabledAppPojo) {
             DisabledAppPojo disabled = (DisabledAppPojo) pojo;
             try {
@@ -81,6 +130,10 @@ public class SettingsResult extends Result<SettingPojo> {
     @Override
     public void doLaunch(Context context, View v) {
         launchSucceeded = false;
+        if (pojo instanceof NotificationPojo) {
+            launchNotification(context, (NotificationPojo) pojo);
+            return;
+        }
         if (pojo instanceof DisabledAppPojo) {
             enableAndLaunch(context, (DisabledAppPojo) pojo);
             return;
@@ -107,8 +160,29 @@ public class SettingsResult extends Result<SettingPojo> {
         }
     }
 
+    private void launchNotification(Context context, NotificationPojo notification) {
+        if (NotificationListener.openNotification(context, notification.id)) {
+            launchSucceeded = true;
+            return;
+        }
+
+        Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(notification.notificationPackageName);
+        if (launchIntent == null) {
+            Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(launchIntent);
+            launchSucceeded = true;
+        } catch (ActivityNotFoundException | SecurityException e) {
+            Log.w(TAG, "Unable to open notification app", e);
+            Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void hideFailedTarget(Context context) {
-        if (pojo instanceof DisabledAppPojo) return;
+        if (pojo instanceof DisabledAppPojo || pojo instanceof NotificationPojo) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         Set<String> hidden = new HashSet<>(prefs.getStringSet(HIDDEN_TARGETS, java.util.Collections.emptySet()));
         hidden.add(pojo.id);
@@ -165,16 +239,16 @@ public class SettingsResult extends Result<SettingPojo> {
 
     @Override
     protected boolean isAllowedAsFavorite() {
-        return !(pojo instanceof DisabledAppPojo);
+        return !(pojo instanceof DisabledAppPojo) && !(pojo instanceof NotificationPojo);
     }
 
     @Override
     protected boolean canRemoveFromHistory(Context context) {
-        return true;
+        return !(pojo instanceof NotificationPojo);
     }
 
     @Override
     protected boolean canHaveCustomIcon(Context context, IconPack iconPack) {
-        return !(pojo instanceof DisabledAppPojo);
+        return !(pojo instanceof DisabledAppPojo) && !(pojo instanceof NotificationPojo);
     }
 }
