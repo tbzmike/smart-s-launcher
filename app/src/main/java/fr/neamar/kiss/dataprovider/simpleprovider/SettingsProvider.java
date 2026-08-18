@@ -1,5 +1,6 @@
 package fr.neamar.kiss.dataprovider.simpleprovider;
 
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -53,7 +54,7 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         if (pm.hasSystemFeature(PackageManager.FEATURE_NFC)) addIfResolvable(context, context.getString(R.string.settings_nfc), Settings.ACTION_NFC_SETTINGS, R.drawable.setting_nfc);
         addIfResolvable(context, context.getString(R.string.settings_dev), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, R.drawable.setting_dev);
 
-        addIfResolvable(context, "Wi‑Fi settings", Settings.ACTION_WIFI_SETTINGS, R.drawable.setting_wifi);
+        addIfResolvable(context, "Wi-Fi settings", Settings.ACTION_WIFI_SETTINGS, R.drawable.setting_wifi);
         addIfResolvable(context, "Bluetooth settings", Settings.ACTION_BLUETOOTH_SETTINGS, R.drawable.setting_wifi);
         addIfResolvable(context, "Mobile network settings", Settings.ACTION_DATA_ROAMING_SETTINGS, R.drawable.setting_wifi);
         addIfResolvable(context, "Location settings", Settings.ACTION_LOCATION_SOURCE_SETTINGS, R.drawable.setting_wifi);
@@ -79,15 +80,14 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
         launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
 
-        Set<String> seen = new HashSet<>();
+        Set<String> seenPackages = new HashSet<>();
         List<ResolveInfo> results = pm.queryIntentActivities(launcherIntent, PackageManager.GET_DISABLED_COMPONENTS);
         for (ResolveInfo resolveInfo : results) {
             ActivityInfo activity = resolveInfo.activityInfo;
             if (activity == null || activity.applicationInfo == null) continue;
-            if (!isActuallyDisabled(pm, activity)) continue;
-
-            String componentKey = activity.packageName + "/" + activity.name;
-            if (!seen.add(componentKey)) continue;
+            if (!isPackageDisabled(pm, activity.packageName)) continue;
+            if (!activity.exported) continue;
+            if (!seenPackages.add(activity.packageName)) continue;
 
             CharSequence labelCs = resolveInfo.loadLabel(pm);
             if (labelCs == null) labelCs = activity.applicationInfo.loadLabel(pm);
@@ -95,7 +95,7 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
             if (label.isEmpty()) label = activity.packageName;
 
             DisabledAppPojo pojo = new DisabledAppPojo(
-                    DISABLED_APP_SCHEME + componentKey,
+                    DISABLED_APP_SCHEME + activity.packageName + "/" + activity.name,
                     activity.packageName,
                     activity.name
             );
@@ -104,10 +104,9 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         }
     }
 
-    private boolean isActuallyDisabled(PackageManager pm, ActivityInfo activity) {
-        if (!activity.enabled || !activity.applicationInfo.enabled) return true;
+    private boolean isPackageDisabled(PackageManager pm, String packageName) {
         try {
-            int state = pm.getApplicationEnabledSetting(activity.packageName);
+            int state = pm.getApplicationEnabledSetting(packageName);
             return state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
                     || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
                     || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
@@ -118,62 +117,78 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
 
     private void addIfResolvable(Context context, String name, String action, @DrawableRes int resId) {
         Intent intent = new Intent(action);
-        if (context.getPackageManager().resolveActivity(intent, 0) != null) {
+        ResolveInfo resolved = context.getPackageManager().resolveActivity(intent, 0);
+        if (resolved != null && resolved.activityInfo != null && resolved.activityInfo.enabled) {
             pojos.add(createPojo(name, action, resId));
         }
     }
 
     private void addExplicitIfResolvable(Context context, String name, String packageName, String className, @DrawableRes int resId) {
         Intent intent = new Intent().setClassName(packageName, className);
-        if (context.getPackageManager().resolveActivity(intent, 0) != null) {
+        ResolveInfo resolved = context.getPackageManager().resolveActivity(intent, 0);
+        if (resolved != null && resolved.activityInfo != null && resolved.activityInfo.enabled) {
             pojos.add(createPojo(name, packageName, className, resId));
         }
     }
 
-    private void assignName(SettingPojo pojo, String name) { pojo.setName(name, true); }
-    private String getId(String settingName) { return SCHEME + settingName.toLowerCase(Locale.ENGLISH); }
+    private void assignName(SettingPojo pojo, String name) {
+        pojo.setName(name, true);
+    }
+
+    private String getId(String settingName) {
+        return SCHEME + settingName.toLowerCase(Locale.ENGLISH);
+    }
+
     private SettingPojo createPojo(String name, String packageName, String settingName, @DrawableRes int resId) {
         SettingPojo pojo = new SettingPojo(getId(settingName), settingName, packageName, resId);
         assignName(pojo, name);
         return pojo;
     }
+
     private SettingPojo createPojo(String name, String settingName, @DrawableRes int resId) {
         SettingPojo pojo = new SettingPojo(getId(settingName), settingName, resId);
         assignName(pojo, name);
         return pojo;
     }
 
-    @Override
-    public void requestResults(String query, Searcher searcher) {
-        Context context = contextReference.get();
-        if (context == null) return;
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        if (!prefs.getBoolean("enable-settings", true)) return;
-
-        for (SettingPojo pojo : pojos) {
-            MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
-            boolean match = pojo.updateMatchingRelevance(matchInfo, false);
-            if (!match) {
-                matchInfo = fr.neamar.kiss.utils.fuzzy.TypoTolerance.match(context, query, settingName);
-                match = pojo.updateMatchingRelevance(matchInfo, match);
-            }
-            if (match && !searcher.addResult(pojo)) return;
-        }
-
+    private void requestDisabledApps(Context context, String query, Searcher searcher) {
         PackageManager pm = context.getPackageManager();
         for (DisabledAppPojo pojo : disabledApps) {
+            if (!isPackageDisabled(pm, pojo.targetPackage)) continue;
+
             try {
                 ActivityInfo activity = pm.getActivityInfo(
-                        new android.content.ComponentName(pojo.targetPackage, pojo.activityName),
+                        new ComponentName(pojo.targetPackage, pojo.activityName),
                         PackageManager.GET_DISABLED_COMPONENTS
                 );
-                if (!isActuallyDisabled(pm, activity)) continue;
+                if (activity == null || !activity.exported) continue;
             } catch (PackageManager.NameNotFoundException e) {
                 continue;
             }
 
             MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
             if (pojo.updateMatchingRelevance(matchInfo, false) && !searcher.addResult(pojo)) return;
+        }
+    }
+
+    @Override
+    public void requestResults(String query, Searcher searcher) {
+        Context context = contextReference.get();
+        if (context == null) return;
+
+        requestDisabledApps(context, query, searcher);
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        if (prefs.getBoolean("enable-settings", true)) {
+            for (SettingPojo pojo : pojos) {
+                MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
+                boolean match = pojo.updateMatchingRelevance(matchInfo, false);
+                if (!match) {
+                    matchInfo = fr.neamar.kiss.utils.fuzzy.TypoTolerance.match(context, query, settingName);
+                    match = pojo.updateMatchingRelevance(matchInfo, match);
+                }
+                if (match && !searcher.addResult(pojo)) return;
+            }
         }
 
         installedFeatureProvider.requestResults(query, searcher);
