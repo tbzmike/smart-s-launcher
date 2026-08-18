@@ -29,6 +29,7 @@ import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 public class SettingsProvider extends SimpleProvider<SettingPojo> {
     private static final String SCHEME = "setting://";
     private static final String DISABLED_APP_SCHEME = "disabled-app://";
+    private static final String HIDDEN_TARGETS = "hidden-launch-targets";
 
     private final String settingName;
     private final List<SettingPojo> pojos;
@@ -70,7 +71,6 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         addIfResolvable(context, "App notification settings", Settings.ACTION_ALL_APPS_NOTIFICATION_SETTINGS, R.drawable.setting_apps);
 
         buildDisabledAppIndex(pm);
-
         settingName = context.getString(R.string.settings_prefix).toLowerCase(Locale.ROOT);
         contextReference = new WeakReference<>(context);
         installedFeatureProvider = new InstalledFeatureProvider(context);
@@ -79,26 +79,17 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
     private void buildDisabledAppIndex(PackageManager pm) {
         Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
         launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
-
         Set<String> seenPackages = new HashSet<>();
         List<ResolveInfo> results = pm.queryIntentActivities(launcherIntent, PackageManager.GET_DISABLED_COMPONENTS);
         for (ResolveInfo resolveInfo : results) {
             ActivityInfo activity = resolveInfo.activityInfo;
             if (activity == null || activity.applicationInfo == null) continue;
-            if (!isPackageDisabled(pm, activity.packageName)) continue;
-            if (!activity.exported) continue;
-            if (!seenPackages.add(activity.packageName)) continue;
-
+            if (!isPackageDisabled(pm, activity.packageName) || !activity.exported || !seenPackages.add(activity.packageName)) continue;
             CharSequence labelCs = resolveInfo.loadLabel(pm);
             if (labelCs == null) labelCs = activity.applicationInfo.loadLabel(pm);
             String label = labelCs == null ? activity.packageName : labelCs.toString().trim();
             if (label.isEmpty()) label = activity.packageName;
-
-            DisabledAppPojo pojo = new DisabledAppPojo(
-                    DISABLED_APP_SCHEME + activity.packageName + "/" + activity.name,
-                    activity.packageName,
-                    activity.name
-            );
+            DisabledAppPojo pojo = new DisabledAppPojo(DISABLED_APP_SCHEME + activity.packageName + "/" + activity.name, activity.packageName, activity.name);
             pojo.setName(label, true);
             disabledApps.add(pojo);
         }
@@ -118,47 +109,30 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
     private boolean isResolvedActivityLaunchable(Context context, ResolveInfo resolved) {
         if (resolved == null || resolved.activityInfo == null) return false;
         ActivityInfo activity = resolved.activityInfo;
-        if (!activity.exported || !activity.enabled || activity.applicationInfo == null || !activity.applicationInfo.enabled) {
-            return false;
-        }
-        return activity.permission == null
-                || activity.permission.isEmpty()
+        if (!activity.exported || !activity.enabled || activity.applicationInfo == null || !activity.applicationInfo.enabled) return false;
+        return activity.permission == null || activity.permission.isEmpty()
                 || context.checkCallingOrSelfPermission(activity.permission) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void addIfResolvable(Context context, String name, String action, @DrawableRes int resId) {
-        Intent intent = new Intent(action);
-        ResolveInfo resolved = context.getPackageManager().resolveActivity(intent, 0);
-        if (isResolvedActivityLaunchable(context, resolved)) {
-            pojos.add(createPojo(name, action, resId));
-        }
+        ResolveInfo resolved = context.getPackageManager().resolveActivity(new Intent(action), 0);
+        if (isResolvedActivityLaunchable(context, resolved)) pojos.add(createPojo(name, action, resId));
     }
 
     private void addExplicitIfResolvable(Context context, String name, String packageName, String className, @DrawableRes int resId) {
-        Intent intent = new Intent().setClassName(packageName, className);
-        ResolveInfo resolved = context.getPackageManager().resolveActivity(intent, 0);
-        if (isResolvedActivityLaunchable(context, resolved)) {
-            pojos.add(createPojo(name, packageName, className, resId));
-        }
+        ResolveInfo resolved = context.getPackageManager().resolveActivity(new Intent().setClassName(packageName, className), 0);
+        if (isResolvedActivityLaunchable(context, resolved)) pojos.add(createPojo(name, packageName, className, resId));
     }
 
-    private void assignName(SettingPojo pojo, String name) {
-        pojo.setName(name, true);
-    }
-
-    private String getId(String settingName) {
-        return SCHEME + settingName.toLowerCase(Locale.ENGLISH);
-    }
-
+    private String getId(String settingName) { return SCHEME + settingName.toLowerCase(Locale.ENGLISH); }
     private SettingPojo createPojo(String name, String packageName, String settingName, @DrawableRes int resId) {
         SettingPojo pojo = new SettingPojo(getId(settingName), settingName, packageName, resId);
-        assignName(pojo, name);
+        pojo.setName(name, true);
         return pojo;
     }
-
     private SettingPojo createPojo(String name, String settingName, @DrawableRes int resId) {
         SettingPojo pojo = new SettingPojo(getId(settingName), settingName, resId);
-        assignName(pojo, name);
+        pojo.setName(name, true);
         return pojo;
     }
 
@@ -166,17 +140,12 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         PackageManager pm = context.getPackageManager();
         for (DisabledAppPojo pojo : disabledApps) {
             if (!isPackageDisabled(pm, pojo.targetPackage)) continue;
-
             try {
-                ActivityInfo activity = pm.getActivityInfo(
-                        new ComponentName(pojo.targetPackage, pojo.activityName),
-                        PackageManager.GET_DISABLED_COMPONENTS
-                );
+                ActivityInfo activity = pm.getActivityInfo(new ComponentName(pojo.targetPackage, pojo.activityName), PackageManager.GET_DISABLED_COMPONENTS);
                 if (activity == null || !activity.exported) continue;
             } catch (PackageManager.NameNotFoundException e) {
                 continue;
             }
-
             MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
             if (pojo.updateMatchingRelevance(matchInfo, false) && !searcher.addResult(pojo)) return;
         }
@@ -186,12 +155,13 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
     public void requestResults(String query, Searcher searcher) {
         Context context = contextReference.get();
         if (context == null) return;
-
         requestDisabledApps(context, query, searcher);
 
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        Set<String> hidden = prefs.getStringSet(HIDDEN_TARGETS, java.util.Collections.emptySet());
         if (prefs.getBoolean("enable-settings", true)) {
             for (SettingPojo pojo : pojos) {
+                if (hidden.contains(pojo.id)) continue;
                 MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
                 boolean match = pojo.updateMatchingRelevance(matchInfo, false);
                 if (!match) {
@@ -201,11 +171,20 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
                 if (match && !searcher.addResult(pojo)) return;
             }
         }
-
         installedFeatureProvider.requestResults(query, searcher);
     }
 
+    @Override
     public boolean mayFindById(String id) {
-        return id.startsWith(SCHEME) || id.startsWith(DISABLED_APP_SCHEME);
+        return id != null && (id.startsWith(SCHEME) || id.startsWith(DISABLED_APP_SCHEME) || installedFeatureProvider.mayFindById(id));
+    }
+
+    @Override
+    public SettingPojo findById(String id) {
+        if (id == null) return null;
+        for (SettingPojo pojo : pojos) if (pojo.id.equals(id)) return pojo;
+        for (DisabledAppPojo pojo : disabledApps) if (pojo.id.equals(id)) return pojo;
+        if (installedFeatureProvider.mayFindById(id)) return installedFeatureProvider.findById(id);
+        return null;
     }
 }
