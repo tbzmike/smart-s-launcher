@@ -14,4 +14,9 @@ public final class DisabledAppPojo extends SettingPojo {
     public boolean isDisabled() {
         return true;
     }
+
+    @Override
+    public String getHistoryId() {
+        return "app://" + targetPackage + "/" + activityName;
+    }
 }
