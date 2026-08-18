@@ -93,6 +93,9 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         SearchPojo resolvedAction = getResolvedIntentAction(query);
         if (resolvedAction != null) records.add(resolvedAction);
 
+        SearchPojo naturalLanguageAction = getNaturalLanguageAction(query);
+        if (naturalLanguageAction != null) records.add(naturalLanguageAction);
+
         if (prefs.getBoolean("enable-search", true)) {
             SearchPojo chained = getChainedProviderSearch(query);
             if (chained != null) records.add(chained);
@@ -117,10 +120,6 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         return records;
     }
 
-    /**
-     * Explicit clipboard commands keep clipboard access user-driven rather than reading it on every
-     * keystroke. Type "clip", "clipboard" or "paste" to surface useful actions for the current item.
-     */
     private void addClipboardSuggestions(String query, List<Pojo> records) {
         String command = query.trim().toLowerCase(Locale.ROOT);
         if (!command.equals("clip") && !command.equals("clipboard") && !command.equals("paste")) return;
@@ -171,7 +170,6 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         }
     }
 
-    /** Searchable, resolve-checked verbs for common external actions. */
     @Nullable
     private SearchPojo getResolvedIntentAction(String query) {
         String trimmed = query.trim();
@@ -204,6 +202,59 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         }
     }
 
+    /**
+     * Tiny offline intent classifier for natural phrases. It intentionally handles only high-confidence
+     * patterns; ambiguous text still falls through to normal KISS universal search.
+     */
+    @Nullable
+    private SearchPojo getNaturalLanguageAction(String query) {
+        String trimmed = query.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+
+        String argument = stripPrefix(lower, trimmed, "navigate to ", "directions to ", "take me to ");
+        if (argument != null) {
+            return createResolvedUriAction("navigate", "Navigate to " + argument,
+                    Uri.parse("geo:0,0?q=" + Uri.encode(argument)), Intent.ACTION_VIEW, 465);
+        }
+
+        argument = stripPrefix(lower, trimmed, "search wol for ", "find on wol ");
+        if (argument != null) return createChainedSearch("WOL", "https://wol.jw.org/en/wol/s/r1/lp-e?q=%s", argument, 460);
+
+        argument = stripPrefix(lower, trimmed, "search jw for ", "search jw.org for ");
+        if (argument != null) return createChainedSearch("JW.org", "https://www.jw.org/en/search/?q=%s", argument, 460);
+
+        argument = stripPrefix(lower, trimmed, "search youtube for ", "find on youtube ");
+        if (argument != null) return createChainedSearch("YouTube", "https://www.youtube.com/results?search_query=%s", argument, 455);
+
+        argument = stripPrefix(lower, trimmed, "search web for ", "web search for ");
+        if (argument != null) {
+            SearchPojo pojo = getDefaultSearch(argument, context, prefs);
+            if (pojo != null) {
+                pojo.relevance = 450;
+                pojo.setName("Search web for " + argument, false);
+            }
+            return pojo;
+        }
+
+        String suffix = " on play store";
+        if (lower.startsWith("find ") && lower.endsWith(suffix) && trimmed.length() > 5 + suffix.length()) {
+            String app = trimmed.substring(5, trimmed.length() - suffix.length()).trim();
+            return createChainedSearch("Google Play Store", "https://play.google.com/store/search?q=%s", app, 455);
+        }
+        return null;
+    }
+
+    @Nullable
+    private String stripPrefix(String lower, String original, String... prefixes) {
+        for (String prefix : prefixes) {
+            if (lower.startsWith(prefix) && original.length() > prefix.length()) {
+                String value = original.substring(prefix.length()).trim();
+                if (!value.isEmpty()) return value;
+            }
+        }
+        return null;
+    }
+
     @Nullable
     private SearchPojo createResolvedUriAction(String id, String name, Uri uri, String action, int relevance) {
         Intent intent = new Intent(action, uri);
@@ -215,7 +266,6 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         return pojo;
     }
 
-    /** Prefix chaining: "wol threefold", "yt music", "maps pretoria", etc. */
     @Nullable
     private SearchPojo getChainedProviderSearch(String query) {
         String trimmed = query.trim();
@@ -270,8 +320,12 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
     }
 
     private SearchPojo createChainedSearch(String name, String url, String providerQuery) {
+        return createChainedSearch(name, url, providerQuery, 400);
+    }
+
+    private SearchPojo createChainedSearch(String name, String url, String providerQuery, int relevance) {
         SearchPojo pojo = new SearchPojo("search://chain/" + name.toLowerCase(Locale.ROOT), providerQuery, url, SearchPojoType.SEARCH_QUERY);
-        pojo.relevance = 400;
+        pojo.relevance = relevance;
         pojo.setName(name, false);
         return pojo;
     }

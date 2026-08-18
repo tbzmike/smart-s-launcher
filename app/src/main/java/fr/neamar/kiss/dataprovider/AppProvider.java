@@ -17,6 +17,8 @@ import fr.neamar.kiss.broadcast.PackageAddedRemovedHandler;
 import fr.neamar.kiss.loader.LoadAppPojos;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.utils.ContextualRanker;
+import fr.neamar.kiss.utils.SemanticHints;
 import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
@@ -47,6 +49,8 @@ public class AppProvider extends Provider<AppPojo> {
     public void requestResults(String query, Searcher searcher) {
         Set<String> excludedFavoriteIds = KissApplication.getApplication(this).getDataHandler().getExcludedFavorites();
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        List<String> semanticHints = SemanticHints.expand(query);
+
         for (AppPojo pojo : getPojos()) {
             if (pojo.isExcluded() && !prefs.getBoolean("enable-excluded-apps", false)) continue;
             if (excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
@@ -57,7 +61,23 @@ public class AppProvider extends Provider<AppPojo> {
                 matchInfo = SmartMatcher.match(this, query, pojo.getNormalizedTags(), pojo.getName());
                 match = pojo.updateMatchingRelevance(matchInfo, match);
             }
-            if (match && !searcher.addResult(pojo)) return;
+
+            // Semantic fallback is intentionally weaker than a literal/fuzzy result.
+            if (!match) {
+                for (String hint : semanticHints) {
+                    MatchInfo semanticMatch = SmartMatcher.match(this, hint, pojo.normalizedName, pojo.getName());
+                    if (pojo.updateMatchingRelevance(semanticMatch, false)) {
+                        pojo.relevance -= 140;
+                        match = true;
+                        break;
+                    }
+                }
+            }
+
+            if (match) {
+                pojo.relevance += ContextualRanker.boost(pojo.getName());
+                if (!searcher.addResult(pojo)) return;
+            }
         }
     }
 
