@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -59,28 +60,18 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
     @Override
     public void reload() {
         searchProviders.clear();
-
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         Set<String> selectedProviders = getSelectedSearchProviders(prefs);
         Set<String> availableProviders = getAvailableSearchProviders(context, prefs);
-
-        // Get default search engine
         String defaultSearchEngine = getDefaultSearchProvider(prefs);
 
         assert defaultSearchEngine != null;
         for (String searchProvider : selectedProviders) {
             String url = getProviderUrl(availableProviders, searchProvider);
             SearchPojo pojo = new SearchPojo("", url, SearchPojoType.SEARCH_QUERY);
-            // Super low relevance, should never be displayed before anything
             pojo.relevance = -500;
-            if (defaultSearchEngine.equals(searchProvider))
-                // Display default search engine slightly higher
-                pojo.relevance += 1;
-
+            if (defaultSearchEngine.equals(searchProvider)) pojo.relevance += 1;
             pojo.setName(searchProvider, false);
-            if (pojo.url != null) {
-                searchProviders.add(pojo);
-            }
+            if (pojo.url != null) searchProviders.add(pojo);
         }
     }
 
@@ -93,6 +84,9 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         List<Pojo> records = new ArrayList<>();
 
         if (prefs.getBoolean("enable-search", true)) {
+            SearchPojo chained = getChainedProviderSearch(query);
+            if (chained != null) records.add(chained);
+
             for (SearchPojo pojo : searchProviders) {
                 pojo.query = query;
                 records.add(pojo);
@@ -100,47 +94,82 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         }
 
         if (URLUtils.matchesUrlPattern(query) && URLUtil.isValidUrl(query)) {
-            // Open valid URLs directly (if I type http://something.com for instance)
-            SearchPojo pojo = createUrlQuerySearchPojo(query);
-            records.add(pojo);
+            records.add(createUrlQuerySearchPojo(query));
         } else if (URIUtils.isValidUri(query, context).isValid()) {
-            // Open uri directly by an app that can handle it (if i type
-            // gemini://oppen.digital/ariane/ for gemini browser)
-            // https://github.com/Neamar/KISS/issues/1786
             SearchPojo pojo = new SearchPojo("search://uri-access", query, "", SearchPojoType.URI_QUERY);
             pojo.relevance = -100;
             pojo.setName(query, false);
             records.add(pojo);
-        } else {
-            // search for url pattern
-            if (URLUtils.matchesUrlPattern(query)) {
-                // guess url (if I type something.com for instance)
-                String guessedUrl = URLUtil.guessUrl(query);
-                if (URLUtil.isValidUrl(guessedUrl)) {
-                    SearchPojo pojo = createUrlQuerySearchPojo(guessedUrl);
-                    records.add(pojo);
-                }
-            }
+        } else if (URLUtils.matchesUrlPattern(query)) {
+            String guessedUrl = URLUtil.guessUrl(query);
+            if (URLUtil.isValidUrl(guessedUrl)) records.add(createUrlQuerySearchPojo(guessedUrl));
         }
-
         return records;
     }
 
-    /**
-     * create SearchPojo with type {@link SearchPojoType#URI_QUERY} for direct
-     * access to url
-     *
-     * @param url
-     * @return the search pojo
-     */
-    private SearchPojo createUrlQuerySearchPojo(String url) {
-        // URLUtil returns an http URL... we'll upgrade it to HTTPS
-        // to avoid security issues on open networks,
-        // technological problems when using HSTS
-        // and do one less redirection to https
-        // (tradeoff: non https URL will break, but they shouldn't exist anymore)
-        url = url.replace("http://", "https://");
+    /** Prefix chaining: "wol threefold", "yt music", "maps pretoria", etc. */
+    @Nullable
+    private SearchPojo getChainedProviderSearch(String query) {
+        String trimmed = query.trim();
+        int separator = trimmed.indexOf(' ');
+        if (separator <= 0 || separator == trimmed.length() - 1) return null;
 
+        String prefix = trimmed.substring(0, separator).toLowerCase(Locale.ROOT);
+        String providerQuery = trimmed.substring(separator + 1).trim();
+        String providerName;
+        String url;
+        switch (prefix) {
+            case "wol":
+                providerName = "WOL";
+                url = "https://wol.jw.org/en/wol/s/r1/lp-e?q=%s";
+                break;
+            case "jw":
+                providerName = "JW.org";
+                url = "https://www.jw.org/en/search/?q=%s";
+                break;
+            case "yt":
+            case "youtube":
+                providerName = "YouTube";
+                url = "https://www.youtube.com/results?search_query=%s";
+                break;
+            case "maps":
+                providerName = "Google Maps";
+                url = "https://www.google.com/maps/search/?api=1&query=%s";
+                break;
+            case "play":
+                providerName = "Google Play Store";
+                url = "https://play.google.com/store/search?q=%s";
+                break;
+            default:
+                return getCustomChainedProvider(prefix, providerQuery);
+        }
+        return createChainedSearch(providerName, url, providerQuery);
+    }
+
+    @Nullable
+    private SearchPojo getCustomChainedProvider(String prefix, String providerQuery) {
+        Set<String> available = getAvailableSearchProviders(context, prefs);
+        for (String entry : available) {
+            int separator = entry.indexOf('|');
+            if (separator <= 0) continue;
+            String name = entry.substring(0, separator);
+            String normalizedName = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+            if (normalizedName.equals(prefix)) {
+                return createChainedSearch(name, entry.substring(separator + 1), providerQuery);
+            }
+        }
+        return null;
+    }
+
+    private SearchPojo createChainedSearch(String name, String url, String providerQuery) {
+        SearchPojo pojo = new SearchPojo("search://chain/" + name.toLowerCase(Locale.ROOT), providerQuery, url, SearchPojoType.SEARCH_QUERY);
+        pojo.relevance = 400;
+        pojo.setName(name, false);
+        return pojo;
+    }
+
+    private SearchPojo createUrlQuerySearchPojo(String url) {
+        url = url.replace("http://", "https://");
         SearchPojo pojo = new SearchPojo("search://url-access", "", url, SearchPojoType.URL_QUERY);
         pojo.relevance = 50;
         pojo.setName(url, false);
@@ -148,15 +177,11 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
     }
 
     @Nullable
-    // Find the URL associated with specified providerName
     private static String getProviderUrl(Set<String> searchProviders, String searchProviderName) {
         for (String nameAndUrl : searchProviders) {
             if (nameAndUrl.contains(searchProviderName + "|")) {
-                String[] arrayNameAndUrl = nameAndUrl.split("\\|");
-                // sanity check
-                if (arrayNameAndUrl.length == 2) {
-                    return arrayNameAndUrl[1];
-                }
+                String[] arrayNameAndUrl = nameAndUrl.split("\\|", 2);
+                if (arrayNameAndUrl.length == 2) return arrayNameAndUrl[1];
             }
         }
         return null;
