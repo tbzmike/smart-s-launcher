@@ -115,10 +115,21 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         }
     }
 
+    private boolean isResolvedActivityLaunchable(Context context, ResolveInfo resolved) {
+        if (resolved == null || resolved.activityInfo == null) return false;
+        ActivityInfo activity = resolved.activityInfo;
+        if (!activity.exported || !activity.enabled || activity.applicationInfo == null || !activity.applicationInfo.enabled) {
+            return false;
+        }
+        return activity.permission == null
+                || activity.permission.isEmpty()
+                || context.checkCallingOrSelfPermission(activity.permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void addIfResolvable(Context context, String name, String action, @DrawableRes int resId) {
         Intent intent = new Intent(action);
         ResolveInfo resolved = context.getPackageManager().resolveActivity(intent, 0);
-        if (resolved != null && resolved.activityInfo != null && resolved.activityInfo.enabled) {
+        if (isResolvedActivityLaunchable(context, resolved)) {
             pojos.add(createPojo(name, action, resId));
         }
     }
@@ -126,7 +137,7 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
     private void addExplicitIfResolvable(Context context, String name, String packageName, String className, @DrawableRes int resId) {
         Intent intent = new Intent().setClassName(packageName, className);
         ResolveInfo resolved = context.getPackageManager().resolveActivity(intent, 0);
-        if (resolved != null && resolved.activityInfo != null && resolved.activityInfo.enabled) {
+        if (isResolvedActivityLaunchable(context, resolved)) {
             pojos.add(createPojo(name, packageName, className, resId));
         }
     }
