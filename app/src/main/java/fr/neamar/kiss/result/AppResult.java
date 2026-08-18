@@ -14,6 +14,7 @@ import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Process;
 import android.os.UserManager;
 import android.view.Menu;
 import android.view.View;
@@ -44,334 +45,301 @@ import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class AppResult extends ResultWithTags<AppPojo> {
-
     private static final String TAG = AppResult.class.getSimpleName();
+    private static final int ANDROID_UID_USER_RANGE = 100000;
     private volatile Drawable icon = null;
+    private boolean launchSucceeded = true;
 
-    AppResult(@NonNull AppPojo pojo) {
-        super(pojo);
-    }
+    AppResult(@NonNull AppPojo pojo) { super(pojo); }
 
     @NonNull
     @Override
     public View display(final Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
-        if (view == null) {
-            view = inflateFromId(context, R.layout.item_app, parent);
-        }
+        if (view == null) view = inflateFromId(context, R.layout.item_app, parent);
+
+        boolean wasDisabled = pojo.isDisabled();
+        boolean disabledNow = refreshLiveDisabledState(context);
+        if (wasDisabled != disabledNow) clearIcon();
 
         TextView appName = view.findViewById(R.id.item_app_name);
-
         displayHighlighted(pojo.normalizedName, pojo.getName(), fuzzyScore, appName, context);
 
         TextView tagsView = view.findViewById(R.id.item_app_tag);
         displayTags(context, fuzzyScore, tagsView);
 
-        final ImageView appIcon = view.findViewById(R.id.item_app_icon);
-        if (!isHideIcons(context)) {
-            this.setAsyncDrawable(appIcon);
-        } else {
-            appIcon.setImageDrawable(null);
-        }
+        ImageView appIcon = view.findViewById(R.id.item_app_icon);
+        if (!isHideIcons(context)) this.setAsyncDrawable(appIcon);
+        else appIcon.setImageDrawable(null);
 
         displayNotificationDot(context, view, false);
-
+        displayNotificationMessage(context, view);
         return view;
     }
 
     @Override
     public void inflateFavorite(@NonNull Context context, @NonNull View favoriteView) {
+        refreshLiveDisabledState(context);
         super.inflateFavorite(context, favoriteView);
         displayNotificationDot(context, favoriteView, true);
     }
 
     private void displayNotificationDot(Context context, View view, boolean isFavorite) {
         String packageKey = getPackageKey();
-
         SharedPreferences notificationPrefs = context.getSharedPreferences(NotificationListener.NOTIFICATION_PREFERENCES_NAME, Context.MODE_PRIVATE);
         ImageView notificationView = view.findViewById(R.id.item_notification_dot);
+        if (notificationView == null) return;
         notificationView.setVisibility(notificationPrefs.contains(packageKey) ? View.VISIBLE : View.GONE);
         notificationView.setTag(packageKey);
-        int dotColor = UIColors.getNotificationDotColor(context, isFavorite);
-        notificationView.setColorFilter(dotColor);
+        notificationView.setColorFilter(UIColors.getNotificationDotColor(context, isFavorite));
     }
 
-    private String getPackageKey() {
-        return pojo.getPackageKey();
+    private void displayNotificationMessage(Context context, View view) {
+        View row = view.findViewById(R.id.item_notification_row);
+        TextView text = view.findViewById(R.id.item_notification_text);
+        View markRead = view.findViewById(R.id.item_notification_read);
+        if (row == null || text == null || markRead == null) return;
+
+        String packageKey = getPackageKey();
+        String message = NotificationListener.getLatestMessage(context, packageKey);
+        if (message == null || message.trim().isEmpty()) {
+            row.setVisibility(View.GONE);
+            markRead.setOnClickListener(null);
+            return;
+        }
+        text.setText(message);
+        row.setVisibility(View.VISIBLE);
+        markRead.setOnClickListener(v -> {
+            if (NotificationListener.dismissLatest(context, packageKey)) {
+                row.setVisibility(View.GONE);
+                ImageView dot = view.findViewById(R.id.item_notification_dot);
+                if (dot != null) dot.setVisibility(View.GONE);
+            } else {
+                Toast.makeText(context, "Unable to dismiss notification", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private String getPackageKey() { return pojo.getPackageKey(); }
+
+    private boolean refreshLiveDisabledState(Context context) {
+        LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
+        if (launcher == null) return pojo.isDisabled();
+        boolean enabled;
+        try {
+            enabled = launcher.isPackageEnabled(pojo.packageName, pojo.userHandle.getRealHandle())
+                    && launcher.isActivityEnabled(getClassName(), pojo.userHandle.getRealHandle());
+        } catch (SecurityException | IllegalArgumentException e) {
+            return pojo.isDisabled();
+        }
+        pojo.setDisabled(!enabled);
+        return !enabled;
     }
 
     @Override
     protected void buildPopupMenu(Context context, ArrayAdapter<ListPopup.Item> adapter) {
+        refreshLiveDisabledState(context);
         super.buildPopupMenu(context, adapter);
-
         adapter.add(new ListPopup.Item(context, R.string.menu_exclude));
         adapter.add(new ListPopup.Item(context, R.string.menu_app_rename));
-        if (!pojo.isDisabled()) {
-            adapter.add(new ListPopup.Item(context, R.string.menu_app_details));
-        }
+        if (!pojo.isDisabled()) adapter.add(new ListPopup.Item(context, R.string.menu_app_details));
         adapter.add(new ListPopup.Item(context, R.string.menu_app_store));
 
         boolean uninstallDisabled = pojo.isDisabled();
         if (!uninstallDisabled) {
-            // app installed under /system can't be uninstalled
-            ApplicationInfo ai = PackageManagerUtils.getApplicationInfo(context, this.pojo.packageName, this.pojo.userHandle);
-            // Need to AND the flags with SYSTEM:
+            ApplicationInfo ai = PackageManagerUtils.getApplicationInfo(context, pojo.packageName, pojo.userHandle);
             uninstallDisabled = ai != null && (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
         }
-
         if (!uninstallDisabled) {
             UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
-            Bundle restrictions = userManager.getUserRestrictions(pojo.userHandle.getRealHandle());
-            uninstallDisabled = restrictions.getBoolean(UserManager.DISALLOW_APPS_CONTROL, false)
-                    || restrictions.getBoolean(UserManager.DISALLOW_UNINSTALL_APPS, false);
+            if (userManager != null) {
+                Bundle restrictions = userManager.getUserRestrictions(pojo.userHandle.getRealHandle());
+                uninstallDisabled = restrictions.getBoolean(UserManager.DISALLOW_APPS_CONTROL, false)
+                        || restrictions.getBoolean(UserManager.DISALLOW_UNINSTALL_APPS, false);
+            }
         }
-
-        if (!uninstallDisabled) {
-            adapter.add(new ListPopup.Item(context, R.string.menu_app_uninstall));
-        }
-
-        // append root menu if available
-        if (KissApplication.getApplication(context).getRootHandler().isRootActivated() && KissApplication.getApplication(context).getRootHandler().isRootAvailable()) {
+        if (!uninstallDisabled) adapter.add(new ListPopup.Item(context, R.string.menu_app_uninstall));
+        if (KissApplication.getApplication(context).getRootHandler().isRootActivated()
+                && KissApplication.getApplication(context).getRootHandler().isRootAvailable()) {
             adapter.add(new ListPopup.Item(context, R.string.menu_app_hibernate));
         }
     }
 
     @Override
     protected boolean popupMenuClickHandler(final Context context, final RecordAdapter parent, int stringId, View parentView) {
-        if (stringId == R.string.menu_app_details) {
-            launchAppDetails(context);
-            return true;
-        } else if (stringId == R.string.menu_app_store) {
-            launchAppStore(context);
-            return true;
-        } else if (stringId == R.string.menu_app_uninstall) {
-            launchUninstall(context);
-            return true;
-        } else if (stringId == R.string.menu_app_hibernate) {
-            hibernate(context);
-            return true;
-        } else if (stringId == R.string.menu_exclude) {
+        if (stringId == R.string.menu_app_details) { launchAppDetails(context); return true; }
+        if (stringId == R.string.menu_app_store) { launchAppStore(context); return true; }
+        if (stringId == R.string.menu_app_uninstall) { launchUninstall(context); return true; }
+        if (stringId == R.string.menu_app_hibernate) { hibernate(context); return true; }
+        if (stringId == R.string.menu_exclude) {
             final int EXCLUDE_HISTORY_ID = 0;
             final int EXCLUDE_KISS_ID = 1;
             PopupMenu popupExcludeMenu = new PopupMenu(context, parentView);
-            //Adding menu items
             popupExcludeMenu.getMenu().add(EXCLUDE_HISTORY_ID, Menu.NONE, Menu.NONE, R.string.menu_exclude_history);
             popupExcludeMenu.getMenu().add(EXCLUDE_KISS_ID, Menu.NONE, Menu.NONE, R.string.menu_exclude_kiss);
-            //registering popup with OnMenuItemClickListener
             popupExcludeMenu.setOnMenuItemClickListener(item -> {
-                switch (item.getGroupId()) {
-                    case EXCLUDE_HISTORY_ID:
-                        excludeFromHistory(context, pojo);
-                        return true;
-                    case EXCLUDE_KISS_ID:
-                        excludeFromKiss(context, pojo, parent);
-                        return true;
-                }
-
+                if (item.getGroupId() == EXCLUDE_HISTORY_ID) { excludeFromHistory(context, pojo); return true; }
+                if (item.getGroupId() == EXCLUDE_KISS_ID) { excludeFromKiss(context, pojo, parent); return true; }
                 return true;
             });
-
             popupExcludeMenu.show();
             return true;
-        } else if (stringId == R.string.menu_app_rename) {
-            launchRenameDialog(context, parent, pojo);
-            return true;
         }
-
+        if (stringId == R.string.menu_app_rename) { launchRenameDialog(context, parent, pojo); return true; }
         return super.popupMenuClickHandler(context, parent, stringId, parentView);
     }
 
-    private void excludeFromHistory(Context context, AppPojo pojo) {
-        // add to excluded from history app list
-        KissApplication.getApplication(context).getDataHandler().addToExcludedFromHistory(pojo);
-        // remove from history
+    private void excludeFromHistory(Context context, AppPojo app) {
+        KissApplication.getApplication(context).getDataHandler().addToExcludedFromHistory(app);
         removeFromHistory(context);
-        // inform user
         Toast.makeText(context, R.string.excluded_app_history_added, Toast.LENGTH_LONG).show();
     }
 
-    private void excludeFromKiss(Context context, AppPojo pojo, final RecordAdapter parent) {
-        // remove item since it will be hidden
+    private void excludeFromKiss(Context context, AppPojo app, final RecordAdapter parent) {
         parent.removeResult(AppResult.this);
-
-        KissApplication.getApplication(context).getDataHandler().addToExcluded(pojo);
+        KissApplication.getApplication(context).getDataHandler().addToExcluded(app);
         Toast.makeText(context, R.string.excluded_app_list_added, Toast.LENGTH_LONG).show();
     }
 
     private void launchRenameDialog(final Context context, RecordAdapter parent, final AppPojo app) {
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         builder.setTitle(context.getResources().getString(R.string.app_rename_title));
-
         builder.setView(R.layout.rename_dialog);
-
         builder.setPositiveButton(R.string.custom_name_rename, (dialog, which) -> {
             EditText input = ((AlertDialog) dialog).findViewById(R.id.rename);
             dialog.dismiss();
-
-            // Set new name
             String newName = input.getText().toString().trim();
             app.setName(newName);
             KissApplication.getApplication(context).getDataHandler().renameApp(app.getComponentName(), newName);
-
-            // Show toast message
-            String msg = context.getResources().getString(R.string.app_rename_confirmation, app.getName());
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, context.getResources().getString(R.string.app_rename_confirmation, app.getName()), Toast.LENGTH_SHORT).show();
             setTranscriptModeAlwaysScroll(parent);
         });
         builder.setNegativeButton(R.string.custom_name_set_default, (dialog, which) -> {
             dialog.dismiss();
-
             KissApplication.getApplication(context).getDataHandler().removeRenameApp(getComponentName());
-
-            // Set initial name
             String name = PackageManagerUtils.getLabel(context, new ComponentName(app.packageName, app.activityName), app.userHandle);
             if (name != null) {
                 app.setName(name);
-
-                // Show toast message
-                String msg = context.getResources().getString(R.string.app_rename_confirmation, app.getName());
-                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
+                Toast.makeText(context, context.getResources().getString(R.string.app_rename_confirmation, app.getName()), Toast.LENGTH_SHORT).show();
             }
             setTranscriptModeAlwaysScroll(parent);
         });
-        builder.setNeutralButton(android.R.string.cancel, (dialog, which) -> {
-            dialog.cancel();
-            setTranscriptModeAlwaysScroll(parent);
-        });
+        builder.setNeutralButton(android.R.string.cancel, (dialog, which) -> { dialog.cancel(); setTranscriptModeAlwaysScroll(parent); });
         setTranscriptModeDisabled(parent);
         AlertDialog dialog = builder.create();
         dialog.show();
-        // call after dialog got inflated (show call)
         ((TextView) dialog.findViewById(R.id.rename)).setText(app.getName());
     }
 
-    /**
-     * Open an activity displaying details regarding the current package
-     */
     private void launchAppDetails(Context context) {
         LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
-        assert launcher != null;
-        launcher.startAppDetailsActivity(getClassName(), pojo.userHandle.getRealHandle(), null, null);
+        if (launcher != null) launcher.startAppDetailsActivity(getClassName(), pojo.userHandle.getRealHandle(), null, null);
     }
 
     private void launchAppStore(Context context) {
-        try {
-            context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pojo.packageName)));
-        } catch (ActivityNotFoundException anfe) {
-            context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=" + pojo.packageName)));
-        }
+        try { context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pojo.packageName))); }
+        catch (ActivityNotFoundException e) { context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=" + pojo.packageName))); }
     }
 
     private void hibernate(Context context) {
         String msg = context.getResources().getString(R.string.toast_hibernate_completed);
-        if (!KissApplication.getApplication(context).getRootHandler().hibernateApp(pojo.packageName)) {
-            msg = context.getResources().getString(R.string.toast_hibernate_error);
-        } else {
-            KissApplication.getApplication(context).getDataHandler().reloadApps();
-        }
-
+        if (!KissApplication.getApplication(context).getRootHandler().hibernateApp(pojo.packageName)) msg = context.getResources().getString(R.string.toast_hibernate_error);
+        else KissApplication.getApplication(context).getDataHandler().reloadApps();
         Toast.makeText(context, String.format(msg, pojo.getName()), Toast.LENGTH_SHORT).show();
     }
 
-    /**
-     * Open an activity to uninstall the current package
-     */
     private void launchUninstall(Context context) {
-        Intent intent = new Intent(Intent.ACTION_DELETE,
-                Uri.fromParts("package", pojo.packageName, null));
+        Intent intent = new Intent(Intent.ACTION_DELETE, Uri.fromParts("package", pojo.packageName, null));
         intent.putExtra(Intent.EXTRA_USER, pojo.userHandle.getRealHandle());
         context.startActivity(intent);
     }
 
-    @Override
-    boolean isDrawableCached() {
-        return icon != null;
-    }
-
-    @Override
-    void setDrawableCache(Drawable drawable) {
-        icon = drawable;
-    }
+    @Override boolean isDrawableCached() { return icon != null; }
+    @Override void setDrawableCache(Drawable drawable) { icon = drawable; }
 
     @Override
     public Drawable getDrawable(Context context) {
+        refreshLiveDisabledState(context);
         if (icon == null) {
             synchronized (this) {
                 if (icon == null) {
                     IconsHandler iconsHandler = KissApplication.getApplication(context).getIconsHandler();
-                    icon = iconsHandler.getDrawableIconForPackage(getClassName(), this.pojo.userHandle);
+                    icon = iconsHandler.getDrawableIconForPackage(getClassName(), pojo.userHandle);
                 }
             }
         }
-        DrawableUtils.setDisabled(icon, this.pojo.isDisabled());
+        DrawableUtils.setDisabled(icon, pojo.isDisabled());
         return icon;
     }
 
     @Override
     public void doLaunch(Context context, View v) {
+        launchSucceeded = false;
+        boolean wasFrozen = refreshLiveDisabledState(context);
+        if (wasFrozen) {
+            if (!pojo.userHandle.isCurrentUser()) {
+                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()
+                    || !KissApplication.getApplication(context).getRootHandler().isRootAvailable()) {
+                Toast.makeText(context, "Frozen app: enable Root mode to open it.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
+            boolean enabled = KissApplication.getApplication(context).getRootHandler().enableApp(pojo.packageName, userId);
+            if (enabled) KissApplication.getApplication(context).getRootHandler().enableComponent(pojo.packageName, pojo.activityName, userId);
+            if (!enabled) {
+                pojo.setDisabled(true);
+                clearIcon();
+                Toast.makeText(context, "Unable to enable " + pojo.getName(), Toast.LENGTH_LONG).show();
+                return;
+            }
+            pojo.setDisabled(false);
+            clearIcon();
+        }
+
         try {
             LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
-            assert launcher != null;
+            if (launcher == null) throw new ActivityNotFoundException();
             Rect sourceBounds = null;
             Bundle opts = null;
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                // We're on a modern Android and can display activity animations
-                // If AppResult, find the icon
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && v != null) {
                 View potentialIcon = v.findViewById(R.id.item_app_icon);
-                if (potentialIcon == null) {
-                    // If favorite, find the icon
-                    potentialIcon = v.findViewById(R.id.favorite);
-                }
-
+                if (potentialIcon == null) potentialIcon = v.findViewById(R.id.favorite);
                 if (potentialIcon != null) {
                     sourceBounds = getViewBounds(potentialIcon);
-
-                    // If we got an icon, we create options to get a nice animation
                     opts = ActivityOptions.makeClipRevealAnimation(potentialIcon, 0, 0, potentialIcon.getMeasuredWidth(), potentialIcon.getMeasuredHeight()).toBundle();
                 }
             }
-
             launcher.startMainActivity(getClassName(), pojo.userHandle.getRealHandle(), sourceBounds, opts);
+            launchSucceeded = true;
+            pojo.setDisabled(false);
+            KissApplication.getApplication(context).getDataHandler().reloadApps();
         } catch (ActivityNotFoundException | NullPointerException | SecurityException e) {
             Log.w(TAG, "Unable to launch activity", e);
-            // Application was just removed?
-            // (null pointer exception can be thrown on Lollipop+ when app is missing)
+            if (!refreshLiveDisabledState(context)) {
+                KissApplication.getApplication(context).getDataHandler().addToExcluded(pojo);
+                removeFromHistory(context);
+            }
             Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
         }
     }
 
+    @Override
+    protected boolean canAddToHistory() { return launchSucceeded && !pojo.isDisabled(); }
+
     @Nullable
     @Override
     protected Rect getViewBounds(@Nullable View view) {
-        if (view == null) {
-            return null;
-        }
-
+        if (view == null) return null;
         int[] location = new int[2];
         view.getLocationOnScreen(location);
         return new Rect(location[0], location[1], location[0] + view.getWidth(), location[1] + view.getHeight());
     }
 
-    public String getComponentName() {
-        return pojo.getComponentName();
-    }
-
-    public ComponentName getClassName() {
-        return pojo.getComponent();
-    }
-
-    @Override
-    protected boolean isAllowedAsFavorite() {
-        return true;
-    }
-
-    @Override
-    protected boolean canRemoveFromHistory(Context context) {
-        return true;
-    }
-
-    @Override
-    protected boolean canHaveCustomIcon(Context context, IconPack iconPack) {
-        return true;
-    }
+    public String getComponentName() { return pojo.getComponentName(); }
+    public ComponentName getClassName() { return pojo.getComponent(); }
+    @Override protected boolean isAllowedAsFavorite() { return true; }
+    @Override protected boolean canRemoveFromHistory(Context context) { return true; }
+    @Override protected boolean canHaveCustomIcon(Context context, IconPack iconPack) { return true; }
 }
