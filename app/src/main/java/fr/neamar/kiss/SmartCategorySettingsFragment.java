@@ -24,8 +24,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         } else if ("ui-holder".equals(rootKey)) {
             addEntry("wallpaper", "Smart wallpaper & blur",
                     "Smart Focus blur, icon tracking, blur strength and performance");
-            addEntry("workspace", "Flexible workspace",
-                    "Split the launcher into resizable panes for apps, history, widgets and future Smart S panels");
+            addWorkspaceEntry();
         } else if ("ux-holder".equals(rootKey)) {
             addEntry("animations", "Smart animations & transitions",
                     "Scrolling, windows, popups, notifications, switching and numeric animation speed");
@@ -33,6 +32,18 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
             addEntry("frozen", "Frozen apps & app state",
                     "IceBox-safe detection, disabled app launching and background state refresh");
         }
+    }
+
+    private void addWorkspaceEntry() {
+        String key = "smart-section-workspace";
+        if (findPreference(key) != null) return;
+
+        Preference entry = new Preference(requireContext());
+        entry.setKey(key);
+        entry.setTitle("Flexible workspace");
+        entry.setSummary("Split the launcher into resizable panes for apps, history, widgets and future Smart S panels");
+        entry.setFragment(WorkspaceSettingsFragment.class.getName());
+        getPreferenceScreen().addPreference(entry);
     }
 
     private void addEntry(String section, String title, String summary) {
