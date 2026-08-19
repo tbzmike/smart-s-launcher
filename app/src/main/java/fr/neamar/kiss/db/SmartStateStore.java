@@ -82,6 +82,12 @@ public final class SmartStateStore {
         // notification update its stored content instead of duplicating the same event.
         try {
             SQLiteDatabase database = db(context);
+            if (permanent) {
+                ContentValues permanentState = new ContentValues(1);
+                permanentState.put("is_permanent", 1);
+                database.update("notification_history", permanentState,
+                        "notification_id=?", new String[]{notificationId});
+            }
             int rows = database.update("notification_history", values,
                     "notification_id=? AND post_time=?",
                     new String[]{notificationId, Long.toString(postTime)});
