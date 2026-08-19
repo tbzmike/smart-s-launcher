@@ -48,13 +48,15 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                 "Vertical list",
                 "Horizontal icons",
                 "Horizontal cards",
-                "Horizontal app names"
+                "Horizontal app names",
+                "Square-U cards"
         });
         preference.setEntryValues(new CharSequence[]{
                 "vertical",
                 "horizontal_icons",
                 "horizontal_cards",
-                "horizontal_names"
+                "horizontal_names",
+                "square_u"
         });
         preference.setDefaultValue("vertical");
         preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
