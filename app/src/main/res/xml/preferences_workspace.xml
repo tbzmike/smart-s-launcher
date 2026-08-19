@@ -48,7 +48,7 @@
             app:key="smart-workspace-empty-add-widget"
             app:defaultValue="true"
             app:title="Long-press empty space to add widgets"
-            app:summary="Any empty workspace surface can open the existing KISS widget picker"
+            app:summary="Long-press empty workspace to add an Android widget through the Smart S freeform host"
             app:dependency="smart-workspace-enabled" />
 
         <SwitchPreference
@@ -61,9 +61,14 @@
         <SwitchPreference
             app:key="smart-workspace-free-widget-resize"
             app:defaultValue="true"
-            app:title="Free widget resizing"
-            app:summary="Drag a widget's lower-right corner to resize its width and height within the pane and provider limits"
+            app:title="Freeform widget editing"
+            app:summary="Long-press a widget for eight resize handles on every side and corner, plus free movement"
             app:dependency="smart-workspace-enabled" />
+
+        <Preference
+            app:title="Freeform widget behavior"
+            app:summary="Workspace widgets use a separate Smart S host: resize from left, right, top, bottom or any corner; move widgets freely; handles disappear outside edit mode. Legacy KISS widget sizing remains only for legacy mode."
+            app:selectable="false" />
 
         <Preference
             app:title="Pane architecture"
