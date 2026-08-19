@@ -82,21 +82,29 @@ class DB extends SQLiteOpenHelper {
                 case 3:
                     database.execSQL("CREATE TABLE shortcuts ( _id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, package TEXT,"
                             + "icon TEXT, intent_uri TEXT NOT NULL, icon_blob BLOB)");
+                    // fall through
                 case 4:
                     createTags(database);
+                    // fall through
                 case 5:
                     addTimeStamps(database);
+                    // fall through
                 case 6:
                 case 7:
                     addAppsTable(database);
+                    // fall through
                 case 8:
                     convertShortcutIds(database);
+                    // fall through
                 case 9:
                     convertTheme();
+                    // fall through
                 case 10:
                     addCustomComponentsTable(database);
+                    // fall through
                 case 11:
                     addSmartLauncherStateTables(database);
+                    // fall through
                 default:
                     break;
             }
@@ -106,7 +114,6 @@ class DB extends SQLiteOpenHelper {
     @Override
     public void onDowngrade(SQLiteDatabase database, int oldVersion, int newVersion) {
         Log.w("onDowngrade", "Updating database from version " + oldVersion + " to version " + newVersion);
-
         if (newVersion < oldVersion) {
             switch (newVersion) {
                 case 11:
@@ -199,7 +206,6 @@ class DB extends SQLiteOpenHelper {
     private static class ConvertShortcutInfo {
         final String oldId;
         final String newId;
-
         ConvertShortcutInfo(UserHandle userHandle, @NonNull ShortcutRecord shortcutRecord) {
             this.oldId = ShortcutUtil.generateShortcutId(null, shortcutRecord);
             this.newId = ShortcutUtil.generateShortcutId(userHandle, shortcutRecord);
