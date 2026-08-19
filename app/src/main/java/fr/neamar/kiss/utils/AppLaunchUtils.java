@@ -18,34 +18,46 @@ public final class AppLaunchUtils {
 
     private AppLaunchUtils() {}
 
-    public static boolean launchPackage(Context context, String packageName) {
+    public static boolean isPackageEnabled(Context context, String packageName) {
         PackageManager pm = context.getPackageManager();
-        boolean disabled = false;
         try {
             ApplicationInfo appInfo = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
-            disabled = !appInfo.enabled;
-        } catch (PackageManager.NameNotFoundException e) {
+            int state = pm.getApplicationEnabledSetting(packageName);
+            if (!appInfo.enabled
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED) {
+                return false;
+            }
+            ResolveInfo launcher = resolveLauncher(pm, packageName);
+            return launcher == null || launcher.activityInfo == null || launcher.activityInfo.enabled;
+        } catch (PackageManager.NameNotFoundException | IllegalArgumentException e) {
             return false;
         }
+    }
 
+    /** Enable a frozen current-user package without launching it. */
+    public static boolean ensurePackageEnabled(Context context, String packageName) {
+        if (isPackageEnabled(context, packageName)) return true;
+        if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()
+                || !KissApplication.getApplication(context).getRootHandler().isRootAvailable()) return false;
+
+        PackageManager pm = context.getPackageManager();
+        ResolveInfo launcher = resolveLauncher(pm, packageName);
+        int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
+        if (!KissApplication.getApplication(context).getRootHandler().enableApp(packageName, userId)) return false;
+        if (launcher != null && launcher.activityInfo != null) {
+            KissApplication.getApplication(context).getRootHandler().enableComponent(
+                    packageName, launcher.activityInfo.name, userId);
+        }
+        KissApplication.getApplication(context).getDataHandler().reloadApps();
+        return true;
+    }
+
+    public static boolean launchPackage(Context context, String packageName) {
+        if (!ensurePackageEnabled(context, packageName)) return false;
+        PackageManager pm = context.getPackageManager();
         ResolveInfo resolveInfo = resolveLauncher(pm, packageName);
-        if (resolveInfo != null && resolveInfo.activityInfo != null) {
-            ActivityInfo activity = resolveInfo.activityInfo;
-            disabled |= !activity.enabled;
-        }
-
-        if (disabled) {
-            if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()
-                    || !KissApplication.getApplication(context).getRootHandler().isRootAvailable()) return false;
-            int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
-            if (!KissApplication.getApplication(context).getRootHandler().enableApp(packageName, userId)) return false;
-            if (resolveInfo != null && resolveInfo.activityInfo != null) {
-                KissApplication.getApplication(context).getRootHandler().enableComponent(
-                        packageName, resolveInfo.activityInfo.name, userId);
-            }
-            resolveInfo = resolveLauncher(pm, packageName);
-        }
-
         Intent launchIntent = pm.getLaunchIntentForPackage(packageName);
         if (launchIntent == null && resolveInfo != null && resolveInfo.activityInfo != null) {
             launchIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
