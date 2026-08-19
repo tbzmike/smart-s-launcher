@@ -30,6 +30,10 @@
         <item>Depth</item>
         <item>Wave</item>
         <item>Slide</item>
+        <item>Stack</item>
+        <item>Zoom</item>
+        <item>Tilt</item>
+        <item>Cascade</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_scroll_animation_values">
@@ -38,49 +42,83 @@
         <item>depth</item>
         <item>wave</item>
         <item>slide</item>
+        <item>stack</item>
+        <item>zoom</item>
+        <item>tilt</item>
+        <item>cascade</item>
         <item>none</item>
     </string-array>
 
     <string-array name="smart_enter_animation_entries">
         <item>Fade</item>
         <item>Slide up</item>
+        <item>Slide down</item>
+        <item>Slide left</item>
+        <item>Slide right</item>
         <item>Scale</item>
+        <item>Zoom</item>
         <item>Spring</item>
+        <item>Rotate</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_enter_animation_values">
         <item>fade</item>
         <item>slide-up</item>
+        <item>slide-down</item>
+        <item>slide-left</item>
+        <item>slide-right</item>
         <item>scale</item>
+        <item>zoom</item>
         <item>spring</item>
+        <item>rotate</item>
         <item>none</item>
     </string-array>
 
     <string-array name="smart_exit_animation_entries">
         <item>Fade</item>
         <item>Slide down</item>
+        <item>Slide up</item>
+        <item>Slide left</item>
+        <item>Slide right</item>
         <item>Shrink</item>
+        <item>Zoom</item>
+        <item>Rotate</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_exit_animation_values">
         <item>fade</item>
         <item>slide-down</item>
+        <item>slide-up</item>
+        <item>slide-left</item>
+        <item>slide-right</item>
         <item>shrink</item>
+        <item>zoom</item>
+        <item>rotate</item>
         <item>none</item>
     </string-array>
 
     <string-array name="smart_popup_animation_entries">
         <item>Scale</item>
         <item>Slide up</item>
+        <item>Slide down</item>
+        <item>Slide left</item>
+        <item>Slide right</item>
         <item>Fade</item>
+        <item>Zoom</item>
         <item>Spring</item>
+        <item>Rotate</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_popup_animation_values">
         <item>scale</item>
         <item>slide-up</item>
+        <item>slide-down</item>
+        <item>slide-left</item>
+        <item>slide-right</item>
         <item>fade</item>
+        <item>zoom</item>
         <item>spring</item>
+        <item>rotate</item>
         <item>none</item>
     </string-array>
 
@@ -88,12 +126,14 @@
         <item>Crossfade</item>
         <item>Slide</item>
         <item>Depth</item>
+        <item>Zoom</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_switch_animation_values">
         <item>crossfade</item>
         <item>slide</item>
         <item>depth</item>
+        <item>zoom</item>
         <item>none</item>
     </string-array>
 
@@ -101,26 +141,32 @@
         <item>Fade</item>
         <item>Slide up</item>
         <item>Scale</item>
+        <item>Spring</item>
+        <item>Zoom</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_toast_animation_values">
         <item>fade</item>
         <item>slide-up</item>
         <item>scale</item>
+        <item>spring</item>
+        <item>zoom</item>
         <item>none</item>
     </string-array>
 
     <string-array name="smart_animation_speed_entries">
+        <item>Very slow</item>
         <item>Slow</item>
         <item>Normal</item>
         <item>Fast</item>
         <item>Very fast</item>
     </string-array>
     <string-array name="smart_animation_speed_values">
-        <item>0.75</item>
+        <item>0.5</item>
+        <item>0.7</item>
         <item>1.0</item>
-        <item>1.25</item>
-        <item>1.5</item>
+        <item>1.35</item>
+        <item>1.75</item>
     </string-array>
 
     <string-array name="smart_blur_strength_entries">
