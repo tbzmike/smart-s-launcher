@@ -93,6 +93,7 @@ public class SettingsResult extends Result<SettingPojo> {
         View nativeView = NotificationListener.createNativeGroupView(context, notification.groupKey, nativeContainer, false);
         if (nativeView != null) {
             nativeContainer.removeAllViews();
+            disableClicksRecursively(nativeView);
             nativeContainer.addView(nativeView);
             nativeContainer.setVisibility(View.VISIBLE);
             text.setVisibility(View.GONE);
@@ -109,14 +110,12 @@ public class SettingsResult extends Result<SettingPojo> {
         if (!isHideIcons(context)) setAsyncDrawable(icon);
         else icon.setImageDrawable(null);
 
-        // The icon is always an app launcher target. IceBox-frozen apps are enabled first.
         icon.setOnClickListener(v -> {
             if (!AppLaunchUtils.launchPackage(context, notification.packageName)) {
                 Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
             }
         });
 
-        // The text/name/native notification area opens Smart S's grouped notification popup.
         View.OnClickListener openGroup = v -> showNotificationGroup(context, notification);
         appName.setOnClickListener(openGroup);
         title.setOnClickListener(openGroup);
@@ -212,8 +211,8 @@ public class SettingsResult extends Result<SettingPojo> {
 
             View nativeView = NotificationListener.createNativeNotificationView(context, item.id, row, false);
             if (nativeView != null) {
+                disableClicksRecursively(nativeView);
                 row.addView(nativeView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                nativeView.setOnClickListener(v -> showNotificationDetail(context, notification, item));
             } else {
                 TextView itemTitle = new TextView(context);
                 itemTitle.setText(item.title.isEmpty() ? notification.appName : item.title);
@@ -331,6 +330,18 @@ public class SettingsResult extends Result<SettingPojo> {
             }
         }));
         replyDialog.show();
+    }
+
+    private void disableClicksRecursively(View view) {
+        view.setClickable(false);
+        view.setLongClickable(false);
+        view.setOnClickListener(null);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                disableClicksRecursively(group.getChildAt(i));
+            }
+        }
     }
 
     private int dp(Context context, int value) {
