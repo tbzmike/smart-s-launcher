@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
@@ -71,6 +72,11 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         addIfResolvable(context, "Display over other apps", Settings.ACTION_MANAGE_OVERLAY_PERMISSION, R.drawable.setting_apps);
         addIfResolvable(context, "Modify system settings", Settings.ACTION_MANAGE_WRITE_SETTINGS, R.drawable.setting_apps);
         addIfResolvable(context, "App notification settings", Settings.ACTION_ALL_APPS_NOTIFICATION_SETTINGS, R.drawable.setting_apps);
+
+        // Internal Smart S destination. Because it is a normal SettingPojo it can be selected by
+        // KISS's existing "launch pojo" swipe gestures as well as found by search.
+        pojos.add(createPojo("Notification history", context.getPackageName(),
+                NotificationHistoryActivity.class.getName(), R.drawable.setting_apps));
 
         buildDisabledAppIndex(pm);
         settingName = context.getString(R.string.settings_prefix).toLowerCase(Locale.ROOT);
@@ -175,9 +181,7 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
             }
         }
         installedFeatureProvider.requestResults(query, searcher);
-        if (prefs.getBoolean("enable-notification-history", false)) {
-            notificationProvider.requestResults(query, searcher);
-        }
+        if (prefs.getBoolean("enable-notification-history", false)) notificationProvider.requestResults(query, searcher);
     }
 
     @Override
