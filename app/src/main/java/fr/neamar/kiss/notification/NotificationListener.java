@@ -293,12 +293,65 @@ public class NotificationListener extends NotificationListenerService {
         }
     }
 
+    public static boolean hasMarkAllReadAction(Context context, String groupKey) {
+        NotificationListener listener = instance;
+        if (listener == null) return false;
+        StatusBarNotification[] active = listener.getActiveNotifications();
+        if (active == null) return false;
+        for (StatusBarNotification sbn : active) {
+            if (!groupKey.equals(listener.getPackageKey(sbn))) continue;
+            if (findMarkAllReadAction(sbn.getNotification()) != null) return true;
+        }
+        return false;
+    }
+
+    public static boolean markAllRead(Context context, String groupKey) {
+        NotificationListener listener = instance;
+        if (listener == null) return false;
+        StatusBarNotification[] active = listener.getActiveNotifications();
+        if (active == null) return false;
+
+        Notification.Action markAllAction = null;
+        for (StatusBarNotification sbn : active) {
+            if (!groupKey.equals(listener.getPackageKey(sbn))) continue;
+            markAllAction = findMarkAllReadAction(sbn.getNotification());
+            if (markAllAction != null) break;
+        }
+        if (markAllAction == null || markAllAction.actionIntent == null) return false;
+
+        try {
+            markAllAction.actionIntent.send();
+        } catch (PendingIntent.CanceledException | RuntimeException e) {
+            Log.w(TAG, "Mark-all-as-read action failed", e);
+            return false;
+        }
+
+        List<NotificationSnapshot> snapshots = getGroupNotifications(context, groupKey);
+        boolean removed = false;
+        for (NotificationSnapshot snapshot : snapshots) {
+            removed |= dismissNotification(context, snapshot.id);
+        }
+        return removed || snapshots.isEmpty();
+    }
+
     public static boolean markGroupRead(Context context, String groupKey) {
+        if (hasMarkAllReadAction(context, groupKey) && markAllRead(context, groupKey)) return true;
         List<NotificationSnapshot> snapshots = getGroupNotifications(context, groupKey);
         if (snapshots.isEmpty()) return false;
         boolean success = false;
         for (NotificationSnapshot snapshot : snapshots) success |= markNotificationRead(context, snapshot.id);
         return success;
+    }
+
+    private static Notification.Action findMarkAllReadAction(Notification notification) {
+        if (notification == null || notification.actions == null) return null;
+        for (Notification.Action action : notification.actions) {
+            if (action == null || action.actionIntent == null || action.title == null) continue;
+            String title = action.title.toString().trim().toLowerCase(Locale.ROOT);
+            if (title.contains("mark all") && title.contains("read")) return action;
+            if (title.contains("read all") || title.equals("all read")) return action;
+        }
+        return null;
     }
 
     private static boolean cancelByKey(String key) {
