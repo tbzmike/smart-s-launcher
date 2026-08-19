@@ -46,6 +46,14 @@ public final class SmartAnimationEngine {
     }
 
     public static void animateDialogIn(Dialog dialog) {
+        animateDialogIn(dialog, "smart-animation-popup-open", "scale");
+    }
+
+    public static void animateNotificationExpand(Dialog dialog) {
+        animateDialogIn(dialog, "smart-animation-notification-expand", "spring");
+    }
+
+    private static void animateDialogIn(Dialog dialog, String preferenceKey, String fallback) {
         if (dialog == null) return;
         Window window = dialog.getWindow();
         if (window == null) return;
@@ -54,7 +62,7 @@ public final class SmartAnimationEngine {
         reset(decor);
 
         if (!isEnabled(decor.getContext())) return;
-        String style = getStyle(decor.getContext(), "smart-animation-popup-open", "scale");
+        String style = getStyle(decor.getContext(), preferenceKey, fallback);
         if ("none".equals(style)) return;
 
         switch (style) {
