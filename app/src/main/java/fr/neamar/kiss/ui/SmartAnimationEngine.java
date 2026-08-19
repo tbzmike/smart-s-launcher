@@ -4,10 +4,14 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.app.Dialog;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.view.View;
 import android.view.Window;
+import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
+
+import androidx.preference.PreferenceManager;
 
 /**
  * Launcher-owned animation helpers. These animations run on Smart S views directly instead of
@@ -16,8 +20,29 @@ import android.view.animation.OvershootInterpolator;
 public final class SmartAnimationEngine {
     private SmartAnimationEngine() {}
 
-    private static int shortDuration(Context context) {
-        return context.getResources().getInteger(android.R.integer.config_shortAnimTime);
+    private static SharedPreferences prefs(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context);
+    }
+
+    public static boolean isEnabled(Context context) {
+        return prefs(context).getBoolean("smart-animations-enabled", true);
+    }
+
+    public static String getStyle(Context context, String key, String fallback) {
+        return prefs(context).getString(key, fallback);
+    }
+
+    public static long duration(Context context) {
+        int base = context.getResources().getInteger(android.R.integer.config_shortAnimTime);
+        float speed;
+        try {
+            speed = Float.parseFloat(prefs(context).getString("smart-animation-speed", "1.0"));
+        } catch (NumberFormatException e) {
+            speed = 1f;
+        }
+        speed = Math.max(0.35f, Math.min(2.5f, speed));
+        // A lower speed means a longer animation; a higher speed means a shorter animation.
+        return Math.max(80L, Math.round(base / speed));
     }
 
     public static void animateDialogIn(Dialog dialog) {
@@ -26,17 +51,68 @@ public final class SmartAnimationEngine {
         if (window == null) return;
         View decor = window.getDecorView();
         decor.animate().cancel();
-        decor.setAlpha(0f);
-        decor.setScaleX(0.96f);
-        decor.setScaleY(0.96f);
-        decor.setTranslationY(dp(decor, 10));
+        reset(decor);
+
+        if (!isEnabled(decor.getContext())) return;
+        String style = getStyle(decor.getContext(), "smart-animation-popup-open", "scale");
+        if ("none".equals(style)) return;
+
+        switch (style) {
+            case "fade":
+                decor.setAlpha(0f);
+                break;
+            case "slide-up":
+                decor.setAlpha(0f);
+                decor.setTranslationY(dp(decor, 42));
+                break;
+            case "slide-down":
+                decor.setAlpha(0f);
+                decor.setTranslationY(-dp(decor, 42));
+                break;
+            case "slide-left":
+                decor.setAlpha(0f);
+                decor.setTranslationX(dp(decor, 48));
+                break;
+            case "slide-right":
+                decor.setAlpha(0f);
+                decor.setTranslationX(-dp(decor, 48));
+                break;
+            case "zoom":
+                decor.setAlpha(0f);
+                decor.setScaleX(0.72f);
+                decor.setScaleY(0.72f);
+                break;
+            case "spring":
+                decor.setAlpha(0f);
+                decor.setScaleX(0.82f);
+                decor.setScaleY(0.82f);
+                decor.setTranslationY(dp(decor, 18));
+                break;
+            case "rotate":
+                decor.setAlpha(0f);
+                decor.setScaleX(0.9f);
+                decor.setScaleY(0.9f);
+                decor.setRotation(5f);
+                break;
+            case "scale":
+            default:
+                decor.setAlpha(0f);
+                decor.setScaleX(0.94f);
+                decor.setScaleY(0.94f);
+                break;
+        }
+
         decor.animate()
                 .alpha(1f)
                 .scaleX(1f)
                 .scaleY(1f)
+                .translationX(0f)
                 .translationY(0f)
-                .setDuration(shortDuration(decor.getContext()))
-                .setInterpolator(new DecelerateInterpolator())
+                .rotation(0f)
+                .setDuration(duration(decor.getContext()))
+                .setInterpolator("spring".equals(style)
+                        ? new OvershootInterpolator(0.9f)
+                        : new DecelerateInterpolator())
                 .start();
     }
 
@@ -49,38 +125,96 @@ public final class SmartAnimationEngine {
         }
         View decor = window.getDecorView();
         decor.animate().cancel();
-        decor.animate()
-                .alpha(0f)
-                .scaleX(0.97f)
-                .scaleY(0.97f)
-                .translationY(dp(decor, 8))
-                .setDuration(Math.max(100, shortDuration(decor.getContext()) * 3 / 4))
-                .setInterpolator(new DecelerateInterpolator())
-                .setListener(new AnimatorListenerAdapter() {
-                    @Override
-                    public void onAnimationEnd(Animator animation) {
-                        decor.animate().setListener(null);
-                        if (dialog.isShowing()) dialog.dismiss();
-                    }
-                })
-                .start();
+
+        if (!isEnabled(decor.getContext())) {
+            dialog.dismiss();
+            return;
+        }
+        String style = getStyle(decor.getContext(), "smart-animation-popup-close", "shrink");
+        if ("none".equals(style)) {
+            dialog.dismiss();
+            return;
+        }
+
+        android.view.ViewPropertyAnimator animator = decor.animate()
+                .setDuration(Math.max(70L, duration(decor.getContext()) * 3 / 4))
+                .setInterpolator(new AccelerateDecelerateInterpolator());
+        switch (style) {
+            case "fade":
+                animator.alpha(0f);
+                break;
+            case "slide-down":
+                animator.alpha(0f).translationY(dp(decor, 42));
+                break;
+            case "slide-up":
+                animator.alpha(0f).translationY(-dp(decor, 42));
+                break;
+            case "slide-left":
+                animator.alpha(0f).translationX(-dp(decor, 48));
+                break;
+            case "slide-right":
+                animator.alpha(0f).translationX(dp(decor, 48));
+                break;
+            case "zoom":
+                animator.alpha(0f).scaleX(1.18f).scaleY(1.18f);
+                break;
+            case "rotate":
+                animator.alpha(0f).scaleX(0.92f).scaleY(0.92f).rotation(-5f);
+                break;
+            case "shrink":
+            default:
+                animator.alpha(0f).scaleX(0.93f).scaleY(0.93f);
+                break;
+        }
+        animator.setListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                decor.animate().setListener(null);
+                reset(decor);
+                if (dialog.isShowing()) dialog.dismiss();
+            }
+        }).start();
     }
 
     public static void animateWindowSwitch(View outgoing, View incoming) {
-        int duration = shortDuration(incoming.getContext());
+        if (incoming == null) return;
+        Context context = incoming.getContext();
+        if (!isEnabled(context)) return;
+        long duration = duration(context);
+        String style = getStyle(context, "smart-animation-view-switch", "crossfade");
+        if ("none".equals(style)) return;
+
         if (outgoing != null) {
             outgoing.animate().cancel();
-            outgoing.animate().alpha(0f).translationX(-dp(outgoing, 12)).setDuration(duration / 2).start();
+            if ("slide".equals(style)) {
+                outgoing.animate().alpha(0f).translationX(-dp(outgoing, 24)).setDuration(duration / 2).start();
+            } else if ("depth".equals(style)) {
+                outgoing.animate().alpha(0f).scaleX(0.96f).scaleY(0.96f).setDuration(duration / 2).start();
+            } else if ("zoom".equals(style)) {
+                outgoing.animate().alpha(0f).scaleX(1.08f).scaleY(1.08f).setDuration(duration / 2).start();
+            } else {
+                outgoing.animate().alpha(0f).setDuration(duration / 2).start();
+            }
         }
+
         incoming.animate().cancel();
+        reset(incoming);
         incoming.setAlpha(0f);
-        incoming.setTranslationX(dp(incoming, 16));
-        incoming.animate().alpha(1f).translationX(0f).setDuration(duration)
+        if ("slide".equals(style)) incoming.setTranslationX(dp(incoming, 28));
+        else if ("depth".equals(style)) {
+            incoming.setScaleX(1.04f);
+            incoming.setScaleY(1.04f);
+        } else if ("zoom".equals(style)) {
+            incoming.setScaleX(0.9f);
+            incoming.setScaleY(0.9f);
+        }
+        incoming.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f).setDuration(duration)
                 .setInterpolator(new DecelerateInterpolator()).start();
     }
 
     public static void animateListMove(View child, int delta, boolean isNew) {
-        int duration = shortDuration(child.getContext());
+        if (child == null || !isEnabled(child.getContext())) return;
+        long duration = duration(child.getContext());
         child.animate().cancel();
         if (isNew) {
             child.setAlpha(0f);
@@ -101,6 +235,17 @@ public final class SmartAnimationEngine {
                     .setInterpolator(new DecelerateInterpolator())
                     .start();
         }
+    }
+
+    public static void reset(View view) {
+        view.setAlpha(1f);
+        view.setScaleX(1f);
+        view.setScaleY(1f);
+        view.setTranslationX(0f);
+        view.setTranslationY(0f);
+        view.setRotation(0f);
+        view.setRotationX(0f);
+        view.setRotationY(0f);
     }
 
     private static float dp(View view, int value) {
