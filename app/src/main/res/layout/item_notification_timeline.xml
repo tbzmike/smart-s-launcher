@@ -37,7 +37,14 @@
             android:maxLines="2"
             android:textColor="?attr/resultColor"
             android:textSize="?attr/resultTitleSize"
-            tools:text="New message" />
+            tools:text="5 notifications" />
+
+        <FrameLayout
+            android:id="@+id/item_notification_native_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/item_notification_text"
@@ -47,7 +54,7 @@
             android:maxLines="4"
             android:textColor="?android:attr/textColorSecondary"
             android:textSize="?attr/resultSubtitleSize"
-            tools:text="This is the notification body shown directly on the launcher." />
+            tools:text="Fallback notification preview." />
     </LinearLayout>
 
     <Button
