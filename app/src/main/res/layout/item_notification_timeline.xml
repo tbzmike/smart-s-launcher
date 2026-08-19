@@ -34,16 +34,17 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:ellipsize="end"
-            android:maxLines="2"
+            android:maxLines="1"
             android:textColor="?attr/resultColor"
             android:textSize="?attr/resultTitleSize"
             tools:text="5 notifications" />
 
-        <FrameLayout
+        <fr.neamar.kiss.ui.CompactNotificationFrame
             android:id="@+id/item_notification_native_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
+            android:clipChildren="true"
             android:visibility="gone" />
 
         <TextView
@@ -51,7 +52,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:ellipsize="end"
-            android:maxLines="4"
+            android:maxLines="2"
             android:textColor="?android:attr/textColorSecondary"
             android:textSize="?attr/resultSubtitleSize"
             tools:text="Fallback notification preview." />
