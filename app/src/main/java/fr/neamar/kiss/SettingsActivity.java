@@ -178,7 +178,9 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         String key = pref.getKey();
         if (!TextUtils.isEmpty(key)) {
             args.putString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT, key);
-            SettingsFragment fragment = new SettingsFragment();
+            SettingsFragment fragment = isSmartCategory(key)
+                    ? new SmartCategorySettingsFragment()
+                    : new SettingsFragment();
             fragment.setArguments(args);
             getSupportFragmentManager()
                     .beginTransaction()
@@ -191,6 +193,13 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
             setTitle(pref.getTitle());
         }
         return true;
+    }
+
+    private boolean isSmartCategory(String key) {
+        return "history_category".equals(key)
+                || "ui-holder".equals(key)
+                || "ux-holder".equals(key)
+                || "advanced".equals(key);
     }
 
     @Override
