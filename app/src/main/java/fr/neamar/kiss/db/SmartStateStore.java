@@ -76,10 +76,14 @@ public final class SmartStateStore {
         values.put("title", title == null ? "" : title);
         values.put("body", body == null ? "" : body);
         values.put("post_time", postTime);
-        // There is deliberately no notification-count cap. If the device finally exhausts
-        // writable SQLite storage, preserve launcher stability and simply stop that insert.
+        // There is deliberately no notification-count cap. Re-posts/reconnects for the same
+        // notification update its stored content instead of duplicating the same event.
         try {
-            db(context).insertOrThrow("notification_history", null, values);
+            SQLiteDatabase database = db(context);
+            int rows = database.update("notification_history", values,
+                    "notification_id=? AND post_time=?",
+                    new String[]{notificationId, Long.toString(postTime)});
+            if (rows == 0) database.insertOrThrow("notification_history", null, values);
         } catch (SQLiteFullException e) {
             Log.w(TAG, "Notification history reached available database storage", e);
         }
