@@ -2,147 +2,132 @@
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
     app:title="Smart features">
 
-    <PreferenceScreen
-        app:key="smart-notifications"
-        app:summary="@string/smart_notifications_summary"
-        app:title="@string/smart_notifications_title">
-        <PreferenceCategory app:title="@string/smart_live_notifications_category">
-            <SwitchPreference
-                app:defaultValue="true"
-                app:key="smart-notification-timeline-enabled"
-                app:summary="@string/smart_notification_timeline_summary"
-                app:title="@string/smart_notification_timeline" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="smart-notification-timeline-enabled"
-                app:key="smart-notifications-when-history-hidden"
-                app:summary="@string/smart_notifications_when_history_hidden_summary"
-                app:title="@string/smart_notifications_when_history_hidden" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="smart-notification-timeline-enabled"
-                app:key="smart-native-notification-style"
-                app:summary="@string/smart_native_notification_style_summary"
-                app:title="@string/smart_native_notification_style" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="smart-notification-timeline-enabled"
-                app:key="smart-compact-notification-popup"
-                app:summary="@string/smart_compact_notification_popup_summary"
-                app:title="@string/smart_compact_notification_popup" />
-        </PreferenceCategory>
+    <PreferenceCategory app:title="@string/smart_notifications_title">
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-notification-timeline-enabled"
+            app:summary="@string/smart_notification_timeline_summary"
+            app:title="@string/smart_notification_timeline" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-notification-timeline-enabled"
+            app:key="smart-notifications-when-history-hidden"
+            app:summary="@string/smart_notifications_when_history_hidden_summary"
+            app:title="@string/smart_notifications_when_history_hidden" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-notification-timeline-enabled"
+            app:key="smart-native-notification-style"
+            app:summary="@string/smart_native_notification_style_summary"
+            app:title="@string/smart_native_notification_style" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-notification-timeline-enabled"
+            app:key="smart-compact-notification-popup"
+            app:summary="@string/smart_compact_notification_popup_summary"
+            app:title="@string/smart_compact_notification_popup" />
+    </PreferenceCategory>
 
-        <PreferenceCategory app:title="@string/smart_notification_actions_category">
-            <SwitchPreference
-                app:defaultValue="true"
-                app:key="smart-notification-mark-read"
-                app:summary="@string/smart_mark_read_summary"
-                app:title="@string/smart_mark_read" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="smart-notification-mark-read"
-                app:key="smart-notification-mark-all-read"
-                app:summary="@string/smart_mark_all_read_summary"
-                app:title="@string/smart_mark_all_read" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:key="smart-notification-inline-reply"
-                app:summary="@string/smart_inline_reply_summary"
-                app:title="@string/smart_inline_reply" />
-        </PreferenceCategory>
+    <PreferenceCategory app:title="@string/smart_notification_actions_category">
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-notification-mark-read"
+            app:summary="@string/smart_mark_read_summary"
+            app:title="@string/smart_mark_read" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-notification-mark-read"
+            app:key="smart-notification-mark-all-read"
+            app:summary="@string/smart_mark_all_read_summary"
+            app:title="@string/smart_mark_all_read" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-notification-inline-reply"
+            app:summary="@string/smart_inline_reply_summary"
+            app:title="@string/smart_inline_reply" />
+    </PreferenceCategory>
 
-        <PreferenceCategory app:title="@string/smart_notification_history_category">
-            <SwitchPreference
-                app:defaultValue="false"
-                app:key="enable-notification-history"
-                app:summary="@string/smart_enable_notification_history_summary"
-                app:title="@string/smart_enable_notification_history" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="enable-notification-history"
-                app:key="smart-save-permanent-notifications"
-                app:summary="@string/smart_save_permanent_notifications_summary"
-                app:title="@string/smart_save_permanent_notifications" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="enable-notification-history"
-                app:key="smart-notification-history-search"
-                app:summary="@string/smart_notification_history_search_summary"
-                app:title="@string/smart_notification_history_search" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="enable-notification-history"
-                app:key="smart-notification-history-highlight"
-                app:summary="@string/smart_notification_history_highlight_summary"
-                app:title="@string/smart_notification_history_highlight" />
-            <ListPreference
-                app:defaultValue="unlimited"
-                app:dependency="enable-notification-history"
-                app:entries="@array/smart_notification_storage_entries"
-                app:entryValues="@array/smart_notification_storage_values"
-                app:key="smart-notification-storage-policy"
-                app:title="@string/smart_notification_storage_policy"
-                app:useSimpleSummaryProvider="true" />
-        </PreferenceCategory>
-    </PreferenceScreen>
+    <PreferenceCategory app:title="@string/smart_notification_history_category">
+        <SwitchPreference
+            app:defaultValue="false"
+            app:key="enable-notification-history"
+            app:summary="@string/smart_enable_notification_history_summary"
+            app:title="@string/smart_enable_notification_history" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="enable-notification-history"
+            app:key="smart-save-permanent-notifications"
+            app:summary="@string/smart_save_permanent_notifications_summary"
+            app:title="@string/smart_save_permanent_notifications" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="enable-notification-history"
+            app:key="smart-notification-history-search"
+            app:summary="@string/smart_notification_history_search_summary"
+            app:title="@string/smart_notification_history_search" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="enable-notification-history"
+            app:key="smart-notification-history-highlight"
+            app:summary="@string/smart_notification_history_highlight_summary"
+            app:title="@string/smart_notification_history_highlight" />
+        <ListPreference
+            app:defaultValue="unlimited"
+            app:dependency="enable-notification-history"
+            app:entries="@array/smart_notification_storage_entries"
+            app:entryValues="@array/smart_notification_storage_values"
+            app:key="smart-notification-storage-policy"
+            app:title="@string/smart_notification_storage_policy"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
 
-    <PreferenceScreen
-        app:key="smart-frozen-apps"
-        app:summary="@string/smart_frozen_apps_summary"
-        app:title="@string/smart_frozen_apps_title">
-        <PreferenceCategory app:title="@string/smart_frozen_detection_category">
-            <SwitchPreference
-                app:defaultValue="true"
-                app:key="smart-detect-frozen-apps"
-                app:summary="@string/smart_detect_frozen_apps_summary"
-                app:title="@string/smart_detect_frozen_apps" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="smart-detect-frozen-apps"
-                app:key="smart-keep-frozen-searchable"
-                app:summary="@string/smart_keep_frozen_searchable_summary"
-                app:title="@string/smart_keep_frozen_searchable" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="smart-detect-frozen-apps"
-                app:key="smart-grey-frozen-apps"
-                app:summary="@string/smart_grey_frozen_apps_summary"
-                app:title="@string/smart_grey_frozen_apps" />
-        </PreferenceCategory>
-        <PreferenceCategory app:title="@string/smart_frozen_launch_category">
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="smart-detect-frozen-apps"
-                app:key="smart-auto-enable-frozen-apps"
-                app:summary="@string/smart_auto_enable_frozen_apps_summary"
-                app:title="@string/smart_auto_enable_frozen_apps" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="smart-detect-frozen-apps"
-                app:key="smart-package-change-monitoring"
-                app:summary="@string/smart_package_change_monitoring_summary"
-                app:title="@string/smart_package_change_monitoring" />
-            <ListPreference
-                app:defaultValue="15"
-                app:dependency="smart-detect-frozen-apps"
-                app:entries="@array/smart_frozen_refresh_entries"
-                app:entryValues="@array/smart_frozen_refresh_values"
-                app:key="smart-frozen-refresh-interval"
-                app:title="@string/smart_frozen_refresh_interval"
-                app:useSimpleSummaryProvider="true" />
-            <SwitchPreference
-                app:defaultValue="true"
-                app:dependency="smart-detect-frozen-apps"
-                app:key="smart-keep-frozen-history"
-                app:summary="@string/smart_keep_frozen_history_summary"
-                app:title="@string/smart_keep_frozen_history" />
-        </PreferenceCategory>
-    </PreferenceScreen>
+    <PreferenceCategory app:title="@string/smart_frozen_apps_title">
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-detect-frozen-apps"
+            app:summary="@string/smart_detect_frozen_apps_summary"
+            app:title="@string/smart_detect_frozen_apps" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-detect-frozen-apps"
+            app:key="smart-keep-frozen-searchable"
+            app:summary="@string/smart_keep_frozen_searchable_summary"
+            app:title="@string/smart_keep_frozen_searchable" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-detect-frozen-apps"
+            app:key="smart-grey-frozen-apps"
+            app:summary="@string/smart_grey_frozen_apps_summary"
+            app:title="@string/smart_grey_frozen_apps" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-detect-frozen-apps"
+            app:key="smart-auto-enable-frozen-apps"
+            app:summary="@string/smart_auto_enable_frozen_apps_summary"
+            app:title="@string/smart_auto_enable_frozen_apps" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-detect-frozen-apps"
+            app:key="smart-package-change-monitoring"
+            app:summary="@string/smart_package_change_monitoring_summary"
+            app:title="@string/smart_package_change_monitoring" />
+        <ListPreference
+            app:defaultValue="15"
+            app:dependency="smart-detect-frozen-apps"
+            app:entries="@array/smart_frozen_refresh_entries"
+            app:entryValues="@array/smart_frozen_refresh_values"
+            app:key="smart-frozen-refresh-interval"
+            app:title="@string/smart_frozen_refresh_interval"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-detect-frozen-apps"
+            app:key="smart-keep-frozen-history"
+            app:summary="@string/smart_keep_frozen_history_summary"
+            app:title="@string/smart_keep_frozen_history" />
+    </PreferenceCategory>
 
-    <PreferenceScreen
-        app:key="smart-animations"
-        app:summary="@string/smart_animations_summary"
-        app:title="@string/smart_animations_title">
+    <PreferenceCategory app:title="@string/smart_animations_title">
         <SwitchPreference
             app:defaultValue="true"
             app:key="smart-animations-enabled"
@@ -220,12 +205,9 @@
             app:key="smart-animation-speed"
             app:title="@string/smart_animation_speed"
             app:useSimpleSummaryProvider="true" />
-    </PreferenceScreen>
+    </PreferenceCategory>
 
-    <PreferenceScreen
-        app:key="smart-wallpaper-blur"
-        app:summary="@string/smart_wallpaper_blur_summary"
-        app:title="@string/smart_wallpaper_blur_title">
+    <PreferenceCategory app:title="@string/smart_wallpaper_blur_title">
         <SwitchPreference
             app:defaultValue="false"
             app:key="smart-focus-blur-enabled"
@@ -279,5 +261,5 @@
             app:key="smart-blur-performance"
             app:title="@string/smart_blur_performance"
             app:useSimpleSummaryProvider="true" />
-    </PreferenceScreen>
+    </PreferenceCategory>
 </PreferenceScreen>
