@@ -5,7 +5,11 @@ import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.Spannable;
+import android.text.SpannableString;
 import android.text.TextWatcher;
+import android.text.style.StyleSpan;
+import android.text.style.UnderlineSpan;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.Button;
@@ -24,6 +28,7 @@ import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
@@ -68,7 +73,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("All saved notifications · tap a result to open its app");
+        subtitle.setText("All saved notifications · tap an app icon to open the app · tap a message to open its notification");
         subtitle.setTextSize(13);
         root.addView(subtitle, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -87,7 +92,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         list = new ListView(this);
         list.setDividerHeight(1);
         list.setAdapter(new HistoryAdapter());
-        list.setOnItemClickListener((parent, view, position, id) -> open(records.get(position)));
+        list.setOnItemClickListener((parent, view, position, id) -> openNotificationTarget(records.get(position)));
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         search.addTextChangedListener(new TextWatcher() {
@@ -117,7 +122,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     }
 
     private void refresh() {
-        String query = search == null ? "" : search.getText().toString().trim();
+        String query = getSearchQuery();
         List<String> terms = null;
         if (!query.isEmpty()) {
             Set<String> smartTerms = new LinkedHashSet<>();
@@ -130,10 +135,17 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         if (list != null && list.getAdapter() instanceof BaseAdapter) ((BaseAdapter) list.getAdapter()).notifyDataSetChanged();
     }
 
-    private void open(NotificationHistoryRecord record) {
-        // If IceBox has frozen the app, enable it first so either the original active PendingIntent
-        // or the package launcher can work. Old history entries no longer have a live PendingIntent,
-        // so they safely fall back to the app's real launcher activity.
+    private String getSearchQuery() {
+        return search == null ? "" : search.getText().toString().trim();
+    }
+
+    private void openApp(NotificationHistoryRecord record) {
+        if (!AppLaunchUtils.launchPackage(this, record.packageName)) {
+            Toast.makeText(this, "Unable to open " + record.appName, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void openNotificationTarget(NotificationHistoryRecord record) {
         if (!AppLaunchUtils.ensurePackageEnabled(this, record.packageName)) {
             Toast.makeText(this, "Unable to enable " + record.appName, Toast.LENGTH_SHORT).show();
             return;
@@ -142,6 +154,25 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         if (!AppLaunchUtils.launchPackage(this, record.packageName)) {
             Toast.makeText(this, "Unable to open " + record.appName, Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private CharSequence highlightLiteral(String value, String query) {
+        String safeValue = value == null ? "" : value;
+        if (query == null || query.isEmpty()) return safeValue;
+
+        SpannableString highlighted = new SpannableString(safeValue);
+        String haystack = safeValue.toLowerCase(Locale.ROOT);
+        String needle = query.toLowerCase(Locale.ROOT);
+        int from = 0;
+        while (from < haystack.length()) {
+            int start = haystack.indexOf(needle, from);
+            if (start < 0) break;
+            int end = start + needle.length();
+            highlighted.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            highlighted.setSpan(new UnderlineSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            from = end;
+        }
+        return highlighted;
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -154,6 +185,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         @Override
         public android.view.View getView(int position, android.view.View convertView, ViewGroup parent) {
             NotificationHistoryRecord record = getItem(position);
+            String query = getSearchQuery();
             LinearLayout row = new LinearLayout(NotificationHistoryActivity.this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             int pad = dp(10);
@@ -168,13 +200,18 @@ public class NotificationHistoryActivity extends AppCompatActivity {
                 if (!AppLaunchUtils.isPackageEnabled(NotificationHistoryActivity.this, record.packageName)
                         && icon.getDrawable() != null) icon.getDrawable().setAlpha(140);
             } catch (PackageManager.NameNotFoundException ignored) {}
+            icon.setClickable(true);
+            icon.setOnClickListener(v -> openApp(record));
             row.addView(icon, new LinearLayout.LayoutParams(size, size));
 
             LinearLayout text = new LinearLayout(NotificationHistoryActivity.this);
             text.setOrientation(LinearLayout.VERTICAL);
             text.setPadding(pad, 0, 0, 0);
+            text.setClickable(true);
+            text.setOnClickListener(v -> openNotificationTarget(record));
+
             TextView app = new TextView(NotificationHistoryActivity.this);
-            app.setText(record.appName);
+            app.setText(highlightLiteral(record.appName, query));
             app.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             app.setTextSize(15);
             text.addView(app);
@@ -182,7 +219,8 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             TextView message = new TextView(NotificationHistoryActivity.this);
             String combined = record.title;
             if (record.text != null && !record.text.isEmpty()) combined = combined == null || combined.isEmpty() ? record.text : combined + "\n" + record.text;
-            message.setText(combined == null || combined.isEmpty() ? "Notification" : combined);
+            if (combined == null || combined.isEmpty()) combined = "Notification";
+            message.setText(highlightLiteral(combined, query));
             message.setMaxLines(4);
             message.setTextSize(14);
             text.addView(message);
