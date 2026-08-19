@@ -29,32 +29,39 @@ public final class SmartAnimationEngine {
     }
 
     public static String getStyle(Context context, String key, String fallback) {
-        return prefs(context).getString(key, fallback);
+        Object value = prefs(context).getAll().get(key);
+        return value instanceof String ? (String) value : fallback;
     }
 
     public static long duration(Context context) {
         int base = context.getResources().getInteger(android.R.integer.config_shortAnimTime);
         SharedPreferences preferences = prefs(context);
-        float speed = 1f;
-
-        if (preferences.contains("smart-animation-speed-percent")) {
-            try {
-                int percent = preferences.getInt("smart-animation-speed-percent", 100);
-                speed = percent / 100f;
-            } catch (ClassCastException ignored) {
-                speed = 1f;
-            }
-        } else {
-            try {
-                speed = Float.parseFloat(preferences.getString("smart-animation-speed", "1.0"));
-            } catch (ClassCastException | NumberFormatException ignored) {
-                speed = 1f;
-            }
-        }
-
+        float speed = readSpeedMultiplier(preferences);
         speed = Math.max(0.05f, Math.min(3f, speed));
         // A lower speed means a longer animation; a higher speed means a shorter animation.
         return Math.max(80L, Math.round(base / speed));
+    }
+
+    private static float readSpeedMultiplier(SharedPreferences preferences) {
+        Object percentValue = preferences.getAll().get("smart-animation-speed-percent");
+        Float percent = parseNumber(percentValue);
+        if (percent != null) return percent / 100f;
+
+        Object legacyValue = preferences.getAll().get("smart-animation-speed");
+        Float legacy = parseNumber(legacyValue);
+        return legacy == null ? 1f : legacy;
+    }
+
+    private static Float parseNumber(Object value) {
+        if (value instanceof Number) return ((Number) value).floatValue();
+        if (value instanceof String) {
+            try {
+                return Float.parseFloat((String) value);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     public static void animateDialogIn(Dialog dialog) {
