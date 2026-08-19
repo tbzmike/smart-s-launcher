@@ -23,7 +23,7 @@ import fr.neamar.kiss.utils.UserHandle;
 class DB extends SQLiteOpenHelper {
 
     private final static String DB_NAME = "kiss.s3db";
-    private final static int DB_VERSION = 11;
+    private final static int DB_VERSION = 12;
     private static final String TAG = DB.class.getSimpleName();
 
     private final Context mContext;
@@ -35,7 +35,6 @@ class DB extends SQLiteOpenHelper {
 
     @Override
     public void onCreate(SQLiteDatabase database) {
-        // `query` is a keyword so we escape it. See: https://www.sqlite.org/lang_keywords.html
         database.execSQL("CREATE TABLE history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, \"query\" TEXT, record TEXT NOT NULL)");
         database.execSQL("CREATE TABLE shortcuts ( _id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, package TEXT,"
                 + "icon TEXT, intent_uri TEXT NOT NULL, icon_blob BLOB)");
@@ -43,6 +42,7 @@ class DB extends SQLiteOpenHelper {
         addTimeStamps(database);
         addAppsTable(database);
         addCustomComponentsTable(database);
+        addSmartLauncherStateTables(database);
     }
 
     private void createTags(SQLiteDatabase database) {
@@ -64,11 +64,17 @@ class DB extends SQLiteOpenHelper {
         database.execSQL("CREATE INDEX idx_custom_components_id ON custom_components(id);");
     }
 
+    private void addSmartLauncherStateTables(SQLiteDatabase database) {
+        database.execSQL("CREATE TABLE IF NOT EXISTS app_catalog ( _id INTEGER PRIMARY KEY AUTOINCREMENT, package TEXT NOT NULL, class TEXT NOT NULL, label TEXT NOT NULL, user_serial INTEGER NOT NULL DEFAULT 0, UNIQUE(package,class,user_serial))");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_app_catalog_package ON app_catalog(package)");
+        database.execSQL("CREATE TABLE IF NOT EXISTS notification_history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id TEXT NOT NULL, package TEXT NOT NULL, app_name TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', post_time INTEGER NOT NULL)");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_time ON notification_history(post_time DESC)");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package ON notification_history(package)");
+    }
+
     @Override
     public void onUpgrade(SQLiteDatabase database, int oldVersion, int newVersion) {
         Log.w("onUpgrade", "Updating database from version " + oldVersion + " to version " + newVersion);
-        // See
-        // http://www.drdobbs.com/database/using-sqlite-on-android/232900584
         if (oldVersion < newVersion) {
             switch (oldVersion) {
                 case 1:
@@ -76,26 +82,21 @@ class DB extends SQLiteOpenHelper {
                 case 3:
                     database.execSQL("CREATE TABLE shortcuts ( _id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, package TEXT,"
                             + "icon TEXT, intent_uri TEXT NOT NULL, icon_blob BLOB)");
-                    // fall through
                 case 4:
                     createTags(database);
-                    // fall through
                 case 5:
                     addTimeStamps(database);
-                    // fall through
                 case 6:
                 case 7:
                     addAppsTable(database);
-                    // fall through
                 case 8:
                     convertShortcutIds(database);
-                    // fall through
                 case 9:
                     convertTheme();
-                    // fall through
                 case 10:
                     addCustomComponentsTable(database);
-                    // fall through
+                case 11:
+                    addSmartLauncherStateTables(database);
                 default:
                     break;
             }
@@ -108,6 +109,13 @@ class DB extends SQLiteOpenHelper {
 
         if (newVersion < oldVersion) {
             switch (newVersion) {
+                case 11:
+                    database.execSQL("DROP INDEX IF EXISTS idx_notification_history_package");
+                    database.execSQL("DROP INDEX IF EXISTS idx_notification_history_time");
+                    database.execSQL("DROP TABLE IF EXISTS notification_history");
+                    database.execSQL("DROP INDEX IF EXISTS idx_app_catalog_package");
+                    database.execSQL("DROP TABLE IF EXISTS app_catalog");
+                    break;
                 case 10:
                     database.execSQL("DROP INDEX idx_custom_components_id");
                     database.execSQL("DROP TABLE custom_components");
@@ -134,33 +142,22 @@ class DB extends SQLiteOpenHelper {
             List<ConvertShortcutInfo> shortcuts = new ArrayList<>();
             shortcutInfos.forEach(shortcutInfo -> {
                 ShortcutRecord shortcutRecordWithName = ShortcutUtil.createShortcutRecord(mContext, shortcutInfo, true);
-                if (shortcutRecordWithName != null) {
-                    shortcuts.add(new ConvertShortcutInfo(UserHandle.OWNER, shortcutRecordWithName));
-                }
+                if (shortcutRecordWithName != null) shortcuts.add(new ConvertShortcutInfo(UserHandle.OWNER, shortcutRecordWithName));
                 ShortcutRecord shortcutRecordWithoutName = ShortcutUtil.createShortcutRecord(mContext, shortcutInfo, false);
-                if (shortcutRecordWithoutName != null) {
-                    shortcuts.add(new ConvertShortcutInfo(UserHandle.OWNER, shortcutRecordWithoutName));
-                }
+                if (shortcutRecordWithoutName != null) shortcuts.add(new ConvertShortcutInfo(UserHandle.OWNER, shortcutRecordWithoutName));
             });
-            // convert all tags
             shortcuts.forEach((shortcut) -> {
                 ContentValues values = new ContentValues(1);
                 values.put("record", shortcut.newId);
                 int updated = database.update("tags", values, "record=?", new String[]{shortcut.oldId});
-                if (updated > 0) {
-                    Log.v(TAG, "Updated tags: " + shortcut.oldId + " > " + shortcut.newId);
-                }
+                if (updated > 0) Log.v(TAG, "Updated tags: " + shortcut.oldId + " > " + shortcut.newId);
             });
-            // convert history
             shortcuts.forEach((shortcut) -> {
                 ContentValues values = new ContentValues(1);
                 values.put("record", shortcut.newId);
                 int updated = database.update("history", values, "record=?", new String[]{shortcut.oldId});
-                if (updated > 0) {
-                    Log.v(TAG, "Updated history: " + shortcut.oldId + " > " + shortcut.newId);
-                }
+                if (updated > 0) Log.v(TAG, "Updated history: " + shortcut.oldId + " > " + shortcut.newId);
             });
-            // convert favorites
             String[] favoriteAppsList = PreferenceManager.getDefaultSharedPreferences(mContext)
                     .getString("favorite-apps-list", "").split(";");
             List<String> favorites = new ArrayList<>();
@@ -172,7 +169,6 @@ class DB extends SQLiteOpenHelper {
                     Log.v(TAG, "Updated favorite: " + shortcut.oldId + " > " + shortcut.newId);
                 }
             });
-
             SharedPreferences.Editor prefsEditor = PreferenceManager.getDefaultSharedPreferences(mContext).edit()
                     .putString("favorite-apps-list", TextUtils.join(";", favorites));
             commit(prefsEditor, "favorite-apps-list");
@@ -184,47 +180,23 @@ class DB extends SQLiteOpenHelper {
         String oldTheme = prefs.getString("theme", "transparent");
         SharedPreferences.Editor prefsEditor = prefs.edit();
         switch (oldTheme) {
-            case "dark":
-                prefsEditor.putString("theme", "opaque");
-                prefsEditor.putString("night-mode", "yes");
-                break;
-            case "semi-transparent-dark":
-                prefsEditor.putString("theme", "semi-transparent");
-                prefsEditor.putString("night-mode", "yes");
-                break;
-            case "transparent-dark":
-                prefsEditor.putString("theme", "transparent");
-                prefsEditor.putString("night-mode", "yes");
-                break;
-            case "amoled-dark":
-                prefsEditor.putString("theme", "amoled-dark");
-                prefsEditor.putString("night-mode", "yes");
-                break;
-            case "light":
-                prefsEditor.putString("theme", "opaque");
-                prefsEditor.putString("night-mode", "no");
-                break;
-            case "semi-transparent":
-                prefsEditor.putString("theme", "semi-transparent");
-                prefsEditor.putString("night-mode", "no");
-                break;
-            case "transparent":
-                prefsEditor.putString("theme", "transparent");
-                prefsEditor.putString("night-mode", "no");
-                break;
+            case "dark": prefsEditor.putString("theme", "opaque"); prefsEditor.putString("night-mode", "yes"); break;
+            case "semi-transparent-dark": prefsEditor.putString("theme", "semi-transparent"); prefsEditor.putString("night-mode", "yes"); break;
+            case "transparent-dark": prefsEditor.putString("theme", "transparent"); prefsEditor.putString("night-mode", "yes"); break;
+            case "amoled-dark": prefsEditor.putString("theme", "amoled-dark"); prefsEditor.putString("night-mode", "yes"); break;
+            case "light": prefsEditor.putString("theme", "opaque"); prefsEditor.putString("night-mode", "no"); break;
+            case "semi-transparent": prefsEditor.putString("theme", "semi-transparent"); prefsEditor.putString("night-mode", "no"); break;
+            case "transparent": prefsEditor.putString("theme", "transparent"); prefsEditor.putString("night-mode", "no"); break;
         }
         commit(prefsEditor, "theme");
     }
 
     private void commit(SharedPreferences.Editor prefsEditor, String key) {
         boolean commited = prefsEditor.commit();
-        if (!commited) {
-            throw new UnsupportedOperationException("Can't upgrade preference: " + key);
-        }
+        if (!commited) throw new UnsupportedOperationException("Can't upgrade preference: " + key);
     }
 
     private static class ConvertShortcutInfo {
-
         final String oldId;
         final String newId;
 
