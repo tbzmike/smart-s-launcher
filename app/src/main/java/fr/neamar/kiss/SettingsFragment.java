@@ -13,7 +13,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.DialogFragment;
+import androidx.preference.ListPreference;
 import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceManager;
@@ -43,6 +45,7 @@ import fr.neamar.kiss.preference.ImportSettingsPreference;
 import fr.neamar.kiss.preference.LaunchPojoSelectPreference;
 import fr.neamar.kiss.preference.SelectCustomSearchProvidersPreference;
 import fr.neamar.kiss.searcher.QuerySearcher;
+import fr.neamar.kiss.searcher.SemanticEmbeddingScorer;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.Permission;
@@ -72,6 +75,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
 
         setPreferencesFromResource(R.xml.preferences, rootKey);
+        addSemanticSearchPreferences(rootKey);
 
         if (prefs.getStringSet("selected-search-provider-names", null) == null) {
             // If null, it means this setting has never been accessed before
@@ -109,6 +113,61 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         updateNightMode();
 
         permissionManager = new Permission(getActivity());
+    }
+
+    private void addSemanticSearchPreferences(@Nullable String rootKey) {
+        PreferenceGroup parent = findPreference("providers");
+        if (parent == null && "providers".equals(rootKey)) parent = getPreferenceScreen();
+        if (parent == null || parent.findPreference("semantic-search-category") != null) return;
+
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("semantic-search-category");
+        category.setTitle("Semantic search & embeddings");
+        parent.addPreference(category);
+
+        SwitchPreference enabled = new SwitchPreference(requireContext());
+        enabled.setKey("semantic-search-enabled");
+        enabled.setTitle("Enable semantic search");
+        enabled.setSummary("Use on-device embeddings as a fallback when literal/fuzzy matching is not enough.");
+        enabled.setDefaultValue(false);
+        category.addPreference(enabled);
+
+        ListPreference model = new ListPreference(requireContext());
+        model.setKey("semantic-model");
+        model.setTitle("Embedding model");
+        model.setEntries(new CharSequence[]{SemanticEmbeddingScorer.MODEL_NAME});
+        model.setEntryValues(new CharSequence[]{SemanticEmbeddingScorer.MODEL_ID});
+        model.setDefaultValue(SemanticEmbeddingScorer.MODEL_ID);
+        model.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        model.setDependency("semantic-search-enabled");
+        category.addPreference(model);
+
+        ListPreference dimensions = new ListPreference(requireContext());
+        dimensions.setKey("semantic-embedding-dimensions");
+        dimensions.setTitle("Embedding dimensions");
+        dimensions.setEntries(new CharSequence[]{"64 · fastest", "128 · balanced", "256 · richer"});
+        dimensions.setEntryValues(new CharSequence[]{"64", "128", "256"});
+        dimensions.setDefaultValue("128");
+        dimensions.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        dimensions.setDependency("semantic-search-enabled");
+        category.addPreference(dimensions);
+
+        ListPreference threshold = new ListPreference(requireContext());
+        threshold.setKey("semantic-threshold");
+        threshold.setTitle("Semantic similarity threshold");
+        threshold.setEntries(new CharSequence[]{"0.26 · broad", "0.34 · balanced", "0.42 · strict", "0.52 · very strict"});
+        threshold.setEntryValues(new CharSequence[]{"0.26", "0.34", "0.42", "0.52"});
+        threshold.setDefaultValue("0.34");
+        threshold.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        threshold.setDependency("semantic-search-enabled");
+        category.addPreference(threshold);
+
+        Preference info = new Preference(requireContext());
+        info.setKey("semantic-model-info");
+        info.setTitle("Embedding engine details");
+        info.setSummary(SemanticEmbeddingScorer.MODEL_NAME + " · on-device · no network · vectors computed at search time");
+        info.setSelectable(false);
+        category.addPreference(info);
     }
 
     private void updateItemsToRun() {
