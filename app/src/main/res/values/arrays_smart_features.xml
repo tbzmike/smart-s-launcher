@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="smart_notification_storage_entries">
+        <item>Unlimited until storage is full</item>
+        <item>Storage-aware cleanup</item>
+    </string-array>
+    <string-array name="smart_notification_storage_values">
+        <item>unlimited</item>
+        <item>storage-aware</item>
+    </string-array>
+
+    <string-array name="smart_frozen_refresh_entries">
+        <item>Package changes only</item>
+        <item>Every 15 seconds</item>
+        <item>Every 30 seconds</item>
+        <item>Every 1 minute</item>
+        <item>Every 5 minutes</item>
+    </string-array>
+    <string-array name="smart_frozen_refresh_values">
+        <item>package-only</item>
+        <item>15</item>
+        <item>30</item>
+        <item>60</item>
+        <item>300</item>
+    </string-array>
+
+    <string-array name="smart_scroll_animation_entries">
+        <item>Classic</item>
+        <item>Focus</item>
+        <item>Depth</item>
+        <item>Wave</item>
+        <item>Slide</item>
+        <item>None</item>
+    </string-array>
+    <string-array name="smart_scroll_animation_values">
+        <item>classic</item>
+        <item>focus</item>
+        <item>depth</item>
+        <item>wave</item>
+        <item>slide</item>
+        <item>none</item>
+    </string-array>
+
+    <string-array name="smart_enter_animation_entries">
+        <item>Fade</item>
+        <item>Slide up</item>
+        <item>Scale</item>
+        <item>Spring</item>
+        <item>None</item>
+    </string-array>
+    <string-array name="smart_enter_animation_values">
+        <item>fade</item>
+        <item>slide-up</item>
+        <item>scale</item>
+        <item>spring</item>
+        <item>none</item>
+    </string-array>
+
+    <string-array name="smart_exit_animation_entries">
+        <item>Fade</item>
+        <item>Slide down</item>
+        <item>Shrink</item>
+        <item>None</item>
+    </string-array>
+    <string-array name="smart_exit_animation_values">
+        <item>fade</item>
+        <item>slide-down</item>
+        <item>shrink</item>
+        <item>none</item>
+    </string-array>
+
+    <string-array name="smart_popup_animation_entries">
+        <item>Scale</item>
+        <item>Slide up</item>
+        <item>Fade</item>
+        <item>Spring</item>
+        <item>None</item>
+    </string-array>
+    <string-array name="smart_popup_animation_values">
+        <item>scale</item>
+        <item>slide-up</item>
+        <item>fade</item>
+        <item>spring</item>
+        <item>none</item>
+    </string-array>
+
+    <string-array name="smart_switch_animation_entries">
+        <item>Crossfade</item>
+        <item>Slide</item>
+        <item>Depth</item>
+        <item>None</item>
+    </string-array>
+    <string-array name="smart_switch_animation_values">
+        <item>crossfade</item>
+        <item>slide</item>
+        <item>depth</item>
+        <item>none</item>
+    </string-array>
+
+    <string-array name="smart_toast_animation_entries">
+        <item>Fade</item>
+        <item>Slide up</item>
+        <item>Scale</item>
+        <item>None</item>
+    </string-array>
+    <string-array name="smart_toast_animation_values">
+        <item>fade</item>
+        <item>slide-up</item>
+        <item>scale</item>
+        <item>none</item>
+    </string-array>
+
+    <string-array name="smart_animation_speed_entries">
+        <item>Slow</item>
+        <item>Normal</item>
+        <item>Fast</item>
+        <item>Very fast</item>
+    </string-array>
+    <string-array name="smart_animation_speed_values">
+        <item>0.75</item>
+        <item>1.0</item>
+        <item>1.25</item>
+        <item>1.5</item>
+    </string-array>
+
+    <string-array name="smart_blur_strength_entries">
+        <item>Light</item>
+        <item>Balanced</item>
+        <item>Strong</item>
+    </string-array>
+    <string-array name="smart_blur_strength_values">
+        <item>light</item>
+        <item>balanced</item>
+        <item>strong</item>
+    </string-array>
+
+    <string-array name="smart_blur_radius_entries">
+        <item>Small</item>
+        <item>Medium</item>
+        <item>Large</item>
+    </string-array>
+    <string-array name="smart_blur_radius_values">
+        <item>small</item>
+        <item>medium</item>
+        <item>large</item>
+    </string-array>
+
+    <string-array name="smart_focus_area_entries">
+        <item>Tight</item>
+        <item>Balanced</item>
+        <item>Wide</item>
+    </string-array>
+    <string-array name="smart_focus_area_values">
+        <item>tight</item>
+        <item>balanced</item>
+        <item>wide</item>
+    </string-array>
+
+    <string-array name="smart_blur_performance_entries">
+        <item>Quality</item>
+        <item>Balanced</item>
+        <item>Battery saver</item>
+    </string-array>
+    <string-array name="smart_blur_performance_values">
+        <item>quality</item>
+        <item>balanced</item>
+        <item>battery</item>
+    </string-array>
+</resources>
