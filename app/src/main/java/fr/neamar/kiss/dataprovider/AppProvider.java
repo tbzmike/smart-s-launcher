@@ -2,7 +2,9 @@ package fr.neamar.kiss.dataprovider;
 
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherApps;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -33,17 +35,33 @@ public class AppProvider extends Provider<AppPojo> {
     private final Runnable reconcileFrozenState = new Runnable() {
         @Override public void run() {
             boolean changed = false;
-            if (launcherApps != null && isLoaded()) {
+            if (isLoaded()) {
+                PackageManager pm = getPackageManager();
                 for (AppPojo pojo : getPojos()) {
+                    boolean enabled = true;
                     try {
-                        boolean enabled = launcherApps.isPackageEnabled(pojo.packageName, pojo.userHandle.getRealHandle())
-                                && launcherApps.isActivityEnabled(pojo.getComponent(), pojo.userHandle.getRealHandle());
-                        if (pojo.isDisabled() == enabled) {
-                            pojo.setDisabled(!enabled);
-                            changed = true;
+                        ApplicationInfo appInfo = pm.getApplicationInfo(pojo.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+                        int state = pm.getApplicationEnabledSetting(pojo.packageName);
+                        enabled = appInfo.enabled
+                                && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                                && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                                && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
+                    } catch (PackageManager.NameNotFoundException | IllegalArgumentException e) {
+                        enabled = false;
+                    }
+
+                    if (enabled && launcherApps != null) {
+                        try {
+                            enabled = launcherApps.isPackageEnabled(pojo.packageName, pojo.userHandle.getRealHandle())
+                                    && launcherApps.isActivityEnabled(pojo.getComponent(), pojo.userHandle.getRealHandle());
+                        } catch (SecurityException | IllegalArgumentException ignored) {
+                            // PackageManager state remains authoritative when LauncherApps hides it.
                         }
-                    } catch (SecurityException | IllegalArgumentException ignored) {
-                        // Persistent catalog keeps the last safe state when Android hides a package.
+                    }
+
+                    if (pojo.isDisabled() == enabled) {
+                        pojo.setDisabled(!enabled);
+                        changed = true;
                     }
                 }
             }
