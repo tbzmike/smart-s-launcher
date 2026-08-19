@@ -4,7 +4,10 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
@@ -27,6 +30,10 @@ import java.util.Map;
 import java.util.Set;
 
 import fr.neamar.kiss.KissApplication;
+import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.ui.CompactNotificationFrame;
 import fr.neamar.kiss.utils.Log;
 
 public class NotificationListener extends NotificationListenerService {
@@ -55,22 +62,19 @@ public class NotificationListener extends NotificationListenerService {
     private SharedPreferences prefs;
     private SharedPreferences details;
 
-    @Override
-    public void onCreate() {
+    @Override public void onCreate() {
         super.onCreate();
         instance = this;
         prefs = getBaseContext().getSharedPreferences(NOTIFICATION_PREFERENCES_NAME, Context.MODE_PRIVATE);
         details = getBaseContext().getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
     }
 
-    @Override
-    public void onDestroy() {
+    @Override public void onDestroy() {
         if (instance == this) instance = null;
         super.onDestroy();
     }
 
-    @Override
-    public void onListenerConnected() {
+    @Override public void onListenerConnected() {
         super.onListenerConnected();
         refreshAllNotifications(true);
     }
@@ -109,28 +113,23 @@ public class NotificationListener extends NotificationListenerService {
             Set<String> seeded = new HashSet<>();
             for (StatusBarNotification sbn : timeline) {
                 String groupKey = getPackageKey(sbn);
-                if (seeded.add(groupKey)) {
-                    KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(groupKey));
-                }
+                if (seeded.add(groupKey)) KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(groupKey));
             }
         }
     }
 
-    @Override
-    public void onListenerDisconnected() {
+    @Override public void onListenerDisconnected() {
         prefs.edit().clear().apply();
         details.edit().clear().apply();
         super.onListenerDisconnected();
     }
 
-    @Override
-    public void onNotificationRankingUpdate(RankingMap rankingMap) {
+    @Override public void onNotificationRankingUpdate(RankingMap rankingMap) {
         super.onNotificationRankingUpdate(rankingMap);
         refreshAllNotifications(false);
     }
 
-    @Override
-    public void onNotificationPosted(StatusBarNotification sbn) {
+    @Override public void onNotificationPosted(StatusBarNotification sbn) {
         if (sbn == null || isNotificationTrivial(sbn)) return;
 
         String packageKey = getPackageKey(sbn);
@@ -145,9 +144,31 @@ public class NotificationListener extends NotificationListenerService {
         detailEditor.putStringSet(ACTIVE_NOTIFICATION_IDS, active);
         storeNotificationDetail(detailEditor, id, packageKey, sbn);
         detailEditor.apply();
+        persistHistory(sbn, id);
 
         if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
             KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(packageKey));
+        }
+        sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+    }
+
+    private void persistHistory(StatusBarNotification sbn, String id) {
+        Notification n = sbn.getNotification();
+        CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
+        CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
+        if (text == null || text.length() == 0) text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
+        SmartStateStore.saveNotification(this, id, sbn.getPackageName(), getAppName(sbn.getPackageName()),
+                title == null ? "" : title.toString(), text == null ? "" : text.toString(), sbn.getPostTime());
+    }
+
+    private String getAppName(String packageName) {
+        try {
+            PackageManager pm = getPackageManager();
+            ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+            CharSequence label = info.loadLabel(pm);
+            return label == null ? packageName : label.toString();
+        } catch (PackageManager.NameNotFoundException e) {
+            return packageName;
         }
     }
 
@@ -156,7 +177,6 @@ public class NotificationListener extends NotificationListenerService {
         CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
         CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
         if (text == null || text.length() == 0) text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
-
         String titleString = title == null ? "" : title.toString();
         String textString = text == null ? "" : text.toString();
         editor.putString(id + "|package", sbn.getPackageName());
@@ -165,17 +185,18 @@ public class NotificationListener extends NotificationListenerService {
         editor.putString(id + "|title", titleString);
         editor.putString(id + "|text", textString);
         editor.putLong(id + "|post", sbn.getPostTime());
-
         String message = titleString;
         if (!textString.isEmpty()) message = message.isEmpty() ? textString : message + ": " + textString;
         editor.putString(packageKey + "|text", message);
         editor.putString(packageKey + "|key", sbn.getKey());
     }
 
-    @Override
-    public void onNotificationRemoved(StatusBarNotification sbn) {
+    @Override public void onNotificationRemoved(StatusBarNotification sbn) {
         if (sbn == null) return;
+        removeCachedNotification(sbn);
+    }
 
+    private void removeCachedNotification(StatusBarNotification sbn) {
         String packageKey = getPackageKey(sbn);
         Set<String> currentNotifications = getCurrentNotificationsForPackage(packageKey);
         currentNotifications.remove(Integer.toString(sbn.getId()));
@@ -185,18 +206,33 @@ public class NotificationListener extends NotificationListenerService {
         String id = getTimelineId(sbn);
         Set<String> active = new HashSet<>(details.getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet()));
         active.remove(id);
-        details.edit()
+        SharedPreferences.Editor edit = details.edit()
                 .putStringSet(ACTIVE_NOTIFICATION_IDS, active)
-                .remove(id + "|package")
-                .remove(id + "|group")
-                .remove(id + "|key")
-                .remove(id + "|title")
-                .remove(id + "|text")
-                .remove(id + "|post")
-                .apply();
+                .remove(id + "|package").remove(id + "|group").remove(id + "|key")
+                .remove(id + "|title").remove(id + "|text").remove(id + "|post");
 
-        if (!currentNotifications.isEmpty()) refreshAllNotifications(false);
-        else details.edit().remove(packageKey + "|text").remove(packageKey + "|key").apply();
+        if (currentNotifications.isEmpty()) {
+            edit.remove(packageKey + "|text").remove(packageKey + "|key");
+            DBHelper.removeFromHistory(this, getGroupId(packageKey));
+        } else {
+            String latestId = null;
+            long latestTime = Long.MIN_VALUE;
+            for (String activeId : active) {
+                if (!packageKey.equals(details.getString(activeId + "|group", ""))) continue;
+                long time = details.getLong(activeId + "|post", 0L);
+                if (time > latestTime) { latestTime = time; latestId = activeId; }
+            }
+            if (latestId != null) {
+                String title = details.getString(latestId + "|title", "");
+                String body = details.getString(latestId + "|text", "");
+                String message = title == null ? "" : title;
+                if (body != null && !body.isEmpty()) message = message.isEmpty() ? body : message + ": " + body;
+                edit.putString(packageKey + "|text", message);
+                edit.putString(packageKey + "|key", details.getString(latestId + "|key", ""));
+            }
+        }
+        edit.apply();
+        sendBroadcast(new Intent(MainActivity.LOAD_OVER));
     }
 
     public Set<String> getCurrentNotificationsForPackage(String packageKey) {
@@ -228,8 +264,7 @@ public class NotificationListener extends NotificationListenerService {
         Notification.Action[] actions = sbn.getNotification().actions;
         if (actions != null) {
             for (Notification.Action action : actions) {
-                CharSequence title = action.title;
-                String actionTitle = title == null ? "" : title.toString().toLowerCase(Locale.ROOT);
+                String actionTitle = action.title == null ? "" : action.title.toString().toLowerCase(Locale.ROOT);
                 if (!actionTitle.contains("read")) continue;
                 try {
                     if (action.actionIntent != null) action.actionIntent.send();
@@ -240,11 +275,14 @@ public class NotificationListener extends NotificationListenerService {
             }
         }
 
+        // Update Smart S immediately; Android's removal callback can arrive noticeably later.
+        listener.removeCachedNotification(sbn);
         try {
             listener.cancelNotification(key);
             return true;
         } catch (SecurityException e) {
             Log.w(TAG, "Unable to dismiss notification after mark read", e);
+            listener.refreshAllNotifications(false);
             return false;
         }
     }
@@ -253,20 +291,22 @@ public class NotificationListener extends NotificationListenerService {
         List<NotificationSnapshot> snapshots = getGroupNotifications(context, groupKey);
         if (snapshots.isEmpty()) return false;
         boolean success = false;
-        for (NotificationSnapshot snapshot : snapshots) {
-            success |= markNotificationRead(context, snapshot.id);
-        }
+        for (NotificationSnapshot snapshot : snapshots) success |= markNotificationRead(context, snapshot.id);
         return success;
     }
 
     private static boolean cancelByKey(String key) {
         NotificationListener listener = instance;
         if (listener == null || key == null) return false;
+        StatusBarNotification sbn = listener.findActiveByKey(key);
+        if (sbn == null) return false;
+        listener.removeCachedNotification(sbn);
         try {
             listener.cancelNotification(key);
             return true;
         } catch (SecurityException e) {
             Log.w(TAG, "Unable to dismiss notification", e);
+            listener.refreshAllNotifications(false);
             return false;
         }
     }
@@ -275,13 +315,10 @@ public class NotificationListener extends NotificationListenerService {
         String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(notificationId + "|key", null);
         NotificationListener listener = instance;
         if (listener == null || key == null) return false;
-
         StatusBarNotification sbn = listener.findActiveByKey(key);
-        if (sbn == null) return false;
-        PendingIntent contentIntent = sbn.getNotification().contentIntent;
-        if (contentIntent == null) return false;
+        if (sbn == null || sbn.getNotification().contentIntent == null) return false;
         try {
-            contentIntent.send();
+            sbn.getNotification().contentIntent.send();
             return true;
         } catch (PendingIntent.CanceledException e) {
             Log.w(TAG, "Notification content intent was canceled", e);
@@ -294,7 +331,6 @@ public class NotificationListener extends NotificationListenerService {
         if (listener == null) return null;
         StatusBarNotification[] active = listener.getActiveNotifications();
         if (active == null) return null;
-
         StatusBarNotification latest = null;
         for (StatusBarNotification sbn : active) {
             if (listener.isNotificationTrivial(sbn)) continue;
@@ -305,13 +341,11 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     public static View createNativeNotificationView(Context context, String notificationId, ViewGroup parent, boolean expanded) {
-        String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE)
-                .getString(notificationId + "|key", null);
+        String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(notificationId + "|key", null);
         NotificationListener listener = instance;
         if (listener == null || key == null) return null;
         StatusBarNotification sbn = listener.findActiveByKey(key);
-        if (sbn == null) return null;
-        return createNativeView(context, sbn.getNotification(), parent, expanded);
+        return sbn == null ? null : createNativeView(context, sbn.getNotification(), parent, expanded);
     }
 
     private static View createNativeView(Context context, Notification notification, ViewGroup parent, boolean expanded) {
@@ -322,12 +356,16 @@ public class NotificationListener extends NotificationListenerService {
                 Notification.Builder builder = Notification.Builder.recoverBuilder(context, notification);
                 remoteViews = expanded ? builder.createBigContentView() : builder.createContentView();
             }
-            if (remoteViews == null) {
-                remoteViews = expanded && notification.bigContentView != null
-                        ? notification.bigContentView : notification.contentView;
-            }
+            if (remoteViews == null) remoteViews = expanded && notification.bigContentView != null ? notification.bigContentView : notification.contentView;
             if (remoteViews == null && expanded) remoteViews = notification.contentView;
-            return remoteViews == null ? null : remoteViews.apply(context, parent);
+            if (remoteViews == null) return null;
+
+            CompactNotificationFrame wrapper = new CompactNotificationFrame(context);
+            wrapper.setMaxHeightDp(expanded ? 240 : 88);
+            wrapper.setClipChildren(true);
+            View nativeView = remoteViews.apply(context, wrapper);
+            wrapper.addView(nativeView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            return wrapper;
         } catch (RuntimeException e) {
             Log.w(TAG, "Unable to inflate native notification RemoteViews", e);
             return null;
@@ -337,9 +375,7 @@ public class NotificationListener extends NotificationListenerService {
     private StatusBarNotification findActiveByKey(String key) {
         StatusBarNotification[] active = getActiveNotifications();
         if (active == null) return null;
-        for (StatusBarNotification sbn : active) {
-            if (key.equals(sbn.getKey())) return sbn;
-        }
+        for (StatusBarNotification sbn : active) if (key.equals(sbn.getKey())) return sbn;
         return null;
     }
 
@@ -347,31 +383,25 @@ public class NotificationListener extends NotificationListenerService {
         SharedPreferences details = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
         Set<String> active = details.getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
         if (active == null || active.isEmpty()) return Collections.emptyList();
-
         List<NotificationSnapshot> result = new ArrayList<>();
         for (String id : new HashSet<>(active)) {
             if (!groupKey.equals(details.getString(id + "|group", ""))) continue;
             String title = details.getString(id + "|title", "");
             String text = details.getString(id + "|text", "");
-            long post = details.getLong(id + "|post", 0L);
-            result.add(new NotificationSnapshot(id,
-                    title == null ? "" : title,
-                    text == null ? "" : text,
-                    post));
+            result.add(new NotificationSnapshot(id, title == null ? "" : title, text == null ? "" : text,
+                    details.getLong(id + "|post", 0L)));
         }
         result.sort(Comparator.comparingLong((NotificationSnapshot n) -> n.postTime).reversed());
         return result;
     }
 
     public static String getTimelineId(StatusBarNotification sbn) {
-        String encoded = Base64.encodeToString(sbn.getKey().getBytes(StandardCharsets.UTF_8),
-                Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+        String encoded = Base64.encodeToString(sbn.getKey().getBytes(StandardCharsets.UTF_8), Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
         return NOTIFICATION_SCHEME + encoded;
     }
 
     public static String getGroupId(String groupKey) {
-        String encoded = Base64.encodeToString(groupKey.getBytes(StandardCharsets.UTF_8),
-                Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+        String encoded = Base64.encodeToString(groupKey.getBytes(StandardCharsets.UTF_8), Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
         return NOTIFICATION_GROUP_SCHEME + encoded;
     }
 
@@ -384,28 +414,19 @@ public class NotificationListener extends NotificationListenerService {
         Notification notification = sbn.getNotification();
         if (notification == null) return true;
         if (isOngoing(notification) || isForegroundService(notification) || isGroupHeader(notification)) return true;
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             final Ranking ranking = new Ranking();
             if (getCurrentRanking().getRanking(sbn.getKey(), ranking)) {
-                if (ranking.getChannel() != null
-                        && !ranking.getChannel().getId().equals(NotificationChannel.DEFAULT_CHANNEL_ID)
+                if (ranking.getChannel() != null && !ranking.getChannel().getId().equals(NotificationChannel.DEFAULT_CHANNEL_ID)
                         && isGroupHeader(notification)) return true;
             }
         }
         return notification.priority <= Notification.PRIORITY_MIN;
     }
 
-    private boolean isOngoing(Notification notification) {
-        return (notification.flags & Notification.FLAG_ONGOING_EVENT) != 0;
-    }
-
+    private boolean isOngoing(Notification notification) { return (notification.flags & Notification.FLAG_ONGOING_EVENT) != 0; }
     private boolean isForegroundService(Notification notification) {
-        return (notification.flags & Notification.FLAG_FOREGROUND_SERVICE) != 0
-                || Notification.CATEGORY_SERVICE.equals(notification.category);
+        return (notification.flags & Notification.FLAG_FOREGROUND_SERVICE) != 0 || Notification.CATEGORY_SERVICE.equals(notification.category);
     }
-
-    private boolean isGroupHeader(Notification notification) {
-        return (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0;
-    }
+    private boolean isGroupHeader(Notification notification) { return (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0; }
 }
