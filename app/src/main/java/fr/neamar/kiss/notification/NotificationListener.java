@@ -165,7 +165,8 @@ public class NotificationListener extends NotificationListenerService {
         CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
         if (text == null || text.length() == 0) text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
         SmartStateStore.saveNotification(this, id, sbn.getPackageName(), getAppName(sbn.getPackageName()),
-                title == null ? "" : title.toString(), text == null ? "" : text.toString(), sbn.getPostTime());
+                title == null ? "" : title.toString(), text == null ? "" : text.toString(), sbn.getPostTime(),
+                isPermanentForHistory(sbn));
     }
 
     private String getAppName(String packageName) {
@@ -531,6 +532,13 @@ public class NotificationListener extends NotificationListenerService {
 
     private String getPackageKey(StatusBarNotification sbn) {
         return sbn.getUser().hashCode() + "|" + sbn.getPackageName();
+    }
+
+    private boolean isPermanentForHistory(StatusBarNotification sbn) {
+        if (sbn == null) return false;
+        Notification notification = sbn.getNotification();
+        if (notification == null) return false;
+        return !sbn.isClearable() || isOngoing(notification) || isForegroundService(notification);
     }
 
     public boolean isNotificationTrivial(StatusBarNotification sbn) {
