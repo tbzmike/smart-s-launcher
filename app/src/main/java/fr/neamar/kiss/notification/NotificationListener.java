@@ -257,6 +257,12 @@ public class NotificationListener extends NotificationListenerService {
                 .getString(notificationId + "|package", null);
     }
 
+    public static boolean isNotificationActive(Context context, String notificationId) {
+        Set<String> active = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
+        return active != null && active.contains(notificationId);
+    }
+
     public static String getExpandedNotificationText(Context context, String notificationId) {
         StatusBarNotification sbn = findActiveNotification(context, notificationId);
         if (sbn == null || sbn.getNotification() == null) {
@@ -279,7 +285,7 @@ public class NotificationListener extends NotificationListenerService {
             for (CharSequence line : lines) appendDistinct(text, line);
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             android.os.Parcelable[] messageBundles = extras.getParcelableArray(Notification.EXTRA_MESSAGES);
             if (messageBundles != null) {
                 List<Notification.MessagingStyle.Message> messages =
@@ -439,9 +445,8 @@ public class NotificationListener extends NotificationListenerService {
         PendingIntent contentIntent = sbn.getNotification().contentIntent;
         if (contentIntent == null) return false;
         try {
-            // Do not attach an empty fill-in Intent. Some apps use immutable/deep-link
-            // notification PendingIntents and an injected fill-in can prevent routing to
-            // the exact conversation/message target.
+            // Preserve the app's exact deep link/conversation target. Supplying a synthetic
+            // fill-in Intent here can change or invalidate routing for immutable PendingIntents.
             contentIntent.send();
             return true;
         } catch (PendingIntent.CanceledException | RuntimeException e) {
