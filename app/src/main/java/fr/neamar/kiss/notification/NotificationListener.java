@@ -3,12 +3,14 @@ package fr.neamar.kiss.notification;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.PendingIntent;
+import android.app.RemoteInput;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Base64;
@@ -34,6 +36,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
 
 public class NotificationListener extends NotificationListenerService {
@@ -89,6 +92,7 @@ public class NotificationListener extends NotificationListenerService {
         SharedPreferences.Editor detailEditor = details.edit().clear();
 
         for (StatusBarNotification sbn : sbns) {
+            if (seedTimeline) persistHistory(sbn, getTimelineId(sbn));
             if (isNotificationTrivial(sbn)) continue;
             String packageKey = getPackageKey(sbn);
             notificationsByPackage.computeIfAbsent(packageKey, k -> new HashSet<>()).add(Integer.toString(sbn.getId()));
@@ -130,21 +134,23 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     @Override public void onNotificationPosted(StatusBarNotification sbn) {
-        if (sbn == null || isNotificationTrivial(sbn)) return;
+        if (sbn == null) return;
+
+        String id = getTimelineId(sbn);
+        persistHistory(sbn, id);
+        if (isNotificationTrivial(sbn)) return;
 
         String packageKey = getPackageKey(sbn);
         Set<String> currentNotifications = getCurrentNotificationsForPackage(packageKey);
         currentNotifications.add(Integer.toString(sbn.getId()));
         prefs.edit().putStringSet(packageKey, currentNotifications).apply();
 
-        String id = getTimelineId(sbn);
         Set<String> active = new HashSet<>(details.getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet()));
         active.add(id);
         SharedPreferences.Editor detailEditor = details.edit();
         detailEditor.putStringSet(ACTIVE_NOTIFICATION_IDS, active);
         storeNotificationDetail(detailEditor, id, packageKey, sbn);
         detailEditor.apply();
-        persistHistory(sbn, id);
 
         if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
             KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(packageKey));
@@ -154,6 +160,7 @@ public class NotificationListener extends NotificationListenerService {
 
     private void persistHistory(StatusBarNotification sbn, String id) {
         Notification n = sbn.getNotification();
+        if (n == null) return;
         CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
         CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
         if (text == null || text.length() == 0) text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
@@ -275,7 +282,6 @@ public class NotificationListener extends NotificationListenerService {
             }
         }
 
-        // Update Smart S immediately; Android's removal callback can arrive noticeably later.
         listener.removeCachedNotification(sbn);
         try {
             listener.cancelNotification(key);
@@ -312,18 +318,83 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     public static boolean openNotification(Context context, String notificationId) {
-        String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(notificationId + "|key", null);
+        SharedPreferences details = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
+        String key = details.getString(notificationId + "|key", null);
+        String packageName = details.getString(notificationId + "|package", null);
         NotificationListener listener = instance;
         if (listener == null || key == null) return false;
+        if (packageName != null && !AppLaunchUtils.ensurePackageEnabled(context, packageName)) return false;
+
         StatusBarNotification sbn = listener.findActiveByKey(key);
-        if (sbn == null || sbn.getNotification().contentIntent == null) return false;
+        if (sbn == null) return false;
+        PendingIntent contentIntent = sbn.getNotification().contentIntent;
+        if (contentIntent == null) return false;
         try {
-            sbn.getNotification().contentIntent.send();
+            contentIntent.send(context, 0, new Intent());
             return true;
-        } catch (PendingIntent.CanceledException e) {
-            Log.w(TAG, "Notification content intent was canceled", e);
+        } catch (PendingIntent.CanceledException | RuntimeException e) {
+            Log.w(TAG, "Notification content intent could not be opened", e);
             return false;
         }
+    }
+
+    public static boolean hasReplyAction(Context context, String notificationId) {
+        StatusBarNotification sbn = findActiveNotification(context, notificationId);
+        return sbn != null && findReplyAction(sbn.getNotification()) != null;
+    }
+
+    public static boolean replyToNotification(Context context, String notificationId, String replyText) {
+        if (replyText == null || replyText.trim().isEmpty()) return false;
+        StatusBarNotification sbn = findActiveNotification(context, notificationId);
+        if (sbn == null) return false;
+
+        String packageName = sbn.getPackageName();
+        if (!AppLaunchUtils.ensurePackageEnabled(context, packageName)) return false;
+
+        Notification.Action action = findReplyAction(sbn.getNotification());
+        if (action == null || action.actionIntent == null) return false;
+        RemoteInput[] remoteInputs = action.getRemoteInputs();
+        if (remoteInputs == null || remoteInputs.length == 0) return false;
+
+        Bundle results = new Bundle();
+        boolean hasFreeFormInput = false;
+        for (RemoteInput remoteInput : remoteInputs) {
+            if (!remoteInput.getAllowFreeFormInput()) continue;
+            results.putCharSequence(remoteInput.getResultKey(), replyText);
+            hasFreeFormInput = true;
+        }
+        if (!hasFreeFormInput) return false;
+
+        Intent fillInIntent = new Intent();
+        RemoteInput.addResultsToIntent(remoteInputs, fillInIntent, results);
+        try {
+            action.actionIntent.send(context, 0, fillInIntent);
+            return true;
+        } catch (PendingIntent.CanceledException | RuntimeException e) {
+            Log.w(TAG, "Inline reply action failed", e);
+            return false;
+        }
+    }
+
+    private static StatusBarNotification findActiveNotification(Context context, String notificationId) {
+        String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getString(notificationId + "|key", null);
+        NotificationListener listener = instance;
+        if (listener == null || key == null) return null;
+        return listener.findActiveByKey(key);
+    }
+
+    private static Notification.Action findReplyAction(Notification notification) {
+        if (notification == null || notification.actions == null) return null;
+        for (Notification.Action action : notification.actions) {
+            if (action == null || action.actionIntent == null) continue;
+            RemoteInput[] remoteInputs = action.getRemoteInputs();
+            if (remoteInputs == null) continue;
+            for (RemoteInput remoteInput : remoteInputs) {
+                if (remoteInput != null && remoteInput.getAllowFreeFormInput()) return action;
+            }
+        }
+        return null;
     }
 
     public static View createNativeGroupView(Context context, String groupKey, ViewGroup parent, boolean expanded) {
