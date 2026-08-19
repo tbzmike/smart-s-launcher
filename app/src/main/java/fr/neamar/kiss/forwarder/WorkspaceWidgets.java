@@ -12,6 +12,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
+import androidx.core.view.HapticFeedbackConstantsCompat;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
@@ -172,7 +173,7 @@ class WorkspaceWidgets extends Widgets {
         frame.setBackground(null);
         done.setVisibility(View.GONE);
         frame.requestLayout();
-        frame.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM);
+        frame.performHapticFeedback(HapticFeedbackConstantsCompat.CONFIRM);
     }
 
     private int dp(int value) {
