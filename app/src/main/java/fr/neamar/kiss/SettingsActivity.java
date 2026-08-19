@@ -102,6 +102,10 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == R.id.smart_features) {
+            openSmartFeaturesSettings();
+            return true;
+        }
         if (item.getItemId() == R.id.help) {
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setData(Uri.parse("http://help.kisslauncher.com"));
@@ -109,6 +113,18 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void openSmartFeaturesSettings() {
+        Fragment current = getSupportFragmentManager().findFragmentByTag(ARG_SHOW_FRAGMENT);
+        if (current instanceof SmartFeaturesSettingsFragment) {
+            return;
+        }
+        getSupportFragmentManager()
+                .beginTransaction()
+                .replace(R.id.content_container, new SmartFeaturesSettingsFragment(), ARG_SHOW_FRAGMENT)
+                .addToBackStack("smart-features")
+                .commit();
     }
 
     @Override
