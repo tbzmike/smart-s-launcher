@@ -1,8 +1,11 @@
 package fr.neamar.kiss.ui;
 
 import android.appwidget.AppWidgetHostView;
+import android.appwidget.AppWidgetProviderInfo;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.os.Build;
+import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,6 +15,9 @@ import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 
 import androidx.preference.PreferenceManager;
+
+import java.util.HashSet;
+import java.util.Set;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
@@ -27,7 +33,11 @@ public final class SmartWorkspaceController {
     public static final String PREF_PRIMARY_CONTENT = "smart-workspace-primary-content";
     public static final String PREF_SPLIT_PERCENT = "smart-workspace-split-percent";
     public static final String PREF_DRAGGABLE = "smart-workspace-draggable";
+    public static final String PREF_EMPTY_ADD_WIDGET = "smart-workspace-empty-add-widget";
+    public static final String PREF_EMPTY_GESTURES = "smart-workspace-empty-gestures";
+    public static final String PREF_FREE_WIDGET_RESIZE = "smart-workspace-free-widget-resize";
 
+    private static final String PREF_WIDGET_SIZE_PREFIX = "smart-workspace-widget-size-";
     private static final int MIN_PANE_PERCENT = 15;
     private static final int MAX_PANE_PERCENT = 85;
 
@@ -39,6 +49,13 @@ public final class SmartWorkspaceController {
     private final View secondPane;
     private final View divider;
     private final boolean horizontal;
+    private final Set<Integer> resizeConfiguredWidgetIds = new HashSet<>();
+
+    private AppWidgetHostView resizingWidget;
+    private float resizeStartRawX;
+    private float resizeStartRawY;
+    private int resizeStartWidth;
+    private int resizeStartHeight;
 
     private SmartWorkspaceController(MainActivity activity,
                                      SharedPreferences prefs,
@@ -127,7 +144,6 @@ public final class SmartWorkspaceController {
         workspace.addView(firstPane, paneParams(horizontal, splitPercent));
 
         View divider = new View(activity);
-        divider.setBackgroundColor(Color.argb(105, 255, 255, 255));
         divider.setContentDescription("Resize Smart S workspace panes");
         workspace.addView(divider, dividerParams(activity, horizontal));
         workspace.addView(secondPane, paneParams(horizontal, 100 - splitPercent));
@@ -135,14 +151,39 @@ public final class SmartWorkspaceController {
         SmartWorkspaceController controller = new SmartWorkspaceController(
                 activity, prefs, workspace, widgetArea, firstPane, secondPane, divider, horizontal);
         controller.configureDivider();
+        controller.configureEmptySurfaces(historyPane, emptyView, widgetScroller, widgetArea, workspace);
         controller.observeWidgetPaneSize();
         return controller;
     }
 
+    private void configureEmptySurfaces(View... surfaces) {
+        boolean gesturesEnabled = prefs.getBoolean(PREF_EMPTY_GESTURES, true);
+        boolean longPressWidgetsEnabled = prefs.getBoolean(PREF_EMPTY_ADD_WIDGET, true);
+        for (View surface : surfaces) {
+            if (surface == null) continue;
+            if (gesturesEnabled) {
+                surface.setOnTouchListener(activity);
+            }
+            if (longPressWidgetsEnabled) {
+                activity.registerForContextMenu(surface);
+            }
+        }
+    }
+
     private void configureDivider() {
-        divider.setClickable(prefs.getBoolean(PREF_DRAGGABLE, true));
+        boolean draggable = prefs.getBoolean(PREF_DRAGGABLE, true);
+        if (!draggable) {
+            divider.setClickable(false);
+            divider.setOnTouchListener(null);
+            divider.setBackgroundColor(Color.TRANSPARENT);
+            divider.setVisibility(View.GONE);
+            return;
+        }
+
+        divider.setVisibility(View.VISIBLE);
+        divider.setBackgroundColor(Color.argb(105, 255, 255, 255));
+        divider.setClickable(true);
         divider.setOnTouchListener((view, event) -> {
-            if (!prefs.getBoolean(PREF_DRAGGABLE, true)) return false;
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     view.getParent().requestDisallowInterceptTouchEvent(true);
@@ -185,7 +226,8 @@ public final class SmartWorkspaceController {
     private void observeWidgetPaneSize() {
         widgetArea.addOnLayoutChangeListener((v, left, top, right, bottom,
                                                oldLeft, oldTop, oldRight, oldBottom) -> {
-            if ((right - left) != (oldRight - oldLeft) || (bottom - top) != (oldBottom - oldTop)) {
+            if ((right - left) != (oldRight - oldLeft)
+                    || (bottom - top) != (oldBottom - oldTop)) {
                 v.post(this::updateWidgetSizeHints);
             }
         });
@@ -193,22 +235,133 @@ public final class SmartWorkspaceController {
     }
 
     /**
-     * Tell widget providers their real pane width after every split resize. Host views already use
-     * MATCH_PARENT, while updateAppWidgetSize lets responsive widgets choose the correct layout.
+     * Tell widget providers their actual visible size after pane or widget resizing.
      */
     private void updateWidgetSizeHints() {
         float density = activity.getResources().getDisplayMetrics().density;
-        int availableWidthDp = Math.max(1, Math.round(widgetArea.getWidth() / density));
         for (int i = 0; i < widgetArea.getChildCount(); i++) {
             View child = widgetArea.getChildAt(i);
             if (!(child instanceof AppWidgetHostView)) continue;
             AppWidgetHostView hostView = (AppWidgetHostView) child;
+            configureFreeWidgetResize(hostView);
+
+            int widthPx = child.getWidth() > 0 ? child.getWidth() : child.getMeasuredWidth();
             int heightPx = child.getHeight() > 0 ? child.getHeight() : child.getMeasuredHeight();
+            int widthDp = Math.max(1, Math.round(widthPx / density));
             int heightDp = Math.max(1, Math.round(heightPx / density));
-            hostView.updateAppWidgetSize(null,
-                    availableWidthDp, heightDp,
-                    availableWidthDp, heightDp);
+            hostView.updateAppWidgetSize(null, widthDp, heightDp, widthDp, heightDp);
         }
+    }
+
+    private void configureFreeWidgetResize(AppWidgetHostView hostView) {
+        if (!prefs.getBoolean(PREF_FREE_WIDGET_RESIZE, true)) return;
+        int appWidgetId = hostView.getAppWidgetId();
+        if (!resizeConfiguredWidgetIds.add(appWidgetId)) return;
+
+        applySavedWidgetSize(hostView);
+        hostView.setOnTouchListener((view, event) -> {
+            AppWidgetHostView widget = (AppWidgetHostView) view;
+            int handle = dp(activity, 34);
+
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    if (event.getX() < widget.getWidth() - handle
+                            || event.getY() < widget.getHeight() - handle) {
+                        return false;
+                    }
+                    resizingWidget = widget;
+                    resizeStartRawX = event.getRawX();
+                    resizeStartRawY = event.getRawY();
+                    resizeStartWidth = Math.max(1, widget.getWidth());
+                    resizeStartHeight = Math.max(1, widget.getHeight());
+                    ViewParentUtils.disallowIntercept(widget, true);
+                    return true;
+
+                case MotionEvent.ACTION_MOVE:
+                    if (resizingWidget != widget) return false;
+                    resizeWidget(widget,
+                            resizeStartWidth + Math.round(event.getRawX() - resizeStartRawX),
+                            resizeStartHeight + Math.round(event.getRawY() - resizeStartRawY));
+                    return true;
+
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    if (resizingWidget != widget) return false;
+                    resizeWidget(widget,
+                            resizeStartWidth + Math.round(event.getRawX() - resizeStartRawX),
+                            resizeStartHeight + Math.round(event.getRawY() - resizeStartRawY));
+                    saveWidgetSize(widget);
+                    ViewParentUtils.disallowIntercept(widget, false);
+                    resizingWidget = null;
+                    return true;
+
+                default:
+                    return false;
+            }
+        });
+    }
+
+    private void resizeWidget(AppWidgetHostView hostView, int requestedWidth, int requestedHeight) {
+        AppWidgetProviderInfo info = hostView.getAppWidgetInfo();
+        int paneWidth = Math.max(1, widgetArea.getWidth());
+        int minWidth = dp(activity, 48);
+        int minHeight = dp(activity, 48);
+        int maxWidth = paneWidth;
+        int maxHeight = Math.max(workspace.getHeight() * 3, dp(activity, 200));
+
+        if (info != null) {
+            int providerMinWidth = info.minResizeWidth > 0 ? info.minResizeWidth : info.minWidth;
+            int providerMinHeight = info.minResizeHeight > 0 ? info.minResizeHeight : info.minHeight;
+            minWidth = Math.max(minWidth, providerMinWidth);
+            minHeight = Math.max(minHeight, providerMinHeight);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (info.maxResizeWidth > 0) maxWidth = Math.min(maxWidth, info.maxResizeWidth);
+                if (info.maxResizeHeight > 0) maxHeight = Math.min(maxHeight, info.maxResizeHeight);
+            }
+        }
+
+        int width = clamp(requestedWidth, Math.min(minWidth, maxWidth), Math.max(minWidth, maxWidth));
+        int height = clamp(requestedHeight, Math.min(minHeight, maxHeight), Math.max(minHeight, maxHeight));
+
+        ViewGroup.LayoutParams raw = hostView.getLayoutParams();
+        LinearLayout.LayoutParams params;
+        if (raw instanceof LinearLayout.LayoutParams) {
+            params = (LinearLayout.LayoutParams) raw;
+        } else {
+            params = new LinearLayout.LayoutParams(width, height);
+        }
+        params.width = width;
+        params.height = height;
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        hostView.setLayoutParams(params);
+        hostView.requestLayout();
+        hostView.post(this::updateWidgetSizeHints);
+    }
+
+    private void saveWidgetSize(AppWidgetHostView hostView) {
+        float density = activity.getResources().getDisplayMetrics().density;
+        int widthDp = Math.max(1, Math.round(hostView.getWidth() / density));
+        int heightDp = Math.max(1, Math.round(hostView.getHeight() / density));
+        prefs.edit().putString(widgetSizeKey(hostView.getAppWidgetId()), widthDp + "x" + heightDp).apply();
+    }
+
+    private void applySavedWidgetSize(AppWidgetHostView hostView) {
+        String saved = prefs.getString(widgetSizeKey(hostView.getAppWidgetId()), "");
+        if (saved == null || saved.isEmpty()) return;
+        String[] parts = saved.split("x", 2);
+        if (parts.length != 2) return;
+        try {
+            float density = activity.getResources().getDisplayMetrics().density;
+            int width = Math.round(Integer.parseInt(parts[0]) * density);
+            int height = Math.round(Integer.parseInt(parts[1]) * density);
+            hostView.post(() -> resizeWidget(hostView, width, height));
+        } catch (NumberFormatException ignored) {
+            // Ignore malformed legacy/user preference values and keep provider default sizing.
+        }
+    }
+
+    private static String widgetSizeKey(int appWidgetId) {
+        return PREF_WIDGET_SIZE_PREFIX + appWidgetId;
     }
 
     private static LinearLayout.LayoutParams paneParams(boolean horizontal, int weight) {
@@ -232,5 +385,15 @@ public final class SmartWorkspaceController {
 
     private static int dp(MainActivity activity, int value) {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);
+    }
+
+    private static final class ViewParentUtils {
+        private ViewParentUtils() {}
+
+        static void disallowIntercept(View view, boolean disallow) {
+            if (view.getParent() != null) {
+                view.getParent().requestDisallowInterceptTouchEvent(disallow);
+            }
+        }
     }
 }
