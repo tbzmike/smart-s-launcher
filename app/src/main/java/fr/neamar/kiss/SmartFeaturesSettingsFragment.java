@@ -24,7 +24,9 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
     @Override
     public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
         prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
-        setPreferencesFromResource(R.xml.preferences_smart_features, rootKey);
+        // This fragment owns one flat, isolated hierarchy. Ignore the parent preference key passed
+        // by SettingsActivity so it can never be resolved against the legacy KISS XML by mistake.
+        setPreferencesFromResource(R.xml.preferences_smart_features, null);
     }
 
     @Override
