@@ -2,7 +2,10 @@ package fr.neamar.kiss;
 
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.Spannable;
@@ -11,6 +14,7 @@ import android.text.TextWatcher;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -23,6 +27,9 @@ import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import java.text.DateFormat;
 import java.util.ArrayList;
@@ -43,11 +50,13 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     private ListView list;
     private final List<NotificationHistoryRecord> records = new ArrayList<>();
     private String selectedPackage;
+    private boolean selectedPermanent;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setTitle("Notification history");
+        configureWallpaperBackground();
         buildUi();
         rebuildTabs();
         refresh();
@@ -60,11 +69,28 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         if (list != null) refresh();
     }
 
+    private void configureWallpaperBackground() {
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
+        getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            WindowManager.LayoutParams attributes = getWindow().getAttributes();
+            attributes.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+            attributes.setBlurBehindRadius(dp(28));
+            getWindow().setAttributes(attributes);
+        }
+    }
+
     private void buildUi() {
         int pad = dp(12);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(pad, pad, pad, pad);
+        root.setBackgroundColor(Color.argb(158, 0, 0, 0));
+        ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            view.setPadding(pad, pad + bars.top, pad, pad + bars.bottom);
+            return insets;
+        });
 
         TextView title = new TextView(this);
         title.setText("Notification history");
@@ -73,7 +99,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("All saved notifications · tap an app icon to open the app · tap a message to open its notification");
+        subtitle.setText("Saved notifications · permanent notifications are separated · tap an app icon to open the app · tap a message to open its notification");
         subtitle.setTextSize(13);
         root.addView(subtitle, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -91,6 +117,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
 
         list = new ListView(this);
         list.setDividerHeight(1);
+        list.setCacheColorHint(Color.TRANSPARENT);
         list.setAdapter(new HistoryAdapter());
         list.setOnItemClickListener((parent, view, position, id) -> openNotificationTarget(records.get(position)));
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -101,21 +128,30 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             @Override public void afterTextChanged(Editable s) {}
         });
         setContentView(root);
+        ViewCompat.requestApplyInsets(root);
     }
 
     private void rebuildTabs() {
         tabs.removeAllViews();
-        addTab("All", null);
-        for (String[] app : SmartStateStore.getNotificationApps(this)) addTab(app[1], app[0]);
+        addTab("All", null, false);
+        addTab("Permanent", null, true);
+        for (String[] app : SmartStateStore.getNotificationApps(this)) addTab(app[1], app[0], false);
     }
 
-    private void addTab(String label, String packageName) {
+    private void addTab(String label, String packageName, boolean permanent) {
         Button button = new Button(this);
         button.setText(label == null || label.isEmpty() ? packageName : label);
         button.setAllCaps(false);
+        boolean selected = selectedPermanent == permanent
+                && ((selectedPackage == null && packageName == null)
+                || (selectedPackage != null && selectedPackage.equals(packageName)));
+        button.setAlpha(selected ? 1f : 0.78f);
         button.setOnClickListener(v -> {
             selectedPackage = packageName;
-            search.setHint(packageName == null ? "Search all notifications" : "Search " + button.getText());
+            selectedPermanent = permanent;
+            if (permanent) search.setHint("Search permanent notifications");
+            else search.setHint(packageName == null ? "Search all notifications" : "Search " + button.getText());
+            rebuildTabs();
             refresh();
         });
         tabs.addView(button, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -131,7 +167,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             terms = new ArrayList<>(smartTerms);
         }
         records.clear();
-        records.addAll(SmartStateStore.queryNotifications(this, selectedPackage, terms, 2000));
+        records.addAll(SmartStateStore.queryNotifications(this, selectedPackage, terms, selectedPermanent, 2000));
         if (list != null && list.getAdapter() instanceof BaseAdapter) ((BaseAdapter) list.getAdapter()).notifyDataSetChanged();
     }
 
