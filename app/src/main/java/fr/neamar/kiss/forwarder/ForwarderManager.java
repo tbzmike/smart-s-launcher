@@ -25,7 +25,7 @@ public class ForwarderManager extends Forwarder {
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
 
-        this.widgetsForwarder = new Widgets(mainActivity);
+        this.widgetsForwarder = new WorkspaceWidgets(mainActivity);
         this.interfaceTweaks = new InterfaceTweaks(mainActivity);
         this.liveWallpaperForwarder = new LiveWallpaper(mainActivity);
         this.experienceTweaks = new ExperienceTweaks(mainActivity);
