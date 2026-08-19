@@ -3,7 +3,9 @@ package fr.neamar.kiss;
 import android.os.Bundle;
 
 import androidx.annotation.Nullable;
+import androidx.preference.ListPreference;
 import androidx.preference.Preference;
+import androidx.preference.PreferenceManager;
 
 /**
  * Adds Smart S configuration entries to the relevant existing KISS settings category.
@@ -19,6 +21,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
 
     private void addSmartSectionEntries(@Nullable String rootKey) {
         if ("history_category".equals(rootKey)) {
+            addHistoryLayoutPreference();
             addEntry("notifications", "Smart notifications & history",
                     "Timeline, notification actions, persistent history and notification search");
         } else if ("ui-holder".equals(rootKey)) {
@@ -32,6 +35,36 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
             addEntry("frozen", "Frozen apps & app state",
                     "IceBox-safe detection, disabled app launching and background state refresh");
         }
+    }
+
+    private void addHistoryLayoutPreference() {
+        String key = "smart-history-layout";
+        if (findPreference(key) != null) return;
+
+        ListPreference preference = new ListPreference(requireContext());
+        preference.setKey(key);
+        preference.setTitle("App history layout");
+        preference.setEntries(new CharSequence[]{
+                "Vertical list",
+                "Horizontal icons",
+                "Horizontal cards",
+                "Horizontal app names"
+        });
+        preference.setEntryValues(new CharSequence[]{
+                "vertical",
+                "horizontal_icons",
+                "horizontal_cards",
+                "horizontal_names"
+        });
+        preference.setDefaultValue("vertical");
+        preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        preference.setOnPreferenceChangeListener((changedPreference, newValue) -> {
+            PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
+                    .putBoolean("require-layout-update", true)
+                    .apply();
+            return true;
+        });
+        getPreferenceScreen().addPreference(preference);
     }
 
     private void addWorkspaceEntry() {
