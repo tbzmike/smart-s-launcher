@@ -105,11 +105,11 @@ class DB extends SQLiteOpenHelper {
                     // fall through
                 case 11:
                     addSmartLauncherStateTables(database);
-                    // fall through
+                    break;
                 case 12:
                     database.execSQL("ALTER TABLE notification_history ADD COLUMN is_permanent INTEGER NOT NULL DEFAULT 0");
                     database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_permanent ON notification_history(is_permanent)");
-                    // fall through
+                    break;
                 default:
                     break;
             }
