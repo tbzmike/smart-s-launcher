@@ -2,6 +2,7 @@ package fr.neamar.kiss.ui;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
@@ -43,6 +44,11 @@ public final class NotificationPopupDialog {
         int pad = dp(context, 10);
         list.setPadding(pad, pad, pad, pad);
 
+        AlertDialog dialog = new AlertDialog.Builder(context)
+                .setTitle(notifications.size() + " notifications")
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+
         for (NotificationListener.NotificationSnapshot snapshot : notifications) {
             TextView row = new TextView(context);
             String label = snapshot.title == null ? "" : snapshot.title.trim();
@@ -53,18 +59,17 @@ public final class NotificationPopupDialog {
             row.setTextSize(15f);
             row.setPadding(pad, pad, pad, pad);
             row.setMaxLines(4);
-            row.setOnClickListener(v -> showNotification(context, groupKey, snapshot));
+            row.setOnClickListener(v -> {
+                dialog.dismiss();
+                showNotification(context, groupKey, snapshot);
+            });
             list.addView(row, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
         ScrollView scroll = new ScrollView(context);
         scroll.addView(list);
-        AlertDialog dialog = new AlertDialog.Builder(context)
-                .setTitle(notifications.size() + " notifications")
-                .setView(scroll)
-                .setNegativeButton(android.R.string.cancel, null)
-                .create();
+        dialog.setView(scroll);
         showWide(dialog);
     }
 
@@ -123,12 +128,11 @@ public final class NotificationPopupDialog {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
-        LinearLayout replyArea = new LinearLayout(context);
-        replyArea.setOrientation(LinearLayout.HORIZONTAL);
-        replyArea.setPadding(0, pad, 0, 0);
-        EditText reply = null;
         if (NotificationListener.hasReplyAction(context, snapshot.id)) {
-            reply = new EditText(context);
+            LinearLayout replyArea = new LinearLayout(context);
+            replyArea.setOrientation(LinearLayout.HORIZONTAL);
+            replyArea.setPadding(0, pad, 0, 0);
+            EditText reply = new EditText(context);
             reply.setSingleLine(false);
             reply.setHint("Reply");
             replyArea.addView(reply, new LinearLayout.LayoutParams(0,
@@ -136,11 +140,10 @@ public final class NotificationPopupDialog {
             Button send = new Button(context);
             send.setText("Reply");
             replyArea.addView(send);
-            EditText finalReply = reply;
             send.setOnClickListener(v -> {
                 if (NotificationListener.replyToNotification(context, snapshot.id,
-                        finalReply.getText().toString())) {
-                    finalReply.setText("");
+                        reply.getText().toString())) {
+                    reply.setText("");
                 } else {
                     Toast.makeText(context, "Unable to send reply", Toast.LENGTH_SHORT).show();
                 }
@@ -154,50 +157,69 @@ public final class NotificationPopupDialog {
 
         AlertDialog dialog = new AlertDialog.Builder(context)
                 .setView(scroll)
+                .setNeutralButton("Mark read", null)
+                .setPositiveButton("Open notification", null)
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
-        dialog.setOnShowListener(ignored -> {
-            LinearLayout actions = new LinearLayout(context);
-            actions.setOrientation(LinearLayout.HORIZONTAL);
-            actions.setGravity(Gravity.END);
-            actions.setPadding(pad, 0, pad, pad);
 
-            Button markRead = new Button(context);
-            markRead.setText("Mark read");
-            markRead.setOnClickListener(v -> {
-                if (NotificationListener.markNotificationRead(context, snapshot.id)) {
-                    dialog.dismiss();
-                } else {
-                    Toast.makeText(context, "Unable to mark notification as read",
-                            Toast.LENGTH_SHORT).show();
-                }
-            });
-            actions.addView(markRead);
+        SharedPreferences detailPrefs = context.getSharedPreferences(
+                NotificationListener.DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
+        SharedPreferences.OnSharedPreferenceChangeListener removalListener =
+                (sharedPreferences, key) -> {
+                    if (NotificationListener.ACTIVE_NOTIFICATION_IDS.equals(key)
+                            && !NotificationListener.isNotificationActive(context, snapshot.id)
+                            && dialog.isShowing()) {
+                        dialog.dismiss();
+                    }
+                };
+
+        dialog.setOnShowListener(ignored -> {
+            detailPrefs.registerOnSharedPreferenceChangeListener(removalListener);
+
+            Button markRead = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+            if (markRead != null) {
+                markRead.setOnClickListener(v -> {
+                    if (NotificationListener.markNotificationRead(context, snapshot.id)) {
+                        dialog.dismiss();
+                    } else {
+                        Toast.makeText(context, "Unable to mark notification as read",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+
+            Button open = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (open != null) {
+                open.setOnClickListener(v -> {
+                    if (NotificationListener.openNotification(context, snapshot.id)) {
+                        dialog.dismiss();
+                    } else {
+                        Toast.makeText(context, "Unable to open this notification",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
 
             if (NotificationListener.hasMarkAllReadAction(context, groupKey)) {
                 Button markAll = new Button(context);
                 markAll.setText("Mark all read");
+                markAll.setAllCaps(false);
                 markAll.setOnClickListener(v -> {
-                    if (NotificationListener.markAllRead(context, groupKey)) dialog.dismiss();
-                    else Toast.makeText(context, "Unable to mark all as read",
-                            Toast.LENGTH_SHORT).show();
+                    if (NotificationListener.markAllRead(context, groupKey)) {
+                        dialog.dismiss();
+                    } else {
+                        Toast.makeText(context, "Unable to mark all as read",
+                                Toast.LENGTH_SHORT).show();
+                    }
                 });
-                actions.addView(markAll);
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                params.gravity = Gravity.END;
+                content.addView(markAll, params);
             }
-
-            Button open = new Button(context);
-            open.setText("Open notification");
-            open.setOnClickListener(v -> {
-                if (NotificationListener.openNotification(context, snapshot.id)) {
-                    dialog.dismiss();
-                } else {
-                    Toast.makeText(context, "Unable to open this notification",
-                            Toast.LENGTH_SHORT).show();
-                }
-            });
-            actions.addView(open);
-            content.addView(actions);
         });
+        dialog.setOnDismissListener(ignored ->
+                detailPrefs.unregisterOnSharedPreferenceChangeListener(removalListener));
         showWide(dialog);
     }
 
