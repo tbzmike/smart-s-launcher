@@ -252,6 +252,61 @@ public class NotificationListener extends NotificationListenerService {
         return context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(packageKey + "|text", "");
     }
 
+    public static String getNotificationPackage(Context context, String notificationId) {
+        return context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getString(notificationId + "|package", null);
+    }
+
+    public static String getExpandedNotificationText(Context context, String notificationId) {
+        StatusBarNotification sbn = findActiveNotification(context, notificationId);
+        if (sbn == null || sbn.getNotification() == null) {
+            return context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE)
+                    .getString(notificationId + "|text", "");
+        }
+        return extractExpandedText(sbn.getNotification());
+    }
+
+    private static String extractExpandedText(Notification notification) {
+        Bundle extras = notification.extras;
+        if (extras == null) return "";
+        StringBuilder text = new StringBuilder();
+
+        CharSequence bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
+        appendDistinct(text, bigText);
+
+        CharSequence[] lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
+        if (lines != null) {
+            for (CharSequence line : lines) appendDistinct(text, line);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            android.os.Parcelable[] messageBundles = extras.getParcelableArray(Notification.EXTRA_MESSAGES);
+            if (messageBundles != null) {
+                List<Notification.MessagingStyle.Message> messages =
+                        Notification.MessagingStyle.Message.getMessagesFromBundleArray(messageBundles);
+                if (messages != null) {
+                    for (Notification.MessagingStyle.Message message : messages) {
+                        if (message != null) appendDistinct(text, message.getText());
+                    }
+                }
+            }
+        }
+
+        CharSequence normalText = extras.getCharSequence(Notification.EXTRA_TEXT);
+        appendDistinct(text, normalText);
+        return text.toString();
+    }
+
+    private static void appendDistinct(StringBuilder builder, CharSequence value) {
+        if (value == null) return;
+        String clean = value.toString().trim();
+        if (clean.isEmpty()) return;
+        String current = builder.toString();
+        if (!current.isEmpty() && (current.equals(clean) || current.contains(clean))) return;
+        if (builder.length() > 0) builder.append('\n');
+        builder.append(clean);
+    }
+
     public static boolean dismissLatest(Context context, String packageKey) {
         String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(packageKey + "|key", null);
         return cancelByKey(key);
@@ -380,11 +435,14 @@ public class NotificationListener extends NotificationListenerService {
         if (packageName != null && !AppLaunchUtils.ensurePackageEnabled(context, packageName)) return false;
 
         StatusBarNotification sbn = listener.findActiveByKey(key);
-        if (sbn == null) return false;
+        if (sbn == null || sbn.getNotification() == null) return false;
         PendingIntent contentIntent = sbn.getNotification().contentIntent;
         if (contentIntent == null) return false;
         try {
-            contentIntent.send(context, 0, new Intent());
+            // Do not attach an empty fill-in Intent. Some apps use immutable/deep-link
+            // notification PendingIntents and an injected fill-in can prevent routing to
+            // the exact conversation/message target.
+            contentIntent.send();
             return true;
         } catch (PendingIntent.CanceledException | RuntimeException e) {
             Log.w(TAG, "Notification content intent could not be opened", e);
@@ -486,8 +544,12 @@ public class NotificationListener extends NotificationListenerService {
             if (remoteViews == null) return null;
 
             CompactNotificationFrame wrapper = new CompactNotificationFrame(context);
-            wrapper.setMaxHeightDp(expanded ? 240 : 88);
-            wrapper.setClipChildren(true);
+            float density = context.getResources().getDisplayMetrics().density;
+            int screenHeightDp = Math.max(1,
+                    Math.round(context.getResources().getDisplayMetrics().heightPixels / density));
+            wrapper.setMaxHeightDp(expanded ? Math.max(320, screenHeightDp * 70 / 100) : 88);
+            wrapper.setClipChildren(!expanded);
+            wrapper.setClipToPadding(!expanded);
             View nativeView = remoteViews.apply(context, wrapper);
             wrapper.addView(nativeView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             return wrapper;
