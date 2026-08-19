@@ -4,7 +4,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.Settings;
 
 import androidx.annotation.Nullable;
 import androidx.preference.ListPreference;
@@ -109,15 +108,15 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
             Preference oldSpeed = group.findPreference("smart-animation-speed");
             if (oldSpeed == null) continue;
 
-            if (!prefs.contains("smart-animation-speed-percent")) {
-                int percent = 100;
-                try {
-                    float legacy = Float.parseFloat(prefs.getString("smart-animation-speed", "1.0"));
-                    percent = Math.max(5, Math.min(300, Math.round(legacy * 100f)));
-                } catch (ClassCastException | NumberFormatException ignored) {
-                    percent = 100;
-                }
-                prefs.edit().putInt("smart-animation-speed-percent", percent).apply();
+            int percent = readAnimationSpeedPercentSafely();
+            Object storedPercent = prefs.getAll().get("smart-animation-speed-percent");
+            if (!(storedPercent instanceof Integer) || ((Integer) storedPercent) != percent) {
+                // SeekBarPreference persists an Integer. Remove any legacy String/Float value first
+                // so Preference cannot throw ClassCastException while binding this screen.
+                prefs.edit()
+                        .remove("smart-animation-speed-percent")
+                        .putInt("smart-animation-speed-percent", percent)
+                        .apply();
             }
 
             group.removePreference(oldSpeed);
@@ -134,6 +133,42 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
             group.addPreference(speed);
             return;
         }
+    }
+
+    private int readAnimationSpeedPercentSafely() {
+        Object rawPercent = prefs.getAll().get("smart-animation-speed-percent");
+        Integer parsedPercent = parsePercent(rawPercent);
+        if (parsedPercent != null) return clampPercent(parsedPercent);
+
+        Object legacySpeed = prefs.getAll().get("smart-animation-speed");
+        if (legacySpeed instanceof Number) {
+            return clampPercent(Math.round(((Number) legacySpeed).floatValue() * 100f));
+        }
+        if (legacySpeed instanceof String) {
+            try {
+                return clampPercent(Math.round(Float.parseFloat((String) legacySpeed) * 100f));
+            } catch (NumberFormatException ignored) {
+                // Fall through to the safe default.
+            }
+        }
+        return 100;
+    }
+
+    @Nullable
+    private Integer parsePercent(@Nullable Object value) {
+        if (value instanceof Number) return Math.round(((Number) value).floatValue());
+        if (value instanceof String) {
+            try {
+                return Math.round(Float.parseFloat((String) value));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private int clampPercent(int percent) {
+        return Math.max(5, Math.min(300, percent));
     }
 
     private void addWorkspacePreferences(PreferenceGroup root) {
@@ -218,7 +253,7 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         if ("enable-notification-history".equals(key)
                 && sharedPreferences.getBoolean(key, false)
                 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+            startActivity(new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
         }
 
         if (key != null && key.startsWith("smart-workspace-")) {
