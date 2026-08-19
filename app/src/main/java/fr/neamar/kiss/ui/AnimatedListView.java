@@ -47,6 +47,8 @@ public class AnimatedListView extends BlockableListView {
         if (!observer.isAlive())
             return;
 
+        int animationDuration = getContext().getResources().getInteger(android.R.integer.config_shortAnimTime);
+
         // postpone animation to after the layout is computed and views are rebound
         observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
             @Override
@@ -63,14 +65,28 @@ public class AnimatedListView extends BlockableListView {
                     int position = firstVisiblePosition + i;
                     long itemId = getAdapter().getItemId(position);
                     View child = listView.getChildAt(i);
+                    int delta = 0;
                     ItemInfo itemInfo = mItemMap.get(itemId);
 
                     if (itemInfo != null) {
-                        int delta = itemInfo.top - child.getTop();
-                        SmartAnimationEngine.animateListMove(child, delta, false);
+                        int topBeforeLayout = itemInfo.top;
+                        int topAfterLayout = child.getTop();
+                        delta = topBeforeLayout - topAfterLayout;
                     } else {
-                        int delta = i == 0 ? -child.getHeight() - listView.getDividerHeight() : child.getHeight() / 3;
-                        SmartAnimationEngine.animateListMove(child, delta, true);
+                        if (i == 0) {
+                            delta = -child.getHeight() - listView.getDividerHeight();
+                        } else {
+                            child.setScaleY(0.f);
+                            child.animate()
+                                    .setDuration(animationDuration)
+                                    .scaleY(1.f);
+                        }
+                    }
+                    if (delta != 0) {
+                        child.setTranslationY(delta);
+                        child.animate()
+                                .setDuration(animationDuration)
+                                .translationY(0);
                     }
                 }
 
