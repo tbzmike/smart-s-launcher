@@ -34,13 +34,25 @@ public final class SmartAnimationEngine {
 
     public static long duration(Context context) {
         int base = context.getResources().getInteger(android.R.integer.config_shortAnimTime);
-        float speed;
-        try {
-            speed = Float.parseFloat(prefs(context).getString("smart-animation-speed", "1.0"));
-        } catch (NumberFormatException e) {
-            speed = 1f;
+        SharedPreferences preferences = prefs(context);
+        float speed = 1f;
+
+        if (preferences.contains("smart-animation-speed-percent")) {
+            try {
+                int percent = preferences.getInt("smart-animation-speed-percent", 100);
+                speed = percent / 100f;
+            } catch (ClassCastException ignored) {
+                speed = 1f;
+            }
+        } else {
+            try {
+                speed = Float.parseFloat(preferences.getString("smart-animation-speed", "1.0"));
+            } catch (ClassCastException | NumberFormatException ignored) {
+                speed = 1f;
+            }
         }
-        speed = Math.max(0.35f, Math.min(2.5f, speed));
+
+        speed = Math.max(0.05f, Math.min(3f, speed));
         // A lower speed means a longer animation; a higher speed means a shorter animation.
         return Math.max(80L, Math.round(base / speed));
     }
