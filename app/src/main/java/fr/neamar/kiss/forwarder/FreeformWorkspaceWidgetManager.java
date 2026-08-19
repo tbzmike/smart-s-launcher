@@ -168,12 +168,12 @@ final class FreeformWorkspaceWidgetManager {
                     bindIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
                     if (data.hasExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER)) {
                         bindIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER,
-                                data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER));
+                                (android.os.Parcelable) data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER));
                     }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
                             && data.hasExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE)) {
                         bindIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE,
-                                data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE));
+                                (android.os.Parcelable) data.getParcelableExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE));
                     }
                     bindLauncher.launch(bindIntent);
                 });
