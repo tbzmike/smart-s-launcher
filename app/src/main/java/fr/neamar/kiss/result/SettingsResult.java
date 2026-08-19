@@ -15,6 +15,7 @@ import android.os.Process;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -82,15 +83,26 @@ public class SettingsResult extends Result<SettingPojo> {
         TextView text = view.findViewById(R.id.item_notification_text);
         Button markRead = view.findViewById(R.id.item_notification_dismiss);
         ImageView icon = view.findViewById(R.id.item_notification_icon);
+        FrameLayout nativeContainer = view.findViewById(R.id.item_notification_native_container);
 
         appName.setText(notification.appName);
         title.setText(notification.getSummary());
-        String preview = notification.latestTitle;
-        if (!notification.latestText.isEmpty()) {
-            preview = preview.isEmpty() ? notification.latestText : preview + ": " + notification.latestText;
+
+        View nativeView = NotificationListener.createNativeGroupView(context, notification.groupKey, nativeContainer, false);
+        if (nativeView != null) {
+            nativeContainer.removeAllViews();
+            nativeContainer.addView(nativeView);
+            nativeContainer.setVisibility(View.VISIBLE);
+            text.setVisibility(View.GONE);
+        } else {
+            String preview = notification.latestTitle;
+            if (!notification.latestText.isEmpty()) {
+                preview = preview.isEmpty() ? notification.latestText : preview + ": " + notification.latestText;
+            }
+            text.setText(preview);
+            text.setVisibility(preview.isEmpty() ? View.GONE : View.VISIBLE);
+            nativeContainer.setVisibility(View.GONE);
         }
-        text.setText(preview);
-        text.setVisibility(preview.isEmpty() ? View.GONE : View.VISIBLE);
 
         if (!isHideIcons(context)) setAsyncDrawable(icon);
         else icon.setImageDrawable(null);
@@ -181,19 +193,24 @@ public class SettingsResult extends Result<SettingPojo> {
             row.setOrientation(LinearLayout.VERTICAL);
             row.setPadding(0, padding / 2, 0, padding / 2);
 
-            TextView title = new TextView(context);
-            title.setText(item.title.isEmpty() ? notification.appName : item.title);
-            title.setTextSize(16);
-            title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
-            row.addView(title);
+            View nativeView = NotificationListener.createNativeNotificationView(context, item.id, row, false);
+            if (nativeView != null) {
+                row.addView(nativeView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else {
+                TextView itemTitle = new TextView(context);
+                itemTitle.setText(item.title.isEmpty() ? notification.appName : item.title);
+                itemTitle.setTextSize(16);
+                itemTitle.setTypeface(itemTitle.getTypeface(), android.graphics.Typeface.BOLD);
+                row.addView(itemTitle);
 
-            if (!item.text.isEmpty()) {
-                TextView body = new TextView(context);
-                body.setText(item.text);
-                body.setMaxLines(2);
-                body.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                body.setTextSize(14);
-                row.addView(body);
+                if (!item.text.isEmpty()) {
+                    TextView body = new TextView(context);
+                    body.setText(item.text);
+                    body.setMaxLines(2);
+                    body.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    body.setTextSize(14);
+                    row.addView(body);
+                }
             }
 
             row.setOnClickListener(v -> showNotificationDetail(context, notification, item));
@@ -211,10 +228,24 @@ public class SettingsResult extends Result<SettingPojo> {
 
     private void showNotificationDetail(Context context, NotificationPojo group, NotificationListener.NotificationSnapshot item) {
         String title = item.title.isEmpty() ? group.appName : item.title;
-        String body = item.text.isEmpty() ? "No message text available." : item.text;
+        LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        int padding = dp(context, 12);
+        content.setPadding(padding, padding, padding, padding);
+
+        View nativeView = NotificationListener.createNativeNotificationView(context, item.id, content, true);
+        if (nativeView != null) {
+            content.addView(nativeView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        } else {
+            TextView body = new TextView(context);
+            body.setText(item.text.isEmpty() ? "No message text available." : item.text);
+            body.setTextSize(16);
+            content.addView(body);
+        }
+
         new AlertDialog.Builder(context)
                 .setTitle(title)
-                .setMessage(body)
+                .setView(content)
                 .setPositiveButton("Open notification", (dialog, which) -> {
                     if (!NotificationListener.openNotification(context, item.id)) {
                         Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(group.packageName);
