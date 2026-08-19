@@ -1,60 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <string-array name="themesEntries">
-        <item>@string/theme_opaque</item>
-        <item>@string/theme_semi_transparent</item>
-        <item>@string/theme_transparent</item>
-        <item>@string/theme_amoled</item>
+        <item>@string/theme_opaque</item><item>@string/theme_semi_transparent</item><item>@string/theme_transparent</item><item>@string/theme_amoled</item>
     </string-array>
     <string-array name="themesValues" translatable="false">
-        <item>opaque</item>
-        <item>semi-transparent</item>
-        <item>transparent</item>
-        <item>amoled-dark</item>
+        <item>opaque</item><item>semi-transparent</item><item>transparent</item><item>amoled-dark</item>
     </string-array>
     <string-array name="nightModeEntries" translatable="false">
-        <item>@string/no</item>
-        <item>@string/yes</item>
-        <item>@string/theme_night_mode_follow_system</item>
+        <item>@string/no</item><item>@string/yes</item><item>@string/theme_night_mode_follow_system</item>
     </string-array>
     <string-array name="nightModeValues" translatable="false">
-        <item>no</item>
-        <item>yes</item>
-        <item>follow-system</item>
+        <item>no</item><item>yes</item><item>follow-system</item>
     </string-array>
     <string-array name="historyModeEntries">
-        <item>@string/history_recency</item>
-        <item>@string/history_frecency</item>
-        <item>@string/history_frequency</item>
-        <item>@string/history_adaptive</item>
-        <item>@string/history_time</item>
-        <item>@string/history_alphabetically</item>
+        <item>@string/history_recency</item><item>@string/history_frecency</item><item>@string/history_frequency</item><item>@string/history_adaptive</item><item>@string/history_time</item><item>@string/history_alphabetically</item>
     </string-array>
     <string-array name="historyModeValues" translatable="false">
-        <item>recency</item>
-        <item>frecency</item>
-        <item>frequency</item>
-        <item>adaptive</item>
-        <item>time</item>
-        <item>alphabetically</item>
+        <item>recency</item><item>frecency</item><item>frequency</item><item>adaptive</item><item>time</item><item>alphabetically</item>
     </string-array>
     <string-array name="taggedResultSortModeEntries">
-        <item>@string/tagged_result_sort_mode_default</item>
-        <item>@string/history_recency</item>
-        <item>@string/history_frecency</item>
-        <item>@string/history_frequency</item>
-        <item>@string/history_adaptive</item>
-        <item>@string/history_time</item>
-        <item>@string/history_alphabetically</item>
+        <item>@string/tagged_result_sort_mode_default</item><item>@string/history_recency</item><item>@string/history_frecency</item><item>@string/history_frequency</item><item>@string/history_adaptive</item><item>@string/history_time</item><item>@string/history_alphabetically</item>
     </string-array>
     <string-array name="taggedResultSortModeValues" translatable="false">
-        <item>default</item>
-        <item>recency</item>
-        <item>frecency</item>
-        <item>frequency</item>
-        <item>adaptive</item>
-        <item>time</item>
-        <item>alphabetically</item>
+        <item>default</item><item>recency</item><item>frecency</item><item>frequency</item><item>adaptive</item><item>time</item><item>alphabetically</item>
     </string-array>
     <string-array name="defaultSearchProviders" tools:ignore="InconsistentArrays">
         <item>Web|%s</item>
@@ -70,14 +38,14 @@
     </string-array>
     <string-array name="toggleTagsDefault"></string-array>
     <string-array name="favTagsDefault"></string-array>
-    <string-array name="contactMimeTypesDefault">
-        <item>vnd.android.cursor.item/phone_v2</item>
-    </string-array>
+    <string-array name="contactMimeTypesDefault"><item>vnd.android.cursor.item/phone_v2</item></string-array>
+
     <string-array name="gestureEntries">
         <item>@string/gesture_do_nothing</item>
         <item>@string/gesture_keyboard</item>
         <item>@string/gesture_hide_keyboard</item>
         <item>@string/gesture_notifications</item>
+        <item>Notification history</item>
         <item>@string/gesture_quicksettings</item>
         <item>@string/gesture_apps</item>
         <item>@string/gesture_history</item>
@@ -90,6 +58,7 @@
         <item>display-keyboard</item>
         <item>hide-keyboard</item>
         <item>display-notifications</item>
+        <item>display-notification-history</item>
         <item>display-quicksettings</item>
         <item>display-apps</item>
         <item>display-history</item>
@@ -97,153 +66,43 @@
         <item>go-to-homescreen</item>
         <item>launch-pojo</item>
     </string-array>
+
     <string-array name="shadowEntries">
-        <item>@string/theme_customize_default</item>
-        <item>@string/theme_customize_enabled</item>
-        <item>@string/theme_customize_disabled</item>
+        <item>@string/theme_customize_default</item><item>@string/theme_customize_enabled</item><item>@string/theme_customize_disabled</item>
     </string-array>
-    <string-array name="shadowValues" translatable="false">
-        <item>default</item>
-        <item>enabled</item>
-        <item>disabled</item>
-    </string-array>
+    <string-array name="shadowValues" translatable="false"><item>default</item><item>enabled</item><item>disabled</item></string-array>
     <string-array name="separatorEntries">
-        <item>@string/theme_customize_default</item>
-        <item>@string/theme_customize_disabled</item>
-        <item>@string/theme_light</item>
-        <item>@string/theme_dark</item>
+        <item>@string/theme_customize_default</item><item>@string/theme_customize_disabled</item><item>@string/theme_light</item><item>@string/theme_dark</item>
     </string-array>
-    <string-array name="separatorValues" translatable="false">
-        <item>default</item>
-        <item>disabled</item>
-        <item>light</item>
-        <item>dark</item>
-    </string-array>
+    <string-array name="separatorValues" translatable="false"><item>default</item><item>disabled</item><item>light</item><item>dark</item></string-array>
     <string-array name="resultColorEntries">
-        <item>@string/theme_customize_default</item>
-        <item>@string/theme_light</item>
-        <item>@string/theme_semi_transparent</item>
-        <item>@string/theme_dark</item>
-        <item>@string/theme_semi_transparent_dark</item>
-        <item>@string/theme_amoled</item>
+        <item>@string/theme_customize_default</item><item>@string/theme_light</item><item>@string/theme_semi_transparent</item><item>@string/theme_dark</item><item>@string/theme_semi_transparent_dark</item><item>@string/theme_amoled</item>
     </string-array>
-    <string-array name="resultColorValues" translatable="false">
-        <item>default</item>
-        <item>light</item>
-        <item>semi-light</item>
-        <item>dark</item>
-        <item>semi-dark</item>
-        <item>black</item>
-    </string-array>
+    <string-array name="resultColorValues" translatable="false"><item>default</item><item>light</item><item>semi-light</item><item>dark</item><item>semi-dark</item><item>black</item></string-array>
     <string-array name="wallpaperEntries">
-        <item>@string/theme_customize_default</item>
-        <item>@string/theme_customize_enabled</item>
-        <item>@string/theme_light</item>
-        <item>@string/theme_dark</item>
+        <item>@string/theme_customize_default</item><item>@string/theme_customize_enabled</item><item>@string/theme_light</item><item>@string/theme_dark</item>
     </string-array>
-    <string-array name="wallpaperValues" translatable="false">
-        <item>default</item>
-        <item>enabled</item>
-        <item>disabled-light</item>
-        <item>disabled</item>
-    </string-array>
-
+    <string-array name="wallpaperValues" translatable="false"><item>default</item><item>enabled</item><item>disabled-light</item><item>disabled</item></string-array>
     <string-array name="resultsSizeEntries">
-        <item>@string/results_size_largest</item>
-        <item>@string/results_size_large</item>
-        <item>@string/results_size_default</item>
-        <item>@string/results_size_medium</item>
-        <item>@string/results_size_small</item>
-        <item>@string/results_size_smallest</item>
+        <item>@string/results_size_largest</item><item>@string/results_size_large</item><item>@string/results_size_default</item><item>@string/results_size_medium</item><item>@string/results_size_small</item><item>@string/results_size_smallest</item>
     </string-array>
-
-    <string-array name="resultsSizeValues" translatable="false">
-        <item>largest</item>
-        <item>large</item>
-        <item>default</item>
-        <item>medium</item>
-        <item>small</item>
-        <item>smallest</item>
-    </string-array>
-
-    <!-- Names for DrawableUtils.SHAPE_*    -->
+    <string-array name="resultsSizeValues" translatable="false"><item>largest</item><item>large</item><item>default</item><item>medium</item><item>small</item><item>smallest</item></string-array>
     <string-array name="adaptiveEntries">
-        <item>@string/shape_system_default</item>
-        <item>@string/shape_circle</item>
-        <item>@string/shape_square</item>
-        <item>@string/shape_squircle</item>
-        <item>@string/shape_rounded_rectangle</item>
-        <item>@string/shape_teardrop_bottom_right</item>
-        <item>@string/shape_teardrop_bottom_left</item>
-        <item>@string/shape_teardrop_top_left</item>
-        <item>@string/shape_teardrop_top_right</item>
-        <item>@string/shape_teardrop_random</item>
-        <item>@string/shape_hexagon</item>
-        <item>@string/shape_octagon</item>
+        <item>@string/shape_system_default</item><item>@string/shape_circle</item><item>@string/shape_square</item><item>@string/shape_squircle</item><item>@string/shape_rounded_rectangle</item><item>@string/shape_teardrop_bottom_right</item><item>@string/shape_teardrop_bottom_left</item><item>@string/shape_teardrop_top_left</item><item>@string/shape_teardrop_top_right</item><item>@string/shape_teardrop_random</item><item>@string/shape_hexagon</item><item>@string/shape_octagon</item>
     </string-array>
-
-    <!-- Names for DrawableUtils.SHAPE_* for contacts -->
     <string-array name="adaptiveEntriesForContacts">
-        <item>@string/shape_app</item>
-        <item>@string/shape_circle</item>
-        <item>@string/shape_square</item>
-        <item>@string/shape_squircle</item>
-        <item>@string/shape_rounded_rectangle</item>
-        <item>@string/shape_teardrop_bottom_right</item>
-        <item>@string/shape_teardrop_bottom_left</item>
-        <item>@string/shape_teardrop_top_left</item>
-        <item>@string/shape_teardrop_top_right</item>
-        <item>@string/shape_teardrop_random</item>
-        <item>@string/shape_hexagon</item>
-        <item>@string/shape_octagon</item>
+        <item>@string/shape_app</item><item>@string/shape_circle</item><item>@string/shape_square</item><item>@string/shape_squircle</item><item>@string/shape_rounded_rectangle</item><item>@string/shape_teardrop_bottom_right</item><item>@string/shape_teardrop_bottom_left</item><item>@string/shape_teardrop_top_left</item><item>@string/shape_teardrop_top_right</item><item>@string/shape_teardrop_random</item><item>@string/shape_hexagon</item><item>@string/shape_octagon</item>
     </string-array>
-
-
-    <!-- Values come from DrawableUtils.SHAPE_*    -->
     <string-array name="adaptiveValues" translatable="false">
-        <item>0</item>  <!-- SHAPE_SYSTEM -->
-        <item>1</item>  <!-- SHAPE_CIRCLE -->
-        <item>2</item>  <!-- SHAPE_SQUARE -->
-        <item>3</item>  <!-- SHAPE_SQUIRCLE -->
-        <item>4</item>  <!-- SHAPE_ROUND_RECT -->
-        <item>5</item>  <!-- SHAPE_TEARDROP_BR -->
-        <item>6</item>  <!-- SHAPE_TEARDROP_BL -->
-        <item>7</item>  <!-- SHAPE_TEARDROP_TL -->
-        <item>8</item>  <!-- SHAPE_TEARDROP_TR -->
-        <item>9</item>  <!-- SHAPE_TEARDROP_RND -->
-        <item>10</item> <!-- SHAPE_HEXAGON -->
-        <item>11</item> <!-- SHAPE_OCTAGON -->
+        <item>0</item><item>1</item><item>2</item><item>3</item><item>4</item><item>5</item><item>6</item><item>7</item><item>8</item><item>9</item><item>10</item><item>11</item>
     </string-array>
-
     <string-array name="barColorEntries">
-        <item>@string/theme_customize_default</item>
-        <item>@string/theme_light</item>
-        <item>@string/theme_semi_transparent</item>
-        <item>@string/theme_dark</item>
-        <item>@string/theme_semi_transparent_dark</item>
-        <item>@string/theme_amoled</item>
+        <item>@string/theme_customize_default</item><item>@string/theme_light</item><item>@string/theme_semi_transparent</item><item>@string/theme_dark</item><item>@string/theme_semi_transparent_dark</item><item>@string/theme_amoled</item>
     </string-array>
-    <string-array name="barColorValues" translatable="false">
-        <item>default</item>
-        <item>light</item>
-        <item>semi-light</item>
-        <item>dark</item>
-        <item>semi-dark</item>
-        <item>black</item>
-    </string-array>
+    <string-array name="barColorValues" translatable="false"><item>default</item><item>light</item><item>semi-light</item><item>dark</item><item>semi-dark</item><item>black</item></string-array>
     <string-array name="resultHighlightingEntries">
-        <item>@string/result_highlighting_text_color</item>
-        <item>@string/result_highlighting_underline</item>
-        <item>@string/result_highlighting_bold</item>
-        <item>@string/result_highlighting_italic</item>
+        <item>@string/result_highlighting_text_color</item><item>@string/result_highlighting_underline</item><item>@string/result_highlighting_bold</item><item>@string/result_highlighting_italic</item>
     </string-array>
-    <string-array name="resultHighlightingValues">
-        <item>color</item>
-        <item>underline</item>
-        <item>bold</item>
-        <item>italic</item>
-    </string-array>
-    <string-array name="resultHighlightingDefault">
-        <item>color</item>
-    </string-array>
+    <string-array name="resultHighlightingValues"><item>color</item><item>underline</item><item>bold</item><item>italic</item></string-array>
+    <string-array name="resultHighlightingDefault"><item>color</item></string-array>
 </resources>
