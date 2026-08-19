@@ -38,6 +38,7 @@ import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.ui.NotificationPopupDialog;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
@@ -95,6 +96,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
     private void displayNotificationMessage(Context context, View view) {
         View row = view.findViewById(R.id.item_notification_row);
         TextView text = view.findViewById(R.id.item_notification_text);
+        TextView appName = view.findViewById(R.id.item_app_name);
         View markRead = view.findViewById(R.id.item_notification_read);
         if (row == null || text == null || markRead == null) return;
 
@@ -102,18 +104,27 @@ public class AppResult extends ResultWithTags<AppPojo> {
         String message = NotificationListener.getLatestMessage(context, packageKey);
         if (message == null || message.trim().isEmpty()) {
             row.setVisibility(View.GONE);
+            row.setOnClickListener(null);
+            text.setOnClickListener(null);
+            if (appName != null) appName.setOnClickListener(null);
             markRead.setOnClickListener(null);
             return;
         }
+
         text.setText(message);
         row.setVisibility(View.VISIBLE);
+        View.OnClickListener popupClick = v -> NotificationPopupDialog.showGroup(context, packageKey);
+        row.setOnClickListener(popupClick);
+        text.setOnClickListener(popupClick);
+        if (appName != null) appName.setOnClickListener(popupClick);
+
         markRead.setOnClickListener(v -> {
-            if (NotificationListener.dismissLatest(context, packageKey)) {
+            if (NotificationListener.markGroupRead(context, packageKey)) {
                 row.setVisibility(View.GONE);
                 ImageView dot = view.findViewById(R.id.item_notification_dot);
                 if (dot != null) dot.setVisibility(View.GONE);
             } else {
-                Toast.makeText(context, "Unable to dismiss notification", Toast.LENGTH_SHORT).show();
+                Toast.makeText(context, "Unable to mark notification as read", Toast.LENGTH_SHORT).show();
             }
         });
     }
