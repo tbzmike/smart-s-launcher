@@ -6,7 +6,7 @@ import androidx.annotation.Nullable;
 import androidx.preference.Preference;
 
 /**
- * Adds a single Smart S configuration entry to the relevant existing KISS settings category.
+ * Adds Smart S configuration entries to the relevant existing KISS settings category.
  * The legacy SettingsFragment remains responsible for loading and managing the category itself.
  */
 public class SmartCategorySettingsFragment extends SettingsFragment {
@@ -14,34 +14,28 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
     @Override
     public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
         super.onCreatePreferences(savedInstanceState, rootKey);
-        addSmartSectionEntry(rootKey);
+        addSmartSectionEntries(rootKey);
     }
 
-    private void addSmartSectionEntry(@Nullable String rootKey) {
-        String section;
-        String title;
-        String summary;
-
+    private void addSmartSectionEntries(@Nullable String rootKey) {
         if ("history_category".equals(rootKey)) {
-            section = "notifications";
-            title = "Smart notifications & history";
-            summary = "Timeline, notification actions, persistent history and notification search";
+            addEntry("notifications", "Smart notifications & history",
+                    "Timeline, notification actions, persistent history and notification search");
         } else if ("ui-holder".equals(rootKey)) {
-            section = "wallpaper";
-            title = "Smart wallpaper & blur";
-            summary = "Smart Focus blur, icon tracking, blur strength and performance";
+            addEntry("wallpaper", "Smart wallpaper & blur",
+                    "Smart Focus blur, icon tracking, blur strength and performance");
+            addEntry("workspace", "Flexible workspace",
+                    "Split the launcher into resizable panes for apps, history, widgets and future Smart S panels");
         } else if ("ux-holder".equals(rootKey)) {
-            section = "animations";
-            title = "Smart animations & transitions";
-            summary = "Scrolling, windows, popups, notifications, switching and animation speed";
+            addEntry("animations", "Smart animations & transitions",
+                    "Scrolling, windows, popups, notifications, switching and numeric animation speed");
         } else if ("advanced".equals(rootKey)) {
-            section = "frozen";
-            title = "Frozen apps & app state";
-            summary = "IceBox-safe detection, disabled app launching and background state refresh";
-        } else {
-            return;
+            addEntry("frozen", "Frozen apps & app state",
+                    "IceBox-safe detection, disabled app launching and background state refresh");
         }
+    }
 
+    private void addEntry(String section, String title, String summary) {
         String key = "smart-section-" + section;
         if (findPreference(key) != null) return;
 
