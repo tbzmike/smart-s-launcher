@@ -22,11 +22,11 @@ import fr.neamar.kiss.R;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 
 /**
- * Alternative presentations for the normal KISS history/results adapter.
+ * Optional presentations for the normal KISS history/results adapter.
  *
- * This renderer never creates a second history data source. Every tile/card is produced from the
- * existing RecordAdapter so launching, frozen apps, settings results, shortcuts and notifications
- * continue to use the normal KISS/Smart S behavior.
+ * The existing RecordAdapter remains the single source of truth. This class changes presentation
+ * only, so launching, frozen apps, settings entries, shortcuts and notification actions continue
+ * through the normal KISS/Smart S result pipeline.
  */
 final class HistoryDisplayForwarder extends Forwarder {
     static final String PREF_LAYOUT = "smart-history-layout";
@@ -38,6 +38,14 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private static final int CARD_WIDTH_DP = 190;
     private static final int CARD_HEIGHT_DP = 132;
+
+    // The approved Square-U visual is intentionally portrait-like and spacious. Only a window of
+    // history is visible at once; the rest appears as the carousel rotates.
+    private static final int SQUARE_CARD_WIDTH_DP = 124;
+    private static final int SQUARE_CARD_HEIGHT_DP = 158;
+    private static final float SQUARE_VISIBLE_RADIUS = 6.15f;
+    private static final float SQUARE_BOTTOM_BAND = 2.05f;
+    private static final int MAX_CENTER_NOTIFICATIONS = 4;
 
     private FrameLayout container;
     private HorizontalScrollView scroller;
@@ -101,18 +109,27 @@ final class HistoryDisplayForwarder extends Forwarder {
 
         notificationCenter = new LinearLayout(mainActivity);
         notificationCenter.setOrientation(LinearLayout.VERTICAL);
-        notificationCenter.setGravity(Gravity.CENTER);
+        notificationCenter.setGravity(Gravity.CENTER_HORIZONTAL);
         notificationCenter.setClipChildren(false);
         notificationCenter.setClipToPadding(false);
-        notificationCenter.setPadding(dp(7), dp(7), dp(7), dp(7));
+        notificationCenter.setPadding(dp(10), dp(10), dp(10), dp(10));
+        notificationCenter.setElevation(dp(6));
+        notificationCenter.setVisibility(View.GONE);
+
+        GradientDrawable panel = new GradientDrawable();
+        panel.setColor(Color.argb(205, 8, 9, 12));
+        panel.setCornerRadius(dp(22));
+        panel.setStroke(dp(2), Color.argb(190, 78, 105, 255));
+        notificationCenter.setBackground(panel);
 
         FrameLayout.LayoutParams notificationParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER);
-        notificationParams.leftMargin = dp(46);
-        notificationParams.rightMargin = dp(46);
-        notificationParams.topMargin = dp(48);
-        notificationParams.bottomMargin = dp(104);
+        // Leave a generous gutter for the angled side cards, like the approved mockup.
+        notificationParams.leftMargin = dp(70);
+        notificationParams.rightMargin = dp(70);
+        notificationParams.topMargin = dp(72);
+        notificationParams.bottomMargin = dp(132);
         squareRoot.addView(notificationCenter, notificationParams);
 
         FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(
@@ -173,13 +190,13 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private void rebuildSquare() {
-        // Preserve rotationOffset. Data refreshes (including notification refreshes) must not throw
-        // the carousel back to its initial position.
+        // Preserve the current carousel position while history/notifications update.
         squareTrack.removeAllViews();
         notificationCenter.removeAllViews();
 
         final int count = mainActivity.adapter.getCount();
-        int notificationIndex = 0;
+        int visibleNotifications = 0;
+        int totalNotifications = 0;
 
         for (int position = 0; position < count; position++) {
             View source = mainActivity.adapter.getView(position, null, squareTrack);
@@ -190,30 +207,64 @@ final class HistoryDisplayForwarder extends Forwarder {
             View notificationSource = mainActivity.adapter.getView(position, null, notificationCenter);
             View notificationRow = notificationSource.findViewById(R.id.item_notification_row);
             if (notificationRow != null && notificationRow.getVisibility() == View.VISIBLE) {
-                View shell = createNotificationShell(notificationSource);
-                LinearLayout.LayoutParams notificationLp = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                notificationLp.setMargins(dp(3), dp(4), dp(3), dp(4));
-                notificationCenter.addView(shell, notificationLp);
-                animateNotificationIn(shell, notificationIndex++);
+                totalNotifications++;
+                if (visibleNotifications < MAX_CENTER_NOTIFICATIONS) {
+                    if (visibleNotifications == 0) addNotificationHeader();
+                    View shell = createNotificationShell(notificationSource);
+                    LinearLayout.LayoutParams notificationLp = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    notificationLp.setMargins(dp(2), dp(4), dp(2), dp(4));
+                    notificationCenter.addView(shell, notificationLp);
+                    animateNotificationIn(shell, visibleNotifications);
+                    visibleNotifications++;
+                }
             }
         }
 
+        if (totalNotifications > visibleNotifications) {
+            addNotificationCountFooter(totalNotifications);
+        }
+        notificationCenter.setVisibility(visibleNotifications > 0 ? View.VISIBLE : View.GONE);
+
         squareTrack.onDataRebuilt();
         animateNotificationCenterRefresh();
+    }
+
+    private void addNotificationHeader() {
+        TextView title = new TextView(mainActivity);
+        title.setText("Notifications");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(17f);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(dp(8), dp(4), dp(8), dp(8));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        notificationCenter.addView(title, lp);
+    }
+
+    private void addNotificationCountFooter(int total) {
+        TextView footer = new TextView(mainActivity);
+        footer.setText(total + " active notifications");
+        footer.setTextColor(Color.argb(220, 230, 230, 235));
+        footer.setTextSize(12.5f);
+        footer.setGravity(Gravity.CENTER);
+        footer.setPadding(dp(8), dp(7), dp(8), dp(3));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        notificationCenter.addView(footer, lp);
     }
 
     private View createNotificationShell(View notificationSource) {
         FrameLayout shell = new FrameLayout(mainActivity);
         shell.setClipChildren(false);
         shell.setClipToPadding(false);
-        shell.setPadding(dp(8), dp(5), dp(8), dp(5));
-        shell.setElevation(dp(5));
+        shell.setPadding(dp(7), dp(4), dp(7), dp(4));
+        shell.setElevation(dp(3));
 
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.argb(188, 24, 24, 26));
-        background.setCornerRadius(dp(18));
-        background.setStroke(dp(1), Color.argb(115, 255, 255, 255));
+        background.setColor(Color.argb(230, 25, 26, 30));
+        background.setCornerRadius(dp(15));
+        background.setStroke(dp(1), Color.argb(75, 255, 255, 255));
         shell.setBackground(background);
 
         notificationSource.setAlpha(1f);
@@ -240,9 +291,6 @@ final class HistoryDisplayForwarder extends Forwarder {
         return source;
     }
 
-    /**
-     * Icon mode still carries a full label. "Icon mode" changes visual emphasis, not information.
-     */
     private View createIconTile(View source) {
         FrameLayout tile = baseTile(dp(112), dp(102));
         Drawable iconDrawable = extractIcon(source);
@@ -280,7 +328,7 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private View createCardTile(View source) {
         FrameLayout card = baseTile(dp(CARD_WIDTH_DP), dp(CARD_HEIGHT_DP));
-        styleCard(card, dp(18));
+        styleCard(card, dp(18), false);
 
         Drawable iconDrawable = extractIcon(source);
         CharSequence label = extractLabel(source);
@@ -290,21 +338,30 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     /**
-     * Square carousel cards intentionally keep the original 190x132dp design whenever the pane is
-     * wide enough. Side/corner perspective is achieved with transforms, not by measuring tiny
-     * cards.
+     * Square-U cards intentionally use a clean dark portrait surface. The internal adapter preview
+     * is not drawn here because it competes visually with the app icon and label in this layout.
      */
     private View createSquareCard(View source) {
         FrameLayout card = new FrameLayout(mainActivity);
-        styleCard(card, dp(18));
+        styleCard(card, dp(18), true);
         card.setElevation(dp(4));
         card.setClipChildren(false);
         card.setClipToPadding(false);
 
         Drawable iconDrawable = extractIcon(source);
         CharSequence label = extractLabel(source);
-        addMutedPreview(card, source);
-        addForegroundIconAndLabel(card, iconDrawable, label, dp(58), 13.5f, dp(13));
+
+        if (iconDrawable != null) {
+            ImageView icon = new ImageView(mainActivity);
+            icon.setImageDrawable(iconDrawable);
+            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                    dp(68), dp(68), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+            iconParams.topMargin = dp(18);
+            card.addView(icon, iconParams);
+        }
+
+        addFullLabel(card, label, 13.5f, dp(56), 3);
         return card;
     }
 
@@ -328,7 +385,6 @@ final class HistoryDisplayForwarder extends Forwarder {
             iconParams.topMargin = topMargin;
             card.addView(icon, iconParams);
         }
-
         addFullLabel(card, label, textSize, dp(52), 3);
     }
 
@@ -347,7 +403,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         name.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
 
         GradientDrawable labelBackground = new GradientDrawable();
-        labelBackground.setColor(Color.argb(138, 0, 0, 0));
+        labelBackground.setColor(Color.argb(115, 0, 0, 0));
         labelBackground.setCornerRadius(dp(10));
         name.setBackground(labelBackground);
 
@@ -355,15 +411,10 @@ final class HistoryDisplayForwarder extends Forwarder {
                 ViewGroup.LayoutParams.MATCH_PARENT, labelHeight, Gravity.BOTTOM);
         nameParams.leftMargin = dp(5);
         nameParams.rightMargin = dp(5);
-        nameParams.bottomMargin = dp(4);
+        nameParams.bottomMargin = dp(5);
         card.addView(name, nameParams);
     }
 
-    /**
-     * Prefer the normal application label, then discover the primary visible text in any other
-     * result layout. This gives shortcuts, settings, system entries and future result types labels
-     * without hard-coding each result class.
-     */
     private CharSequence extractLabel(View source) {
         TextView appName = source.findViewById(R.id.item_app_name);
         if (isUsefulLabel(appName)) return appName.getText();
@@ -397,8 +448,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         }
         int id = text.getId();
         if (id == R.id.item_notification_text || id == R.id.item_notification_read) return false;
-        CharSequence value = text.getText();
-        String normalized = value == null ? "" : value.toString().trim();
+        String normalized = text.getText().toString().trim();
         return !normalized.isEmpty()
                 && !"Mark read".equalsIgnoreCase(normalized)
                 && !"Open notification".equalsIgnoreCase(normalized)
@@ -427,11 +477,13 @@ final class HistoryDisplayForwarder extends Forwarder {
         return null;
     }
 
-    private void styleCard(FrameLayout card, float radius) {
+    private void styleCard(FrameLayout card, float radius, boolean square) {
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.argb(112, 22, 22, 24));
+        background.setColor(square ? Color.argb(225, 16, 17, 20) : Color.argb(112, 22, 22, 24));
         background.setCornerRadius(radius);
-        background.setStroke(dp(1), Color.argb(135, 255, 255, 255));
+        background.setStroke(dp(1), square
+                ? Color.argb(145, 190, 200, 215)
+                : Color.argb(135, 255, 255, 255));
         card.setBackground(background);
         card.setClipToOutline(true);
     }
@@ -518,12 +570,17 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void animateNotificationCenterRefresh() {
         if (!SmartAnimationEngine.isEnabled(mainActivity)
-                || notificationCenter.getChildCount() == 0) return;
+                || notificationCenter.getVisibility() != View.VISIBLE) return;
         notificationCenter.animate().cancel();
-        notificationCenter.setAlpha(0.9f);
+        notificationCenter.setAlpha(0.88f);
+        notificationCenter.setScaleX(0.985f);
+        notificationCenter.setScaleY(0.985f);
         notificationCenter.animate()
                 .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
                 .setDuration(Math.max(80L, SmartAnimationEngine.duration(mainActivity) / 2))
+                .setInterpolator(new DecelerateInterpolator())
                 .start();
     }
 
@@ -542,10 +599,9 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     /**
-     * Continuous 3D square carousel. The newest item starts at bottom center. Dragging rotates every
-     * card around a complete rectangular loop so there is no discontinuous jump between the two
-     * upper corners. Large cards are preserved and side cards turn in perspective to expose the
-     * notification center.
+     * Spacious 3D Square-U carousel. A fixed number of cards are visible at once; older history is
+     * intentionally kept off-track until the user scrolls. This prevents the crowding caused by
+     * dividing the entire perimeter by the full history count.
      */
     private final class SquareTrackLayout extends ViewGroup {
         private final int touchSlop;
@@ -561,7 +617,7 @@ final class HistoryDisplayForwarder extends Forwarder {
             setClipChildren(false);
             setClipToPadding(false);
             setWillNotDraw(false);
-            setCameraDistance(dp(2200));
+            setCameraDistance(dp(2400));
         }
 
         void resetForFirstEntry() {
@@ -571,8 +627,6 @@ final class HistoryDisplayForwarder extends Forwarder {
         }
 
         void onDataRebuilt() {
-            // Intentionally preserve rotationOffset to prevent notification/history updates from
-            // snapping the user back to the start of the carousel.
             requestLayout();
         }
 
@@ -582,8 +636,9 @@ final class HistoryDisplayForwarder extends Forwarder {
             int height = MeasureSpec.getSize(heightMeasureSpec);
             setMeasuredDimension(width, height);
 
-            int cardWidth = Math.min(dp(CARD_WIDTH_DP), Math.max(dp(96), width - dp(16)));
-            int cardHeight = Math.round(cardWidth * (CARD_HEIGHT_DP / (float) CARD_WIDTH_DP));
+            int cardWidth = Math.min(dp(SQUARE_CARD_WIDTH_DP), Math.max(dp(88), width - dp(20)));
+            int cardHeight = Math.round(cardWidth
+                    * (SQUARE_CARD_HEIGHT_DP / (float) SQUARE_CARD_WIDTH_DP));
 
             int childWidthSpec = MeasureSpec.makeMeasureSpec(cardWidth, MeasureSpec.EXACTLY);
             int childHeightSpec = MeasureSpec.makeMeasureSpec(cardHeight, MeasureSpec.EXACTLY);
@@ -602,28 +657,24 @@ final class HistoryDisplayForwarder extends Forwarder {
             int childWidth = getChildAt(0).getMeasuredWidth();
             int childHeight = getChildAt(0).getMeasuredHeight();
 
-            float left = dp(7);
-            float right = Math.max(left, width - childWidth - dp(7));
-            float top = dp(8);
-            float bottom = Math.max(top, height - childHeight - dp(7));
-
-            float horizontal = Math.max(1f, right - left);
-            float vertical = Math.max(1f, bottom - top);
-            float totalPath = 2f * (horizontal + vertical);
-            float bottomCenterDistance = horizontal / 2f;
-
-            // Fit all current history items around the loop. They can overlap like a cover-flow
-            // carousel; the measured card itself remains the original size.
-            float spacing = totalPath / Math.max(1, count);
+            float left = dp(8);
+            float right = Math.max(left, width - childWidth - dp(8));
+            float top = dp(28);
+            float bottom = Math.max(top, height - childHeight - dp(10));
+            float centerX = (left + right) / 2f;
 
             for (int i = 0; i < count; i++) {
                 int recencyIndex = (count - 1) - i;
-                float distance = bottomCenterDistance
-                        + ((recencyIndex + rotationOffset) * spacing);
-                PathPoint point = pointOnSquare(distance, left, right, top, bottom,
-                        horizontal, vertical, totalPath);
-
+                float relative = cyclicRelative(recencyIndex + rotationOffset, count);
                 View child = getChildAt(i);
+
+                if (Math.abs(relative) > SQUARE_VISIBLE_RADIUS + 0.35f) {
+                    child.setVisibility(View.INVISIBLE);
+                    continue;
+                }
+
+                child.setVisibility(View.VISIBLE);
+                PathPoint point = pointOnOpenU(relative, left, right, top, bottom, centerX);
                 int childLeft = Math.round(point.x);
                 int childTop = Math.round(point.y);
                 child.layout(childLeft, childTop,
@@ -632,7 +683,7 @@ final class HistoryDisplayForwarder extends Forwarder {
 
                 child.setPivotX(child.getMeasuredWidth() / 2f);
                 child.setPivotY(child.getMeasuredHeight() / 2f);
-                child.setCameraDistance(dp(1800));
+                child.setCameraDistance(dp(1900));
                 child.setRotationY(point.rotationY);
                 child.setRotationX(point.rotationX);
                 child.setScaleX(point.scale);
@@ -642,62 +693,46 @@ final class HistoryDisplayForwarder extends Forwarder {
             }
         }
 
-        private PathPoint pointOnSquare(float distance, float left, float right,
-                                        float top, float bottom, float horizontal,
-                                        float vertical, float totalPath) {
-            float wrapped = distance % totalPath;
-            if (wrapped < 0f) wrapped += totalPath;
+        private float cyclicRelative(float value, int count) {
+            if (count <= 1) return 0f;
+            float half = count / 2f;
+            while (value > half) value -= count;
+            while (value < -half) value += count;
+            return value;
+        }
 
-            // Start at bottom-left and travel clockwise: bottom -> right -> top -> left.
-            if (wrapped <= horizontal) {
-                float progress = wrapped / horizontal;
-                float centerBias = 1f - Math.abs((progress * 2f) - 1f);
-                float rotationY = (progress - 0.5f) * -28f;
-                return new PathPoint(
-                        left + horizontal * progress,
-                        bottom,
-                        rotationY,
-                        0f,
-                        0.88f + 0.12f * centerBias,
-                        0.90f + 0.10f * centerBias,
-                        dp(3) + dp(8) * centerBias);
+        private PathPoint pointOnOpenU(float relative, float left, float right,
+                                       float top, float bottom, float centerX) {
+            float absolute = Math.abs(relative);
+            float sign = relative < 0f ? -1f : 1f;
+
+            // Five-card bottom band around the selected item. The center item is the newest on
+            // first entry and is deliberately larger/brighter than its neighbours.
+            if (absolute <= SQUARE_BOTTOM_BAND) {
+                float normalized = relative / SQUARE_BOTTOM_BAND;
+                float halfSpan = Math.max(1f, (right - left) / 2f);
+                float x = centerX + normalized * halfSpan;
+                float focus = 1f - Math.min(1f, absolute / (SQUARE_BOTTOM_BAND + 0.25f));
+                float scale = 0.82f + (0.18f * focus);
+                float alpha = 0.90f + (0.10f * focus);
+                float rotationY = -normalized * 18f;
+                return new PathPoint(x, bottom, rotationY, 0f, scale, alpha,
+                        dp(3) + dp(11) * focus);
             }
 
-            float afterBottom = wrapped - horizontal;
-            if (afterBottom <= vertical) {
-                float progress = afterBottom / vertical;
-                return new PathPoint(
-                        right,
-                        bottom - vertical * progress,
-                        -58f,
-                        -3f,
-                        0.80f,
-                        0.86f,
-                        dp(2));
-            }
-
-            float afterRight = afterBottom - vertical;
-            if (afterRight <= horizontal) {
-                float progress = afterRight / horizontal;
-                return new PathPoint(
-                        right - horizontal * progress,
-                        top,
-                        (progress - 0.5f) * 18f,
-                        -12f,
-                        0.72f,
-                        0.72f,
-                        0f);
-            }
-
-            float progress = (afterRight - horizontal) / vertical;
-            return new PathPoint(
-                    left,
-                    top + vertical * progress,
-                    58f,
-                    -3f,
-                    0.80f,
-                    0.86f,
-                    dp(2));
+            // After leaving the bottom band cards climb one of the two vertical sides and angle
+            // inward, matching the approved mockup. Spacing is fixed by the visible slot window,
+            // not by the total history size.
+            float sideRange = SQUARE_VISIBLE_RADIUS - SQUARE_BOTTOM_BAND;
+            float sideProgress = Math.min(1f,
+                    (absolute - SQUARE_BOTTOM_BAND) / Math.max(0.01f, sideRange));
+            float x = sign > 0f ? right : left;
+            float y = bottom - (bottom - top) * sideProgress;
+            float rotationY = sign > 0f ? -55f : 55f;
+            float scale = 0.84f - (0.08f * sideProgress);
+            float alpha = 0.92f - (0.16f * sideProgress);
+            return new PathPoint(x, y, rotationY, -2f, scale, alpha,
+                    dp(2) + dp(2) * (1f - sideProgress));
         }
 
         @Override
@@ -736,7 +771,9 @@ final class HistoryDisplayForwarder extends Forwarder {
                     float x = event.getX();
                     float delta = x - lastX;
                     lastX = x;
-                    rotationOffset += delta / Math.max(dp(46), getWidth() / 7f);
+                    // A larger divisor produces the deliberate, smooth carousel movement from the
+                    // approved concept instead of the former jumpy response.
+                    rotationOffset += delta / Math.max(dp(78), getWidth() / 5.5f);
                     requestLayout();
                     return true;
 
