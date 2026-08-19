@@ -45,7 +45,7 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
     protected List<AppPojo> doInBackground(Void... params) {
         long start = System.currentTimeMillis();
         List<AppPojo> apps = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        Set<String> seenPackages = new HashSet<>();
 
         Context ctx = context.get();
         if (ctx == null) return apps;
@@ -65,19 +65,24 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
             for (LauncherActivityInfo activityInfo : launcherApps.getActivityList(null, profile)) {
                 if (isCancelled()) break;
                 ApplicationInfo appInfo = activityInfo.getApplicationInfo();
+                String packageKey = packageKey(serial, appInfo.packageName);
+                if (seenPackages.contains(packageKey)) continue;
+
                 boolean disabled = PackageManagerUtils.isAppSuspended(appInfo) || isQuietModeEnabled(manager, profile);
                 if (!disabled || !isPrivateProfile) {
                     AppPojo app = createPojo(user, appInfo.packageName, activityInfo.getName(), activityInfo.getLabel(), disabled,
                             excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
                     apps.add(app);
-                    seen.add(key(serial, appInfo.packageName, activityInfo.getName()));
+                    seenPackages.add(packageKey);
                     SmartStateStore.rememberApp(ctx, appInfo.packageName, activityInfo.getName(), activityInfo.getLabel().toString(), serial);
                 }
             }
         }
 
         // LauncherApps intentionally hides packages disabled by IceBox. Query PackageManager with
-        // disabled components included so current-user frozen apps remain discoverable.
+        // disabled components included so current-user frozen apps remain discoverable. Keep one
+        // canonical launcher component per package: aliases/internal launcher activities must not
+        // become duplicate app results.
         android.os.UserHandle currentProfile = Process.myUserHandle();
         long currentSerial = manager.getSerialNumberForUser(currentProfile);
         UserHandle currentUser = new UserHandle(currentSerial, currentProfile);
@@ -89,8 +94,10 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
             if (isCancelled()) break;
             ActivityInfo activity = resolveInfo.activityInfo;
             if (activity == null || activity.applicationInfo == null) continue;
-            String candidateKey = key(currentSerial, activity.packageName, activity.name);
-            if (seen.contains(candidateKey)) continue;
+            String packageKey = packageKey(currentSerial, activity.packageName);
+            if (seenPackages.contains(packageKey)) continue;
+            if (!activity.exported) continue;
+
             CharSequence label = resolveInfo.loadLabel(pm);
             if (label == null || label.length() == 0) label = activity.applicationInfo.loadLabel(pm);
             boolean disabled = !activity.enabled || !activity.applicationInfo.enabled
@@ -99,17 +106,23 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                     label == null ? activity.packageName : label, disabled,
                     excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
             apps.add(app);
-            seen.add(candidateKey);
+            seenPackages.add(packageKey);
             SmartStateStore.rememberApp(ctx, activity.packageName, activity.name, app.getName(), currentSerial);
         }
 
         // Persistent catalog is the final safety net: a frozen package can disappear from both
         // LauncherApps and intent queries, but it is still installed and must stay searchable.
+        // The catalog is package-canonical, so only one remembered launcher component is restored.
         for (AppCatalogRecord remembered : SmartStateStore.getRememberedApps(ctx, currentSerial)) {
-            String candidateKey = key(currentSerial, remembered.packageName, remembered.activityName);
-            if (seen.contains(candidateKey)) continue;
+            String packageKey = packageKey(currentSerial, remembered.packageName);
+            if (seenPackages.contains(packageKey)) continue;
             try {
                 ApplicationInfo info = pm.getApplicationInfo(remembered.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+                ActivityInfo activityInfo = pm.getActivityInfo(
+                        new android.content.ComponentName(remembered.packageName, remembered.activityName),
+                        PackageManager.MATCH_DISABLED_COMPONENTS);
+                if (!activityInfo.exported) continue;
+
                 boolean disabled = !info.enabled || PackageManagerUtils.isAppSuspended(info);
                 AppPojo app = createPojo(currentUser, remembered.packageName, remembered.activityName,
                         remembered.label, disabled,
@@ -118,7 +131,7 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                 // a live launch/reconciliation proves otherwise.
                 app.setDisabled(true);
                 apps.add(app);
-                seen.add(candidateKey);
+                seenPackages.add(packageKey);
             } catch (PackageManager.NameNotFoundException e) {
                 SmartStateStore.forgetPackage(ctx, remembered.packageName);
             }
@@ -130,12 +143,12 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
             if (customApp != null && customApp.hasCustomName()) app.setName(customApp.name);
         }
 
-        Log.i(TAG, (System.currentTimeMillis() - start) + " milliseconds to list apps including frozen catalog");
+        Log.i(TAG, (System.currentTimeMillis() - start) + " milliseconds to list canonical apps including frozen catalog");
         return apps;
     }
 
-    private String key(long serial, String packageName, String activityName) {
-        return serial + "|" + packageName + "/" + activityName;
+    private String packageKey(long serial, String packageName) {
+        return serial + "|" + packageName;
     }
 
     private boolean isQuietModeEnabled(UserManager manager, android.os.UserHandle profile) {
