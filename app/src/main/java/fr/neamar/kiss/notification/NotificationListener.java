@@ -9,6 +9,9 @@ import android.os.Build;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Base64;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.RemoteViews;
 
 import androidx.preference.PreferenceManager;
 
@@ -283,6 +286,51 @@ public class NotificationListener extends NotificationListenerService {
         } catch (PendingIntent.CanceledException e) {
             Log.w(TAG, "Notification content intent was canceled", e);
             return false;
+        }
+    }
+
+    public static View createNativeGroupView(Context context, String groupKey, ViewGroup parent, boolean expanded) {
+        NotificationListener listener = instance;
+        if (listener == null) return null;
+        StatusBarNotification[] active = listener.getActiveNotifications();
+        if (active == null) return null;
+
+        StatusBarNotification latest = null;
+        for (StatusBarNotification sbn : active) {
+            if (listener.isNotificationTrivial(sbn)) continue;
+            if (!groupKey.equals(listener.getPackageKey(sbn))) continue;
+            if (latest == null || sbn.getPostTime() > latest.getPostTime()) latest = sbn;
+        }
+        return latest == null ? null : createNativeView(context, latest.getNotification(), parent, expanded);
+    }
+
+    public static View createNativeNotificationView(Context context, String notificationId, ViewGroup parent, boolean expanded) {
+        String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getString(notificationId + "|key", null);
+        NotificationListener listener = instance;
+        if (listener == null || key == null) return null;
+        StatusBarNotification sbn = listener.findActiveByKey(key);
+        if (sbn == null) return null;
+        return createNativeView(context, sbn.getNotification(), parent, expanded);
+    }
+
+    private static View createNativeView(Context context, Notification notification, ViewGroup parent, boolean expanded) {
+        if (notification == null) return null;
+        RemoteViews remoteViews = null;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                Notification.Builder builder = Notification.Builder.recoverBuilder(context, notification);
+                remoteViews = expanded ? builder.createBigContentView() : builder.createContentView();
+            }
+            if (remoteViews == null) {
+                remoteViews = expanded && notification.bigContentView != null
+                        ? notification.bigContentView : notification.contentView;
+            }
+            if (remoteViews == null && expanded) remoteViews = notification.contentView;
+            return remoteViews == null ? null : remoteViews.apply(context, parent);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to inflate native notification RemoteViews", e);
+            return null;
         }
     }
 
