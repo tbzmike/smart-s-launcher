@@ -38,6 +38,7 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
+import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
@@ -206,12 +207,13 @@ public class SettingsResult extends Result<SettingPojo> {
         list.setOrientation(LinearLayout.VERTICAL);
         int padding = dp(context, 16);
         list.setPadding(padding, padding / 2, padding, padding / 2);
+        AlertDialog[] groupDialog = new AlertDialog[1];
 
         for (NotificationListener.NotificationSnapshot item : items) {
             LinearLayout row = new LinearLayout(context);
             row.setOrientation(LinearLayout.VERTICAL);
             row.setPadding(0, padding / 2, 0, padding / 2);
-            View.OnClickListener openDetail = v -> showNotificationDetail(context, notification, item);
+            View.OnClickListener openDetail = v -> showNotificationDetail(context, notification, item, groupDialog[0]);
 
             View nativeView = NotificationListener.createNativeNotificationView(context, item.id, row, false);
             if (nativeView != null) {
@@ -238,21 +240,41 @@ public class SettingsResult extends Result<SettingPojo> {
                 }
             }
 
-            // Tapping a notification in the group expands it inside Smart S.
             row.setOnClickListener(openDetail);
             list.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
         ScrollView scroll = new ScrollView(context);
         scroll.addView(list);
-        new AlertDialog.Builder(context)
+        AlertDialog.Builder builder = new AlertDialog.Builder(context)
                 .setTitle(notification.appName + " · " + notification.getSummary())
                 .setView(scroll)
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .setNegativeButton(android.R.string.cancel, null);
+        boolean hasMarkAll = NotificationListener.hasMarkAllReadAction(context, notification.groupKey);
+        if (hasMarkAll) builder.setPositiveButton("Mark all read", null);
+
+        AlertDialog dialog = builder.create();
+        groupDialog[0] = dialog;
+        dialog.setOnShowListener(ignored -> {
+            SmartAnimationEngine.animateDialogIn(dialog);
+            if (hasMarkAll) {
+                Button markAll = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+                markAll.setOnClickListener(v -> {
+                    if (NotificationListener.markAllRead(context, notification.groupKey)) {
+                        context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                        SmartAnimationEngine.dismissDialog(dialog);
+                    } else {
+                        Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        });
+        dialog.show();
     }
 
-    private void showNotificationDetail(Context context, NotificationPojo group, NotificationListener.NotificationSnapshot item) {
+    private void showNotificationDetail(Context context, NotificationPojo group,
+                                        NotificationListener.NotificationSnapshot item,
+                                        AlertDialog parentGroupDialog) {
         String detailTitle = item.title.isEmpty() ? group.appName : item.title;
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -302,7 +324,10 @@ public class SettingsResult extends Result<SettingPojo> {
                 Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
             } else {
                 context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
-                dialog.dismiss();
+                SmartAnimationEngine.dismissDialog(dialog);
+                if (parentGroupDialog != null && parentGroupDialog.isShowing()) {
+                    SmartAnimationEngine.dismissDialog(parentGroupDialog);
+                }
             }
         });
 
@@ -317,6 +342,7 @@ public class SettingsResult extends Result<SettingPojo> {
             }
         });
 
+        dialog.setOnShowListener(ignored -> SmartAnimationEngine.animateDialogIn(dialog));
         dialog.show();
     }
 
@@ -332,15 +358,18 @@ public class SettingsResult extends Result<SettingPojo> {
                 .setPositiveButton("Send", null)
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
-        replyDialog.setOnShowListener(ignored -> replyDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String replyText = input.getText().toString().trim();
-            if (replyText.isEmpty()) return;
-            if (NotificationListener.replyToNotification(context, item.id, replyText)) {
-                replyDialog.dismiss();
-            } else {
-                Toast.makeText(context, "Unable to send reply.", Toast.LENGTH_SHORT).show();
-            }
-        }));
+        replyDialog.setOnShowListener(ignored -> {
+            SmartAnimationEngine.animateDialogIn(replyDialog);
+            replyDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                String replyText = input.getText().toString().trim();
+                if (replyText.isEmpty()) return;
+                if (NotificationListener.replyToNotification(context, item.id, replyText)) {
+                    SmartAnimationEngine.dismissDialog(replyDialog);
+                } else {
+                    Toast.makeText(context, "Unable to send reply.", Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
         replyDialog.show();
     }
 
