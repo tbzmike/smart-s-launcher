@@ -32,6 +32,17 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
     @Override
     public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
         prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
+
+        Bundle args = getArguments();
+        String section = args == null ? null : args.getString(ARG_SECTION);
+        if ("animations".equals(section)) {
+            PreferenceGroup root = getPreferenceManager().createPreferenceScreen(requireContext());
+            setPreferenceScreen((androidx.preference.PreferenceScreen) root);
+            root.setTitle("Smart animations & transitions");
+            addAnimationPreferences(root);
+            return;
+        }
+
         setPreferencesFromResource(R.xml.preferences_smart_features, null);
         filterToRequestedSection();
     }
@@ -65,9 +76,6 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
                     case "frozen":
                         keep = group.findPreference("smart-detect-frozen-apps") != null;
                         break;
-                    case "animations":
-                        keep = group.findPreference("smart-animations-enabled") != null;
-                        break;
                     case "wallpaper":
                         keep = group.findPreference("smart-focus-blur-enabled") != null;
                         break;
@@ -86,9 +94,6 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
                 case "frozen":
                     root.setTitle("Frozen apps & app state");
                     break;
-                case "animations":
-                    root.setTitle("Smart animations & transitions");
-                    break;
                 case "wallpaper":
                     root.setTitle("Smart wallpaper & blur");
                     break;
@@ -98,6 +103,87 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         }
 
         replaceAnimationSpeedControl(root);
+    }
+
+    private void addAnimationPreferences(PreferenceGroup root) {
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setTitle(R.string.smart_animations_title);
+        root.addPreference(category);
+
+        SwitchPreference enabled = new SwitchPreference(requireContext());
+        enabled.setKey("smart-animations-enabled");
+        enabled.setTitle(R.string.smart_animation_master);
+        enabled.setSummary(R.string.smart_animation_master_summary);
+        enabled.setDefaultValue(true);
+        category.addPreference(enabled);
+
+        addAnimationList(category, "smart-animation-scroll", R.string.smart_animation_scroll,
+                R.array.smart_scroll_animation_entries, R.array.smart_scroll_animation_values, "classic");
+        addAnimationList(category, "smart-animation-window-enter", R.string.smart_animation_window_enter,
+                R.array.smart_enter_animation_entries, R.array.smart_enter_animation_values, "fade");
+        addAnimationList(category, "smart-animation-window-exit", R.string.smart_animation_window_exit,
+                R.array.smart_exit_animation_entries, R.array.smart_exit_animation_values, "fade");
+        addAnimationList(category, "smart-animation-popup-open", R.string.smart_animation_popup_open,
+                R.array.smart_popup_animation_entries, R.array.smart_popup_animation_values, "scale");
+        addAnimationList(category, "smart-animation-popup-close", R.string.smart_animation_popup_close,
+                R.array.smart_exit_animation_entries, R.array.smart_exit_animation_values, "shrink");
+        addAnimationList(category, "smart-animation-notification-expand", R.string.smart_animation_notification_expand,
+                R.array.smart_popup_animation_entries, R.array.smart_popup_animation_values, "spring");
+        addAnimationList(category, "smart-animation-view-switch", R.string.smart_animation_view_switch,
+                R.array.smart_switch_animation_entries, R.array.smart_switch_animation_values, "crossfade");
+        addAnimationList(category, "smart-animation-toast", R.string.smart_animation_toast,
+                R.array.smart_toast_animation_entries, R.array.smart_toast_animation_values, "fade");
+
+        int percent = readAnimationSpeedPercentSafely();
+        Object storedPercent = prefs.getAll().get("smart-animation-speed-percent");
+        if (!(storedPercent instanceof Integer) || ((Integer) storedPercent) != percent) {
+            prefs.edit().remove("smart-animation-speed-percent")
+                    .putInt("smart-animation-speed-percent", percent).apply();
+        }
+
+        SeekBarPreference speed = new SeekBarPreference(requireContext());
+        speed.setKey("smart-animation-speed-percent");
+        speed.setTitle("Animation speed (%)");
+        speed.setSummary("5% is extremely slow · 100% is normal · 300% is very fast");
+        speed.setMin(5);
+        speed.setMax(300);
+        speed.setSeekBarIncrement(5);
+        speed.setShowSeekBarValue(true);
+        speed.setDefaultValue(100);
+        category.addPreference(speed);
+
+        updateAnimationControlsEnabled(enabled.isChecked());
+    }
+
+    private void addAnimationList(PreferenceGroup category, String key, int titleRes,
+                                  int entriesRes, int valuesRes, String defaultValue) {
+        ListPreference preference = new ListPreference(requireContext());
+        preference.setKey(key);
+        preference.setTitle(titleRes);
+        preference.setEntries(entriesRes);
+        preference.setEntryValues(valuesRes);
+        preference.setDefaultValue(defaultValue);
+        preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        category.addPreference(preference);
+    }
+
+    private void updateAnimationControlsEnabled(boolean enabled) {
+        PreferenceGroup root = getPreferenceScreen();
+        if (root == null) return;
+        setAnimationChildEnabled(root, "smart-animation-scroll", enabled);
+        setAnimationChildEnabled(root, "smart-animation-window-enter", enabled);
+        setAnimationChildEnabled(root, "smart-animation-window-exit", enabled);
+        setAnimationChildEnabled(root, "smart-animation-popup-open", enabled);
+        setAnimationChildEnabled(root, "smart-animation-popup-close", enabled);
+        setAnimationChildEnabled(root, "smart-animation-notification-expand", enabled);
+        setAnimationChildEnabled(root, "smart-animation-view-switch", enabled);
+        setAnimationChildEnabled(root, "smart-animation-toast", enabled);
+        setAnimationChildEnabled(root, "smart-animation-speed-percent", enabled);
+    }
+
+    private void setAnimationChildEnabled(PreferenceGroup root, String key, boolean enabled) {
+        Preference preference = root.findPreference(key);
+        if (preference != null) preference.setEnabled(enabled);
     }
 
     private void replaceAnimationSpeedControl(PreferenceGroup root) {
@@ -111,12 +197,8 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
             int percent = readAnimationSpeedPercentSafely();
             Object storedPercent = prefs.getAll().get("smart-animation-speed-percent");
             if (!(storedPercent instanceof Integer) || ((Integer) storedPercent) != percent) {
-                // SeekBarPreference persists an Integer. Remove any legacy String/Float value first
-                // so Preference cannot throw ClassCastException while binding this screen.
-                prefs.edit()
-                        .remove("smart-animation-speed-percent")
-                        .putInt("smart-animation-speed-percent", percent)
-                        .apply();
+                prefs.edit().remove("smart-animation-speed-percent")
+                        .putInt("smart-animation-speed-percent", percent).apply();
             }
 
             group.removePreference(oldSpeed);
@@ -129,7 +211,6 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
             speed.setSeekBarIncrement(5);
             speed.setShowSeekBarValue(true);
             speed.setDefaultValue(100);
-            speed.setDependency("smart-animations-enabled");
             group.addPreference(speed);
             return;
         }
@@ -256,9 +337,11 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
             startActivity(new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
         }
 
+        if ("smart-animations-enabled".equals(key)) {
+            updateAnimationControlsEnabled(sharedPreferences.getBoolean(key, true));
+        }
+
         if (key != null && key.startsWith("smart-workspace-")) {
-            // The workspace reparents core launcher views, so apply structural changes on the next
-            // MainActivity resume rather than mutating the home layout while Settings is on top.
             sharedPreferences.edit().putBoolean("require-layout-update", true).apply();
         }
     }
