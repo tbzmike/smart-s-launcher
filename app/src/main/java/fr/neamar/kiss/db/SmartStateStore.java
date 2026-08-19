@@ -10,7 +10,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import fr.neamar.kiss.utils.Log;
 
@@ -38,6 +40,13 @@ public final class SmartStateStore {
         values.put("label", label);
         values.put("user_serial", userSerial);
         SQLiteDatabase database = db(context);
+
+        // Smart S exposes one launcher entry per package/profile. Remove stale aliases/internal
+        // launcher activities before remembering the current canonical launch component.
+        database.delete("app_catalog",
+                "package=? AND user_serial=? AND class<>?",
+                new String[]{packageName, Long.toString(userSerial), activityName});
+
         int rows = database.update("app_catalog", values,
                 "package=? AND class=? AND user_serial=?",
                 new String[]{packageName, activityName, Long.toString(userSerial)});
@@ -51,17 +60,42 @@ public final class SmartStateStore {
     @NonNull
     public static List<AppCatalogRecord> getRememberedApps(@NonNull Context context, long userSerial) {
         List<AppCatalogRecord> result = new ArrayList<>();
+        Set<String> seenPackages = new HashSet<>();
+        List<Long> duplicateIds = new ArrayList<>();
+
         try (Cursor cursor = db(context).query("app_catalog",
-                new String[]{"package", "class", "label", "user_serial"},
-                "user_serial=?", new String[]{Long.toString(userSerial)}, null, null, "label COLLATE NOCASE")) {
+                new String[]{"_id", "package", "class", "label", "user_serial"},
+                "user_serial=?", new String[]{Long.toString(userSerial)}, null, null, "_id DESC")) {
             while (cursor.moveToNext()) {
+                long id = cursor.getLong(0);
+                String packageName = cursor.getString(1);
+                if (!seenPackages.add(packageName)) {
+                    duplicateIds.add(id);
+                    continue;
+                }
+
                 AppCatalogRecord record = new AppCatalogRecord();
-                record.packageName = cursor.getString(0);
-                record.activityName = cursor.getString(1);
-                record.label = cursor.getString(2);
-                record.userSerial = cursor.getLong(3);
+                record.packageName = packageName;
+                record.activityName = cursor.getString(2);
+                record.label = cursor.getString(3);
+                record.userSerial = cursor.getLong(4);
                 result.add(record);
             }
+        }
+
+        SQLiteDatabase database = db(context);
+        for (Long duplicateId : duplicateIds) {
+            database.delete("app_catalog", "_id=?", new String[]{Long.toString(duplicateId)});
+        }
+        return result;
+    }
+
+    @NonNull
+    public static List<String[]> getNotificationApps(@NonNull Context context) {
+        List<String[]> result = new ArrayList<>();
+        try (Cursor cursor = db(context).rawQuery(
+                "SELECT package, MAX(app_name) FROM notification_history WHERE is_permanent=0 GROUP BY package ORDER BY MAX(post_time) DESC", null)) {
+            while (cursor.moveToNext()) result.add(new String[]{cursor.getString(0), cursor.getString(1)});
         }
         return result;
     }
@@ -95,16 +129,6 @@ public final class SmartStateStore {
         } catch (SQLiteFullException e) {
             Log.w(TAG, "Notification history reached available database storage", e);
         }
-    }
-
-    @NonNull
-    public static List<String[]> getNotificationApps(@NonNull Context context) {
-        List<String[]> result = new ArrayList<>();
-        try (Cursor cursor = db(context).rawQuery(
-                "SELECT package, MAX(app_name) FROM notification_history WHERE is_permanent=0 GROUP BY package ORDER BY MAX(post_time) DESC", null)) {
-            while (cursor.moveToNext()) result.add(new String[]{cursor.getString(0), cursor.getString(1)});
-        }
-        return result;
     }
 
     @NonNull
