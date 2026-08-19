@@ -16,7 +16,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -38,6 +37,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
+import fr.neamar.kiss.ui.CompactNotificationFrame;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
@@ -85,15 +85,18 @@ public class SettingsResult extends Result<SettingPojo> {
         TextView text = view.findViewById(R.id.item_notification_text);
         Button markRead = view.findViewById(R.id.item_notification_dismiss);
         ImageView icon = view.findViewById(R.id.item_notification_icon);
-        FrameLayout nativeContainer = view.findViewById(R.id.item_notification_native_container);
+        CompactNotificationFrame nativeContainer = view.findViewById(R.id.item_notification_native_container);
 
         appName.setText(notification.appName);
         title.setText(notification.getSummary());
 
+        View.OnClickListener openGroup = v -> showNotificationGroup(context, notification);
+        nativeContainer.setInterceptChildTouches(true);
+        nativeContainer.setOnClickListener(openGroup);
+
         View nativeView = NotificationListener.createNativeGroupView(context, notification.groupKey, nativeContainer, false);
         if (nativeView != null) {
             nativeContainer.removeAllViews();
-            disableClicksRecursively(nativeView);
             nativeContainer.addView(nativeView);
             nativeContainer.setVisibility(View.VISIBLE);
             text.setVisibility(View.GONE);
@@ -110,17 +113,17 @@ public class SettingsResult extends Result<SettingPojo> {
         if (!isHideIcons(context)) setAsyncDrawable(icon);
         else icon.setImageDrawable(null);
 
+        // Only the app icon launches the app itself. IceBox-frozen apps are enabled first.
         icon.setOnClickListener(v -> {
             if (!AppLaunchUtils.launchPackage(context, notification.packageName)) {
                 Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
             }
         });
 
-        View.OnClickListener openGroup = v -> showNotificationGroup(context, notification);
+        // Everything describing the notification opens Smart S's grouped popup.
         appName.setOnClickListener(openGroup);
         title.setOnClickListener(openGroup);
         text.setOnClickListener(openGroup);
-        nativeContainer.setOnClickListener(openGroup);
 
         markRead.setText(R.string.notification_mark_read);
         markRead.setOnClickListener(v -> {
@@ -208,10 +211,15 @@ public class SettingsResult extends Result<SettingPojo> {
             LinearLayout row = new LinearLayout(context);
             row.setOrientation(LinearLayout.VERTICAL);
             row.setPadding(0, padding / 2, 0, padding / 2);
+            View.OnClickListener openDetail = v -> showNotificationDetail(context, notification, item);
 
             View nativeView = NotificationListener.createNativeNotificationView(context, item.id, row, false);
             if (nativeView != null) {
-                disableClicksRecursively(nativeView);
+                if (nativeView instanceof CompactNotificationFrame) {
+                    CompactNotificationFrame frame = (CompactNotificationFrame) nativeView;
+                    frame.setInterceptChildTouches(true);
+                    frame.setOnClickListener(openDetail);
+                }
                 row.addView(nativeView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             } else {
                 TextView itemTitle = new TextView(context);
@@ -230,7 +238,8 @@ public class SettingsResult extends Result<SettingPojo> {
                 }
             }
 
-            row.setOnClickListener(v -> showNotificationDetail(context, notification, item));
+            // Tapping a notification in the group expands it inside Smart S.
+            row.setOnClickListener(openDetail);
             list.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
@@ -252,6 +261,9 @@ public class SettingsResult extends Result<SettingPojo> {
 
         View nativeView = NotificationListener.createNativeNotificationView(context, item.id, content, true);
         if (nativeView != null) {
+            if (nativeView instanceof CompactNotificationFrame) {
+                ((CompactNotificationFrame) nativeView).setInterceptChildTouches(true);
+            }
             content.addView(nativeView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         } else {
             TextView body = new TextView(context);
@@ -330,18 +342,6 @@ public class SettingsResult extends Result<SettingPojo> {
             }
         }));
         replyDialog.show();
-    }
-
-    private void disableClicksRecursively(View view) {
-        view.setClickable(false);
-        view.setLongClickable(false);
-        view.setOnClickListener(null);
-        if (view instanceof ViewGroup) {
-            ViewGroup group = (ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) {
-                disableClicksRecursively(group.getChildAt(i));
-            }
-        }
     }
 
     private int dp(Context context, int value) {
