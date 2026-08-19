@@ -70,12 +70,16 @@ public class AnimatedListView extends BlockableListView {
 
                     if (itemInfo != null) {
                         int topBeforeLayout = itemInfo.top;
+                        // this view may have moved
                         int topAfterLayout = child.getTop();
                         delta = topBeforeLayout - topAfterLayout;
                     } else {
+                        // this is a new view
                         if (i == 0) {
+                            // the first visible position can slide from the top
                             delta = -child.getHeight() - listView.getDividerHeight();
                         } else {
+                            // animate new views
                             child.setScaleY(0.f);
                             child.animate()
                                     .setDuration(animationDuration)
