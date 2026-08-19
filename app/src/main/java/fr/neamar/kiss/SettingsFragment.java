@@ -63,7 +63,6 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     );
 
     private SharedPreferences prefs;
-
     private Permission permissionManager;
 
     public SettingsFragment() {
@@ -74,15 +73,17 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
         prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
 
+        // The core XML tree is the authoritative Settings UI. Optional/dynamic sections must never
+        // be allowed to take the whole SettingsActivity down.
         setPreferencesFromResource(R.xml.preferences, rootKey);
-        addSemanticSearchPreferences(rootKey);
+
+        try {
+            addSemanticSearchPreferences(rootKey);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Unable to create semantic search settings; keeping core settings available", e);
+        }
 
         if (prefs.getStringSet("selected-search-provider-names", null) == null) {
-            // If null, it means this setting has never been accessed before
-            // In this case, null != [] ([] happens when the user manually unselected every single option)
-            // So, when null, we know it's the first time opening this setting and we can write the default value.
-            // note: other preferences are initialized automatically in MainActivity.onCreate() from the preferences XML,
-            // but this preference isn't defined in the XML so can't be initialized that easily.
             prefs.edit().putStringSet("selected-search-provider-names", SearchProvider.getSelectedSearchProviders(prefs)).apply();
         }
 
@@ -108,9 +109,13 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
             removePreference("search-providers", "reset-shortcuts");
         }
 
-        updateItemsToRun();
-        fixSummaries();
-        updateNightMode();
+        try {
+            updateItemsToRun();
+            fixSummaries();
+            updateNightMode();
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Non-critical Settings post-processing failed; keeping SettingsActivity open", e);
+        }
 
         permissionManager = new Permission(getActivity());
     }
@@ -231,7 +236,6 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
 
                         @Override
                         public void onDenied() {
-                            // You don't want to give us permission, that's fine. Revert the toggle.
                             SwitchPreference p = findPreference(key);
                             if (p != null) {
                                 p.setChecked(false);
@@ -250,8 +254,6 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 getDataHandler().reloadSearchProvider();
             } else if ("pref-fav-tags-list".equals(key)) {
                 getDataHandler().reloadTags();
-
-                // after we edit the fav tags list update DataHandler
                 Set<String> favTags = sharedPreferences.getStringSet(key, Collections.emptySet());
                 DataHandler dh = getDataHandler();
                 List<Pojo> favoritesPojo = dh.getFavorites();
@@ -320,7 +322,6 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
             }
         }
 
-        // Only display "rate the app" preference if the user has been using KISS long enough to enjoy it ;)
         Preference rateApp = findPreference("rate-app");
         if (rateApp != null) {
             if (historyLength < 300) {
@@ -330,7 +331,6 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                     Intent intent = new Intent(Intent.ACTION_VIEW);
                     intent.setData(Uri.parse("market://details?id=" + getContext().getApplicationContext().getPackageName()));
                     startActivity(intent);
-
                     return true;
                 });
             }
@@ -352,14 +352,6 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         }
     }
 
-    /**
-     * Override to catch an exception which can crash whole app.
-     * This exception can occure when entries are added to/removed from preferences dynamically.
-     *
-     * @param key The key of the preference to retrieve.
-     * @return The {@link Preference} with the key, or null.
-     * @see PreferenceFragmentCompat#findPreference(CharSequence)
-     */
     @Nullable
     @Override
     public <T extends Preference> T findPreference(@NonNull CharSequence key) {
@@ -387,7 +379,6 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         }
 
         if (dialogFragment != null) {
-            // check if dialog is already showing
             if (getParentFragmentManager().findFragmentByTag(DIALOG_FRAGMENT_TAG) != null) {
                 return true;
             }
@@ -428,7 +419,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 if (positiveResult) {
                     PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
                             .putStringSet("excluded-apps-from-history", null).apply();
-                    KissApplication.getApplication(requireContext()).getDataHandler().reloadApps(); // reload because it's cached in AppPojo#excludedFromHistory
+                    KissApplication.getApplication(requireContext()).getDataHandler().reloadApps();
                     Toast.makeText(getContext(), R.string.excluded_app_list_erased, Toast.LENGTH_LONG).show();
                 }
                 break;
@@ -437,9 +428,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                     PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
                             .putStringSet(DataHandler.PREF_KEY_EXCLUDED_SHORTCUT_APPS, null).apply();
                     DataHandler dataHandler = KissApplication.getApplication(requireContext()).getDataHandler();
-                    // Reload shortcuts to refresh the shortcuts shown in KISS
                     dataHandler.reloadShortcuts();
-                    // Reload apps since the `AppPojo.isExcludedShortcuts` value also needs to be refreshed
                     dataHandler.reloadApps();
                     Toast.makeText(getContext(), R.string.excluded_app_list_erased, Toast.LENGTH_LONG).show();
                 }
@@ -452,9 +441,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 break;
             case "reset-shortcuts":
                 if (positiveResult && android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    // Remove all shortcuts
                     ShortcutUtil.removeAllShortcuts(getContext());
-                    // Build all shortcuts
                     ShortcutUtil.addAllShortcuts(getContext());
                     Toast.makeText(getContext(), R.string.regenerate_shortcuts_done, Toast.LENGTH_LONG).show();
                 }
