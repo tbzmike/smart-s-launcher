@@ -23,7 +23,7 @@ import fr.neamar.kiss.utils.UserHandle;
 class DB extends SQLiteOpenHelper {
 
     private final static String DB_NAME = "kiss.s3db";
-    private final static int DB_VERSION = 12;
+    private final static int DB_VERSION = 13;
     private static final String TAG = DB.class.getSimpleName();
 
     private final Context mContext;
@@ -67,9 +67,10 @@ class DB extends SQLiteOpenHelper {
     private void addSmartLauncherStateTables(SQLiteDatabase database) {
         database.execSQL("CREATE TABLE IF NOT EXISTS app_catalog ( _id INTEGER PRIMARY KEY AUTOINCREMENT, package TEXT NOT NULL, class TEXT NOT NULL, label TEXT NOT NULL, user_serial INTEGER NOT NULL DEFAULT 0, UNIQUE(package,class,user_serial))");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_app_catalog_package ON app_catalog(package)");
-        database.execSQL("CREATE TABLE IF NOT EXISTS notification_history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id TEXT NOT NULL, package TEXT NOT NULL, app_name TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', post_time INTEGER NOT NULL)");
+        database.execSQL("CREATE TABLE IF NOT EXISTS notification_history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id TEXT NOT NULL, package TEXT NOT NULL, app_name TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', post_time INTEGER NOT NULL, is_permanent INTEGER NOT NULL DEFAULT 0)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_time ON notification_history(post_time DESC)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package ON notification_history(package)");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_permanent ON notification_history(is_permanent)");
     }
 
     @Override
@@ -105,6 +106,10 @@ class DB extends SQLiteOpenHelper {
                 case 11:
                     addSmartLauncherStateTables(database);
                     // fall through
+                case 12:
+                    database.execSQL("ALTER TABLE notification_history ADD COLUMN is_permanent INTEGER NOT NULL DEFAULT 0");
+                    database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_permanent ON notification_history(is_permanent)");
+                    // fall through
                 default:
                     break;
             }
@@ -117,6 +122,7 @@ class DB extends SQLiteOpenHelper {
         if (newVersion < oldVersion) {
             switch (newVersion) {
                 case 11:
+                    database.execSQL("DROP INDEX IF EXISTS idx_notification_history_permanent");
                     database.execSQL("DROP INDEX IF EXISTS idx_notification_history_package");
                     database.execSQL("DROP INDEX IF EXISTS idx_notification_history_time");
                     database.execSQL("DROP TABLE IF EXISTS notification_history");
@@ -173,7 +179,7 @@ class DB extends SQLiteOpenHelper {
                 int index = favorites.indexOf(shortcut.oldId);
                 if (index >= 0) {
                     favorites.set(index, shortcut.newId);
-                    Log.v(TAG, "Updated favorite: " + shortcut.oldId + " > " + shortcut.newId);
+                    Log.v(TAG, "Updated favorites: " + shortcut.oldId + " > " + shortcut.newId);
                 }
             });
             SharedPreferences.Editor prefsEditor = PreferenceManager.getDefaultSharedPreferences(mContext).edit()
