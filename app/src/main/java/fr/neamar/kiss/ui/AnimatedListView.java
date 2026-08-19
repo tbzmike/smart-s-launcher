@@ -10,17 +10,31 @@ import java.util.HashMap;
 public class AnimatedListView extends BlockableListView {
 
     protected final HashMap<Long, ItemInfo> mItemMap = new HashMap<>();
+    private SmartScrollAnimationController smartScrollAnimations;
 
     public AnimatedListView(Context context) {
         super(context);
+        initSmartAnimations();
     }
 
     public AnimatedListView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        initSmartAnimations();
     }
 
     public AnimatedListView(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
+        initSmartAnimations();
+    }
+
+    private void initSmartAnimations() {
+        smartScrollAnimations = new SmartScrollAnimationController(this);
+    }
+
+    @Override
+    protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+        super.onScrollChanged(l, t, oldl, oldt);
+        if (smartScrollAnimations != null) smartScrollAnimations.apply();
     }
 
     public void prepareChangeAnim() {
