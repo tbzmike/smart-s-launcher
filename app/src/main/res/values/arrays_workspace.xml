@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="smart_workspace_orientation_entries">
+        <item>Left / right</item>
+        <item>Top / bottom</item>
+    </string-array>
+    <string-array name="smart_workspace_orientation_values">
+        <item>horizontal</item>
+        <item>vertical</item>
+    </string-array>
+
+    <string-array name="smart_workspace_content_entries">
+        <item>Apps &amp; history</item>
+        <item>Widgets</item>
+    </string-array>
+    <string-array name="smart_workspace_content_values">
+        <item>history</item>
+        <item>widgets</item>
+    </string-array>
+</resources>
