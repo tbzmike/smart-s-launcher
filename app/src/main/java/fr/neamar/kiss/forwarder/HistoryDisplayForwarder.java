@@ -406,8 +406,6 @@ final class HistoryDisplayForwarder extends Forwarder {
             float spacing = totalPath / Math.max(1, count);
 
             for (int i = 0; i < count; i++) {
-                // Adapter's newest history item is at the end. Keep it at bottom-center by mapping
-                // newest -> sequence zero, then distribute older items around the square-U.
                 int recencyIndex = (count - 1) - i;
                 float signedStep;
                 if (recencyIndex == 0) {
@@ -439,8 +437,6 @@ final class HistoryDisplayForwarder extends Forwarder {
             float wrapped = distance % totalPath;
             if (wrapped < 0f) wrapped += totalPath;
 
-            // Path starts at bottom-left -> bottom-right -> right side up -> jump through virtual
-            // top edge -> left side down. The virtual wrap is hidden by the side overlap.
             if (wrapped <= bottomLength) {
                 float progress = wrapped / bottomLength;
                 float centerBias = 1f - Math.abs((progress * 2f) - 1f);
@@ -496,7 +492,7 @@ final class HistoryDisplayForwarder extends Forwarder {
                     float x = event.getX();
                     float delta = x - lastX;
                     lastX = x;
-                    rotationOffset += delta / Math.max(dp(52f), getWidth() / 6f);
+                    rotationOffset += delta / Math.max(dp(52), getWidth() / 6f);
                     requestLayout();
                     return true;
                 case MotionEvent.ACTION_UP:
