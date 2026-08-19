@@ -68,7 +68,8 @@ public final class SmartStateStore {
 
     public static void saveNotification(@NonNull Context context, @NonNull String notificationId,
                                         @NonNull String packageName, @NonNull String appName,
-                                        @Nullable String title, @Nullable String body, long postTime) {
+                                        @Nullable String title, @Nullable String body, long postTime,
+                                        boolean permanent) {
         ContentValues values = new ContentValues();
         values.put("notification_id", notificationId);
         values.put("package", packageName);
@@ -76,6 +77,7 @@ public final class SmartStateStore {
         values.put("title", title == null ? "" : title);
         values.put("body", body == null ? "" : body);
         values.put("post_time", postTime);
+        values.put("is_permanent", permanent ? 1 : 0);
         // There is deliberately no notification-count cap. Re-posts/reconnects for the same
         // notification update its stored content instead of duplicating the same event.
         try {
@@ -93,7 +95,7 @@ public final class SmartStateStore {
     public static List<String[]> getNotificationApps(@NonNull Context context) {
         List<String[]> result = new ArrayList<>();
         try (Cursor cursor = db(context).rawQuery(
-                "SELECT package, MAX(app_name) FROM notification_history GROUP BY package ORDER BY MAX(post_time) DESC", null)) {
+                "SELECT package, MAX(app_name) FROM notification_history WHERE is_permanent=0 GROUP BY package ORDER BY MAX(post_time) DESC", null)) {
             while (cursor.moveToNext()) result.add(new String[]{cursor.getString(0), cursor.getString(1)});
         }
         return result;
@@ -104,11 +106,25 @@ public final class SmartStateStore {
                                                                      @Nullable String packageName,
                                                                      @Nullable List<String> terms,
                                                                      int limit) {
+        return queryNotifications(context, packageName, terms, null, limit);
+    }
+
+    @NonNull
+    public static List<NotificationHistoryRecord> queryNotifications(@NonNull Context context,
+                                                                     @Nullable String packageName,
+                                                                     @Nullable List<String> terms,
+                                                                     @Nullable Boolean permanent,
+                                                                     int limit) {
         StringBuilder where = new StringBuilder();
         List<String> args = new ArrayList<>();
         if (packageName != null && !packageName.isEmpty()) {
             where.append("package=?");
             args.add(packageName);
+        }
+        if (permanent != null) {
+            if (where.length() > 0) where.append(" AND ");
+            where.append("is_permanent=?");
+            args.add(permanent ? "1" : "0");
         }
         if (terms != null && !terms.isEmpty()) {
             if (where.length() > 0) where.append(" AND ");
@@ -125,7 +141,7 @@ public final class SmartStateStore {
         List<NotificationHistoryRecord> result = new ArrayList<>();
         String limitText = limit > 0 ? Integer.toString(limit) : null;
         try (Cursor cursor = db(context).query("notification_history",
-                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time"},
+                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent"},
                 where.length() == 0 ? null : where.toString(),
                 args.isEmpty() ? null : args.toArray(new String[0]),
                 null, null, "post_time DESC", limitText)) {
@@ -138,6 +154,7 @@ public final class SmartStateStore {
                 record.title = cursor.getString(4);
                 record.text = cursor.getString(5);
                 record.postTime = cursor.getLong(6);
+                record.permanent = cursor.getInt(7) != 0;
                 result.add(record);
             }
         }
