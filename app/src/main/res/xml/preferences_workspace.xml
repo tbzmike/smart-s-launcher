@@ -41,7 +41,28 @@
             app:key="smart-workspace-draggable"
             app:defaultValue="true"
             app:title="Resizable divider"
-            app:summary="Drag the divider continuously between 15% and 85% of the available launcher area"
+            app:summary="Drag the divider continuously between 15% and 85%; when disabled the divider is completely hidden"
+            app:dependency="smart-workspace-enabled" />
+
+        <SwitchPreference
+            app:key="smart-workspace-empty-add-widget"
+            app:defaultValue="true"
+            app:title="Long-press empty space to add widgets"
+            app:summary="Any empty workspace surface can open the existing KISS widget picker"
+            app:dependency="smart-workspace-enabled" />
+
+        <SwitchPreference
+            app:key="smart-workspace-empty-gestures"
+            app:defaultValue="true"
+            app:title="KISS gestures on empty panes"
+            app:summary="Keep configured KISS swipe gestures active on empty workspace surfaces"
+            app:dependency="smart-workspace-enabled" />
+
+        <SwitchPreference
+            app:key="smart-workspace-free-widget-resize"
+            app:defaultValue="true"
+            app:title="Free widget resizing"
+            app:summary="Drag a widget's lower-right corner to resize its width and height within the pane and provider limits"
             app:dependency="smart-workspace-enabled" />
 
         <Preference
