@@ -15,6 +15,7 @@ import android.os.Process;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -37,6 +38,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
@@ -107,10 +109,25 @@ public class SettingsResult extends Result<SettingPojo> {
         if (!isHideIcons(context)) setAsyncDrawable(icon);
         else icon.setImageDrawable(null);
 
+        // The icon is always an app launcher target. IceBox-frozen apps are enabled first.
+        icon.setOnClickListener(v -> {
+            if (!AppLaunchUtils.launchPackage(context, notification.packageName)) {
+                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // The text/name/native notification area opens Smart S's grouped notification popup.
+        View.OnClickListener openGroup = v -> showNotificationGroup(context, notification);
+        appName.setOnClickListener(openGroup);
+        title.setOnClickListener(openGroup);
+        text.setOnClickListener(openGroup);
+        nativeContainer.setOnClickListener(openGroup);
+
         markRead.setText(R.string.notification_mark_read);
         markRead.setOnClickListener(v -> {
             if (NotificationListener.markGroupRead(context, notification.groupKey)) {
                 markRead.setEnabled(false);
+                view.setVisibility(View.GONE);
                 context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
             } else {
                 Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
@@ -196,6 +213,7 @@ public class SettingsResult extends Result<SettingPojo> {
             View nativeView = NotificationListener.createNativeNotificationView(context, item.id, row, false);
             if (nativeView != null) {
                 row.addView(nativeView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                nativeView.setOnClickListener(v -> showNotificationDetail(context, notification, item));
             } else {
                 TextView itemTitle = new TextView(context);
                 itemTitle.setText(item.title.isEmpty() ? notification.appName : item.title);
@@ -227,7 +245,7 @@ public class SettingsResult extends Result<SettingPojo> {
     }
 
     private void showNotificationDetail(Context context, NotificationPojo group, NotificationListener.NotificationSnapshot item) {
-        String title = item.title.isEmpty() ? group.appName : item.title;
+        String detailTitle = item.title.isEmpty() ? group.appName : item.title;
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
         int padding = dp(context, 12);
@@ -243,29 +261,76 @@ public class SettingsResult extends Result<SettingPojo> {
             content.addView(body);
         }
 
-        new AlertDialog.Builder(context)
-                .setTitle(title)
+        LinearLayout actions = new LinearLayout(context);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button markRead = new Button(context);
+        markRead.setText("Mark read");
+        actions.addView(markRead, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        Button open = new Button(context);
+        open.setText("Open notification");
+        actions.addView(open, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        if (NotificationListener.hasReplyAction(context, item.id)) {
+            Button reply = new Button(context);
+            reply.setText("Reply");
+            reply.setOnClickListener(v -> showReplyDialog(context, item));
+            actions.addView(reply, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        content.addView(actions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        AlertDialog dialog = new AlertDialog.Builder(context)
+                .setTitle(detailTitle)
                 .setView(content)
-                .setPositiveButton("Open notification", (dialog, which) -> {
-                    if (!NotificationListener.openNotification(context, item.id)) {
-                        Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(group.packageName);
-                        if (launchIntent != null) {
-                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                            context.startActivity(launchIntent);
-                        } else {
-                            Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
-                        }
-                    }
-                })
-                .setNeutralButton("Mark read", (dialog, which) -> {
-                    if (!NotificationListener.markNotificationRead(context, item.id)) {
-                        Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
-                    } else {
-                        context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
-                    }
-                })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+
+        markRead.setOnClickListener(v -> {
+            if (!NotificationListener.markNotificationRead(context, item.id)) {
+                Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
+            } else {
+                context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                dialog.dismiss();
+            }
+        });
+
+        open.setOnClickListener(v -> {
+            if (!AppLaunchUtils.ensurePackageEnabled(context, group.packageName)) {
+                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (!NotificationListener.openNotification(context, item.id)
+                    && !AppLaunchUtils.launchPackage(context, group.packageName)) {
+                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        dialog.show();
+    }
+
+    private void showReplyDialog(Context context, NotificationListener.NotificationSnapshot item) {
+        EditText input = new EditText(context);
+        input.setHint("Type a reply");
+        input.setSingleLine(false);
+        input.setMinLines(2);
+
+        AlertDialog replyDialog = new AlertDialog.Builder(context)
+                .setTitle("Reply")
+                .setView(input)
+                .setPositiveButton("Send", null)
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        replyDialog.setOnShowListener(ignored -> replyDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String replyText = input.getText().toString().trim();
+            if (replyText.isEmpty()) return;
+            if (NotificationListener.replyToNotification(context, item.id, replyText)) {
+                replyDialog.dismiss();
+            } else {
+                Toast.makeText(context, "Unable to send reply.", Toast.LENGTH_SHORT).show();
+            }
+        }));
+        replyDialog.show();
     }
 
     private int dp(Context context, int value) {
