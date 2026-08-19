@@ -14,7 +14,6 @@ import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Process;
 import android.os.UserManager;
 import android.view.Menu;
 import android.view.View;
@@ -39,6 +38,7 @@ import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
@@ -46,7 +46,6 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class AppResult extends ResultWithTags<AppPojo> {
     private static final String TAG = AppResult.class.getSimpleName();
-    private static final int ANDROID_UID_USER_RANGE = 100000;
     private volatile Drawable icon = null;
     private boolean launchSucceeded = true;
 
@@ -122,15 +121,8 @@ public class AppResult extends ResultWithTags<AppPojo> {
     private String getPackageKey() { return pojo.getPackageKey(); }
 
     private boolean refreshLiveDisabledState(Context context) {
-        LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
-        if (launcher == null) return pojo.isDisabled();
-        boolean enabled;
-        try {
-            enabled = launcher.isPackageEnabled(pojo.packageName, pojo.userHandle.getRealHandle())
-                    && launcher.isActivityEnabled(getClassName(), pojo.userHandle.getRealHandle());
-        } catch (SecurityException | IllegalArgumentException e) {
-            return pojo.isDisabled();
-        }
+        // PackageManager can still see IceBox-disabled packages even when LauncherApps hides them.
+        boolean enabled = AppLaunchUtils.isPackageEnabled(context, pojo.packageName);
         pojo.setDisabled(!enabled);
         return !enabled;
     }
@@ -280,15 +272,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
                 Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
                 return;
             }
-            if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()
-                    || !KissApplication.getApplication(context).getRootHandler().isRootAvailable()) {
-                Toast.makeText(context, "Frozen app: enable Root mode to open it.", Toast.LENGTH_LONG).show();
-                return;
-            }
-            int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
-            boolean enabled = KissApplication.getApplication(context).getRootHandler().enableApp(pojo.packageName, userId);
-            if (enabled) KissApplication.getApplication(context).getRootHandler().enableComponent(pojo.packageName, pojo.activityName, userId);
-            if (!enabled) {
+            if (!AppLaunchUtils.ensurePackageEnabled(context, pojo.packageName)) {
                 pojo.setDisabled(true);
                 clearIcon();
                 Toast.makeText(context, "Unable to enable " + pojo.getName(), Toast.LENGTH_LONG).show();
@@ -317,7 +301,13 @@ public class AppResult extends ResultWithTags<AppPojo> {
             KissApplication.getApplication(context).getDataHandler().reloadApps();
         } catch (ActivityNotFoundException | NullPointerException | SecurityException e) {
             Log.w(TAG, "Unable to launch activity", e);
-            if (!refreshLiveDisabledState(context)) {
+            // Never hide/exclude an app merely because IceBox froze it between index and tap.
+            if (!AppLaunchUtils.isPackageEnabled(context, pojo.packageName)) {
+                pojo.setDisabled(true);
+                clearIcon();
+                KissApplication.getApplication(context).getDataHandler().reloadApps();
+            } else {
+                // Only a genuinely enabled, broken launcher component is treated as a failed app target.
                 KissApplication.getApplication(context).getDataHandler().addToExcluded(pojo);
                 removeFromHistory(context);
             }
