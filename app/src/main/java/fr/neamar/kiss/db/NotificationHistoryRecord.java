@@ -8,4 +8,5 @@ public class NotificationHistoryRecord {
     public String title;
     public String text;
     public long postTime;
+    public boolean permanent;
 }
