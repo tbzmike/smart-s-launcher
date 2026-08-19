@@ -1,9 +1,13 @@
 package fr.neamar.kiss.searcher;
 
+import androidx.preference.PreferenceManager;
+
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.dataprovider.simpleprovider.NotificationProvider;
 
 /**
- * Retrieve pojos from history
+ * Minimalistic-mode searcher. Normal history stays hidden, but live notification groups remain
+ * visible so hiding KISS history never hides active notifications.
  */
 public class NullSearcher extends Searcher {
 
@@ -19,7 +23,12 @@ public class NullSearcher extends Searcher {
 
     @Override
     protected Void doInBackground(Void... voids) {
-        // nothing found ;)
+        MainActivity activity = activityWeakReference.get();
+        if (activity == null || isCancelled()) return null;
+        if (!PreferenceManager.getDefaultSharedPreferences(activity)
+                .getBoolean("enable-notification-history", false)) return null;
+
+        addResults(new NotificationProvider(activity).getPojos());
         return null;
     }
 }
