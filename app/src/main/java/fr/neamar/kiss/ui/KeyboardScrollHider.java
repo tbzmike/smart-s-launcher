@@ -157,53 +157,22 @@ public class KeyboardScrollHider implements View.OnTouchListener {
                 break;
 
             case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_CANCEL:
                 this.lastMotionEvent = null;
 
-                if (!this.resizeDone) {
-                    // Hide the keyboard if the user has scrolled down by about half a result item
-                    if (isScrolled()) {
-                        this.handler.hideKeyboard();
-                    }
-                    ValueAnimator animator = ValueAnimator.ofInt(
-                            this.list.getHeight(),
-                            this.listParent.getHeight()
-                    );
-                    int animationDuration = v.getContext().getResources().getInteger(android.R.integer.config_shortAnimTime);
-                    animator.setDuration(animationDuration);
-                    animator.setInterpolator(new AccelerateInterpolator());
-                    animator.addUpdateListener(animation -> {
-                        int height = (int) animation.getAnimatedValue();
-                        KeyboardScrollHider.this.setListLayoutHeight(height);
-                    });
-                    animator.addListener(new Animator.AnimatorListener() {
-                        @Override
-                        public void onAnimationStart(@NonNull Animator animation) {
-                            // Give the list view the control over it's input back
-                            KeyboardScrollHider.this.list.unblockTouchEvents();
-
-                            // Quickly fade out edge pull effect
-                            KeyboardScrollHider.this.pullEffect.releasePull();
-                        }
-
-                        @Override
-                        public void onAnimationEnd(@NonNull Animator animation) {
-                            KeyboardScrollHider.this.handleResizeDone();
-                        }
-
-                        @Override
-                        public void onAnimationCancel(@NonNull Animator animation) {
-                        }
-
-                        @Override
-                        public void onAnimationRepeat(@NonNull Animator animation) {
-                        }
-                    });
-                    animator.start();
-                } else {
-                    this.handleResizeDone();
+                // A simple tap must stay a tap. Restoring MATCH_PARENT during ACTION_UP can
+                // relayout the ListView before it finishes dispatching the item click, which
+                // makes history/app icons appear unclickable while the keyboard is visible.
+                if (Math.abs(this.offsetYCurrent - this.offsetYStart) <= THRESHOLD) {
+                    this.list.post(this::handleResizeDone);
+                    break;
                 }
 
+                finishScrollGesture(v);
+                break;
+
+            case MotionEvent.ACTION_CANCEL:
+                this.lastMotionEvent = null;
+                finishScrollGesture(v);
                 break;
         }
 
@@ -212,6 +181,52 @@ public class KeyboardScrollHider implements View.OnTouchListener {
         }
 
         return false;
+    }
+
+    private void finishScrollGesture(View v) {
+        if (!this.resizeDone) {
+            // Hide the keyboard if the user has scrolled down by about half a result item
+            if (isScrolled()) {
+                this.handler.hideKeyboard();
+            }
+            ValueAnimator animator = ValueAnimator.ofInt(
+                    this.list.getHeight(),
+                    this.listParent.getHeight()
+            );
+            int animationDuration = v.getContext().getResources().getInteger(android.R.integer.config_shortAnimTime);
+            animator.setDuration(animationDuration);
+            animator.setInterpolator(new AccelerateInterpolator());
+            animator.addUpdateListener(animation -> {
+                int height = (int) animation.getAnimatedValue();
+                KeyboardScrollHider.this.setListLayoutHeight(height);
+            });
+            animator.addListener(new Animator.AnimatorListener() {
+                @Override
+                public void onAnimationStart(@NonNull Animator animation) {
+                    // Give the list view the control over it's input back
+                    KeyboardScrollHider.this.list.unblockTouchEvents();
+
+                    // Quickly fade out edge pull effect
+                    KeyboardScrollHider.this.pullEffect.releasePull();
+                }
+
+                @Override
+                public void onAnimationEnd(@NonNull Animator animation) {
+                    KeyboardScrollHider.this.handleResizeDone();
+                }
+
+                @Override
+                public void onAnimationCancel(@NonNull Animator animation) {
+                }
+
+                @Override
+                public void onAnimationRepeat(@NonNull Animator animation) {
+                }
+            });
+            animator.start();
+        } else {
+            this.handleResizeDone();
+        }
     }
 
     public void fixScroll() {
