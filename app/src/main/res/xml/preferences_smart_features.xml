@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
+    app:title="Smart features">
+
+    <PreferenceScreen
+        app:key="smart-notifications"
+        app:summary="@string/smart_notifications_summary"
+        app:title="@string/smart_notifications_title">
+        <PreferenceCategory app:title="@string/smart_live_notifications_category">
+            <SwitchPreference
+                app:defaultValue="true"
+                app:key="smart-notification-timeline-enabled"
+                app:summary="@string/smart_notification_timeline_summary"
+                app:title="@string/smart_notification_timeline" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="smart-notification-timeline-enabled"
+                app:key="smart-notifications-when-history-hidden"
+                app:summary="@string/smart_notifications_when_history_hidden_summary"
+                app:title="@string/smart_notifications_when_history_hidden" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="smart-notification-timeline-enabled"
+                app:key="smart-native-notification-style"
+                app:summary="@string/smart_native_notification_style_summary"
+                app:title="@string/smart_native_notification_style" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="smart-notification-timeline-enabled"
+                app:key="smart-compact-notification-popup"
+                app:summary="@string/smart_compact_notification_popup_summary"
+                app:title="@string/smart_compact_notification_popup" />
+        </PreferenceCategory>
+
+        <PreferenceCategory app:title="@string/smart_notification_actions_category">
+            <SwitchPreference
+                app:defaultValue="true"
+                app:key="smart-notification-mark-read"
+                app:summary="@string/smart_mark_read_summary"
+                app:title="@string/smart_mark_read" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="smart-notification-mark-read"
+                app:key="smart-notification-mark-all-read"
+                app:summary="@string/smart_mark_all_read_summary"
+                app:title="@string/smart_mark_all_read" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:key="smart-notification-inline-reply"
+                app:summary="@string/smart_inline_reply_summary"
+                app:title="@string/smart_inline_reply" />
+        </PreferenceCategory>
+
+        <PreferenceCategory app:title="@string/smart_notification_history_category">
+            <SwitchPreference
+                app:defaultValue="false"
+                app:key="enable-notification-history"
+                app:summary="@string/smart_enable_notification_history_summary"
+                app:title="@string/smart_enable_notification_history" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="enable-notification-history"
+                app:key="smart-save-permanent-notifications"
+                app:summary="@string/smart_save_permanent_notifications_summary"
+                app:title="@string/smart_save_permanent_notifications" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="enable-notification-history"
+                app:key="smart-notification-history-search"
+                app:summary="@string/smart_notification_history_search_summary"
+                app:title="@string/smart_notification_history_search" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="enable-notification-history"
+                app:key="smart-notification-history-highlight"
+                app:summary="@string/smart_notification_history_highlight_summary"
+                app:title="@string/smart_notification_history_highlight" />
+            <ListPreference
+                app:defaultValue="unlimited"
+                app:dependency="enable-notification-history"
+                app:entries="@array/smart_notification_storage_entries"
+                app:entryValues="@array/smart_notification_storage_values"
+                app:key="smart-notification-storage-policy"
+                app:title="@string/smart_notification_storage_policy"
+                app:useSimpleSummaryProvider="true" />
+        </PreferenceCategory>
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        app:key="smart-frozen-apps"
+        app:summary="@string/smart_frozen_apps_summary"
+        app:title="@string/smart_frozen_apps_title">
+        <PreferenceCategory app:title="@string/smart_frozen_detection_category">
+            <SwitchPreference
+                app:defaultValue="true"
+                app:key="smart-detect-frozen-apps"
+                app:summary="@string/smart_detect_frozen_apps_summary"
+                app:title="@string/smart_detect_frozen_apps" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="smart-detect-frozen-apps"
+                app:key="smart-keep-frozen-searchable"
+                app:summary="@string/smart_keep_frozen_searchable_summary"
+                app:title="@string/smart_keep_frozen_searchable" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="smart-detect-frozen-apps"
+                app:key="smart-grey-frozen-apps"
+                app:summary="@string/smart_grey_frozen_apps_summary"
+                app:title="@string/smart_grey_frozen_apps" />
+        </PreferenceCategory>
+        <PreferenceCategory app:title="@string/smart_frozen_launch_category">
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="smart-detect-frozen-apps"
+                app:key="smart-auto-enable-frozen-apps"
+                app:summary="@string/smart_auto_enable_frozen_apps_summary"
+                app:title="@string/smart_auto_enable_frozen_apps" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="smart-detect-frozen-apps"
+                app:key="smart-package-change-monitoring"
+                app:summary="@string/smart_package_change_monitoring_summary"
+                app:title="@string/smart_package_change_monitoring" />
+            <ListPreference
+                app:defaultValue="15"
+                app:dependency="smart-detect-frozen-apps"
+                app:entries="@array/smart_frozen_refresh_entries"
+                app:entryValues="@array/smart_frozen_refresh_values"
+                app:key="smart-frozen-refresh-interval"
+                app:title="@string/smart_frozen_refresh_interval"
+                app:useSimpleSummaryProvider="true" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:dependency="smart-detect-frozen-apps"
+                app:key="smart-keep-frozen-history"
+                app:summary="@string/smart_keep_frozen_history_summary"
+                app:title="@string/smart_keep_frozen_history" />
+        </PreferenceCategory>
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        app:key="smart-animations"
+        app:summary="@string/smart_animations_summary"
+        app:title="@string/smart_animations_title">
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-animations-enabled"
+            app:summary="@string/smart_animation_master_summary"
+            app:title="@string/smart_animation_master" />
+        <ListPreference
+            app:defaultValue="classic"
+            app:dependency="smart-animations-enabled"
+            app:entries="@array/smart_scroll_animation_entries"
+            app:entryValues="@array/smart_scroll_animation_values"
+            app:key="smart-animation-scroll"
+            app:title="@string/smart_animation_scroll"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="fade"
+            app:dependency="smart-animations-enabled"
+            app:entries="@array/smart_enter_animation_entries"
+            app:entryValues="@array/smart_enter_animation_values"
+            app:key="smart-animation-window-enter"
+            app:title="@string/smart_animation_window_enter"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="fade"
+            app:dependency="smart-animations-enabled"
+            app:entries="@array/smart_exit_animation_entries"
+            app:entryValues="@array/smart_exit_animation_values"
+            app:key="smart-animation-window-exit"
+            app:title="@string/smart_animation_window_exit"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="scale"
+            app:dependency="smart-animations-enabled"
+            app:entries="@array/smart_popup_animation_entries"
+            app:entryValues="@array/smart_popup_animation_values"
+            app:key="smart-animation-popup-open"
+            app:title="@string/smart_animation_popup_open"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="shrink"
+            app:dependency="smart-animations-enabled"
+            app:entries="@array/smart_exit_animation_entries"
+            app:entryValues="@array/smart_exit_animation_values"
+            app:key="smart-animation-popup-close"
+            app:title="@string/smart_animation_popup_close"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="spring"
+            app:dependency="smart-animations-enabled"
+            app:entries="@array/smart_popup_animation_entries"
+            app:entryValues="@array/smart_popup_animation_values"
+            app:key="smart-animation-notification-expand"
+            app:title="@string/smart_animation_notification_expand"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="crossfade"
+            app:dependency="smart-animations-enabled"
+            app:entries="@array/smart_switch_animation_entries"
+            app:entryValues="@array/smart_switch_animation_values"
+            app:key="smart-animation-view-switch"
+            app:title="@string/smart_animation_view_switch"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="fade"
+            app:dependency="smart-animations-enabled"
+            app:entries="@array/smart_toast_animation_entries"
+            app:entryValues="@array/smart_toast_animation_values"
+            app:key="smart-animation-toast"
+            app:title="@string/smart_animation_toast"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="1.0"
+            app:dependency="smart-animations-enabled"
+            app:entries="@array/smart_animation_speed_entries"
+            app:entryValues="@array/smart_animation_speed_values"
+            app:key="smart-animation-speed"
+            app:title="@string/smart_animation_speed"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceScreen>
+
+    <PreferenceScreen
+        app:key="smart-wallpaper-blur"
+        app:summary="@string/smart_wallpaper_blur_summary"
+        app:title="@string/smart_wallpaper_blur_title">
+        <SwitchPreference
+            app:defaultValue="false"
+            app:key="smart-focus-blur-enabled"
+            app:summary="@string/smart_focus_blur_summary"
+            app:title="@string/smart_focus_blur" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-focus-blur-enabled"
+            app:key="smart-focus-track-icons"
+            app:summary="@string/smart_focus_track_icons_summary"
+            app:title="@string/smart_focus_track_icons" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:dependency="smart-focus-blur-enabled"
+            app:key="smart-focus-animate"
+            app:summary="@string/smart_focus_animate_summary"
+            app:title="@string/smart_focus_animate" />
+        <ListPreference
+            app:defaultValue="balanced"
+            app:dependency="smart-focus-blur-enabled"
+            app:entries="@array/smart_blur_strength_entries"
+            app:entryValues="@array/smart_blur_strength_values"
+            app:key="smart-focus-strength"
+            app:title="@string/smart_focus_strength"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="medium"
+            app:dependency="smart-focus-blur-enabled"
+            app:entries="@array/smart_blur_radius_entries"
+            app:entryValues="@array/smart_blur_radius_values"
+            app:key="smart-focus-radius"
+            app:title="@string/smart_focus_radius"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="balanced"
+            app:dependency="smart-focus-blur-enabled"
+            app:entries="@array/smart_focus_area_entries"
+            app:entryValues="@array/smart_focus_area_values"
+            app:key="smart-focus-area-size"
+            app:title="@string/smart_focus_area_size"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-history-background-blur"
+            app:summary="@string/smart_history_background_blur_summary"
+            app:title="@string/smart_history_background_blur" />
+        <ListPreference
+            app:defaultValue="balanced"
+            app:entries="@array/smart_blur_performance_entries"
+            app:entryValues="@array/smart_blur_performance_values"
+            app:key="smart-blur-performance"
+            app:title="@string/smart_blur_performance"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceScreen>
+</PreferenceScreen>
