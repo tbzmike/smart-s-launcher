@@ -33,7 +33,6 @@
             app:title="First pane size (%)"
             app:summary="Initial size of the first pane; the divider can also be dragged directly on the launcher"
             app:min="15"
-            app:max="85"
             app:seekBarIncrement="1"
             app:showSeekBarValue="true"
             app:dependency="smart-workspace-enabled" />
