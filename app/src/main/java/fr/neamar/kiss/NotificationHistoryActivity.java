@@ -6,7 +6,6 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.Button;
@@ -47,6 +46,13 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         buildUi();
         rebuildTabs();
         refresh();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (tabs != null) rebuildTabs();
+        if (list != null) refresh();
     }
 
     private void buildUi() {
@@ -120,12 +126,18 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             terms = new ArrayList<>(smartTerms);
         }
         records.clear();
-        // Storage is unlimited by count; only the currently rendered window is capped for UI safety.
         records.addAll(SmartStateStore.queryNotifications(this, selectedPackage, terms, 2000));
         if (list != null && list.getAdapter() instanceof BaseAdapter) ((BaseAdapter) list.getAdapter()).notifyDataSetChanged();
     }
 
     private void open(NotificationHistoryRecord record) {
+        // If IceBox has frozen the app, enable it first so either the original active PendingIntent
+        // or the package launcher can work. Old history entries no longer have a live PendingIntent,
+        // so they safely fall back to the app's real launcher activity.
+        if (!AppLaunchUtils.ensurePackageEnabled(this, record.packageName)) {
+            Toast.makeText(this, "Unable to enable " + record.appName, Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (NotificationListener.openNotification(this, record.notificationId)) return;
         if (!AppLaunchUtils.launchPackage(this, record.packageName)) {
             Toast.makeText(this, "Unable to open " + record.appName, Toast.LENGTH_SHORT).show();
@@ -140,7 +152,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         @Override public long getItemId(int position) { return records.get(position).dbId; }
 
         @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
+        public android.view.View getView(int position, android.view.View convertView, ViewGroup parent) {
             NotificationHistoryRecord record = getItem(position);
             LinearLayout row = new LinearLayout(NotificationHistoryActivity.this);
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -153,6 +165,8 @@ public class NotificationHistoryActivity extends AppCompatActivity {
                 PackageManager pm = getPackageManager();
                 ApplicationInfo info = pm.getApplicationInfo(record.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
                 icon.setImageDrawable(info.loadIcon(pm));
+                if (!AppLaunchUtils.isPackageEnabled(NotificationHistoryActivity.this, record.packageName)
+                        && icon.getDrawable() != null) icon.getDrawable().setAlpha(140);
             } catch (PackageManager.NameNotFoundException ignored) {}
             row.addView(icon, new LinearLayout.LayoutParams(size, size));
 
