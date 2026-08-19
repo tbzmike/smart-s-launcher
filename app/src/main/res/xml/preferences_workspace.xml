@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
+    app:title="Flexible workspace">
+
+    <PreferenceCategory app:title="Flexible panes">
+        <SwitchPreference
+            app:key="smart-workspace-enabled"
+            app:defaultValue="false"
+            app:title="Enable flexible workspace"
+            app:summary="Use resizable launcher panes instead of one fixed full-screen content area" />
+
+        <ListPreference
+            app:key="smart-workspace-orientation"
+            app:defaultValue="horizontal"
+            app:title="Split direction"
+            app:entries="@array/smart_workspace_orientation_entries"
+            app:entryValues="@array/smart_workspace_orientation_values"
+            app:dependency="smart-workspace-enabled"
+            app:useSimpleSummaryProvider="true" />
+
+        <ListPreference
+            app:key="smart-workspace-primary-content"
+            app:defaultValue="history"
+            app:title="First pane content"
+            app:entries="@array/smart_workspace_content_entries"
+            app:entryValues="@array/smart_workspace_content_values"
+            app:dependency="smart-workspace-enabled"
+            app:useSimpleSummaryProvider="true" />
+
+        <SeekBarPreference
+            app:key="smart-workspace-split-percent"
+            app:defaultValue="50"
+            app:title="First pane size (%)"
+            app:summary="Initial size of the first pane; the divider can also be dragged directly on the launcher"
+            app:min="15"
+            app:max="85"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true"
+            app:dependency="smart-workspace-enabled" />
+
+        <SwitchPreference
+            app:key="smart-workspace-draggable"
+            app:defaultValue="true"
+            app:title="Resizable divider"
+            app:summary="Drag the divider continuously between 15% and 85% of the available launcher area"
+            app:dependency="smart-workspace-enabled" />
+
+        <Preference
+            app:title="Pane architecture"
+            app:summary="Apps &amp; history and Android widgets can occupy either pane. The workspace foundation is designed for more Smart S panels and widgets later."
+            app:selectable="false" />
+    </PreferenceCategory>
+</PreferenceScreen>
