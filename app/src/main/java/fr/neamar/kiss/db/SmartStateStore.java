@@ -4,6 +4,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteFullException;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -11,8 +12,11 @@ import androidx.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
+import fr.neamar.kiss.utils.Log;
+
 /** Persistent Smart S state that must survive provider reloads and app freezes. */
 public final class SmartStateStore {
+    private static final String TAG = SmartStateStore.class.getSimpleName();
     private static volatile SQLiteDatabase database;
 
     private SmartStateStore() {}
@@ -72,8 +76,13 @@ public final class SmartStateStore {
         values.put("title", title == null ? "" : title);
         values.put("body", body == null ? "" : body);
         values.put("post_time", postTime);
-        // No item-count pruning: history grows until the user/device storage policy intervenes.
-        db(context).insert("notification_history", null, values);
+        // There is deliberately no notification-count cap. If the device finally exhausts
+        // writable SQLite storage, preserve launcher stability and simply stop that insert.
+        try {
+            db(context).insertOrThrow("notification_history", null, values);
+        } catch (SQLiteFullException e) {
+            Log.w(TAG, "Notification history reached available database storage", e);
+        }
     }
 
     @NonNull
