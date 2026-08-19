@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="smart_features_title">Smart features</string>
     <string name="smart_notifications_title">Notifications &amp; history</string>
     <string name="smart_notifications_summary">Launcher timeline, notification actions and persistent history</string>
     <string name="smart_live_notifications_category">Live notifications</string>
