@@ -72,8 +72,13 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
         Result<?> result = getItem(position);
         View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
-        TileVisualStyle.apply(view, result, parent.getContext());
-        if (parent instanceof AbsListView) applyVerticalHistorySizing(view, parent.getContext());
+        if (parent instanceof AbsListView) {
+            // Only style the native vertical list here. Custom Square-U/horizontal renderers
+            // build their own icon/theme cards; styling them twice caused duplicate icon work
+            // and made first paint noticeably slower.
+            TileVisualStyle.apply(view, result, parent.getContext());
+            applyVerticalHistorySizing(view, parent.getContext());
+        }
         return view;
     }
 
