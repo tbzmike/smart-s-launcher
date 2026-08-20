@@ -145,6 +145,7 @@ final class HistoryVisualEnhancer {
 
             if (launchStats == null || launchStats.lastLaunchTime <= 0) {
                 subtitle.setText(base);
+                configureLaunchInfoMarquee(subtitle);
                 continue;
             }
 
@@ -156,7 +157,25 @@ final class HistoryVisualEnhancer {
             text.append(launchStats.launchesToday == 1 ? " launch today" : " launches today");
             subtitle.setText(text.toString());
             subtitle.setVisibility(View.VISIBLE);
+            configureLaunchInfoMarquee(subtitle);
         }
+    }
+
+    /**
+     * Keep the full launch metadata available instead of truncating it. Android's marquee only
+     * moves when the text is wider than its row, and it automatically stops drawing when the
+     * launcher window is no longer visible/focused.
+     */
+    private void configureLaunchInfoMarquee(TextView subtitle) {
+        subtitle.setSingleLine(true);
+        subtitle.setMaxLines(1);
+        subtitle.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        subtitle.setMarqueeRepeatLimit(-1);
+        subtitle.setHorizontallyScrolling(true);
+        subtitle.setHorizontalFadingEdgeEnabled(true);
+        subtitle.setSelected(true);
+        subtitle.setFocusable(false);
+        subtitle.setFocusableInTouchMode(false);
     }
 
     private void enhanceHistoryGroup(ViewGroup group, boolean square) {
