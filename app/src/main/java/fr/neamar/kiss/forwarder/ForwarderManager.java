@@ -23,6 +23,7 @@ public class ForwarderManager extends Forwarder {
     private final Notification notificationForwarder;
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final SquareUInteractionController squareUInteractionController;
+    private final HistoryVisualEnhancer historyVisualEnhancer;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -38,6 +39,8 @@ public class ForwarderManager extends Forwarder {
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
         this.squareUInteractionController = new SquareUInteractionController(
                 mainActivity, historyDisplayForwarder);
+        this.historyVisualEnhancer = new HistoryVisualEnhancer(
+                mainActivity, historyDisplayForwarder);
     }
 
     public void onCreate() {
@@ -49,6 +52,7 @@ public class ForwarderManager extends Forwarder {
         tagsMenu.onCreate();
         historyDisplayForwarder.onCreate();
         squareUInteractionController.onCreate();
+        historyVisualEnhancer.onCreate();
     }
 
     public void onStart() {
@@ -62,6 +66,7 @@ public class ForwarderManager extends Forwarder {
         tagsMenu.onResume();
         historyDisplayForwarder.onResume();
         squareUInteractionController.onResume();
+        historyVisualEnhancer.onResume();
     }
 
     public void onPause() {
@@ -91,6 +96,7 @@ public class ForwarderManager extends Forwarder {
         widgetsForwarder.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
         squareUInteractionController.onDataSetChanged();
+        historyVisualEnhancer.onDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
