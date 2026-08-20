@@ -76,71 +76,116 @@ public final class SmartAnimationEngine {
         if (dialog == null) return;
         Window window = dialog.getWindow();
         if (window == null) return;
-        View decor = window.getDecorView();
-        decor.animate().cancel();
-        reset(decor);
+        animateViewIn(window.getDecorView(), preferenceKey, fallback);
+    }
 
-        if (!isEnabled(decor.getContext())) return;
-        String style = getStyle(decor.getContext(), preferenceKey, fallback);
-        if ("none".equals(style)) return;
+    /** Animate non-Dialog popup content using the same popup preference as dialogs. */
+    public static void animatePopupViewIn(View view) {
+        animateViewIn(view, "smart-animation-popup-open", "scale");
+    }
 
-        switch (style) {
-            case "fade":
-                decor.setAlpha(0f);
-                break;
-            case "slide-up":
-                decor.setAlpha(0f);
-                decor.setTranslationY(dp(decor, 42));
-                break;
-            case "slide-down":
-                decor.setAlpha(0f);
-                decor.setTranslationY(-dp(decor, 42));
-                break;
-            case "slide-left":
-                decor.setAlpha(0f);
-                decor.setTranslationX(dp(decor, 48));
-                break;
-            case "slide-right":
-                decor.setAlpha(0f);
-                decor.setTranslationX(-dp(decor, 48));
-                break;
-            case "zoom":
-                decor.setAlpha(0f);
-                decor.setScaleX(0.72f);
-                decor.setScaleY(0.72f);
-                break;
-            case "spring":
-                decor.setAlpha(0f);
-                decor.setScaleX(0.82f);
-                decor.setScaleY(0.82f);
-                decor.setTranslationY(dp(decor, 18));
-                break;
-            case "rotate":
-                decor.setAlpha(0f);
-                decor.setScaleX(0.9f);
-                decor.setScaleY(0.9f);
-                decor.setRotation(5f);
-                break;
-            case "scale":
-            default:
-                decor.setAlpha(0f);
-                decor.setScaleX(0.94f);
-                decor.setScaleY(0.94f);
-                break;
+    /** Animate non-Dialog popup content out, then run the actual dismiss action. */
+    public static void animatePopupViewOut(View view, Runnable endAction) {
+        if (view == null) {
+            if (endAction != null) endAction.run();
+            return;
+        }
+        view.animate().cancel();
+        if (!isEnabled(view.getContext())) {
+            reset(view);
+            if (endAction != null) endAction.run();
+            return;
+        }
+        String style = getStyle(view.getContext(), "smart-animation-popup-close", "shrink");
+        if ("none".equals(style)) {
+            reset(view);
+            if (endAction != null) endAction.run();
+            return;
         }
 
-        decor.animate()
+        android.view.ViewPropertyAnimator animator = view.animate()
+                .setDuration(Math.max(70L, duration(view.getContext()) * 3 / 4))
+                .setInterpolator(new AccelerateDecelerateInterpolator());
+        applyExitStyle(view, animator, style);
+        animator.setListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                view.animate().setListener(null);
+                reset(view);
+                if (endAction != null) endAction.run();
+            }
+        }).start();
+    }
+
+    private static void animateViewIn(View view, String preferenceKey, String fallback) {
+        if (view == null) return;
+        view.animate().cancel();
+        reset(view);
+
+        if (!isEnabled(view.getContext())) return;
+        String style = getStyle(view.getContext(), preferenceKey, fallback);
+        if ("none".equals(style)) return;
+
+        applyEnterStart(view, style);
+        view.animate()
                 .alpha(1f)
                 .scaleX(1f)
                 .scaleY(1f)
                 .translationX(0f)
                 .translationY(0f)
                 .rotation(0f)
-                .setDuration(duration(decor.getContext()))
+                .setDuration(duration(view.getContext()))
                 .setInterpolator("spring".equals(style)
                         ? new OvershootInterpolator(0.9f)
                         : new DecelerateInterpolator())
                 .start();
+    }
+
+    private static void applyEnterStart(View view, String style) {
+        switch (style) {
+            case "fade":
+                view.setAlpha(0f);
+                break;
+            case "slide-up":
+                view.setAlpha(0f);
+                view.setTranslationY(dp(view, 42));
+                break;
+            case "slide-down":
+                view.setAlpha(0f);
+                view.setTranslationY(-dp(view, 42));
+                break;
+            case "slide-left":
+                view.setAlpha(0f);
+                view.setTranslationX(dp(view, 48));
+                break;
+            case "slide-right":
+                view.setAlpha(0f);
+                view.setTranslationX(-dp(view, 48));
+                break;
+            case "zoom":
+                view.setAlpha(0f);
+                view.setScaleX(0.72f);
+                view.setScaleY(0.72f);
+                break;
+            case "spring":
+                view.setAlpha(0f);
+                view.setScaleX(0.82f);
+                view.setScaleY(0.82f);
+                view.setTranslationY(dp(view, 18));
+                break;
+            case "rotate":
+                view.setAlpha(0f);
+                view.setScaleX(0.9f);
+                view.setScaleY(0.9f);
+                view.setRotation(5f);
+                break;
+            case "scale":
+            default:
+                view.setAlpha(0f);
+                view.setScaleX(0.94f);
+                view.setScaleY(0.94f);
+                break;
+        }
     }
 
     public static void dismissDialog(Dialog dialog) {
@@ -166,21 +211,34 @@ public final class SmartAnimationEngine {
         android.view.ViewPropertyAnimator animator = decor.animate()
                 .setDuration(Math.max(70L, duration(decor.getContext()) * 3 / 4))
                 .setInterpolator(new AccelerateDecelerateInterpolator());
+        applyExitStyle(decor, animator, style);
+        animator.setListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                decor.animate().setListener(null);
+                reset(decor);
+                if (dialog.isShowing()) dialog.dismiss();
+            }
+        }).start();
+    }
+
+    private static void applyExitStyle(View view, android.view.ViewPropertyAnimator animator,
+                                       String style) {
         switch (style) {
             case "fade":
                 animator.alpha(0f);
                 break;
             case "slide-down":
-                animator.alpha(0f).translationY(dp(decor, 42));
+                animator.alpha(0f).translationY(dp(view, 42));
                 break;
             case "slide-up":
-                animator.alpha(0f).translationY(-dp(decor, 42));
+                animator.alpha(0f).translationY(-dp(view, 42));
                 break;
             case "slide-left":
-                animator.alpha(0f).translationX(-dp(decor, 48));
+                animator.alpha(0f).translationX(-dp(view, 48));
                 break;
             case "slide-right":
-                animator.alpha(0f).translationX(dp(decor, 48));
+                animator.alpha(0f).translationX(dp(view, 48));
                 break;
             case "zoom":
                 animator.alpha(0f).scaleX(1.18f).scaleY(1.18f);
@@ -193,14 +251,6 @@ public final class SmartAnimationEngine {
                 animator.alpha(0f).scaleX(0.93f).scaleY(0.93f);
                 break;
         }
-        animator.setListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                decor.animate().setListener(null);
-                reset(decor);
-                if (dialog.isShowing()) dialog.dismiss();
-            }
-        }).start();
     }
 
     public static void animateWindowSwitch(View outgoing, View incoming) {
