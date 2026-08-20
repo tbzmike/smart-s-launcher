@@ -19,6 +19,7 @@ import fr.neamar.kiss.result.Result;
 /**
  * Lightweight visual fallback for launcher records that do not expose rich card artwork.
  * The accent is sampled once from an already-available real icon and cached by stable result id.
+ * Native list rows stay transparent; app-derived card surfaces are reserved for tile modes.
  */
 public final class TileVisualStyle {
     private static final ConcurrentHashMap<Long, Integer> ACCENT_CACHE = new ConcurrentHashMap<>();
@@ -28,6 +29,12 @@ public final class TileVisualStyle {
     private TileVisualStyle() {}
 
     public static void apply(@NonNull View row, @NonNull Result<?> result, @NonNull Context context) {
+        // This helper is used by the native list renderer. Do not paint a card surface here:
+        // Square-U/horizontal tile modes own their own app-themed 3D backgrounds.
+        row.setBackgroundColor(Color.TRANSPARENT);
+        row.setElevation(0f);
+        row.setTranslationZ(0f);
+
         IconState iconState = ensureImmediateIcon(row, context);
         Drawable icon = iconState.drawable;
         if (icon == null) return;
@@ -39,22 +46,6 @@ public final class TileVisualStyle {
             // Do not synchronously load contact photos/app resources just to color the list row.
             // The normal async icon pipeline will replace the placeholder without blocking scroll.
             accent = NEUTRAL_ACCENT;
-        }
-
-        boolean hasRichNotification = false;
-        View notification = row.findViewById(R.id.item_notification_row);
-        if (notification != null && notification.getVisibility() == View.VISIBLE) {
-            hasRichNotification = true;
-        }
-
-        if (!hasRichNotification) {
-            GradientDrawable background = new GradientDrawable(
-                    GradientDrawable.Orientation.TL_BR,
-                    new int[]{tone(accent, 1.16f, 205), tone(accent, 0.70f, 220)});
-            background.setCornerRadius(dp(context, 15));
-            background.setStroke(dp(context, 1), tone(accent, 1.34f, 175));
-            row.setBackground(background);
-            row.setElevation(dp(context, 2));
         }
 
         ImageView primary = findPrimaryIcon(row);
