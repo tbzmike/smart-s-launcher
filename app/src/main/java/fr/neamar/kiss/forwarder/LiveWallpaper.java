@@ -2,18 +2,21 @@ package fr.neamar.kiss.forwarder;
 
 import android.animation.ValueAnimator;
 import android.app.WallpaperManager;
+import android.content.SharedPreferences;
 import android.content.res.TypedArray;
 import android.graphics.Point;
+import android.os.Build;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
+import android.view.WindowManager;
 
 import androidx.annotation.StyleableRes;
 import androidx.core.content.ContextCompat;
 
 import fr.neamar.kiss.MainActivity;
 
-class LiveWallpaper extends Forwarder {
+class LiveWallpaper extends Forwarder implements SharedPreferences.OnSharedPreferenceChangeListener {
 
     private final boolean wallpaperIsVisible;
 
@@ -42,10 +45,73 @@ class LiveWallpaper extends Forwarder {
 
         mContentView = mainActivity.findViewById(android.R.id.content);
         mWallpaperManager.setWallpaperOffsetSteps(.5f, 0.f);
-        mWallpaperOffset = 0.5f; // this is the center
+        mWallpaperOffset = 0.5f;
         mAnimation = new Anim();
         mVelocityTracker = null;
         mWindowSize = new Point(1, 1);
+
+        // Smart Blur used to exist only as preferences. Keep the renderer here, beside
+        // the wallpaper lifecycle, so list/tile redraws never recompute the blur.
+        prefs.registerOnSharedPreferenceChangeListener(this);
+        applySmartBlur();
+    }
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if (key == null || key.startsWith("smart-focus-") || "smart-history-background-blur".equals(key)
+                || "smart-blur-performance".equals(key)) {
+            applySmartBlur();
+        }
+    }
+
+    private void applySmartBlur() {
+        if (!wallpaperIsVisible) {
+            return;
+        }
+
+        WindowManager.LayoutParams attributes = mainActivity.getWindow().getAttributes();
+        boolean enabled = prefs.getBoolean("smart-focus-blur-enabled", false)
+                || prefs.getBoolean("smart-history-background-blur", false);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && enabled) {
+            int radius = resolveBlurRadius();
+            attributes.flags |= WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+            attributes.setBlurBehindRadius(radius);
+        } else {
+            attributes.flags &= ~WindowManager.LayoutParams.FLAG_BLUR_BEHIND;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                attributes.setBlurBehindRadius(0);
+            }
+        }
+        mainActivity.getWindow().setAttributes(attributes);
+    }
+
+    private int resolveBlurRadius() {
+        String strength = prefs.getString("smart-focus-strength", "balanced");
+        String radius = prefs.getString("smart-focus-radius", "medium");
+        String performance = prefs.getString("smart-blur-performance", "balanced");
+
+        float strengthFactor;
+        switch (strength) {
+            case "light": strengthFactor = 0.65f; break;
+            case "strong": strengthFactor = 1.35f; break;
+            default: strengthFactor = 1.0f; break;
+        }
+
+        int baseRadius;
+        switch (radius) {
+            case "small": baseRadius = 24; break;
+            case "large": baseRadius = 72; break;
+            default: baseRadius = 48; break;
+        }
+
+        float performanceFactor;
+        switch (performance) {
+            case "battery": performanceFactor = 0.65f; break;
+            case "quality": performanceFactor = 1.25f; break;
+            default: performanceFactor = 1.0f; break;
+        }
+        return Math.max(1, Math.min(120, Math.round(baseRadius * strengthFactor * performanceFactor)));
     }
 
     boolean onTouch(View view, MotionEvent event) {
@@ -58,72 +124,44 @@ class LiveWallpaper extends Forwarder {
             case MotionEvent.ACTION_DOWN:
                 if (isPreferenceWPDragAnimate()) {
                     mAnimation.cancel();
-
                     mVelocityTracker = VelocityTracker.obtain();
                     mVelocityTracker.addMovement(event);
-
                     mLastTouchPos = event.getRawX();
-                    mainActivity.getWindowManager()
-                            .getDefaultDisplay()
-                            .getSize(mWindowSize);
+                    mainActivity.getWindowManager().getDefaultDisplay().getSize(mWindowSize);
                 }
-                //send touch event to the LWP
-                if (isPreferenceLWPTouch())
-                    sendTouchEvent(view, event);
+                if (isPreferenceLWPTouch()) sendTouchEvent(view, event);
                 break;
             case MotionEvent.ACTION_MOVE:
                 if (mVelocityTracker != null) {
                     mVelocityTracker.addMovement(event);
-
                     float fTouchPos = event.getRawX();
                     float fOffset = (mLastTouchPos - fTouchPos) * 1.01f / mWindowSize.x;
                     fOffset += mWallpaperOffset;
                     updateWallpaperOffset(fOffset);
                     mLastTouchPos = fTouchPos;
                 }
-
-                //send move/drag event to the LWP
-                if (isPreferenceLWPDrag())
-                    sendTouchEvent(view, event);
+                if (isPreferenceLWPDrag()) sendTouchEvent(view, event);
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 if (mVelocityTracker != null) {
                     mVelocityTracker.addMovement(event);
-
                     mVelocityTracker.computeCurrentVelocity(1000 / 30);
                     if (mAnimation.init(isPreferenceWPStickToSides(), isPreferenceWPReturnCenter(), mVelocityTracker.getXVelocity(), mWallpaperOffset))
                         mAnimation.start();
-
                     mVelocityTracker.recycle();
                     mVelocityTracker = null;
                 }
                 break;
         }
-
-        // do not consume the event
         return false;
     }
 
-    private boolean isPreferenceLWPTouch() {
-        return prefs.getBoolean("lwp-touch", true);
-    }
-
-    private boolean isPreferenceLWPDrag() {
-        return prefs.getBoolean("lwp-drag", false);
-    }
-
-    private boolean isPreferenceWPDragAnimate() {
-        return prefs.getBoolean("wp-drag-animate", false);
-    }
-
-    private boolean isPreferenceWPReturnCenter() {
-        return prefs.getBoolean("wp-animate-center", true);
-    }
-
-    private boolean isPreferenceWPStickToSides() {
-        return prefs.getBoolean("wp-animate-sides", false);
-    }
+    private boolean isPreferenceLWPTouch() { return prefs.getBoolean("lwp-touch", true); }
+    private boolean isPreferenceLWPDrag() { return prefs.getBoolean("lwp-drag", false); }
+    private boolean isPreferenceWPDragAnimate() { return prefs.getBoolean("wp-drag-animate", false); }
+    private boolean isPreferenceWPReturnCenter() { return prefs.getBoolean("wp-animate-center", true); }
+    private boolean isPreferenceWPStickToSides() { return prefs.getBoolean("wp-animate-sides", false); }
 
     private android.os.IBinder getWindowToken() {
         return mWindowToken != null ? mWindowToken : (mWindowToken = mContentView.getWindowToken());
@@ -149,16 +187,11 @@ class LiveWallpaper extends Forwarder {
     private void sendTouchEvent(View view, MotionEvent event) {
         int pointerCount = event.getPointerCount();
         int[] viewOffset = {0, 0};
-        // this will not account for a rotated view
         view.getLocationOnScreen(viewOffset);
-
-        // get index of first finger
         int pointerIndex = event.findPointerIndex(0);
         if (pointerIndex >= 0 && pointerIndex < pointerCount) {
             sendTouchEvent((int) event.getX(pointerIndex) + viewOffset[0], (int) event.getY(pointerIndex) + viewOffset[1], pointerIndex);
         }
-
-        // get index of second finger
         pointerIndex = event.findPointerIndex(1);
         if (pointerIndex >= 0 && pointerIndex < pointerCount) {
             sendTouchEvent((int) event.getX(pointerIndex) + viewOffset[0], (int) event.getY(pointerIndex) + viewOffset[1], pointerIndex);
@@ -175,29 +208,19 @@ class LiveWallpaper extends Forwarder {
             mVelocity = velocity;
             mStartOffset = wallpaperOffset;
             float expectedPos = -Math.min(Math.max(mVelocity / LiveWallpaper.this.mWindowSize.x, -.5f), .5f) + mStartOffset;
-
-            // if we stick only to the center
             float leftStickPercent = -1.f;
             float rightStickPercent = 2.f;
-
             if (stickToSides && stickToCenter) {
-                // if we stick to the left, right and center
                 leftStickPercent = .2f;
                 rightStickPercent = .8f;
             } else if (stickToSides) {
-                // if we stick only to the center
                 leftStickPercent = .5f;
                 rightStickPercent = .5f;
             }
-
-            if (expectedPos <= leftStickPercent)
-                mDeltaOffset = 0.f - mStartOffset;
-            else if (expectedPos >= rightStickPercent)
-                mDeltaOffset = 1.f - mStartOffset;
-            else if (stickToCenter)
-                mDeltaOffset = .5f - mStartOffset;
-            else
-                return false;
+            if (expectedPos <= leftStickPercent) mDeltaOffset = 0.f - mStartOffset;
+            else if (expectedPos >= rightStickPercent) mDeltaOffset = 1.f - mStartOffset;
+            else if (stickToCenter) mDeltaOffset = .5f - mStartOffset;
+            else return false;
             return true;
         }
 
@@ -219,10 +242,8 @@ class LiveWallpaper extends Forwarder {
         private void applyTransformation(float interpolatedTime) {
             float fOffset = mStartOffset + mDeltaOffset * interpolatedTime;
             float velocityInterpolator = (float) Math.sqrt(interpolatedTime) * 3.f;
-            if (velocityInterpolator < 1.f)
-                fOffset -= mVelocity / LiveWallpaper.this.mWindowSize.x * velocityInterpolator;
-            else
-                fOffset -= mVelocity / LiveWallpaper.this.mWindowSize.x * (1.f - 0.5f * (velocityInterpolator - 1.f));
+            if (velocityInterpolator < 1.f) fOffset -= mVelocity / LiveWallpaper.this.mWindowSize.x * velocityInterpolator;
+            else fOffset -= mVelocity / LiveWallpaper.this.mWindowSize.x * (1.f - 0.5f * (velocityInterpolator - 1.f));
             LiveWallpaper.this.updateWallpaperOffset(fOffset);
         }
     }
