@@ -15,6 +15,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.StringRes;
 
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.utils.SystemUiVisibilityHelper;
 
 public class ListPopup extends PopupWindow {
@@ -134,7 +135,8 @@ public class ListPopup extends PopupWindow {
     }
 
     private void appendResizeItem(View anchor) {
-        Object tag = anchor == null ? null : anchor.getTag();
+        if (anchor == null || UiEditLock.isLocked(anchor.getContext())) return;
+        Object tag = anchor.getTag();
         if (!(tag instanceof ResizeTarget)) return;
 
         LinearLayout layout = getLinearLayout();
