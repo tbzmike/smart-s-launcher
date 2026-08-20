@@ -60,7 +60,7 @@ public final class NotificationPopupDialog {
             row.setPadding(pad, pad, pad, pad);
             row.setMaxLines(4);
             row.setOnClickListener(v -> {
-                dialog.dismiss();
+                SmartAnimationEngine.dismissDialog(dialog);
                 showNotification(context, groupKey, snapshot);
             });
             list.addView(row, new LinearLayout.LayoutParams(
@@ -71,6 +71,7 @@ public final class NotificationPopupDialog {
         scroll.addView(list);
         dialog.setView(scroll);
         showWide(dialog);
+        SmartAnimationEngine.animateDialogIn(dialog);
     }
 
     private static void showNotification(Context context, String groupKey,
@@ -169,7 +170,7 @@ public final class NotificationPopupDialog {
                     if (NotificationListener.ACTIVE_NOTIFICATION_IDS.equals(key)
                             && !NotificationListener.isNotificationActive(context, snapshot.id)
                             && dialog.isShowing()) {
-                        dialog.dismiss();
+                        SmartAnimationEngine.dismissDialog(dialog);
                     }
                 };
 
@@ -180,7 +181,7 @@ public final class NotificationPopupDialog {
             if (markRead != null) {
                 markRead.setOnClickListener(v -> {
                     if (NotificationListener.markNotificationRead(context, snapshot.id)) {
-                        dialog.dismiss();
+                        SmartAnimationEngine.dismissDialog(dialog);
                     } else {
                         Toast.makeText(context, "Unable to mark notification as read",
                                 Toast.LENGTH_SHORT).show();
@@ -192,7 +193,7 @@ public final class NotificationPopupDialog {
             if (open != null) {
                 open.setOnClickListener(v -> {
                     if (NotificationListener.openNotification(context, snapshot.id)) {
-                        dialog.dismiss();
+                        SmartAnimationEngine.dismissDialog(dialog);
                     } else {
                         Toast.makeText(context, "Unable to open this notification",
                                 Toast.LENGTH_SHORT).show();
@@ -206,7 +207,7 @@ public final class NotificationPopupDialog {
                 markAll.setAllCaps(false);
                 markAll.setOnClickListener(v -> {
                     if (NotificationListener.markAllRead(context, groupKey)) {
-                        dialog.dismiss();
+                        SmartAnimationEngine.dismissDialog(dialog);
                     } else {
                         Toast.makeText(context, "Unable to mark all as read",
                                 Toast.LENGTH_SHORT).show();
@@ -221,6 +222,7 @@ public final class NotificationPopupDialog {
         dialog.setOnDismissListener(ignored ->
                 detailPrefs.unregisterOnSharedPreferenceChangeListener(removalListener));
         showWide(dialog);
+        SmartAnimationEngine.animateNotificationExpand(dialog);
     }
 
     private static void showWide(AlertDialog dialog) {
