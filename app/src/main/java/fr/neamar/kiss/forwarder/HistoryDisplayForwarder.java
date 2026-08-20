@@ -1,6 +1,8 @@
 package fr.neamar.kiss.forwarder;
 
 import android.animation.ValueAnimator;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -18,8 +20,12 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 
 final class HistoryDisplayForwarder extends Forwarder {
@@ -36,6 +42,9 @@ final class HistoryDisplayForwarder extends Forwarder {
     private static final int SQUARE_CARD_HEIGHT_DP = 158;
     private static final float SQUARE_VISIBLE_RADIUS = 6.15f;
     private static final float SQUARE_BOTTOM_BAND = 2.05f;
+    private static final int ACCENT_SAMPLE_SIZE = 10;
+
+    private final Map<Long, Integer> accentCache = new HashMap<>();
 
     private FrameLayout container;
     private HorizontalScrollView scroller;
@@ -196,11 +205,14 @@ final class HistoryDisplayForwarder extends Forwarder {
         row.removeAllViews();
         final int count = mainActivity.adapter.getCount();
         for (int position = 0; position < count; position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
             View source = mainActivity.adapter.getView(position, null, row);
-            View tile = createTile(source, activeMode);
+            View tile = createTile(source, activeMode, result);
             bindResultInteraction(tile, position);
             row.addView(tile);
-            animateHistoryItemIn(tile, position);
+            if (position >= Math.max(0, count - 18)) {
+                animateHistoryItemIn(tile, position - Math.max(0, count - 18));
+            }
         }
         scroller.post(() -> scroller.fullScroll(View.FOCUS_RIGHT));
     }
@@ -220,12 +232,13 @@ final class HistoryDisplayForwarder extends Forwarder {
         int visibleNotifications = 0;
 
         for (int position = 0; position < count; position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
             View source = mainActivity.adapter.getView(position, null, squareTrack);
             View notificationRow = source.findViewById(R.id.item_notification_row);
             boolean hasNotification = notificationRow != null
                     && notificationRow.getVisibility() == View.VISIBLE;
 
-            View card = createSquareCard(source, hasNotification);
+            View card = createSquareCard(source, result);
             bindResultInteraction(card, position);
             squareTrack.addView(card);
 
@@ -294,10 +307,10 @@ final class HistoryDisplayForwarder extends Forwarder {
         tile.setFocusable(true);
     }
 
-    private View createTile(View source, String mode) {
-        if (ICONS.equals(mode)) return createIconTile(source);
-        if (NAMES.equals(mode)) return createNameTile(source);
-        if (CARDS.equals(mode)) return createCardTile(source);
+    private View createTile(View source, String mode, Result<?> result) {
+        if (ICONS.equals(mode)) return createIconTile(source, result);
+        if (NAMES.equals(mode)) return createNameTile(source, result);
+        if (CARDS.equals(mode)) return createCardTile(source, result);
         return source;
     }
 
@@ -309,100 +322,94 @@ final class HistoryDisplayForwarder extends Forwarder {
         return safePrefInt("smart-horizontal-icon-size-percent", 100, 60, 170);
     }
 
-    private View createIconTile(View source) {
+    private View createIconTile(View source, Result<?> result) {
         int tilePercent = horizontalTilePercent();
         int iconPercent = horizontalIconPercent();
         FrameLayout tile = baseTile(dp(112) * tilePercent / 100, dp(102) * tilePercent / 100);
-        Drawable iconDrawable = extractIcon(source);
+        Drawable iconDrawable = resolveIcon(source, result);
+        styleCard(tile, dp(16), false, accentFor(result, iconDrawable));
         CharSequence label = extractLabel(source);
-        if (iconDrawable != null) {
-            ImageView icon = new ImageView(mainActivity);
-            icon.setImageDrawable(iconDrawable);
-            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            int iconSize = dp(52) * iconPercent / 100;
-            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                    iconSize, iconSize, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-            iconParams.topMargin = dp(5);
-            tile.addView(icon, iconParams);
-        }
+
+        ImageView icon = new ImageView(mainActivity);
+        icon.setImageDrawable(iconDrawable);
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        int iconSize = dp(52) * iconPercent / 100;
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                iconSize, iconSize, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        iconParams.topMargin = dp(5);
+        tile.addView(icon, iconParams);
+
         addFullLabel(tile, label, 12f, dp(44) * tilePercent / 100, 1);
         return tile;
     }
 
-    private View createNameTile(View source) {
+    private View createNameTile(View source, Result<?> result) {
         int tilePercent = horizontalTilePercent();
+        int iconPercent = horizontalIconPercent();
         FrameLayout tile = baseTile(dp(190) * tilePercent / 100, dp(76) * tilePercent / 100);
+        Drawable iconDrawable = resolveIcon(source, result);
+        styleCard(tile, dp(16), false, accentFor(result, iconDrawable));
+
+        int iconSize = dp(42) * iconPercent / 100;
+        ImageView icon = new ImageView(mainActivity);
+        icon.setImageDrawable(iconDrawable);
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                iconSize, iconSize, Gravity.START | Gravity.CENTER_VERTICAL);
+        iconParams.leftMargin = dp(8);
+        tile.addView(icon, iconParams);
+
         TextView name = buildMarqueeLabel(extractLabel(source), 16f);
-        name.setPadding(dp(10), dp(7), dp(10), dp(7));
-        tile.addView(name, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        name.setPadding(dp(8), dp(7), dp(8), dp(7));
+        FrameLayout.LayoutParams nameParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        nameParams.leftMargin = iconSize + dp(14);
+        nameParams.rightMargin = dp(6);
+        tile.addView(name, nameParams);
         return tile;
     }
 
-    private View createCardTile(View source) {
+    private View createCardTile(View source, Result<?> result) {
         int tilePercent = horizontalTilePercent();
         int iconPercent = horizontalIconPercent();
         FrameLayout card = baseTile(dp(CARD_WIDTH_DP) * tilePercent / 100,
                 dp(CARD_HEIGHT_DP) * tilePercent / 100);
-        styleCard(card, dp(18), false);
-        Drawable iconDrawable = extractIcon(source);
+        Drawable iconDrawable = resolveIcon(source, result);
+        styleCard(card, dp(18), false, accentFor(result, iconDrawable));
         CharSequence label = extractLabel(source);
-        addMutedPreview(card, source);
+
+        View notificationRow = source.findViewById(R.id.item_notification_row);
+        boolean hasRichPreview = notificationRow != null
+                && notificationRow.getVisibility() == View.VISIBLE;
+        if (hasRichPreview) addMutedPreview(card, source);
+
         addForegroundIconAndLabel(card, iconDrawable, label,
                 dp(58) * iconPercent / 100, 14f, dp(14));
         return card;
     }
 
-    private View createSquareCard(View source, boolean preserveSourceForNotification) {
+    private View createSquareCard(View source, Result<?> result) {
         FrameLayout card = new FrameLayout(mainActivity);
-        styleCard(card, dp(18), true);
-        card.setElevation(dp(4));
+        Drawable iconDrawable = resolveIcon(source, result);
+        styleCard(card, dp(18), true, accentFor(result, iconDrawable));
         card.setClipChildren(false);
         card.setClipToPadding(false);
 
         CharSequence label = extractLabel(source);
-        ImageView sourceIcon = findIconView(source);
         int iconPercent = safePrefInt("smart-u-icon-size-percent", 100, 60, 160);
         int iconSize = dp(72) * iconPercent / 100;
 
-        if (sourceIcon != null && !preserveSourceForNotification) {
-            if (sourceIcon.getParent() instanceof ViewGroup) {
-                ((ViewGroup) sourceIcon.getParent()).removeView(sourceIcon);
-            }
-            sourceIcon.setClickable(false);
-            sourceIcon.setFocusable(false);
-            sourceIcon.setAlpha(1f);
-            sourceIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                    iconSize, iconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
-            iconParams.topMargin = dp(15);
-            card.addView(sourceIcon, iconParams);
-        } else if (sourceIcon != null) {
-            ImageView mirror = new ImageView(mainActivity);
-            mirror.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            mirror.setAlpha(1f);
-            syncMirroredIcon(mirror, sourceIcon);
-            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                    iconSize, iconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
-            iconParams.topMargin = dp(15);
-            card.addView(mirror, iconParams);
-            scheduleIconMirror(card, mirror, sourceIcon);
-        }
+        ImageView icon = new ImageView(mainActivity);
+        icon.setImageDrawable(iconDrawable);
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        icon.setAlpha(1f);
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                iconSize, iconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+        iconParams.topMargin = dp(15);
+        card.addView(icon, iconParams);
 
         addFullLabel(card, label, 14f, dp(42), 1);
         return card;
-    }
-
-    private void scheduleIconMirror(View owner, ImageView target, ImageView source) {
-        owner.post(() -> syncMirroredIcon(target, source));
-        owner.postDelayed(() -> syncMirroredIcon(target, source), 90L);
-        owner.postDelayed(() -> syncMirroredIcon(target, source), 260L);
-        owner.postDelayed(() -> syncMirroredIcon(target, source), 700L);
-    }
-
-    private void syncMirroredIcon(ImageView target, ImageView source) {
-        Drawable drawable = source.getDrawable();
-        if (drawable != null && target.getDrawable() != drawable) target.setImageDrawable(drawable);
     }
 
     private void addMutedPreview(FrameLayout card, View source) {
@@ -416,15 +423,13 @@ final class HistoryDisplayForwarder extends Forwarder {
     private void addForegroundIconAndLabel(FrameLayout card, Drawable iconDrawable,
                                            CharSequence label, int iconSize,
                                            float textSize, int topMargin) {
-        if (iconDrawable != null) {
-            ImageView icon = new ImageView(mainActivity);
-            icon.setImageDrawable(iconDrawable);
-            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                    iconSize, iconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
-            iconParams.topMargin = topMargin;
-            card.addView(icon, iconParams);
-        }
+        ImageView icon = new ImageView(mainActivity);
+        icon.setImageDrawable(iconDrawable);
+        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                iconSize, iconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+        iconParams.topMargin = topMargin;
+        card.addView(icon, iconParams);
         addFullLabel(card, label, textSize, dp(42), 1);
     }
 
@@ -499,6 +504,13 @@ final class HistoryDisplayForwarder extends Forwarder {
                 && !"Reply".equalsIgnoreCase(normalized);
     }
 
+    private Drawable resolveIcon(View source, Result<?> result) {
+        Drawable drawable = extractIcon(source);
+        if (drawable == null) drawable = result.getDrawable(mainActivity);
+        if (drawable == null) drawable = mainActivity.getPackageManager().getDefaultActivityIcon();
+        return drawable;
+    }
+
     private Drawable extractIcon(View source) {
         ImageView iconView = findIconView(source);
         return iconView == null ? null : iconView.getDrawable();
@@ -506,12 +518,16 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private ImageView findIconView(View source) {
         ImageView appIcon = source.findViewById(R.id.item_app_icon);
-        if (appIcon != null) return appIcon;
+        if (appIcon != null && appIcon.getDrawable() != null) return appIcon;
         return findFirstVisibleImage(source);
     }
 
     private ImageView findFirstVisibleImage(View view) {
-        if (view instanceof ImageView && view.getVisibility() == View.VISIBLE) return (ImageView) view;
+        if (view instanceof ImageView
+                && view.getVisibility() == View.VISIBLE
+                && ((ImageView) view).getDrawable() != null) {
+            return (ImageView) view;
+        }
         if (!(view instanceof ViewGroup)) return null;
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
@@ -521,13 +537,75 @@ final class HistoryDisplayForwarder extends Forwarder {
         return null;
     }
 
-    private void styleCard(FrameLayout card, float radius, boolean square) {
-        GradientDrawable background = new GradientDrawable();
-        background.setColor(square ? Color.argb(238, 22, 24, 30) : Color.argb(112, 22, 22, 24));
+    private int accentFor(Result<?> result, Drawable drawable) {
+        long key = result.getUniqueId();
+        Integer cached = accentCache.get(key);
+        if (cached != null) return cached;
+        int accent = sampleAccent(drawable);
+        accentCache.put(key, accent);
+        return accent;
+    }
+
+    private int sampleAccent(Drawable drawable) {
+        if (drawable == null) return Color.rgb(64, 84, 118);
+        Bitmap bitmap = Bitmap.createBitmap(
+                ACCENT_SAMPLE_SIZE, ACCENT_SAMPLE_SIZE, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+
+        int oldLeft = drawable.getBounds().left;
+        int oldTop = drawable.getBounds().top;
+        int oldRight = drawable.getBounds().right;
+        int oldBottom = drawable.getBounds().bottom;
+        drawable.setBounds(0, 0, ACCENT_SAMPLE_SIZE, ACCENT_SAMPLE_SIZE);
+        drawable.draw(canvas);
+        drawable.setBounds(oldLeft, oldTop, oldRight, oldBottom);
+
+        long red = 0L;
+        long green = 0L;
+        long blue = 0L;
+        int count = 0;
+        float[] hsv = new float[3];
+        for (int y = 0; y < ACCENT_SAMPLE_SIZE; y++) {
+            for (int x = 0; x < ACCENT_SAMPLE_SIZE; x++) {
+                int color = bitmap.getPixel(x, y);
+                if (Color.alpha(color) < 48) continue;
+                Color.colorToHSV(color, hsv);
+                if (hsv[2] < 0.12f) continue;
+                red += Color.red(color);
+                green += Color.green(color);
+                blue += Color.blue(color);
+                count++;
+            }
+        }
+        bitmap.recycle();
+        if (count == 0) return Color.rgb(64, 84, 118);
+
+        int result = Color.rgb((int) (red / count), (int) (green / count), (int) (blue / count));
+        Color.colorToHSV(result, hsv);
+        hsv[1] = Math.max(0.34f, Math.min(0.82f, hsv[1]));
+        hsv[2] = Math.max(0.40f, Math.min(0.80f, hsv[2]));
+        return Color.HSVToColor(hsv);
+    }
+
+    private int tone(int color, float valueMultiplier, int alpha) {
+        float[] hsv = new float[3];
+        Color.colorToHSV(color, hsv);
+        hsv[2] = Math.max(0f, Math.min(1f, hsv[2] * valueMultiplier));
+        return Color.HSVToColor(alpha, hsv);
+    }
+
+    private void styleCard(FrameLayout card, float radius, boolean square, int accent) {
+        GradientDrawable background = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{
+                        tone(accent, 1.28f, square ? 242 : 220),
+                        tone(accent, 0.92f, square ? 246 : 226),
+                        tone(accent, 0.55f, square ? 250 : 235)
+                });
         background.setCornerRadius(radius);
-        background.setStroke(dp(1), square
-                ? Color.argb(205, 218, 228, 242) : Color.argb(135, 255, 255, 255));
+        background.setStroke(dp(square ? 2 : 1), tone(accent, 1.55f, square ? 220 : 175));
         card.setBackground(background);
+        card.setElevation(dp(square ? 7 : 4));
         card.setClipToOutline(true);
     }
 
