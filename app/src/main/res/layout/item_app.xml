@@ -42,14 +42,15 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:paddingEnd="2dp"
-            android:shadowColor="?attr/resultShadowColor"
+            android:shadowColor="#E6000000"
             android:shadowDx="1"
-            android:shadowDy="2"
-            android:shadowRadius="?attr/textShadowRadius"
+            android:shadowDy="1"
+            android:shadowRadius="3"
             android:textColor="?attr/resultColor"
             android:textDirection="locale"
             android:textIsSelectable="false"
-            android:textSize="?attr/resultTitleSize" />
+            android:textSize="?attr/resultTitleSize"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/item_app_tag"
@@ -57,7 +58,11 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="?android:attr/textColorSecondary"
+            android:shadowColor="#E6000000"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="3"
+            android:textColor="?attr/resultColor"
             android:textSize="?attr/resultSubtitleSize" />
 
         <LinearLayout
@@ -75,7 +80,11 @@
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="2"
-                android:textColor="?android:attr/textColorSecondary"
+                android:shadowColor="#E6000000"
+                android:shadowDx="1"
+                android:shadowDy="1"
+                android:shadowRadius="3"
+                android:textColor="?attr/resultColor"
                 android:textSize="?attr/resultSubtitleSize" />
 
             <Button
