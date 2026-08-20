@@ -16,6 +16,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:contentDescription="@null"
+            android:scaleType="fitCenter"
             tools:src="@drawable/ic_launcher_white" />
 
         <ImageView
@@ -24,24 +25,24 @@
             android:layout_height="?attr/resultSubIconSize"
             android:layout_gravity="end|bottom"
             android:contentDescription="@null"
+            android:scaleType="fitCenter"
             tools:layout_height="@dimen/result_subicon_size"
             tools:layout_width="@dimen/result_subicon_size"
             tools:src="@drawable/ic_launcher_white" />
     </FrameLayout>
 
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_weight="1"
         android:layout_gravity="start|center_vertical"
         android:gravity="center_vertical"
         android:orientation="vertical">
 
-        <TextView
+        <fr.neamar.kiss.ui.AutoMarqueeTextView
             android:id="@+id/item_app_name"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
             android:paddingEnd="2dp"
             android:paddingBottom="3dp"
             android:shadowColor="?attr/resultShadowColor"
@@ -56,12 +57,10 @@
             tools:ignore="RtlSymmetry,UnusedAttribute"
             tools:text="@string/stub_application" />
 
-        <TextView
+        <fr.neamar.kiss.ui.AutoMarqueeTextView
             android:id="@+id/item_shortcut_tag"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
             android:paddingEnd="2dp"
             android:shadowColor="?attr/resultShadowColor"
             android:shadowDx="1"
