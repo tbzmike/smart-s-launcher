@@ -11,6 +11,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.preference.UiEditLock;
 
 public class ForwarderManager extends Forwarder {
@@ -84,8 +85,23 @@ public class ForwarderManager extends Forwarder {
 
     public boolean onOptionsItemSelected(MenuItem item) {
         if (UiEditLock.isLocked(mainActivity)) {
-            UiEditLock.allowEdit(mainActivity);
-            return true;
+            int itemId = item.getItemId();
+
+            // Settings access is never an edit operation. Let MainActivity handle these entries
+            // so the user can always reach KISS Settings and disable the UI lock.
+            if (itemId == R.id.preferences || itemId == R.id.settings) {
+                return false;
+            }
+
+            // While locked, block launcher-surface mutations such as adding widgets or changing
+            // wallpaper before they can reach the widget/edit forwarders.
+            if (itemId == R.id.add_widget || itemId == R.id.wallpaper) {
+                UiEditLock.allowEdit(mainActivity);
+                return true;
+            }
+
+            // Other non-edit actions are allowed to continue through their normal handlers.
+            return widgetsForwarder.onOptionsItemSelected(item);
         }
         return widgetsForwarder.onOptionsItemSelected(item);
     }
