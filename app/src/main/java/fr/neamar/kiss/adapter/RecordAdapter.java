@@ -2,12 +2,16 @@ package fr.neamar.kiss.adapter;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AbsListView;
 import android.widget.BaseAdapter;
+import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.SectionIndexer;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.DialogFragment;
@@ -72,6 +76,13 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
         Result<?> result = getItem(position);
         View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
+
+        // Every result renderer ultimately comes through this adapter. Configure labels here so
+        // apps, settings, shortcuts, contacts and feature results all expose their complete text
+        // when the available width is too small. Custom U/horizontal cards keep their own
+        // marquee labels too, so this also gives their source views a safe full-text fallback.
+        configureOverflowText(view);
+
         if (parent instanceof AbsListView) {
             // Only style the native vertical list here. Custom Square-U/horizontal renderers
             // build their own icon/theme cards; styling them twice caused duplicate icon work
@@ -80,6 +91,71 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             applyVerticalHistorySizing(view, parent.getContext());
         }
         return view;
+    }
+
+    private void configureOverflowText(View view) {
+        if (view instanceof TextView && !(view instanceof Button)) {
+            TextView text = (TextView) view;
+            if (!TextUtils.isEmpty(text.getText())) {
+                text.setSingleLine(true);
+                text.setMaxLines(1);
+                text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+                text.setMarqueeRepeatLimit(-1);
+                text.setHorizontallyScrolling(true);
+                text.setHorizontalFadingEdgeEnabled(true);
+                text.setSelected(true);
+                text.setFocusable(false);
+                text.setFocusableInTouchMode(false);
+                makeTextUseAvailableWidth(text);
+            }
+            return;
+        }
+        if (!(view instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            configureOverflowText(group.getChildAt(i));
+        }
+    }
+
+    private void makeTextUseAvailableWidth(TextView text) {
+        if (!(text.getParent() instanceof LinearLayout)) return;
+        LinearLayout parent = (LinearLayout) text.getParent();
+        ViewGroup.LayoutParams raw = text.getLayoutParams();
+        if (!(raw instanceof LinearLayout.LayoutParams)) return;
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
+
+        if (parent.getOrientation() == LinearLayout.VERTICAL) {
+            if (lp.width == ViewGroup.LayoutParams.WRAP_CONTENT) {
+                lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                text.setLayoutParams(lp);
+            }
+            return;
+        }
+
+        // In rows such as "Setting: Wi-Fi preferences", keep the prefix at its natural width and
+        // give the final label the remaining width. A width constraint is required for Android's
+        // marquee to start; wrap_content alone simply measures the full string off-screen.
+        if (lp.width == ViewGroup.LayoutParams.WRAP_CONTENT && isLastTextLabel(parent, text)) {
+            lp.width = 0;
+            lp.weight = Math.max(1f, lp.weight);
+            text.setLayoutParams(lp);
+        }
+    }
+
+    private boolean isLastTextLabel(LinearLayout parent, TextView current) {
+        boolean foundCurrent = false;
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (child == current) {
+                foundCurrent = true;
+                continue;
+            }
+            if (foundCurrent && child instanceof TextView && !(child instanceof Button)
+                    && child.getVisibility() != View.GONE) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void applyVerticalHistorySizing(View row, Context context) {
@@ -92,17 +168,34 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     private void resizeSignificantImages(View view, Context context, int percent) {
         if (view instanceof ImageView) {
-            ViewGroup.LayoutParams lp = view.getLayoutParams();
-            if (lp != null) {
+            ImageView image = (ImageView) view;
+            ViewGroup.LayoutParams lp = image.getLayoutParams();
+            if (lp != null && lp.width > 0 && lp.height > 0) {
                 int threshold = dp(context, 28);
                 int currentMax = Math.max(lp.width, lp.height);
                 if (currentMax >= threshold) {
-                    int base = Math.max(threshold, currentMax);
-                    int target = Math.max(dp(context, 24), base * percent / 100);
-                    if (lp.width != target || lp.height != target) {
-                        lp.width = target;
-                        lp.height = target;
-                        view.setLayoutParams(lp);
+                    // Scale width and height by the same factor. The previous code forced every
+                    // significant image into a square, which distorted non-square feature and
+                    // settings icons. Keeping the original ratio prevents stretching.
+                    float factor = percent / 100f;
+                    int targetWidth = Math.max(1, Math.round(lp.width * factor));
+                    int targetHeight = Math.max(1, Math.round(lp.height * factor));
+                    int targetMax = Math.max(targetWidth, targetHeight);
+                    int minimumMax = dp(context, 24);
+                    if (targetMax < minimumMax) {
+                        float minimumFactor = minimumMax / (float) targetMax;
+                        targetWidth = Math.max(1, Math.round(targetWidth * minimumFactor));
+                        targetHeight = Math.max(1, Math.round(targetHeight * minimumFactor));
+                    }
+                    if (lp.width != targetWidth || lp.height != targetHeight) {
+                        lp.width = targetWidth;
+                        lp.height = targetHeight;
+                        image.setLayoutParams(lp);
+                    }
+                    // FIT_XY is the only standard scale type that can visibly stretch the
+                    // drawable. Replace it without disturbing CENTER_CROP profile photos.
+                    if (image.getScaleType() == ImageView.ScaleType.FIT_XY) {
+                        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
                     }
                 }
             }
