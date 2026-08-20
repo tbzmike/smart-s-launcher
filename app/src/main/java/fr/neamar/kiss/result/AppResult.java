@@ -309,7 +309,8 @@ public class AppResult extends ResultWithTags<AppPojo> {
             launcher.startMainActivity(getClassName(), pojo.userHandle.getRealHandle(), sourceBounds, opts);
             launchSucceeded = true;
             pojo.setDisabled(false);
-            KissApplication.getApplication(context).getDataHandler().reloadApps();
+            // Normal launches do not mutate the app catalog. Frozen apps already trigger the
+            // required reload in ensurePackageEnabled(), so avoid a costly full reload here.
         } catch (ActivityNotFoundException | NullPointerException | SecurityException e) {
             Log.w(TAG, "Unable to launch activity", e);
             // Never hide/exclude an app merely because IceBox froze it between index and tap.
