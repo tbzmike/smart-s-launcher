@@ -16,7 +16,7 @@ import fr.neamar.kiss.KissApplication;
 
 public final class AppLaunchUtils {
     private static final int ANDROID_UID_USER_RANGE = 100000;
-    private static final long ENABLED_STATE_CACHE_MS = 1800L;
+    private static final long ENABLED_STATE_CACHE_MS = 15000L;
     private static final ConcurrentHashMap<String, EnabledState> ENABLED_STATE_CACHE =
             new ConcurrentHashMap<>();
 
@@ -39,14 +39,10 @@ public final class AppLaunchUtils {
             ApplicationInfo appInfo = pm.getApplicationInfo(
                     packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
             int state = pm.getApplicationEnabledSetting(packageName);
-            if (!appInfo.enabled
-                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
-                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED) {
-                return false;
-            }
-            ResolveInfo launcher = resolveLauncher(pm, packageName);
-            return launcher == null || launcher.activityInfo == null || launcher.activityInfo.enabled;
+            return appInfo.enabled
+                    && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                    && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
         } catch (PackageManager.NameNotFoundException | IllegalArgumentException e) {
             return false;
         }
@@ -88,8 +84,6 @@ public final class AppLaunchUtils {
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             context.startActivity(launchIntent);
-            // A normal launch does not change the app catalog. Avoid a full provider reload here;
-            // frozen apps already reload once in ensurePackageEnabled() when their state changes.
             return true;
         } catch (RuntimeException e) {
             Log.w("AppLaunchUtils", "Unable to launch package " + packageName, e);
