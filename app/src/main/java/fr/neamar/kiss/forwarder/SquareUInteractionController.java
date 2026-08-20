@@ -78,12 +78,12 @@ final class SquareUInteractionController {
 
     private void refreshNow() {
         if (squareTrack == null
-                || mainActivity.adapter == null
+                || activity.adapter == null
                 || !SQUARE_U.equals(prefs.getString(PREF_LAYOUT, "vertical"))) {
             return;
         }
 
-        int count = Math.min(squareTrack.getChildCount(), mainActivity.adapter.getCount());
+        int count = Math.min(squareTrack.getChildCount(), activity.adapter.getCount());
         for (int position = 0; position < count; position++) {
             View card = squareTrack.getChildAt(position);
             if (!(card instanceof ViewGroup)) continue;
@@ -91,7 +91,7 @@ final class SquareUInteractionController {
             TextView label = findPresentationLabel((ViewGroup) card);
             if (label == null) continue;
 
-            String fullName = mainActivity.adapter.getItem(position).getPojo().getName();
+            String fullName = activity.adapter.getItem(position).getPojo().getName();
             if (!TextUtils.isEmpty(fullName)) {
                 label.setText(fullName);
                 label.setContentDescription(fullName);
