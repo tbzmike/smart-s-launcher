@@ -5,27 +5,35 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.os.AsyncTask;
+import android.text.TextUtils;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.TextView;
 
 import java.lang.reflect.Field;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.result.ShortcutsResult;
 import fr.neamar.kiss.utils.Log;
 
 /**
- * Applies visual depth to Smart S history tiles and makes shortcut-driven social
- * tiles prefer the shortcut's own artwork (often a conversation/profile picture)
- * instead of the parent application's generic icon.
+ * Adds physical depth and live, app-provided information to history tiles.
+ * The normal app/shortcut icon remains in the foreground. Artwork, sender/profile
+ * pictures and notification information are presented as supporting card content.
  */
 final class HistoryVisualEnhancer {
     private static final String TAG = HistoryVisualEnhancer.class.getSimpleName();
+    private static final int TAG_LIVE_BACKGROUND = 0x534D4201;
+    private static final int TAG_LIVE_TEXT = 0x534D4202;
+    private static final int TAG_LIVE_PROGRESS = 0x534D4203;
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
@@ -73,12 +81,18 @@ final class HistoryVisualEnhancer {
         int count = Math.min(group.getChildCount(), activity.adapter.getCount());
         for (int position = 0; position < count; position++) {
             View child = group.getChildAt(position);
-            if (child instanceof FrameLayout) {
-                applyDepth((FrameLayout) child, square);
-            }
+            if (!(child instanceof FrameLayout)) continue;
+
+            FrameLayout tile = (FrameLayout) child;
+            applyDepth(tile, square);
+            clearLiveLayers(tile);
+
             Result<?> result = activity.adapter.getItem(position);
-            if (result instanceof ShortcutsResult) {
-                applyShortcutArtwork(child, result);
+            if (result.getPojo() instanceof AppPojo) {
+                AppPojo app = (AppPojo) result.getPojo();
+                loadLiveAppData(tile, app.packageName, square);
+            } else if (result instanceof ShortcutsResult) {
+                loadShortcutArtwork(tile, result);
             }
         }
     }
@@ -110,38 +124,153 @@ final class HistoryVisualEnhancer {
         gloss.setCornerRadius(radius);
 
         LayerDrawable layers = new LayerDrawable(new Drawable[]{shadow, face, gloss});
-        // Leave a visible dark edge on the right/bottom so the tile has physical thickness.
         layers.setLayerInset(1, 0, 0, dp(4), dp(5));
         layers.setLayerInset(2, dp(1), dp(1), dp(5), dp(7));
         return layers;
     }
 
-    private void applyShortcutArtwork(View tile, Result<?> result) {
-        ImageView target = findDirectImage(tile);
-        if (target == null) return;
-
+    private void loadLiveAppData(FrameLayout tile, String packageName, boolean square) {
         AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
-            Drawable artwork = result.getDrawable(activity);
-            if (artwork == null) return;
+            LiveTileDataProvider.LiveTileData data =
+                    LiveTileDataProvider.latestForPackage(activity, packageName);
+            if (data == null) return;
             activity.runOnUiThread(() -> {
-                if (target.isAttachedToWindow()) {
-                    target.setImageDrawable(artwork);
-                    target.setScaleType(ImageView.ScaleType.CENTER_CROP);
-                }
+                if (!tile.isAttachedToWindow()) return;
+                if (data.artwork != null) addArtworkBackground(tile, data.artwork);
+                addLiveText(tile, data, square);
+                addProgress(tile, data);
+                bringForegroundIconForward(tile);
             });
         });
     }
 
-    private ImageView findDirectImage(View view) {
-        if (!(view instanceof ViewGroup)) return null;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            View child = group.getChildAt(i);
-            if (child instanceof ImageView && child.getVisibility() == View.VISIBLE) {
+    private void loadShortcutArtwork(FrameLayout tile, Result<?> result) {
+        AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
+            Drawable artwork = result.getDrawable(activity);
+            if (artwork == null) return;
+            activity.runOnUiThread(() -> {
+                if (!tile.isAttachedToWindow()) return;
+                addArtworkBackground(tile, artwork);
+                bringForegroundIconForward(tile);
+            });
+        });
+    }
+
+    private void addArtworkBackground(FrameLayout tile, Drawable artwork) {
+        ImageView background = new ImageView(activity);
+        background.setTag(TAG_LIVE_BACKGROUND);
+        background.setImageDrawable(artwork);
+        background.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        background.setAlpha(0.38f);
+        background.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+
+        GradientDrawable frame = new GradientDrawable();
+        frame.setColor(Color.TRANSPARENT);
+        frame.setCornerRadius(dp(16));
+        background.setBackground(frame);
+        background.setClipToOutline(true);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        params.setMargins(dp(5), dp(5), dp(8), dp(10));
+        tile.addView(background, 0, params);
+    }
+
+    private void addLiveText(FrameLayout tile, LiveTileDataProvider.LiveTileData data,
+                             boolean square) {
+        StringBuilder content = new StringBuilder();
+        appendDistinct(content, data.title);
+        appendDistinct(content, data.text);
+        appendDistinct(content, data.subText);
+        if (content.length() == 0) return;
+
+        TextView information = new TextView(activity);
+        information.setTag(TAG_LIVE_TEXT);
+        information.setText(content.toString());
+        information.setTextColor(Color.WHITE);
+        information.setTextSize(square ? 10.5f : 11.5f);
+        information.setMaxLines(square ? 3 : 2);
+        information.setEllipsize(TextUtils.TruncateAt.END);
+        information.setGravity(Gravity.START | Gravity.BOTTOM);
+        information.setPadding(dp(7), dp(4), dp(7), dp(4));
+        information.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
+
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.argb(120, 0, 0, 0));
+        background.setCornerRadius(dp(9));
+        information.setBackground(background);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM);
+        params.leftMargin = dp(7);
+        params.rightMargin = dp(7);
+        params.bottomMargin = dp(square ? 48 : 46);
+        tile.addView(information, params);
+    }
+
+    private void addProgress(FrameLayout tile, LiveTileDataProvider.LiveTileData data) {
+        if (data.progressMax <= 0 && !data.progressIndeterminate) return;
+        ProgressBar progress = new ProgressBar(activity, null,
+                android.R.attr.progressBarStyleHorizontal);
+        progress.setTag(TAG_LIVE_PROGRESS);
+        progress.setIndeterminate(data.progressIndeterminate);
+        if (!data.progressIndeterminate) {
+            progress.setMax(Math.max(1, data.progressMax));
+            progress.setProgress(Math.max(0, Math.min(data.progress, data.progressMax)));
+        }
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(4), Gravity.TOP);
+        params.leftMargin = dp(8);
+        params.rightMargin = dp(8);
+        params.topMargin = dp(7);
+        tile.addView(progress, params);
+    }
+
+    private void bringForegroundIconForward(FrameLayout tile) {
+        ImageView icon = findForegroundImage(tile);
+        if (icon != null) {
+            icon.bringToFront();
+            icon.setElevation(dp(8));
+            icon.setTranslationZ(dp(2));
+        }
+        // Labels are deliberately kept above live artwork as well.
+        for (int i = 0; i < tile.getChildCount(); i++) {
+            View child = tile.getChildAt(i);
+            if (child instanceof TextView && child.getTag() == null) child.bringToFront();
+        }
+    }
+
+    private ImageView findForegroundImage(FrameLayout tile) {
+        for (int i = tile.getChildCount() - 1; i >= 0; i--) {
+            View child = tile.getChildAt(i);
+            if (child instanceof ImageView && !Integer.valueOf(TAG_LIVE_BACKGROUND).equals(child.getTag())
+                    && child.getVisibility() == View.VISIBLE) {
                 return (ImageView) child;
             }
         }
         return null;
+    }
+
+    private void clearLiveLayers(FrameLayout tile) {
+        for (int i = tile.getChildCount() - 1; i >= 0; i--) {
+            Object tag = tile.getChildAt(i).getTag();
+            if (Integer.valueOf(TAG_LIVE_BACKGROUND).equals(tag)
+                    || Integer.valueOf(TAG_LIVE_TEXT).equals(tag)
+                    || Integer.valueOf(TAG_LIVE_PROGRESS).equals(tag)) {
+                tile.removeViewAt(i);
+            }
+        }
+    }
+
+    private void appendDistinct(StringBuilder builder, String value) {
+        if (TextUtils.isEmpty(value)) return;
+        String clean = value.trim();
+        if (clean.isEmpty()) return;
+        String existing = builder.toString();
+        if (!existing.isEmpty() && (existing.equals(clean) || existing.contains(clean))) return;
+        if (builder.length() > 0) builder.append('\n');
+        builder.append(clean);
     }
 
     private <T> T readField(String name, Class<T> expectedType) {
