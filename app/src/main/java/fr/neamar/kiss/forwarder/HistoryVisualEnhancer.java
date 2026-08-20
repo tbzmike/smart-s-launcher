@@ -17,8 +17,11 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.lang.reflect.Field;
+import java.util.HashSet;
+import java.util.Set;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.result.ShortcutsResult;
@@ -37,6 +40,7 @@ final class HistoryVisualEnhancer {
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
+    private final Set<String> liveLoadInFlight = new HashSet<>();
 
     HistoryVisualEnhancer(MainActivity activity,
                           HistoryDisplayForwarder historyDisplayForwarder) {
@@ -90,7 +94,12 @@ final class HistoryVisualEnhancer {
             Result<?> result = activity.adapter.getItem(position);
             if (result.getPojo() instanceof AppPojo) {
                 AppPojo app = (AppPojo) result.getPojo();
-                loadLiveAppData(tile, app.packageName, square);
+                // Do not scan Android's entire active-notification array for every tile. Only
+                // apps already known to have notification content can provide live card data.
+                String latest = NotificationListener.getLatestMessage(activity, app.getPackageKey());
+                if (!TextUtils.isEmpty(latest)) {
+                    loadLiveAppData(tile, app.packageName, square);
+                }
             } else if (result instanceof ShortcutsResult) {
                 loadShortcutArtwork(tile, result);
             }
@@ -98,8 +107,10 @@ final class HistoryVisualEnhancer {
     }
 
     private void applyDepth(FrameLayout tile, boolean square) {
-        tile.setBackground(buildDepthBackground(dp(square ? 18 : 16), square));
+        // HistoryDisplayForwarder already builds an app-icon-derived gradient for the card.
+        // Preserve that identity instead of overwriting every tile with a generic grey surface.
         tile.setElevation(dp(square ? 10 : 7));
+        tile.setTranslationZ(dp(square ? 2 : 1));
         tile.setClipToOutline(true);
     }
 
@@ -130,12 +141,17 @@ final class HistoryVisualEnhancer {
     }
 
     private void loadLiveAppData(FrameLayout tile, String packageName, boolean square) {
+        synchronized (liveLoadInFlight) {
+            if (!liveLoadInFlight.add(packageName)) return;
+        }
         AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
             LiveTileDataProvider.LiveTileData data =
                     LiveTileDataProvider.latestForPackage(activity, packageName);
-            if (data == null) return;
             activity.runOnUiThread(() -> {
-                if (!tile.isAttachedToWindow()) return;
+                synchronized (liveLoadInFlight) {
+                    liveLoadInFlight.remove(packageName);
+                }
+                if (!tile.isAttachedToWindow() || data == null) return;
                 if (data.artwork != null) addArtworkBackground(tile, data.artwork);
                 addLiveText(tile, data, square);
                 addProgress(tile, data);
