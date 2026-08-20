@@ -11,6 +11,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.preference.UiEditLock;
 
 public class ForwarderManager extends Forwarder {
     private final Widgets widgetsForwarder;
@@ -44,6 +45,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onCreate() {
+        UiEditLock.syncRuntimeState(mainActivity);
         favoritesForwarder.onCreate();
         widgetsForwarder.onCreate();
         interfaceTweaks.onCreate();
@@ -60,6 +62,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onResume() {
+        UiEditLock.syncRuntimeState(mainActivity);
         interfaceTweaks.onResume();
         experienceTweaks.onResume();
         notificationForwarder.onResume();
