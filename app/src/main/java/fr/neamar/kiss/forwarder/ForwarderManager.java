@@ -22,6 +22,7 @@ public class ForwarderManager extends Forwarder {
     private final TagsMenu tagsMenu;
     private final Notification notificationForwarder;
     private final HistoryDisplayForwarder historyDisplayForwarder;
+    private final SquareUInteractionController squareUInteractionController;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -35,6 +36,8 @@ public class ForwarderManager extends Forwarder {
         this.notificationForwarder = new Notification(mainActivity);
         this.tagsMenu = new TagsMenu(mainActivity);
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
+        this.squareUInteractionController = new SquareUInteractionController(
+                mainActivity, historyDisplayForwarder);
     }
 
     public void onCreate() {
@@ -45,6 +48,7 @@ public class ForwarderManager extends Forwarder {
         shortcutsForwarder.onCreate();
         tagsMenu.onCreate();
         historyDisplayForwarder.onCreate();
+        squareUInteractionController.onCreate();
     }
 
     public void onStart() {
@@ -57,9 +61,11 @@ public class ForwarderManager extends Forwarder {
         notificationForwarder.onResume();
         tagsMenu.onResume();
         historyDisplayForwarder.onResume();
+        squareUInteractionController.onResume();
     }
 
     public void onPause() {
+        squareUInteractionController.onPause();
         experienceTweaks.onPause();
         notificationForwarder.onPause();
     }
@@ -84,6 +90,7 @@ public class ForwarderManager extends Forwarder {
     public void onDataSetChanged() {
         widgetsForwarder.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
+        squareUInteractionController.onDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
@@ -104,6 +111,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
+        squareUInteractionController.onDestroy();
         widgetsForwarder.onDestroy();
     }
 
