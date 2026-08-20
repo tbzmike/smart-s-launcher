@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
@@ -77,16 +78,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         Result<?> result = getItem(position);
         View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
 
-        // Every result renderer ultimately comes through this adapter. Configure labels here so
-        // apps, settings, shortcuts, contacts and feature results all expose their complete text
-        // when the available width is too small. Custom U/horizontal cards keep their own
-        // marquee labels too, so this also gives their source views a safe full-text fallback.
         configureOverflowText(view);
 
         if (parent instanceof AbsListView) {
-            // Only style the native vertical list here. Custom Square-U/horizontal renderers
-            // build their own icon/theme cards; styling them twice caused duplicate icon work
-            // and made first paint noticeably slower.
             TileVisualStyle.apply(view, result, parent.getContext());
             applyVerticalHistorySizing(view, parent.getContext());
         }
@@ -132,9 +126,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             return;
         }
 
-        // In rows such as "Setting: Wi-Fi preferences", keep the prefix at its natural width and
-        // give the final label the remaining width. A width constraint is required for Android's
-        // marquee to start; wrap_content alone simply measures the full string off-screen.
         if (lp.width == ViewGroup.LayoutParams.WRAP_CONTENT && isLastTextLabel(parent, text)) {
             lp.width = 0;
             lp.weight = Math.max(1f, lp.weight);
@@ -163,49 +154,47 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         int rowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 160);
         int iconPercent = safePercent(prefs, "smart-list-icon-size-percent", 100, 60, 170);
         row.setMinimumHeight(dp(context, 64) * rowPercent / 100);
-        resizeSignificantImages(row, context, iconPercent);
+        applyPrimaryIconScale(row, iconPercent);
     }
 
-    private void resizeSignificantImages(View view, Context context, int percent) {
-        if (view instanceof ImageView) {
-            ImageView image = (ImageView) view;
-            ViewGroup.LayoutParams lp = image.getLayoutParams();
-            if (lp != null && lp.width > 0 && lp.height > 0) {
-                int threshold = dp(context, 28);
-                int currentMax = Math.max(lp.width, lp.height);
-                if (currentMax >= threshold) {
-                    // Scale width and height by the same factor. The previous code forced every
-                    // significant image into a square, which distorted non-square feature and
-                    // settings icons. Keeping the original ratio prevents stretching.
-                    float factor = percent / 100f;
-                    int targetWidth = Math.max(1, Math.round(lp.width * factor));
-                    int targetHeight = Math.max(1, Math.round(lp.height * factor));
-                    int targetMax = Math.max(targetWidth, targetHeight);
-                    int minimumMax = dp(context, 24);
-                    if (targetMax < minimumMax) {
-                        float minimumFactor = minimumMax / (float) targetMax;
-                        targetWidth = Math.max(1, Math.round(targetWidth * minimumFactor));
-                        targetHeight = Math.max(1, Math.round(targetHeight * minimumFactor));
-                    }
-                    if (lp.width != targetWidth || lp.height != targetHeight) {
-                        lp.width = targetWidth;
-                        lp.height = targetHeight;
-                        image.setLayoutParams(lp);
-                    }
-                    // FIT_XY is the only standard scale type that can visibly stretch the
-                    // drawable. Replace it without disturbing CENTER_CROP profile photos.
-                    if (image.getScaleType() == ImageView.ScaleType.FIT_XY) {
-                        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                    }
-                }
+    /**
+     * Keep icon resizing idempotent. The previous implementation multiplied the current
+     * LayoutParams every time a recycled row was rebound, so an icon could grow/shrink again and
+     * again and eventually become misaligned or disappear. Scaling the fixed icon slot instead
+     * preserves the original square geometry and the drawable's aspect ratio on every bind.
+     */
+    private void applyPrimaryIconScale(View row, int percent) {
+        ImageView icon = findPrimaryIcon(row);
+        if (icon == null) return;
+
+        float scale = percent / 100f;
+        icon.setScaleX(scale);
+        icon.setScaleY(scale);
+
+        if (icon.getId() == R.id.item_setting_icon) {
+            icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        } else if (icon.getScaleType() == ImageView.ScaleType.FIT_XY) {
+            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        }
+    }
+
+    private ImageView findPrimaryIcon(View row) {
+        int[] ids = new int[]{
+                R.id.item_setting_icon,
+                R.id.item_shortcut_icon,
+                R.id.item_contact_icon,
+                R.id.item_app_icon,
+                R.id.item_phone_icon,
+                R.id.item_search_icon,
+                R.id.item_notification_icon
+        };
+        for (int id : ids) {
+            View candidate = row.findViewById(id);
+            if (candidate instanceof ImageView && candidate.getVisibility() != View.GONE) {
+                return (ImageView) candidate;
             }
-            return;
         }
-        if (!(view instanceof ViewGroup)) return;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            resizeSignificantImages(group.getChildAt(i), context, percent);
-        }
+        return null;
     }
 
     private int safePercent(SharedPreferences prefs, String key, int fallback, int min, int max) {
@@ -268,8 +257,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     public void updateWithPojos(@NonNull Context context, @NonNull List<Pojo> pojos,
                                 boolean isRefresh, String query) {
-        // Search runs on every query change. Avoid streams/Collectors here to reduce temporary
-        // allocations and GC pressure while typing rapidly.
         Map<Pojo, Result<?>> existingResults = new HashMap<>(Math.max(16, results.size() * 2));
         for (Result<?> result : results) {
             existingResults.put(result.getPojo(), result);
