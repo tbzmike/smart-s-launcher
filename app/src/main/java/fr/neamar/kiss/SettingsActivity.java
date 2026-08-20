@@ -8,6 +8,7 @@ import android.text.TextUtils;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBar;
@@ -25,6 +26,7 @@ import java.util.List;
 
 import fr.neamar.kiss.forwarder.ExperienceTweaks;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.SystemUiVisibilityHelper;
 
@@ -32,36 +34,26 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
     private static final String TAG = SettingsActivity.class.getSimpleName();
     public static final String ARG_SHOW_FRAGMENT = "show_fragment";
 
-    // Those settings require the app to restart
     private static final List<String> SETTINGS_REQUIRING_RESTART = Arrays.asList("primary-color", "transparent-search", "transparent-favorites",
             "pref-rounded-list", "pref-rounded-bars", "pref-swap-kiss-button-with-menu", "pref-hide-circle", "history-hide",
             "enable-favorites-bar", "notification-bar-color", "black-notification-icons", "icons-pack", "theme-shadow",
             "theme-separator", "theme-result-color", "large-favorites-bar", "pref-hide-search-bar-hint", "theme-wallpaper",
             "theme-bar-color", "results-size", "large-result-list-margins", "themed-icons", "icons-hide",
             "pref-fav-tags-drawable", null);
-    // Those settings require a restart of the settings
     private static final List<String> SETTINGS_REQUIRING_RESTART_FOR_SETTINGS_ACTIVITY = Arrays.asList("theme", "force-portrait", "night-mode", null);
 
     private boolean requireFullRestart = false;
-
     private SharedPreferences prefs;
-
     private SystemUiVisibilityHelper systemUiVisibilityHelper;
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         InterfaceTweaks.applySettingsTheme(this, prefs);
-
         systemUiVisibilityHelper = new SystemUiVisibilityHelper(this);
-
-        // Lock launcher into portrait mode
-        // Do it here to make the transition as smooth as possible
         ExperienceTweaks.setRequestedOrientation(this, prefs);
 
         super.onCreate(savedInstanceState);
-
         setContentView(R.layout.activity_toolbar_content);
 
         Toolbar toolbar = findViewById(R.id.main_toolbar);
@@ -75,11 +67,8 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
 
         getSupportFragmentManager().addOnBackStackChangedListener(this);
         Fragment fragment = getSupportFragmentManager().findFragmentByTag(ARG_SHOW_FRAGMENT);
-        if (fragment == null) {
-            fragment = new SettingsFragment();
-        }
-        getSupportFragmentManager()
-                .beginTransaction()
+        if (fragment == null) fragment = new SettingsFragment();
+        getSupportFragmentManager().beginTransaction()
                 .replace(R.id.content_container, fragment, ARG_SHOW_FRAGMENT)
                 .commit();
     }
@@ -88,20 +77,31 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
     protected void onTitleChanged(CharSequence title, int color) {
         super.onTitleChanged(title, color);
         ActionBar actionBar = getSupportActionBar();
-        if (actionBar != null) {
-            actionBar.setTitle(title);
-        }
+        if (actionBar != null) actionBar.setTitle(title);
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.menu_settings, menu);
+        MenuItem unlock = menu.findItem(R.id.unlock_ui);
+        if (unlock != null) unlock.setVisible(UiEditLock.isLocked(this));
         return true;
     }
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == R.id.unlock_ui) {
+            UiEditLock.unlock(this);
+            invalidateOptionsMenu();
+            Toast.makeText(this, "Launcher UI unlocked", Toast.LENGTH_SHORT).show();
+            Fragment current = getSupportFragmentManager().findFragmentByTag(ARG_SHOW_FRAGMENT);
+            if (current instanceof PreferenceFragmentCompat) {
+                PreferenceScreen screen = ((PreferenceFragmentCompat) current).getPreferenceScreen();
+                if (screen != null) UiEditLock.refresh(this, screen);
+            }
+            return true;
+        }
         if (item.getItemId() == R.id.smart_features) {
             openSmartFeaturesSettings();
             return true;
@@ -117,11 +117,8 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
 
     private void openSmartFeaturesSettings() {
         Fragment current = getSupportFragmentManager().findFragmentByTag(ARG_SHOW_FRAGMENT);
-        if (current instanceof SmartFeaturesSettingsFragment) {
-            return;
-        }
-        getSupportFragmentManager()
-                .beginTransaction()
+        if (current instanceof SmartFeaturesSettingsFragment) return;
+        getSupportFragmentManager().beginTransaction()
                 .replace(R.id.content_container, new SmartFeaturesSettingsFragment(), ARG_SHOW_FRAGMENT)
                 .addToBackStack("smart-features")
                 .commit();
@@ -131,17 +128,15 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
     public void onResume() {
         super.onResume();
         prefs.registerOnSharedPreferenceChangeListener(this);
+        invalidateOptionsMenu();
     }
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if (UiEditLock.PREF_KEY.equals(key)) invalidateOptionsMenu();
         if (SETTINGS_REQUIRING_RESTART.contains(key) || SETTINGS_REQUIRING_RESTART_FOR_SETTINGS_ACTIVITY.contains(key)) {
             requireFullRestart = true;
-
-            if (SETTINGS_REQUIRING_RESTART_FOR_SETTINGS_ACTIVITY.contains(key)) {
-                // Kill this activity too, and restart
-                recreate();
-            }
+            if (SETTINGS_REQUIRING_RESTART_FOR_SETTINGS_ACTIVITY.contains(key)) recreate();
         }
     }
 
@@ -149,9 +144,6 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
     public void onPause() {
         super.onPause();
         prefs.unregisterOnSharedPreferenceChangeListener(this);
-
-        // Some settings require a full UI refresh,
-        // Flag this, so that MainActivity get the information onResume().
         if (requireFullRestart) {
             prefs.edit().putBoolean("require-layout-update", true).apply();
             requireFullRestart = false;
@@ -166,9 +158,7 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
 
     @Override
     public boolean onSupportNavigateUp() {
-        if (getSupportFragmentManager().popBackStackImmediate()) {
-            return true;
-        }
+        if (getSupportFragmentManager().popBackStackImmediate()) return true;
         return super.onSupportNavigateUp();
     }
 
@@ -182,8 +172,7 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
                     ? new SmartCategorySettingsFragment()
                     : new SettingsFragment();
             fragment.setArguments(args);
-            getSupportFragmentManager()
-                    .beginTransaction()
+            getSupportFragmentManager().beginTransaction()
                     .replace(R.id.content_container, fragment, ARG_SHOW_FRAGMENT)
                     .addToBackStack(key)
                     .commit();
@@ -209,15 +198,10 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         Fragment fragment = getSupportFragmentManager().findFragmentByTag(ARG_SHOW_FRAGMENT);
         if (fragment instanceof PreferenceFragmentCompat) {
             Preference preference = ((PreferenceFragmentCompat) fragment).getPreferenceScreen();
-            if (preference != null)
-                title = preference.getTitle();
+            if (preference != null) title = preference.getTitle();
         }
-
-        if (title != null) {
-            setTitle(title);
-        } else {
-            setTitle(R.string.activity_setting);
-        }
+        if (title != null) setTitle(title);
+        else setTitle(R.string.activity_setting);
     }
 
     @Override
@@ -226,16 +210,13 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
             Log.w(TAG, "No fragment set for preference!");
             return false;
         }
-        // Instantiate the new Fragment.
         final Bundle args = pref.getExtras();
         String key = pref.getKey();
         args.putString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT, key);
         final Fragment fragment = getSupportFragmentManager().getFragmentFactory().instantiate(
-                getClassLoader(),
-                pref.getFragment());
+                getClassLoader(), pref.getFragment());
         fragment.setArguments(args);
         fragment.setTargetFragment(caller, 0);
-        // Replace the existing Fragment with the new Fragment.
         getSupportFragmentManager().beginTransaction()
                 .replace(R.id.content_container, fragment, ARG_SHOW_FRAGMENT)
                 .addToBackStack(key)
