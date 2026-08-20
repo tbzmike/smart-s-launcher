@@ -22,13 +22,6 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 
-/**
- * Optional presentations for the normal KISS history/results adapter.
- *
- * The existing RecordAdapter remains the single source of truth. This class changes presentation
- * only, so launching, frozen apps, settings entries, shortcuts and notification actions continue
- * through the normal KISS/Smart S result pipeline.
- */
 final class HistoryDisplayForwarder extends Forwarder {
     static final String PREF_LAYOUT = "smart-history-layout";
     static final String VERTICAL = "vertical";
@@ -39,9 +32,6 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private static final int CARD_WIDTH_DP = 190;
     private static final int CARD_HEIGHT_DP = 132;
-
-    // The approved Square-U visual is intentionally portrait-like and spacious. Only a window of
-    // history is visible at once; the rest appears as the carousel rotates.
     private static final int SQUARE_CARD_WIDTH_DP = 124;
     private static final int SQUARE_CARD_HEIGHT_DP = 158;
     private static final float SQUARE_VISIBLE_RADIUS = 6.15f;
@@ -75,6 +65,12 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     void onResume() {
         applyMode(false);
+        if (SQUARE_U.equals(activeMode)) {
+            applyNotificationPanelSizing();
+            rebuildSquare();
+        } else if (!VERTICAL.equals(activeMode)) {
+            rebuildHorizontal();
+        }
     }
 
     void onDataSetChanged() {
@@ -137,19 +133,28 @@ final class HistoryDisplayForwarder extends Forwarder {
         notificationScroller.addView(notificationCenter, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        FrameLayout.LayoutParams notificationParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(286), Gravity.CENTER);
-        // Keep the middle panel compact and leave the 3D side cards clearly visible.
-        notificationParams.leftMargin = dp(58);
-        notificationParams.rightMargin = dp(58);
-        notificationParams.topMargin = dp(80);
-        notificationParams.bottomMargin = dp(150);
-        squareRoot.addView(notificationScroller, notificationParams);
+        squareRoot.addView(notificationScroller, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(286), Gravity.CENTER));
+        applyNotificationPanelSizing();
 
         FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
                 Gravity.BOTTOM);
         container.addView(squareRoot, rootParams);
+    }
+
+    private void applyNotificationPanelSizing() {
+        if (notificationScroller == null) return;
+        int sizePercent = safePrefInt("smart-u-notification-panel-size-percent", 100, 55, 150);
+        int gapDp = safePrefInt("smart-u-notification-gap-dp", 28, 8, 96);
+        int screenWidth = mainActivity.getResources().getDisplayMetrics().widthPixels;
+        int baseWidth = Math.max(dp(180), screenWidth - dp(116));
+        int width = Math.min(screenWidth - dp(24), Math.max(dp(150), baseWidth * sizePercent / 100));
+        int height = Math.max(dp(150), dp(286) * sizePercent / 100);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(width, height, Gravity.CENTER);
+        lp.topMargin = dp(50 + gapDp / 2);
+        lp.bottomMargin = dp(138 + gapDp);
+        notificationScroller.setLayoutParams(lp);
     }
 
     private void applyMode(boolean force) {
@@ -183,11 +188,8 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void rebuild() {
         if (mainActivity.adapter == null) return;
-        if (SQUARE_U.equals(activeMode)) {
-            rebuildSquare();
-        } else {
-            rebuildHorizontal();
-        }
+        if (SQUARE_U.equals(activeMode)) rebuildSquare();
+        else rebuildHorizontal();
     }
 
     private void rebuildHorizontal() {
@@ -204,24 +206,20 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private void rebuildSquare() {
+        applyNotificationPanelSizing();
         final int count = mainActivity.adapter.getCount();
         String currentQuery = mainActivity.searchEditText == null
-                ? ""
-                : mainActivity.searchEditText.getText().toString().trim();
+                ? "" : mainActivity.searchEditText.getText().toString().trim();
         long currentPriorityId = count > 0
-                ? mainActivity.adapter.getItem(count - 1).getUniqueId()
-                : Long.MIN_VALUE;
+                ? mainActivity.adapter.getItem(count - 1).getUniqueId() : Long.MIN_VALUE;
         boolean refocusBottom = !currentQuery.equals(lastSquareQuery)
                 || currentPriorityId != lastSquarePriorityId;
 
         squareTrack.removeAllViews();
         notificationCenter.removeAllViews();
-
         int visibleNotifications = 0;
 
         for (int position = 0; position < count; position++) {
-            // Build each adapter result only once. The previous Square-U created a second full view
-            // per result just to inspect notifications, which repeated async icon binding work.
             View source = mainActivity.adapter.getView(position, null, squareTrack);
             View notificationRow = source.findViewById(R.id.item_notification_row);
             boolean hasNotification = notificationRow != null
@@ -245,7 +243,6 @@ final class HistoryDisplayForwarder extends Forwarder {
 
         notificationScroller.setVisibility(visibleNotifications > 0 ? View.VISIBLE : View.GONE);
         if (visibleNotifications > 0) notificationScroller.scrollTo(0, 0);
-
         squareTrack.onDataRebuilt(refocusBottom);
         lastSquareQuery = currentQuery;
         lastSquarePriorityId = currentPriorityId;
@@ -259,9 +256,8 @@ final class HistoryDisplayForwarder extends Forwarder {
         title.setTextSize(15.5f);
         title.setGravity(Gravity.CENTER);
         title.setPadding(dp(6), dp(2), dp(6), dp(5));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        notificationCenter.addView(title, lp);
+        notificationCenter.addView(title, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
     private View createNotificationShell(View notificationSource) {
@@ -277,9 +273,10 @@ final class HistoryDisplayForwarder extends Forwarder {
         background.setStroke(dp(1), Color.argb(68, 255, 255, 255));
         shell.setBackground(background);
 
+        float contentScale = safePrefInt("smart-u-notification-content-size-percent", 100, 65, 140) / 100f;
         notificationSource.setAlpha(1f);
-        notificationSource.setScaleX(0.92f);
-        notificationSource.setScaleY(0.92f);
+        notificationSource.setScaleX(0.92f * contentScale);
+        notificationSource.setScaleY(0.92f * contentScale);
         FrameLayout.LayoutParams sourceParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         sourceParams.gravity = Gravity.CENTER;
@@ -304,35 +301,38 @@ final class HistoryDisplayForwarder extends Forwarder {
         return source;
     }
 
+    private int horizontalTilePercent() {
+        return safePrefInt("smart-horizontal-tile-size-percent", 100, 65, 160);
+    }
+
+    private int horizontalIconPercent() {
+        return safePrefInt("smart-horizontal-icon-size-percent", 100, 60, 170);
+    }
+
     private View createIconTile(View source) {
-        FrameLayout tile = baseTile(dp(112), dp(102));
+        int tilePercent = horizontalTilePercent();
+        int iconPercent = horizontalIconPercent();
+        FrameLayout tile = baseTile(dp(112) * tilePercent / 100, dp(102) * tilePercent / 100);
         Drawable iconDrawable = extractIcon(source);
         CharSequence label = extractLabel(source);
-
         if (iconDrawable != null) {
             ImageView icon = new ImageView(mainActivity);
             icon.setImageDrawable(iconDrawable);
             icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            int iconSize = dp(52) * iconPercent / 100;
             FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                    dp(52), dp(52), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+                    iconSize, iconSize, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
             iconParams.topMargin = dp(5);
             tile.addView(icon, iconParams);
         }
-
-        addFullLabel(tile, label, 12f, dp(44), 2);
+        addFullLabel(tile, label, 12f, dp(44) * tilePercent / 100, 1);
         return tile;
     }
 
     private View createNameTile(View source) {
-        FrameLayout tile = baseTile(dp(190), dp(76));
-        TextView name = new TextView(mainActivity);
-        name.setText(extractLabel(source));
-        name.setTextColor(resolveTextColor());
-        name.setTextSize(16f);
-        name.setGravity(Gravity.CENTER);
-        name.setMaxLines(3);
-        name.setSingleLine(false);
-        name.setEllipsize(null);
+        int tilePercent = horizontalTilePercent();
+        FrameLayout tile = baseTile(dp(190) * tilePercent / 100, dp(76) * tilePercent / 100);
+        TextView name = buildMarqueeLabel(extractLabel(source), 16f);
         name.setPadding(dp(10), dp(7), dp(10), dp(7));
         tile.addView(name, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -340,20 +340,19 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private View createCardTile(View source) {
-        FrameLayout card = baseTile(dp(CARD_WIDTH_DP), dp(CARD_HEIGHT_DP));
+        int tilePercent = horizontalTilePercent();
+        int iconPercent = horizontalIconPercent();
+        FrameLayout card = baseTile(dp(CARD_WIDTH_DP) * tilePercent / 100,
+                dp(CARD_HEIGHT_DP) * tilePercent / 100);
         styleCard(card, dp(18), false);
-
         Drawable iconDrawable = extractIcon(source);
         CharSequence label = extractLabel(source);
         addMutedPreview(card, source);
-        addForegroundIconAndLabel(card, iconDrawable, label, dp(58), 14f, dp(14));
+        addForegroundIconAndLabel(card, iconDrawable, label,
+                dp(58) * iconPercent / 100, 14f, dp(14));
         return card;
     }
 
-    /**
-     * Square-U cards keep a live relationship with the adapter's icon view. AppResult loads many
-     * icons asynchronously, so copying a drawable only once can leave a permanent blank card.
-     */
     private View createSquareCard(View source, boolean preserveSourceForNotification) {
         FrameLayout card = new FrameLayout(mainActivity);
         styleCard(card, dp(18), true);
@@ -363,9 +362,10 @@ final class HistoryDisplayForwarder extends Forwarder {
 
         CharSequence label = extractLabel(source);
         ImageView sourceIcon = findIconView(source);
+        int iconPercent = safePrefInt("smart-u-icon-size-percent", 100, 60, 160);
+        int iconSize = dp(72) * iconPercent / 100;
 
         if (sourceIcon != null && !preserveSourceForNotification) {
-            // Reparent the real ImageView. Async drawable delivery now updates the card directly.
             if (sourceIcon.getParent() instanceof ViewGroup) {
                 ((ViewGroup) sourceIcon.getParent()).removeView(sourceIcon);
             }
@@ -374,24 +374,22 @@ final class HistoryDisplayForwarder extends Forwarder {
             sourceIcon.setAlpha(1f);
             sourceIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
             FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                    dp(72), dp(72), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+                    iconSize, iconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
             iconParams.topMargin = dp(15);
             card.addView(sourceIcon, iconParams);
         } else if (sourceIcon != null) {
-            // Notification rows must retain their original icon. Mirror it without forcing a second
-            // adapter bind, then refresh after the normal async icon loader has had time to finish.
             ImageView mirror = new ImageView(mainActivity);
             mirror.setScaleType(ImageView.ScaleType.FIT_CENTER);
             mirror.setAlpha(1f);
             syncMirroredIcon(mirror, sourceIcon);
             FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                    dp(72), dp(72), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+                    iconSize, iconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
             iconParams.topMargin = dp(15);
             card.addView(mirror, iconParams);
             scheduleIconMirror(card, mirror, sourceIcon);
         }
 
-        addFullLabel(card, label, 14f, dp(58), 3);
+        addFullLabel(card, label, 14f, dp(42), 1);
         return card;
     }
 
@@ -404,9 +402,7 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void syncMirroredIcon(ImageView target, ImageView source) {
         Drawable drawable = source.getDrawable();
-        if (drawable != null && target.getDrawable() != drawable) {
-            target.setImageDrawable(drawable);
-        }
+        if (drawable != null && target.getDrawable() != drawable) target.setImageDrawable(drawable);
     }
 
     private void addMutedPreview(FrameLayout card, View source) {
@@ -429,24 +425,32 @@ final class HistoryDisplayForwarder extends Forwarder {
             iconParams.topMargin = topMargin;
             card.addView(icon, iconParams);
         }
-        addFullLabel(card, label, textSize, dp(52), 3);
+        addFullLabel(card, label, textSize, dp(42), 1);
     }
 
-    private void addFullLabel(FrameLayout card, CharSequence label, float textSize,
-                              int labelHeight, int maxLines) {
+    private TextView buildMarqueeLabel(CharSequence label, float textSize) {
         TextView name = new TextView(mainActivity);
         name.setText(label);
         name.setTextColor(Color.WHITE);
         name.setAlpha(1f);
         name.setTextSize(textSize);
-        name.setGravity(Gravity.CENTER);
-        name.setMaxLines(maxLines);
-        name.setSingleLine(false);
-        name.setEllipsize(null);
-        name.setHorizontallyScrolling(false);
-        name.setPadding(dp(6), dp(2), dp(6), dp(5));
+        name.setGravity(Gravity.CENTER_VERTICAL | Gravity.CENTER_HORIZONTAL);
+        name.setSingleLine(true);
+        name.setMaxLines(1);
+        name.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        name.setMarqueeRepeatLimit(-1);
+        name.setHorizontallyScrolling(true);
+        name.setSelected(true);
+        name.setFocusable(false);
+        name.setFocusableInTouchMode(false);
         name.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
+        return name;
+    }
 
+    private void addFullLabel(FrameLayout card, CharSequence label, float textSize,
+                              int labelHeight, int maxLines) {
+        TextView name = buildMarqueeLabel(label, textSize);
+        name.setPadding(dp(6), dp(2), dp(6), dp(5));
         GradientDrawable labelBackground = new GradientDrawable();
         labelBackground.setColor(Color.argb(138, 0, 0, 0));
         labelBackground.setCornerRadius(dp(10));
@@ -463,10 +467,8 @@ final class HistoryDisplayForwarder extends Forwarder {
     private CharSequence extractLabel(View source) {
         TextView appName = source.findViewById(R.id.item_app_name);
         if (isUsefulLabel(appName)) return appName.getText();
-
         TextView discovered = findPrimaryText(source);
         if (discovered != null) return discovered.getText();
-
         CharSequence description = source.getContentDescription();
         if (!TextUtils.isEmpty(description)) return description;
         return "Item";
@@ -478,7 +480,6 @@ final class HistoryDisplayForwarder extends Forwarder {
             if (isUsefulLabel(text)) return text;
         }
         if (!(view instanceof ViewGroup)) return null;
-
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
             TextView candidate = findPrimaryText(group.getChildAt(i));
@@ -488,9 +489,7 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private boolean isUsefulLabel(TextView text) {
-        if (text == null || text.getVisibility() != View.VISIBLE || TextUtils.isEmpty(text.getText())) {
-            return false;
-        }
+        if (text == null || text.getVisibility() != View.VISIBLE || TextUtils.isEmpty(text.getText())) return false;
         int id = text.getId();
         if (id == R.id.item_notification_text || id == R.id.item_notification_read) return false;
         String normalized = text.getText().toString().trim();
@@ -512,11 +511,8 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private ImageView findFirstVisibleImage(View view) {
-        if (view instanceof ImageView && view.getVisibility() == View.VISIBLE) {
-            return (ImageView) view;
-        }
+        if (view instanceof ImageView && view.getVisibility() == View.VISIBLE) return (ImageView) view;
         if (!(view instanceof ViewGroup)) return null;
-
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
             ImageView candidate = findFirstVisibleImage(group.getChildAt(i));
@@ -530,8 +526,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         background.setColor(square ? Color.argb(238, 22, 24, 30) : Color.argb(112, 22, 22, 24));
         background.setCornerRadius(radius);
         background.setStroke(dp(1), square
-                ? Color.argb(205, 218, 228, 242)
-                : Color.argb(135, 255, 255, 255));
+                ? Color.argb(205, 218, 228, 242) : Color.argb(135, 255, 255, 255));
         card.setBackground(background);
         card.setClipToOutline(true);
     }
@@ -548,54 +543,26 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void animateHistoryItemIn(View view, int position) {
         if (!SmartAnimationEngine.isEnabled(mainActivity)) return;
-        String style = SmartAnimationEngine.getStyle(
-                mainActivity, "smart-animation-scroll", "depth");
+        String style = SmartAnimationEngine.getStyle(mainActivity, "smart-animation-scroll", "depth");
         if ("none".equals(style)) return;
-
         view.animate().cancel();
         view.setAlpha(0f);
         switch (style) {
-            case "wave":
-                view.setTranslationY((position % 2 == 0 ? 1 : -1) * dp(14));
-                break;
-            case "slide":
-                view.setTranslationX(dp(24));
-                break;
-            case "zoom":
-                view.setScaleX(0.84f);
-                view.setScaleY(0.84f);
-                break;
-            case "tilt":
-                view.setRotationY(position % 2 == 0 ? -12f : 12f);
-                break;
-            case "stack":
-                view.setTranslationX(dp(16));
-                view.setScaleX(0.92f);
-                view.setScaleY(0.92f);
-                break;
-            case "cascade":
-                view.setTranslationY(dp(10 + Math.min(28, position * 2)));
-                break;
+            case "wave": view.setTranslationY((position % 2 == 0 ? 1 : -1) * dp(14)); break;
+            case "slide": view.setTranslationX(dp(24)); break;
+            case "zoom": view.setScaleX(0.84f); view.setScaleY(0.84f); break;
+            case "tilt": view.setRotationY(position % 2 == 0 ? -12f : 12f); break;
+            case "stack": view.setTranslationX(dp(16)); view.setScaleX(0.92f); view.setScaleY(0.92f); break;
+            case "cascade": view.setTranslationY(dp(10 + Math.min(28, position * 2))); break;
             case "focus":
             case "depth":
-            default:
-                view.setScaleX(0.92f);
-                view.setScaleY(0.92f);
-                view.setTranslationY(dp(9));
-                break;
+            default: view.setScaleX(0.92f); view.setScaleY(0.92f); view.setTranslationY(dp(9)); break;
         }
-
-        view.animate()
-                .alpha(1f)
-                .translationX(0f)
-                .translationY(0f)
-                .rotationY(0f)
-                .scaleX(1f)
-                .scaleY(1f)
+        view.animate().alpha(1f).translationX(0f).translationY(0f).rotationY(0f)
+                .scaleX(1f).scaleY(1f)
                 .setDuration(SmartAnimationEngine.duration(mainActivity))
                 .setStartDelay(Math.min(140L, position * 12L))
-                .setInterpolator(new DecelerateInterpolator())
-                .start();
+                .setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private void animateNotificationIn(View view, int index) {
@@ -605,15 +572,10 @@ final class HistoryDisplayForwarder extends Forwarder {
         view.setTranslationY(dp(8));
         view.setScaleX(0.98f);
         view.setScaleY(0.98f);
-        view.animate()
-                .alpha(1f)
-                .translationY(0f)
-                .scaleX(1f)
-                .scaleY(1f)
+        view.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
                 .setStartDelay(Math.min(120L, index * 22L))
                 .setDuration(SmartAnimationEngine.duration(mainActivity))
-                .setInterpolator(new DecelerateInterpolator())
-                .start();
+                .setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private void animateNotificationCenterRefresh() {
@@ -623,34 +585,34 @@ final class HistoryDisplayForwarder extends Forwarder {
         notificationScroller.setAlpha(0.90f);
         notificationScroller.setScaleX(0.99f);
         notificationScroller.setScaleY(0.99f);
-        notificationScroller.animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
+        notificationScroller.animate().alpha(1f).scaleX(1f).scaleY(1f)
                 .setDuration(Math.max(80L, SmartAnimationEngine.duration(mainActivity) / 2))
-                .setInterpolator(new DecelerateInterpolator())
-                .start();
+                .setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private int resolveTextColor() {
         android.util.TypedValue value = new android.util.TypedValue();
         if (mainActivity.getTheme().resolveAttribute(android.R.attr.textColorPrimary, value, true)
                 && value.type >= android.util.TypedValue.TYPE_FIRST_COLOR_INT
-                && value.type <= android.util.TypedValue.TYPE_LAST_COLOR_INT) {
-            return value.data;
-        }
+                && value.type <= android.util.TypedValue.TYPE_LAST_COLOR_INT) return value.data;
         return Color.WHITE;
+    }
+
+    private int safePrefInt(String key, int fallback, int min, int max) {
+        Object raw = prefs.getAll().get(key);
+        int value = fallback;
+        if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
+        else if (raw instanceof String) {
+            try { value = Math.round(Float.parseFloat((String) raw)); }
+            catch (NumberFormatException ignored) { value = fallback; }
+        }
+        return Math.max(min, Math.min(max, value));
     }
 
     private int dp(int value) {
         return Math.round(value * mainActivity.getResources().getDisplayMetrics().density);
     }
 
-    /**
-     * Spacious 3D Square-U carousel. A fixed number of cards are visible at once; older history is
-     * intentionally kept off-track until the user scrolls. This prevents the crowding caused by
-     * dividing the entire perimeter by the full history count.
-     */
     private final class SquareTrackLayout extends ViewGroup {
         private final int touchSlop;
         private float downX;
@@ -687,31 +649,23 @@ final class HistoryDisplayForwarder extends Forwarder {
             int width = MeasureSpec.getSize(widthMeasureSpec);
             int height = MeasureSpec.getSize(heightMeasureSpec);
             setMeasuredDimension(width, height);
-
-            int cardWidth = Math.min(dp(SQUARE_CARD_WIDTH_DP), Math.max(dp(88), width - dp(20)));
-            int cardHeight = Math.round(cardWidth
-                    * (SQUARE_CARD_HEIGHT_DP / (float) SQUARE_CARD_WIDTH_DP));
-
+            int tilePercent = safePrefInt("smart-u-tile-size-percent", 100, 70, 150);
+            int baseWidth = dp(SQUARE_CARD_WIDTH_DP) * tilePercent / 100;
+            int cardWidth = Math.min(baseWidth, Math.max(dp(88), width - dp(20)));
+            int cardHeight = Math.round(cardWidth * (SQUARE_CARD_HEIGHT_DP / (float) SQUARE_CARD_WIDTH_DP));
             int childWidthSpec = MeasureSpec.makeMeasureSpec(cardWidth, MeasureSpec.EXACTLY);
             int childHeightSpec = MeasureSpec.makeMeasureSpec(cardHeight, MeasureSpec.EXACTLY);
-            for (int i = 0; i < getChildCount(); i++) {
-                getChildAt(i).measure(childWidthSpec, childHeightSpec);
-            }
+            for (int i = 0; i < getChildCount(); i++) getChildAt(i).measure(childWidthSpec, childHeightSpec);
         }
 
         @Override
         protected void onLayout(boolean changed, int l, int t, int r, int b) {
             int count = getChildCount();
             if (count == 0) return;
-
             int width = r - l;
             int height = b - t;
             int childWidth = getChildAt(0).getMeasuredWidth();
             int childHeight = getChildAt(0).getMeasuredHeight();
-
-            // Side cards are deliberately allowed to overhang their layout bounds. Their 3D Y
-            // rotation narrows the visible footprint, so this makes the rendered U reach the real
-            // left/right screen edges instead of looking pinched inward.
             float left = -dp(34);
             float right = Math.max(left, width - childWidth + dp(34));
             float top = dp(28);
@@ -724,20 +678,16 @@ final class HistoryDisplayForwarder extends Forwarder {
                 int recencyIndex = (count - 1) - i;
                 float relative = cyclicRelative(recencyIndex + rotationOffset, count);
                 View child = getChildAt(i);
-
                 if (Math.abs(relative) > SQUARE_VISIBLE_RADIUS + 0.35f) {
                     child.setVisibility(View.INVISIBLE);
                     continue;
                 }
-
                 child.setVisibility(View.VISIBLE);
                 PathPoint point = pointOnOpenU(relative, left, right, top, bottom, centerX, searching);
                 int childLeft = Math.round(point.x);
                 int childTop = Math.round(point.y);
                 child.layout(childLeft, childTop,
-                        childLeft + child.getMeasuredWidth(),
-                        childTop + child.getMeasuredHeight());
-
+                        childLeft + child.getMeasuredWidth(), childTop + child.getMeasuredHeight());
                 child.setPivotX(child.getMeasuredWidth() / 2f);
                 child.setPivotY(child.getMeasuredHeight() / 2f);
                 child.setCameraDistance(dp(1900));
@@ -759,14 +709,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         }
 
         private PathPoint pointOnOpenU(float relative, float left, float right,
-                                       float top, float bottom, float centerX,
-                                       boolean searching) {
+                                       float top, float bottom, float centerX, boolean searching) {
             float absolute = Math.abs(relative);
             float sign = relative < 0f ? -1f : 1f;
-
-            // The bottom/front band is the priority zone. During search the adapter is already
-            // relevance-ordered, with its highest-relevance result at the end; recency history uses
-            // the same end-of-list anchor. Rebuild refocusing keeps that priority item at center.
             if (absolute <= SQUARE_BOTTOM_BAND) {
                 float normalized = relative / SQUARE_BOTTOM_BAND;
                 float halfSpan = Math.max(1f, (right - left) / 2f);
@@ -774,14 +719,10 @@ final class HistoryDisplayForwarder extends Forwarder {
                 float focus = 1f - Math.min(1f, absolute / (SQUARE_BOTTOM_BAND + 0.25f));
                 float scale = (searching ? 0.88f : 0.85f)
                         + ((searching ? 0.17f : 0.16f) * focus);
-                float alpha = 1f;
                 float rotationY = -normalized * 18f;
-                return new PathPoint(x, bottom, rotationY, 0f, scale, alpha,
+                return new PathPoint(x, bottom, rotationY, 0f, scale, 1f,
                         dp(5) + dp(14) * focus);
             }
-
-            // Older/non-priority items keep the 3D depth by becoming progressively dimmer and
-            // slightly smaller as they climb the two sides.
             float sideRange = SQUARE_VISIBLE_RADIUS - SQUARE_BOTTOM_BAND;
             float sideProgress = Math.min(1f,
                     (absolute - SQUARE_BOTTOM_BAND) / Math.max(0.01f, sideRange));
@@ -798,22 +739,15 @@ final class HistoryDisplayForwarder extends Forwarder {
         public boolean onInterceptTouchEvent(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    downX = event.getX();
-                    lastX = downX;
-                    dragging = false;
+                    downX = event.getX(); lastX = downX; dragging = false;
                     if (settleAnimator != null) settleAnimator.cancel();
                     return false;
-
                 case MotionEvent.ACTION_MOVE:
                     if (Math.abs(event.getX() - downX) > touchSlop) {
-                        dragging = true;
-                        lastX = event.getX();
-                        return true;
+                        dragging = true; lastX = event.getX(); return true;
                     }
                     return false;
-
-                default:
-                    return false;
+                default: return false;
             }
         }
 
@@ -821,11 +755,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         public boolean onTouchEvent(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    downX = event.getX();
-                    lastX = downX;
+                    downX = event.getX(); lastX = downX;
                     if (settleAnimator != null) settleAnimator.cancel();
                     return true;
-
                 case MotionEvent.ACTION_MOVE:
                     float x = event.getX();
                     float delta = x - lastX;
@@ -833,15 +765,12 @@ final class HistoryDisplayForwarder extends Forwarder {
                     rotationOffset += delta / Math.max(dp(78), getWidth() / 5.5f);
                     requestLayout();
                     return true;
-
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
                     if (dragging) settleToNearestSlot();
                     dragging = false;
                     return true;
-
-                default:
-                    return true;
+                default: return true;
             }
         }
 
@@ -854,13 +783,11 @@ final class HistoryDisplayForwarder extends Forwarder {
                 requestLayout();
                 return;
             }
-
             if (Math.abs(target - rotationOffset) < 0.001f) {
                 rotationOffset = target;
                 requestLayout();
                 return;
             }
-
             settleAnimator = ValueAnimator.ofFloat(rotationOffset, target);
             settleAnimator.setDuration(SmartAnimationEngine.duration(mainActivity));
             settleAnimator.setInterpolator(new DecelerateInterpolator());
