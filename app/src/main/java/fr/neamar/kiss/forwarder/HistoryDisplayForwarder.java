@@ -15,6 +15,7 @@ import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import fr.neamar.kiss.MainActivity;
@@ -45,13 +46,13 @@ final class HistoryDisplayForwarder extends Forwarder {
     private static final int SQUARE_CARD_HEIGHT_DP = 158;
     private static final float SQUARE_VISIBLE_RADIUS = 6.15f;
     private static final float SQUARE_BOTTOM_BAND = 2.05f;
-    private static final int MAX_CENTER_NOTIFICATIONS = 4;
 
     private FrameLayout container;
     private HorizontalScrollView scroller;
     private LinearLayout row;
     private FrameLayout squareRoot;
     private SquareTrackLayout squareTrack;
+    private ScrollView notificationScroller;
     private LinearLayout notificationCenter;
     private View edgeEffect;
     private String activeMode = VERTICAL;
@@ -109,30 +110,41 @@ final class HistoryDisplayForwarder extends Forwarder {
         squareRoot.addView(squareTrack, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        notificationScroller = new ScrollView(mainActivity);
+        notificationScroller.setFillViewport(false);
+        notificationScroller.setVerticalScrollBarEnabled(true);
+        notificationScroller.setScrollbarFadingEnabled(true);
+        notificationScroller.setFadingEdgeLength(dp(18));
+        notificationScroller.setVerticalFadingEdgeEnabled(true);
+        notificationScroller.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        notificationScroller.setClipToPadding(false);
+        notificationScroller.setPadding(dp(6), dp(6), dp(6), dp(6));
+        notificationScroller.setElevation(dp(6));
+        notificationScroller.setVisibility(View.GONE);
+
+        GradientDrawable panel = new GradientDrawable();
+        panel.setColor(Color.argb(205, 8, 9, 12));
+        panel.setCornerRadius(dp(20));
+        panel.setStroke(dp(2), Color.argb(190, 78, 105, 255));
+        notificationScroller.setBackground(panel);
+
         notificationCenter = new LinearLayout(mainActivity);
         notificationCenter.setOrientation(LinearLayout.VERTICAL);
         notificationCenter.setGravity(Gravity.CENTER_HORIZONTAL);
         notificationCenter.setClipChildren(false);
         notificationCenter.setClipToPadding(false);
-        notificationCenter.setPadding(dp(10), dp(10), dp(10), dp(10));
-        notificationCenter.setElevation(dp(6));
-        notificationCenter.setVisibility(View.GONE);
-
-        GradientDrawable panel = new GradientDrawable();
-        panel.setColor(Color.argb(205, 8, 9, 12));
-        panel.setCornerRadius(dp(22));
-        panel.setStroke(dp(2), Color.argb(190, 78, 105, 255));
-        notificationCenter.setBackground(panel);
+        notificationCenter.setPadding(dp(5), dp(5), dp(5), dp(5));
+        notificationScroller.addView(notificationCenter, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         FrameLayout.LayoutParams notificationParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.CENTER);
-        // Leave a generous gutter for the angled side cards, like the approved mockup.
-        notificationParams.leftMargin = dp(70);
-        notificationParams.rightMargin = dp(70);
-        notificationParams.topMargin = dp(72);
-        notificationParams.bottomMargin = dp(132);
-        squareRoot.addView(notificationCenter, notificationParams);
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(286), Gravity.CENTER);
+        // Keep the middle panel compact and leave the 3D side cards clearly visible.
+        notificationParams.leftMargin = dp(58);
+        notificationParams.rightMargin = dp(58);
+        notificationParams.topMargin = dp(80);
+        notificationParams.bottomMargin = dp(150);
+        squareRoot.addView(notificationScroller, notificationParams);
 
         FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
@@ -202,41 +214,37 @@ final class HistoryDisplayForwarder extends Forwarder {
         boolean refocusBottom = !currentQuery.equals(lastSquareQuery)
                 || currentPriorityId != lastSquarePriorityId;
 
-        // Preserve the current carousel position for ordinary notification refreshes, but bring a
-        // new search or newly-most-recent result back to the bottom/front priority position.
         squareTrack.removeAllViews();
         notificationCenter.removeAllViews();
 
         int visibleNotifications = 0;
-        int totalNotifications = 0;
 
         for (int position = 0; position < count; position++) {
+            // Build each adapter result only once. The previous Square-U created a second full view
+            // per result just to inspect notifications, which repeated async icon binding work.
             View source = mainActivity.adapter.getView(position, null, squareTrack);
-            View card = createSquareCard(source);
+            View notificationRow = source.findViewById(R.id.item_notification_row);
+            boolean hasNotification = notificationRow != null
+                    && notificationRow.getVisibility() == View.VISIBLE;
+
+            View card = createSquareCard(source, hasNotification);
             bindResultInteraction(card, position);
             squareTrack.addView(card);
 
-            View notificationSource = mainActivity.adapter.getView(position, null, notificationCenter);
-            View notificationRow = notificationSource.findViewById(R.id.item_notification_row);
-            if (notificationRow != null && notificationRow.getVisibility() == View.VISIBLE) {
-                totalNotifications++;
-                if (visibleNotifications < MAX_CENTER_NOTIFICATIONS) {
-                    if (visibleNotifications == 0) addNotificationHeader();
-                    View shell = createNotificationShell(notificationSource);
-                    LinearLayout.LayoutParams notificationLp = new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                    notificationLp.setMargins(dp(2), dp(4), dp(2), dp(4));
-                    notificationCenter.addView(shell, notificationLp);
-                    animateNotificationIn(shell, visibleNotifications);
-                    visibleNotifications++;
-                }
+            if (hasNotification) {
+                if (visibleNotifications == 0) addNotificationHeader();
+                View shell = createNotificationShell(source);
+                LinearLayout.LayoutParams notificationLp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                notificationLp.setMargins(dp(2), dp(2), dp(2), dp(2));
+                notificationCenter.addView(shell, notificationLp);
+                animateNotificationIn(shell, visibleNotifications);
+                visibleNotifications++;
             }
         }
 
-        if (totalNotifications > visibleNotifications) {
-            addNotificationCountFooter(totalNotifications);
-        }
-        notificationCenter.setVisibility(visibleNotifications > 0 ? View.VISIBLE : View.GONE);
+        notificationScroller.setVisibility(visibleNotifications > 0 ? View.VISIBLE : View.GONE);
+        if (visibleNotifications > 0) notificationScroller.scrollTo(0, 0);
 
         squareTrack.onDataRebuilt(refocusBottom);
         lastSquareQuery = currentQuery;
@@ -248,42 +256,33 @@ final class HistoryDisplayForwarder extends Forwarder {
         TextView title = new TextView(mainActivity);
         title.setText("Notifications");
         title.setTextColor(Color.WHITE);
-        title.setTextSize(17f);
+        title.setTextSize(15.5f);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(dp(8), dp(4), dp(8), dp(8));
+        title.setPadding(dp(6), dp(2), dp(6), dp(5));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         notificationCenter.addView(title, lp);
-    }
-
-    private void addNotificationCountFooter(int total) {
-        TextView footer = new TextView(mainActivity);
-        footer.setText(total + " active notifications");
-        footer.setTextColor(Color.argb(220, 230, 230, 235));
-        footer.setTextSize(12.5f);
-        footer.setGravity(Gravity.CENTER);
-        footer.setPadding(dp(8), dp(7), dp(8), dp(3));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        notificationCenter.addView(footer, lp);
     }
 
     private View createNotificationShell(View notificationSource) {
         FrameLayout shell = new FrameLayout(mainActivity);
         shell.setClipChildren(false);
         shell.setClipToPadding(false);
-        shell.setPadding(dp(7), dp(4), dp(7), dp(4));
-        shell.setElevation(dp(3));
+        shell.setPadding(dp(4), dp(2), dp(4), dp(2));
+        shell.setElevation(dp(2));
 
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.argb(230, 25, 26, 30));
-        background.setCornerRadius(dp(15));
-        background.setStroke(dp(1), Color.argb(75, 255, 255, 255));
+        background.setColor(Color.argb(225, 25, 26, 30));
+        background.setCornerRadius(dp(13));
+        background.setStroke(dp(1), Color.argb(68, 255, 255, 255));
         shell.setBackground(background);
 
         notificationSource.setAlpha(1f);
+        notificationSource.setScaleX(0.92f);
+        notificationSource.setScaleY(0.92f);
         FrameLayout.LayoutParams sourceParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sourceParams.gravity = Gravity.CENTER;
         shell.addView(notificationSource, sourceParams);
         return shell;
     }
@@ -352,32 +351,62 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     /**
-     * Square-U cards intentionally use a clean dark portrait surface. The internal adapter preview
-     * is not drawn here because it competes visually with the app icon and label in this layout.
+     * Square-U cards keep a live relationship with the adapter's icon view. AppResult loads many
+     * icons asynchronously, so copying a drawable only once can leave a permanent blank card.
      */
-    private View createSquareCard(View source) {
+    private View createSquareCard(View source, boolean preserveSourceForNotification) {
         FrameLayout card = new FrameLayout(mainActivity);
         styleCard(card, dp(18), true);
         card.setElevation(dp(4));
         card.setClipChildren(false);
         card.setClipToPadding(false);
 
-        Drawable iconDrawable = extractIcon(source);
         CharSequence label = extractLabel(source);
+        ImageView sourceIcon = findIconView(source);
 
-        if (iconDrawable != null) {
-            ImageView icon = new ImageView(mainActivity);
-            icon.setImageDrawable(iconDrawable);
-            icon.setAlpha(1f);
-            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        if (sourceIcon != null && !preserveSourceForNotification) {
+            // Reparent the real ImageView. Async drawable delivery now updates the card directly.
+            if (sourceIcon.getParent() instanceof ViewGroup) {
+                ((ViewGroup) sourceIcon.getParent()).removeView(sourceIcon);
+            }
+            sourceIcon.setClickable(false);
+            sourceIcon.setFocusable(false);
+            sourceIcon.setAlpha(1f);
+            sourceIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
             FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
                     dp(72), dp(72), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
             iconParams.topMargin = dp(15);
-            card.addView(icon, iconParams);
+            card.addView(sourceIcon, iconParams);
+        } else if (sourceIcon != null) {
+            // Notification rows must retain their original icon. Mirror it without forcing a second
+            // adapter bind, then refresh after the normal async icon loader has had time to finish.
+            ImageView mirror = new ImageView(mainActivity);
+            mirror.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            mirror.setAlpha(1f);
+            syncMirroredIcon(mirror, sourceIcon);
+            FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
+                    dp(72), dp(72), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+            iconParams.topMargin = dp(15);
+            card.addView(mirror, iconParams);
+            scheduleIconMirror(card, mirror, sourceIcon);
         }
 
         addFullLabel(card, label, 14f, dp(58), 3);
         return card;
+    }
+
+    private void scheduleIconMirror(View owner, ImageView target, ImageView source) {
+        owner.post(() -> syncMirroredIcon(target, source));
+        owner.postDelayed(() -> syncMirroredIcon(target, source), 90L);
+        owner.postDelayed(() -> syncMirroredIcon(target, source), 260L);
+        owner.postDelayed(() -> syncMirroredIcon(target, source), 700L);
+    }
+
+    private void syncMirroredIcon(ImageView target, ImageView source) {
+        Drawable drawable = source.getDrawable();
+        if (drawable != null && target.getDrawable() != drawable) {
+            target.setImageDrawable(drawable);
+        }
     }
 
     private void addMutedPreview(FrameLayout card, View source) {
@@ -472,22 +501,25 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private Drawable extractIcon(View source) {
-        ImageView appIcon = source.findViewById(R.id.item_app_icon);
-        if (appIcon != null && appIcon.getDrawable() != null) return appIcon.getDrawable();
-        ImageView discovered = findDrawableImage(source);
-        return discovered == null ? null : discovered.getDrawable();
+        ImageView iconView = findIconView(source);
+        return iconView == null ? null : iconView.getDrawable();
     }
 
-    private ImageView findDrawableImage(View view) {
-        if (view instanceof ImageView) {
-            ImageView image = (ImageView) view;
-            if (image.getVisibility() == View.VISIBLE && image.getDrawable() != null) return image;
+    private ImageView findIconView(View source) {
+        ImageView appIcon = source.findViewById(R.id.item_app_icon);
+        if (appIcon != null) return appIcon;
+        return findFirstVisibleImage(source);
+    }
+
+    private ImageView findFirstVisibleImage(View view) {
+        if (view instanceof ImageView && view.getVisibility() == View.VISIBLE) {
+            return (ImageView) view;
         }
         if (!(view instanceof ViewGroup)) return null;
 
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
-            ImageView candidate = findDrawableImage(group.getChildAt(i));
+            ImageView candidate = findFirstVisibleImage(group.getChildAt(i));
             if (candidate != null) return candidate;
         }
         return null;
@@ -570,15 +602,15 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (!SmartAnimationEngine.isEnabled(mainActivity)) return;
         view.animate().cancel();
         view.setAlpha(0f);
-        view.setTranslationY(dp(14));
-        view.setScaleX(0.96f);
-        view.setScaleY(0.96f);
+        view.setTranslationY(dp(8));
+        view.setScaleX(0.98f);
+        view.setScaleY(0.98f);
         view.animate()
                 .alpha(1f)
                 .translationY(0f)
                 .scaleX(1f)
                 .scaleY(1f)
-                .setStartDelay(Math.min(160L, index * 38L))
+                .setStartDelay(Math.min(120L, index * 22L))
                 .setDuration(SmartAnimationEngine.duration(mainActivity))
                 .setInterpolator(new DecelerateInterpolator())
                 .start();
@@ -586,12 +618,12 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void animateNotificationCenterRefresh() {
         if (!SmartAnimationEngine.isEnabled(mainActivity)
-                || notificationCenter.getVisibility() != View.VISIBLE) return;
-        notificationCenter.animate().cancel();
-        notificationCenter.setAlpha(0.88f);
-        notificationCenter.setScaleX(0.985f);
-        notificationCenter.setScaleY(0.985f);
-        notificationCenter.animate()
+                || notificationScroller.getVisibility() != View.VISIBLE) return;
+        notificationScroller.animate().cancel();
+        notificationScroller.setAlpha(0.90f);
+        notificationScroller.setScaleX(0.99f);
+        notificationScroller.setScaleY(0.99f);
+        notificationScroller.animate()
                 .alpha(1f)
                 .scaleX(1f)
                 .scaleY(1f)
@@ -798,8 +830,6 @@ final class HistoryDisplayForwarder extends Forwarder {
                     float x = event.getX();
                     float delta = x - lastX;
                     lastX = x;
-                    // A larger divisor produces the deliberate, smooth carousel movement from the
-                    // approved concept instead of the former jumpy response.
                     rotationOffset += delta / Math.max(dp(78), getWidth() / 5.5f);
                     requestLayout();
                     return true;
