@@ -26,6 +26,7 @@ public class ListPopup extends PopupWindow {
     private ListAdapter mAdapter;
     private SystemUiVisibilityHelper mSystemUiVisibilityHelper;
     private boolean dismissOnClick = true;
+    private boolean animatingDismiss;
 
     public ListPopup(Context context) {
         super(context, null, android.R.attr.popupMenuStyle);
@@ -70,7 +71,15 @@ public class ListPopup extends PopupWindow {
 
     @Override
     public void dismiss() {
+        if (!isShowing()) return;
+        if (animatingDismiss) return;
+        animatingDismiss = true;
+        SmartAnimationEngine.animatePopupViewOut(getContentView(), this::dismissImmediately);
+    }
+
+    private void dismissImmediately() {
         super.dismiss();
+        animatingDismiss = false;
         if (mSystemUiVisibilityHelper != null)
             mSystemUiVisibilityHelper.popPopup();
     }
@@ -185,27 +194,29 @@ public class ListPopup extends PopupWindow {
         setWidth(Math.min(linearLayout.getMeasuredWidth(), (displayFrame.right - displayFrame.left) * 2 / 3));
 
         int xOffset = anchor.getPaddingStart();
+        boolean smartAnimations = SmartAnimationEngine.isEnabled(anchor.getContext());
 
         int yOffset;
         if (distanceToBottom > linearLayout.getMeasuredHeight()) {
             // show below anchor
             yOffset = relativeAnchorPos;
-            setAnimationStyle(R.style.PopupAnimationTop);
+            setAnimationStyle(smartAnimations ? 0 : R.style.PopupAnimationTop);
         } else if (distanceToBottom >= distanceToTop) {
             // show below anchor with scroll depending on menu height
             yOffset = relativeAnchorPos;
             int menuHeight = Math.min(distanceToBottom, linearLayout.getMeasuredHeight());
             setHeight(menuHeight);
-            setAnimationStyle(R.style.PopupAnimationTop);
+            setAnimationStyle(smartAnimations ? 0 : R.style.PopupAnimationTop);
         } else {
             // show above anchor with scroll depending on menu height
             int menuHeight = Math.min(distanceToTop, linearLayout.getMeasuredHeight());
             yOffset = relativeAnchorPos - menuHeight;
             setHeight(menuHeight);
-            setAnimationStyle(R.style.PopupAnimationBottom);
+            setAnimationStyle(smartAnimations ? 0 : R.style.PopupAnimationBottom);
         }
 
         showAsDropDown(anchor, xOffset, yOffset);
+        if (smartAnimations) SmartAnimationEngine.animatePopupViewIn(getContentView());
     }
 
     public interface OnItemClickListener {
