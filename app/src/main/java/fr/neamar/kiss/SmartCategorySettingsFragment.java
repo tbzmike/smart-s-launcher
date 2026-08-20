@@ -9,6 +9,7 @@ import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceManager;
 import androidx.preference.SeekBarPreference;
 
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.preference.UiLivePreviewPreference;
 
 /**
@@ -22,6 +23,9 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         super.onCreatePreferences(savedInstanceState, rootKey);
         addLivePreview(rootKey);
         addSmartSectionEntries(rootKey);
+        if (UiEditLock.isLockableRoot(rootKey)) {
+            UiEditLock.install(requireContext(), getPreferenceScreen());
+        }
     }
 
     private void addLivePreview(@Nullable String rootKey) {
