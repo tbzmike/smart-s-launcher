@@ -10,11 +10,14 @@ import android.view.View;
 import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
+import androidx.preference.PreferenceManager;
 
 import java.util.concurrent.ConcurrentHashMap;
 
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.searcher.SearchHandler;
+import fr.neamar.kiss.searcher.Searcher;
 
 /**
  * Lightweight visual fallback for launcher records that do not expose rich card artwork.
@@ -30,7 +33,26 @@ public final class TileVisualStyle {
         Drawable icon = ensureIcon(row, result, context);
         if (icon == null) return;
 
-        int accent = ACCENT_CACHE.computeIfAbsent(result.getUniqueId(), ignored -> sampleAccent(icon));
+        String layout = PreferenceManager.getDefaultSharedPreferences(context)
+                .getString("smart-history-layout", "vertical");
+        boolean customTileLayout = layout != null && !"vertical".equals(layout);
+        boolean historyList = SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+
+        // Ordinary vertical search results only need the guaranteed icon. Avoid bitmap sampling,
+        // gradients and elevation work for every keystroke unless the user is actually viewing
+        // history cards or one of the custom tile modes.
+        if (!customTileLayout && !historyList) return;
+
+        long key = result.getUniqueId();
+        Integer cachedAccent = ACCENT_CACHE.get(key);
+        int accent;
+        if (cachedAccent != null) {
+            accent = cachedAccent;
+        } else {
+            accent = sampleAccent(icon);
+            ACCENT_CACHE.put(key, accent);
+        }
+
         boolean hasRichNotification = false;
         View notification = row.findViewById(R.id.item_notification_row);
         if (notification != null && notification.getVisibility() == View.VISIBLE) {
@@ -47,9 +69,6 @@ public final class TileVisualStyle {
             row.setElevation(dp(context, 2));
         }
 
-        // The custom Square-U renderer moves this ImageView into its generated card. Giving the
-        // icon a subtle app-colored surface therefore preserves app identity even when the outer
-        // generated card has no rich artwork of its own.
         ImageView primary = findPrimaryIcon(row);
         if (primary != null) {
             GradientDrawable halo = new GradientDrawable(
@@ -118,11 +137,11 @@ public final class TileVisualStyle {
         long green = 0;
         long blue = 0;
         int count = 0;
+        float[] hsv = new float[3];
         for (int y = 0; y < SAMPLE_SIZE; y++) {
             for (int x = 0; x < SAMPLE_SIZE; x++) {
                 int color = bitmap.getPixel(x, y);
                 if (Color.alpha(color) < 48) continue;
-                float[] hsv = new float[3];
                 Color.colorToHSV(color, hsv);
                 if (hsv[2] < 0.12f) continue;
                 red += Color.red(color);
@@ -135,7 +154,6 @@ public final class TileVisualStyle {
         if (count == 0) return Color.rgb(64, 84, 118);
 
         int result = Color.rgb((int) (red / count), (int) (green / count), (int) (blue / count));
-        float[] hsv = new float[3];
         Color.colorToHSV(result, hsv);
         hsv[1] = Math.max(0.30f, Math.min(0.82f, hsv[1]));
         hsv[2] = Math.max(0.38f, Math.min(0.82f, hsv[2]));
