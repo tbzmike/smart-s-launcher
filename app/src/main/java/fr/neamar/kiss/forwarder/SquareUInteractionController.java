@@ -2,6 +2,7 @@ package fr.neamar.kiss.forwarder;
 
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -38,6 +39,8 @@ final class SquareUInteractionController {
     private static final String SQUARE_U = "square_u";
     private static final int MIN_SIZE_PERCENT = 55;
     private static final int MAX_SIZE_PERCENT = 220;
+    private static final int MIN_CARD_GAP_DP = 8;
+    private static final int MAX_COLLISION_PASSES = 4;
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
@@ -149,7 +152,14 @@ final class SquareUInteractionController {
             View card = squareTrack.getChildAt(position);
             if (!(card instanceof ViewGroup)) continue;
 
-            TextView label = findPresentationLabel((ViewGroup) card);
+            // Keep icon, artwork and label inside their own tile. The old U renderer allowed
+            // children to spill into neighbouring cards, which made labels look attached to
+            // the wrong app when cards were enlarged or rotated.
+            ViewGroup cardGroup = (ViewGroup) card;
+            cardGroup.setClipChildren(true);
+            cardGroup.setClipToPadding(true);
+
+            TextView label = findPresentationLabel(cardGroup);
             if (label != null) {
                 String fullName = activity.adapter.getItem(position).getPojo().getName();
                 if (!TextUtils.isEmpty(fullName)) {
@@ -165,6 +175,7 @@ final class SquareUInteractionController {
             captureAndApplyCardTransform(state);
         }
 
+        resolveCardCollisions();
         configureNotificationResize();
     }
 
@@ -227,7 +238,103 @@ final class SquareUInteractionController {
             Object tag = child.getTag();
             if (tag instanceof CardResizeState) captureAndApplyCardTransform((CardResizeState) tag);
         }
+        resolveCardCollisions();
         applyNotificationTransform();
+    }
+
+    /**
+     * Square-U permits large live resizing, but enlarged cards must not cover neighbouring
+     * icons or labels. Start from the renderer's normal positions on every layout pass, then
+     * make small symmetric separations and, only when necessary, reduce the two colliding
+     * cards just enough to keep a visible gap. This keeps the U shape and swipe/rotation
+     * behaviour intact instead of replacing it with a flat grid.
+     */
+    private void resolveCardCollisions() {
+        if (squareTrack == null) return;
+        int count = squareTrack.getChildCount();
+        if (count < 2) return;
+        final float gap = dp(MIN_CARD_GAP_DP);
+
+        for (int pass = 0; pass < MAX_COLLISION_PASSES; pass++) {
+            boolean changed = false;
+            for (int i = 0; i < count; i++) {
+                View first = squareTrack.getChildAt(i);
+                if (first.getVisibility() != View.VISIBLE) continue;
+                for (int j = i + 1; j < count; j++) {
+                    View second = squareTrack.getChildAt(j);
+                    if (second.getVisibility() != View.VISIBLE) continue;
+
+                    RectF a = visualBounds(first);
+                    RectF b = visualBounds(second);
+                    float overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+                    float overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+                    if (overlapX <= -gap || overlapY <= -gap) continue;
+
+                    float centerAX = a.centerX();
+                    float centerAY = a.centerY();
+                    float centerBX = b.centerX();
+                    float centerBY = b.centerY();
+                    boolean horizontalNeighbour = Math.abs(centerAX - centerBX)
+                            >= Math.abs(centerAY - centerBY);
+
+                    if (horizontalNeighbour && overlapY > 0f && overlapX > -gap) {
+                        float move = Math.max(0f, overlapX + gap) / 2f;
+                        float direction = centerAX <= centerBX ? -1f : 1f;
+                        first.setTranslationX(first.getTranslationX() + direction * move);
+                        second.setTranslationX(second.getTranslationX() - direction * move);
+                        changed = true;
+                    } else if (!horizontalNeighbour && overlapX > 0f && overlapY > -gap) {
+                        float move = Math.max(0f, overlapY + gap) / 2f;
+                        float direction = centerAY <= centerBY ? -1f : 1f;
+                        first.setTranslationY(first.getTranslationY() + direction * move);
+                        second.setTranslationY(second.getTranslationY() - direction * move);
+                        changed = true;
+                    }
+
+                    // Very large custom resize values can still leave two cards on top of each
+                    // other after shifting. Scale them down gently, but never flatten the front
+                    // card or remove the 3D perspective supplied by HistoryDisplayForwarder.
+                    a = visualBounds(first);
+                    b = visualBounds(second);
+                    overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+                    overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+                    if (overlapX > 0f && overlapY > 0f) {
+                        first.setScaleX(Math.max(0.72f, first.getScaleX() * 0.94f));
+                        first.setScaleY(Math.max(0.72f, first.getScaleY() * 0.94f));
+                        second.setScaleX(Math.max(0.72f, second.getScaleX() * 0.94f));
+                        second.setScaleY(Math.max(0.72f, second.getScaleY() * 0.94f));
+                        changed = true;
+                    }
+                }
+            }
+            if (!changed) break;
+        }
+
+        // Keep the visual card bodies on-screen. Side cards may still rotate outwards, but their
+        // usable icon/label area should not disappear beyond the display edge.
+        int width = squareTrack.getWidth();
+        if (width > 0) {
+            float inset = dp(4);
+            for (int i = 0; i < count; i++) {
+                View card = squareTrack.getChildAt(i);
+                if (card.getVisibility() != View.VISIBLE) continue;
+                RectF bounds = visualBounds(card);
+                if (bounds.left < inset) {
+                    card.setTranslationX(card.getTranslationX() + inset - bounds.left);
+                } else if (bounds.right > width - inset) {
+                    card.setTranslationX(card.getTranslationX() - (bounds.right - (width - inset)));
+                }
+            }
+        }
+    }
+
+    private RectF visualBounds(View view) {
+        float visualWidth = view.getWidth() * Math.abs(view.getScaleX());
+        float visualHeight = view.getHeight() * Math.abs(view.getScaleY());
+        float centerX = view.getLeft() + view.getWidth() / 2f + view.getTranslationX();
+        float centerY = view.getTop() + view.getHeight() / 2f + view.getTranslationY();
+        return new RectF(centerX - visualWidth / 2f, centerY - visualHeight / 2f,
+                centerX + visualWidth / 2f, centerY + visualHeight / 2f);
     }
 
     private void captureAndApplyCardTransform(CardResizeState state) {
@@ -417,6 +524,7 @@ final class SquareUInteractionController {
         notificationOverlay = null;
         activeResizeOwner = null;
         activeCardState = null;
+        refreshSoon();
     }
 
     private void disallowParentIntercept(View view, boolean disallow) {
@@ -570,12 +678,14 @@ final class SquareUInteractionController {
                         state.offsetYDp = startOffsetY + pxToDp(verticalDirection * visualDelta / 2f);
                     }
                     applyCardTransform(state);
+                    resolveCardCollisions();
                     return true;
 
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
                     disallowParentIntercept(view, false);
                     state.persist();
+                    refreshSoon();
                     return true;
 
                 default:
