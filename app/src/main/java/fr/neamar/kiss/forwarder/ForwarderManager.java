@@ -83,10 +83,15 @@ public class ForwarderManager extends Forwarder {
     }
 
     public boolean onOptionsItemSelected(MenuItem item) {
+        if (UiEditLock.isLocked(mainActivity)) {
+            UiEditLock.allowEdit(mainActivity);
+            return true;
+        }
         return widgetsForwarder.onOptionsItemSelected(item);
     }
 
     public void onCreateContextMenu(ContextMenu menu) {
+        if (UiEditLock.isLocked(mainActivity)) return;
         widgetsForwarder.onCreateContextMenu(menu);
     }
 
