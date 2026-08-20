@@ -40,6 +40,10 @@ public class ListPopup extends PopupWindow {
         setHeight(LinearLayout.LayoutParams.WRAP_CONTENT);
         mItemClickListener = null;
         mClickListener = view -> {
+            if (UiEditLock.isLocked(view.getContext())) {
+                UiEditLock.allowEdit(view.getContext());
+                return;
+            }
             if (dismissOnClick)
                 dismiss();
             if (mItemClickListener != null) {
@@ -49,6 +53,10 @@ public class ListPopup extends PopupWindow {
             }
         };
         mLongClickListener = view -> {
+            if (UiEditLock.isLocked(view.getContext())) {
+                UiEditLock.allowEdit(view.getContext());
+                return true;
+            }
             if (mItemLongClickListener == null)
                 return false;
             LinearLayout layout1 = getLinearLayout();
@@ -145,6 +153,7 @@ public class ListPopup extends PopupWindow {
         resize.setText("Resize");
         resize.setContentDescription("Resize");
         resize.setOnClickListener(v -> {
+            if (!UiEditLock.allowEdit(v.getContext())) return;
             dismiss();
             ((ResizeTarget) tag).beginResize();
         });
