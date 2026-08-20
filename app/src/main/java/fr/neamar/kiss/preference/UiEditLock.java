@@ -2,6 +2,7 @@ package fr.neamar.kiss.preference;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -19,12 +20,24 @@ import androidx.preference.SwitchPreference;
 public final class UiEditLock {
     public static final String PREF_KEY = "smart-ui-locked";
 
+    private static final String BACKUP_WIDGET_RESIZE = "smart-ui-lock-backup-free-widget-resize";
+    private static final String BACKUP_EMPTY_ADD_WIDGET = "smart-ui-lock-backup-empty-add-widget";
+
     private UiEditLock() {
     }
 
     public static boolean isLocked(@NonNull Context context) {
         return PreferenceManager.getDefaultSharedPreferences(context)
                 .getBoolean(PREF_KEY, false);
+    }
+
+    /** Guard a direct home-screen edit action even if a stale popup or gesture is still active. */
+    public static boolean allowEdit(@NonNull Context context) {
+        if (!isLocked(context)) return true;
+        Toast.makeText(context,
+                "Launcher UI is locked. Unlock it in Settings to make changes.",
+                Toast.LENGTH_SHORT).show();
+        return false;
     }
 
     public static boolean isLockableRoot(@Nullable String rootKey) {
@@ -50,9 +63,11 @@ public final class UiEditLock {
         }
 
         boolean locked = isLocked(context);
+        syncWorkspaceEditState(context, locked);
         updateSummary(toggle, locked);
         toggle.setOnPreferenceChangeListener((preference, newValue) -> {
             boolean newLocked = Boolean.TRUE.equals(newValue);
+            syncWorkspaceEditState(context, newLocked);
             updateSummary(toggle, newLocked);
             applyLockState(root, newLocked);
             return true;
@@ -62,16 +77,51 @@ public final class UiEditLock {
 
     /** Re-applies locking after a screen dynamically adds more UI preferences. */
     public static void refresh(@NonNull Context context, @NonNull PreferenceGroup root) {
-        applyLockState(root, isLocked(context));
+        boolean locked = isLocked(context);
+        syncWorkspaceEditState(context, locked);
+        applyLockState(root, locked);
         Preference pref = root.findPreference(PREF_KEY);
         if (pref instanceof SwitchPreference) {
-            updateSummary((SwitchPreference) pref, isLocked(context));
+            updateSummary((SwitchPreference) pref, locked);
         }
+    }
+
+    /**
+     * Workspace edit entry points have their own runtime preferences. While the global lock is on,
+     * disable them too, then restore the user's previous choices when the global lock is released.
+     */
+    private static void syncWorkspaceEditState(@NonNull Context context, boolean locked) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        SharedPreferences.Editor editor = prefs.edit();
+        if (locked) {
+            if (!prefs.contains(BACKUP_WIDGET_RESIZE)) {
+                editor.putBoolean(BACKUP_WIDGET_RESIZE,
+                        prefs.getBoolean("smart-workspace-free-widget-resize", true));
+            }
+            if (!prefs.contains(BACKUP_EMPTY_ADD_WIDGET)) {
+                editor.putBoolean(BACKUP_EMPTY_ADD_WIDGET,
+                        prefs.getBoolean("smart-workspace-empty-add-widget", true));
+            }
+            editor.putBoolean("smart-workspace-free-widget-resize", false);
+            editor.putBoolean("smart-workspace-empty-add-widget", false);
+        } else {
+            if (prefs.contains(BACKUP_WIDGET_RESIZE)) {
+                editor.putBoolean("smart-workspace-free-widget-resize",
+                        prefs.getBoolean(BACKUP_WIDGET_RESIZE, true));
+                editor.remove(BACKUP_WIDGET_RESIZE);
+            }
+            if (prefs.contains(BACKUP_EMPTY_ADD_WIDGET)) {
+                editor.putBoolean("smart-workspace-empty-add-widget",
+                        prefs.getBoolean(BACKUP_EMPTY_ADD_WIDGET, true));
+                editor.remove(BACKUP_EMPTY_ADD_WIDGET);
+            }
+        }
+        editor.apply();
     }
 
     private static void updateSummary(@NonNull SwitchPreference toggle, boolean locked) {
         toggle.setSummary(locked
-                ? "Locked — layout, appearance, animation and direct resize editing are disabled."
+                ? "Locked — all launcher editing is blocked, including resize, move, remove, uninstall, rename, favorites, tags and widget editing."
                 : "Unlocked — launcher UI editing is available.");
     }
 
@@ -91,8 +141,6 @@ public final class UiEditLock {
 
             child.setEnabled(!locked);
             if (child instanceof PreferenceGroup && !locked) {
-                // Restore descendants when unlocking. Their own dependency rules can still
-                // disable individual controls afterwards through AndroidX Preference.
                 applyLockState((PreferenceGroup) child, false);
             }
         }
