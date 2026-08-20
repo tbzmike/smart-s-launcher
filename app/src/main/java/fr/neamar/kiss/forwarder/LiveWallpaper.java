@@ -70,8 +70,10 @@ class LiveWallpaper extends Forwarder implements SharedPreferences.OnSharedPrefe
         }
 
         WindowManager.LayoutParams attributes = mainActivity.getWindow().getAttributes();
-        boolean enabled = prefs.getBoolean("smart-focus-blur-enabled", false)
-                || prefs.getBoolean("smart-history-background-blur", false);
+        // smart-focus-blur-enabled is the master Smart Blur switch. History background blur is
+        // a subordinate behaviour and must never keep FLAG_BLUR_BEHIND alive after the master
+        // switch is turned off.
+        boolean enabled = prefs.getBoolean("smart-focus-blur-enabled", false);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && enabled) {
             int radius = resolveBlurRadius();
@@ -84,6 +86,11 @@ class LiveWallpaper extends Forwarder implements SharedPreferences.OnSharedPrefe
             }
         }
         mainActivity.getWindow().setAttributes(attributes);
+        // Force a fresh window composition immediately. Some Android 12+ compositors retain the
+        // previous blur frame until the decor is invalidated even after the radius reaches zero.
+        View decor = mainActivity.getWindow().getDecorView();
+        decor.invalidate();
+        decor.requestLayout();
     }
 
     private int resolveBlurRadius() {
