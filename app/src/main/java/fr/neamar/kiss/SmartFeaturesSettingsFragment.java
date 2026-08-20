@@ -15,6 +15,8 @@ import androidx.preference.PreferenceManager;
 import androidx.preference.SeekBarPreference;
 import androidx.preference.SwitchPreference;
 
+import fr.neamar.kiss.preference.UiLivePreviewPreference;
+
 /**
  * Isolated preference hierarchy for Smart S extensions.
  *
@@ -39,6 +41,7 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
             PreferenceGroup root = getPreferenceManager().createPreferenceScreen(requireContext());
             setPreferenceScreen((androidx.preference.PreferenceScreen) root);
             root.setTitle("Smart animations & transitions");
+            addLivePreview(root, UiLivePreviewPreference.TYPE_ANIMATIONS);
             addAnimationPreferences(root);
             return;
         }
@@ -55,6 +58,7 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
 
         if ("workspace".equals(section)) {
             clearPreferenceGroup(root);
+            addLivePreview(root, UiLivePreviewPreference.TYPE_WORKSPACE);
             addWorkspacePreferences(root);
             root.setTitle("Flexible workspace");
             return;
@@ -96,6 +100,7 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
                     break;
                 case "wallpaper":
                     root.setTitle("Smart wallpaper & blur");
+                    addLivePreview(root, UiLivePreviewPreference.TYPE_WALLPAPER);
                     break;
                 default:
                     break;
@@ -103,6 +108,11 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         }
 
         replaceAnimationSpeedControl(root);
+    }
+
+    private void addLivePreview(PreferenceGroup root, String type) {
+        if (root.findPreference("live-preview-" + type) != null) return;
+        root.addPreference(new UiLivePreviewPreference(requireContext(), type));
     }
 
     private void addAnimationPreferences(PreferenceGroup root) {
@@ -149,6 +159,7 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         speed.setMax(300);
         speed.setSeekBarIncrement(5);
         speed.setShowSeekBarValue(true);
+        speed.setUpdatesContinuously(true);
         speed.setDefaultValue(100);
         category.addPreference(speed);
 
@@ -210,6 +221,7 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
             speed.setMax(300);
             speed.setSeekBarIncrement(5);
             speed.setShowSeekBarValue(true);
+            speed.setUpdatesContinuously(true);
             speed.setDefaultValue(100);
             group.addPreference(speed);
             return;
@@ -292,6 +304,7 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         split.setMax(85);
         split.setSeekBarIncrement(1);
         split.setShowSeekBarValue(true);
+        split.setUpdatesContinuously(true);
         split.setDefaultValue(50);
         split.setDependency("smart-workspace-enabled");
         category.addPreference(split);
