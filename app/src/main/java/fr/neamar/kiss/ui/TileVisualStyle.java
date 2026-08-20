@@ -10,47 +10,35 @@ import android.view.View;
 import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
-import androidx.preference.PreferenceManager;
 
 import java.util.concurrent.ConcurrentHashMap;
 
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.result.Result;
-import fr.neamar.kiss.searcher.SearchHandler;
-import fr.neamar.kiss.searcher.Searcher;
 
 /**
  * Lightweight visual fallback for launcher records that do not expose rich card artwork.
- * The accent is sampled once from the record's real icon and cached by stable result id.
+ * The accent is sampled once from an already-available real icon and cached by stable result id.
  */
 public final class TileVisualStyle {
     private static final ConcurrentHashMap<Long, Integer> ACCENT_CACHE = new ConcurrentHashMap<>();
     private static final int SAMPLE_SIZE = 10;
+    private static final int NEUTRAL_ACCENT = Color.rgb(64, 84, 118);
 
     private TileVisualStyle() {}
 
     public static void apply(@NonNull View row, @NonNull Result<?> result, @NonNull Context context) {
-        Drawable icon = ensureIcon(row, result, context);
+        IconState iconState = ensureImmediateIcon(row, context);
+        Drawable icon = iconState.drawable;
         if (icon == null) return;
 
-        String layout = PreferenceManager.getDefaultSharedPreferences(context)
-                .getString("smart-history-layout", "vertical");
-        boolean customTileLayout = layout != null && !"vertical".equals(layout);
-        boolean historyList = SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
-
-        // Ordinary vertical search results only need the guaranteed icon. Avoid bitmap sampling,
-        // gradients and elevation work for every keystroke unless the user is actually viewing
-        // history cards or one of the custom tile modes.
-        if (!customTileLayout && !historyList) return;
-
-        long key = result.getUniqueId();
-        Integer cachedAccent = ACCENT_CACHE.get(key);
         int accent;
-        if (cachedAccent != null) {
-            accent = cachedAccent;
+        if (iconState.realIcon) {
+            accent = ACCENT_CACHE.computeIfAbsent(result.getUniqueId(), ignored -> sampleAccent(icon));
         } else {
-            accent = sampleAccent(icon);
-            ACCENT_CACHE.put(key, accent);
+            // Do not synchronously load contact photos/app resources just to color the list row.
+            // The normal async icon pipeline will replace the placeholder without blocking scroll.
+            accent = NEUTRAL_ACCENT;
         }
 
         boolean hasRichNotification = false;
@@ -80,7 +68,7 @@ public final class TileVisualStyle {
         }
     }
 
-    private static Drawable ensureIcon(View row, Result<?> result, Context context) {
+    private static IconState ensureImmediateIcon(View row, Context context) {
         ImageView firstSlot = null;
         int[] ids = new int[]{
                 R.id.item_app_icon,
@@ -94,13 +82,17 @@ public final class TileVisualStyle {
             if (!(candidate instanceof ImageView)) continue;
             ImageView image = (ImageView) candidate;
             if (firstSlot == null) firstSlot = image;
-            if (image.getDrawable() != null) return image.getDrawable();
+            if (image.getDrawable() != null) {
+                return new IconState(image.getDrawable(), true);
+            }
         }
 
-        Drawable drawable = result.getDrawable(context);
-        if (drawable == null) drawable = context.getPackageManager().getDefaultActivityIcon();
-        if (firstSlot != null) firstSlot.setImageDrawable(drawable);
-        return drawable;
+        Drawable fallback = context.getPackageManager().getDefaultActivityIcon();
+        if (firstSlot != null && fallback != null) {
+            firstSlot.setImageDrawable(fallback);
+            firstSlot.setVisibility(View.VISIBLE);
+        }
+        return new IconState(fallback, false);
     }
 
     private static ImageView findPrimaryIcon(View row) {
@@ -137,11 +129,11 @@ public final class TileVisualStyle {
         long green = 0;
         long blue = 0;
         int count = 0;
-        float[] hsv = new float[3];
         for (int y = 0; y < SAMPLE_SIZE; y++) {
             for (int x = 0; x < SAMPLE_SIZE; x++) {
                 int color = bitmap.getPixel(x, y);
                 if (Color.alpha(color) < 48) continue;
+                float[] hsv = new float[3];
                 Color.colorToHSV(color, hsv);
                 if (hsv[2] < 0.12f) continue;
                 red += Color.red(color);
@@ -151,9 +143,10 @@ public final class TileVisualStyle {
             }
         }
         bitmap.recycle();
-        if (count == 0) return Color.rgb(64, 84, 118);
+        if (count == 0) return NEUTRAL_ACCENT;
 
         int result = Color.rgb((int) (red / count), (int) (green / count), (int) (blue / count));
+        float[] hsv = new float[3];
         Color.colorToHSV(result, hsv);
         hsv[1] = Math.max(0.30f, Math.min(0.82f, hsv[1]));
         hsv[2] = Math.max(0.38f, Math.min(0.82f, hsv[2]));
@@ -169,5 +162,15 @@ public final class TileVisualStyle {
 
     private static int dp(Context context, int value) {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
+    }
+
+    private static final class IconState {
+        final Drawable drawable;
+        final boolean realIcon;
+
+        IconState(Drawable drawable, boolean realIcon) {
+            this.drawable = drawable;
+            this.realIcon = realIcon;
+        }
     }
 }
