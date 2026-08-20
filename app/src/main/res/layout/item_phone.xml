@@ -11,13 +11,15 @@
         style="@style/ResultItemIcon"
         android:contentDescription="@null"
         android:src="@drawable/ic_phone"
+        android:scaleType="fitCenter"
         tools:layout_height="@dimen/result_icon_size"
         tools:layout_width="@dimen/result_icon_size" />
 
-    <TextView
+    <fr.neamar.kiss.ui.AutoMarqueeTextView
         android:id="@+id/item_phone_text"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_weight="1"
         android:shadowColor="?attr/resultShadowColor"
         android:shadowDx="1"
         android:shadowDy="2"
