@@ -66,7 +66,7 @@ final class LiveTileDataProvider {
         StatusBarNotification[] active;
         try {
             active = listener.getActiveNotifications();
-        } catch (SecurityException | RuntimeException e) {
+        } catch (RuntimeException e) {
             Log.w(TAG, "Unable to read active notifications", e);
             return null;
         }
