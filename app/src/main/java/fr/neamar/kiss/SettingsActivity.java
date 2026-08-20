@@ -198,6 +198,7 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
     private boolean isSmartCategory(String key) {
         return "history_category".equals(key)
                 || "ui-holder".equals(key)
+                || "theme-customisation".equals(key)
                 || "ux-holder".equals(key)
                 || "advanced".equals(key);
     }
