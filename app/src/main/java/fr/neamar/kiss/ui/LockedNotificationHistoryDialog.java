@@ -21,6 +21,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.Date;
 import java.util.List;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
@@ -188,8 +189,9 @@ public final class LockedNotificationHistoryDialog {
             NotificationHistoryRecord record = records.get(index);
             String recordTitle = record.title == null ? "" : record.title.trim();
             title.setText(recordTitle.isEmpty() ? safeAppName(record) : recordTitle);
-            time.setText(DateFormat.getMediumDateFormat(context).format(record.postTime)
-                    + "  " + DateFormat.getTimeFormat(context).format(record.postTime));
+            Date posted = new Date(record.postTime);
+            time.setText(DateFormat.getMediumDateFormat(context).format(posted)
+                    + "  " + DateFormat.getTimeFormat(context).format(posted));
             counter.setText((index + 1) + " / " + records.size());
 
             boolean active = record.notificationId != null
