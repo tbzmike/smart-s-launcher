@@ -9,6 +9,8 @@ import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceManager;
 import androidx.preference.SeekBarPreference;
 
+import fr.neamar.kiss.preference.UiLivePreviewPreference;
+
 /**
  * Adds Smart S configuration entries to the relevant existing KISS settings category.
  * The legacy SettingsFragment remains responsible for loading and managing the category itself.
@@ -18,7 +20,21 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
     @Override
     public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
         super.onCreatePreferences(savedInstanceState, rootKey);
+        addLivePreview(rootKey);
         addSmartSectionEntries(rootKey);
+    }
+
+    private void addLivePreview(@Nullable String rootKey) {
+        String type = null;
+        if ("history_category".equals(rootKey)) {
+            type = UiLivePreviewPreference.TYPE_HISTORY;
+        } else if ("ui-holder".equals(rootKey) || "theme-customisation".equals(rootKey)) {
+            type = UiLivePreviewPreference.TYPE_UI;
+        } else if ("ux-holder".equals(rootKey)) {
+            type = UiLivePreviewPreference.TYPE_UX;
+        }
+        if (type == null || findPreference("live-preview-" + type) != null) return;
+        getPreferenceScreen().addPreference(new UiLivePreviewPreference(requireContext(), type));
     }
 
     private void addSmartSectionEntries(@Nullable String rootKey) {
@@ -110,6 +126,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         slider.setMax(max);
         slider.setSeekBarIncrement(1);
         slider.setShowSeekBarValue(true);
+        slider.setUpdatesContinuously(true);
         slider.setDefaultValue(defaultValue);
         slider.setOnPreferenceChangeListener((preference, newValue) -> {
             markLayoutDirty();
