@@ -25,24 +25,22 @@
         android:layout_alignBottom="@id/item_contact_icon"
         android:layout_gravity="end|bottom"
         android:contentDescription="@null"
+        android:scaleType="fitCenter"
         tools:layout_height="@dimen/result_subicon_size"
         tools:layout_width="@dimen/result_subicon_size"
         tools:src="@drawable/ic_launcher_white" />
 
-    <TextView
+    <fr.neamar.kiss.ui.AutoMarqueeTextView
         android:id="@+id/item_contact_name"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_toStartOf="@+id/item_contact_action_message"
         android:layout_toEndOf="@id/item_contact_icon"
-        android:ellipsize="end"
-        android:maxLines="1"
         android:paddingEnd="2dp"
         android:shadowColor="?attr/resultShadowColor"
         android:shadowDx="1"
         android:shadowDy="2"
         android:shadowRadius="?attr/textShadowRadius"
-        android:singleLine="true"
         android:textColor="?attr/resultColor"
         android:textDirection="locale"
         android:textIsSelectable="false"
@@ -71,23 +69,20 @@
         tools:ignore="RtlSymmetry,UnusedAttribute"
         tools:text="@string/stub_contact_phone" />
 
-    <TextView
+    <fr.neamar.kiss.ui.AutoMarqueeTextView
         android:id="@+id/item_contact_nickname"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_below="@id/item_contact_name"
         android:layout_alignBaseline="@id/item_contact_phone"
         android:layout_alignEnd="@+id/item_contact_name"
         android:layout_marginStart="5dp"
         android:layout_toEndOf="@+id/item_contact_phone"
-        android:ellipsize="end"
-        android:maxLines="1"
         android:paddingEnd="2dp"
         android:shadowColor="?attr/resultShadowColor"
         android:shadowDx="1"
         android:shadowDy="2"
         android:shadowRadius="?attr/textShadowRadius"
-        android:singleLine="true"
         android:textColor="?android:attr/textColorSecondary"
         android:textDirection="locale"
         android:textIsSelectable="false"
