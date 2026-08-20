@@ -56,6 +56,8 @@ final class HistoryDisplayForwarder extends Forwarder {
     private View edgeEffect;
     private String activeMode = VERTICAL;
     private boolean squareHasBeenEntered;
+    private String lastSquareQuery = "";
+    private long lastSquarePriorityId = Long.MIN_VALUE;
 
     HistoryDisplayForwarder(MainActivity mainActivity) {
         super(mainActivity);
@@ -190,11 +192,21 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private void rebuildSquare() {
-        // Preserve the current carousel position while history/notifications update.
+        final int count = mainActivity.adapter.getCount();
+        String currentQuery = mainActivity.searchEditText == null
+                ? ""
+                : mainActivity.searchEditText.getText().toString().trim();
+        long currentPriorityId = count > 0
+                ? mainActivity.adapter.getItem(count - 1).getUniqueId()
+                : Long.MIN_VALUE;
+        boolean refocusBottom = !currentQuery.equals(lastSquareQuery)
+                || currentPriorityId != lastSquarePriorityId;
+
+        // Preserve the current carousel position for ordinary notification refreshes, but bring a
+        // new search or newly-most-recent result back to the bottom/front priority position.
         squareTrack.removeAllViews();
         notificationCenter.removeAllViews();
 
-        final int count = mainActivity.adapter.getCount();
         int visibleNotifications = 0;
         int totalNotifications = 0;
 
@@ -226,7 +238,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         }
         notificationCenter.setVisibility(visibleNotifications > 0 ? View.VISIBLE : View.GONE);
 
-        squareTrack.onDataRebuilt();
+        squareTrack.onDataRebuilt(refocusBottom);
+        lastSquareQuery = currentQuery;
+        lastSquarePriorityId = currentPriorityId;
         animateNotificationCenterRefresh();
     }
 
@@ -354,14 +368,15 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (iconDrawable != null) {
             ImageView icon = new ImageView(mainActivity);
             icon.setImageDrawable(iconDrawable);
+            icon.setAlpha(1f);
             icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
             FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(
-                    dp(68), dp(68), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
-            iconParams.topMargin = dp(18);
+                    dp(72), dp(72), Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+            iconParams.topMargin = dp(15);
             card.addView(icon, iconParams);
         }
 
-        addFullLabel(card, label, 13.5f, dp(56), 3);
+        addFullLabel(card, label, 14f, dp(58), 3);
         return card;
     }
 
@@ -393,6 +408,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         TextView name = new TextView(mainActivity);
         name.setText(label);
         name.setTextColor(Color.WHITE);
+        name.setAlpha(1f);
         name.setTextSize(textSize);
         name.setGravity(Gravity.CENTER);
         name.setMaxLines(maxLines);
@@ -403,7 +419,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         name.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
 
         GradientDrawable labelBackground = new GradientDrawable();
-        labelBackground.setColor(Color.argb(115, 0, 0, 0));
+        labelBackground.setColor(Color.argb(138, 0, 0, 0));
         labelBackground.setCornerRadius(dp(10));
         name.setBackground(labelBackground);
 
@@ -479,10 +495,10 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void styleCard(FrameLayout card, float radius, boolean square) {
         GradientDrawable background = new GradientDrawable();
-        background.setColor(square ? Color.argb(225, 16, 17, 20) : Color.argb(112, 22, 22, 24));
+        background.setColor(square ? Color.argb(238, 22, 24, 30) : Color.argb(112, 22, 22, 24));
         background.setCornerRadius(radius);
         background.setStroke(dp(1), square
-                ? Color.argb(145, 190, 200, 215)
+                ? Color.argb(205, 218, 228, 242)
                 : Color.argb(135, 255, 255, 255));
         card.setBackground(background);
         card.setClipToOutline(true);
@@ -626,7 +642,11 @@ final class HistoryDisplayForwarder extends Forwarder {
             requestLayout();
         }
 
-        void onDataRebuilt() {
+        void onDataRebuilt(boolean refocusBottom) {
+            if (refocusBottom) {
+                if (settleAnimator != null) settleAnimator.cancel();
+                rotationOffset = 0f;
+            }
             requestLayout();
         }
 
@@ -657,11 +677,16 @@ final class HistoryDisplayForwarder extends Forwarder {
             int childWidth = getChildAt(0).getMeasuredWidth();
             int childHeight = getChildAt(0).getMeasuredHeight();
 
-            float left = dp(8);
-            float right = Math.max(left, width - childWidth - dp(8));
+            // Side cards are deliberately allowed to overhang their layout bounds. Their 3D Y
+            // rotation narrows the visible footprint, so this makes the rendered U reach the real
+            // left/right screen edges instead of looking pinched inward.
+            float left = -dp(34);
+            float right = Math.max(left, width - childWidth + dp(34));
             float top = dp(28);
             float bottom = Math.max(top, height - childHeight - dp(10));
             float centerX = (left + right) / 2f;
+            boolean searching = mainActivity.searchEditText != null
+                    && mainActivity.searchEditText.getText().length() > 0;
 
             for (int i = 0; i < count; i++) {
                 int recencyIndex = (count - 1) - i;
@@ -674,7 +699,7 @@ final class HistoryDisplayForwarder extends Forwarder {
                 }
 
                 child.setVisibility(View.VISIBLE);
-                PathPoint point = pointOnOpenU(relative, left, right, top, bottom, centerX);
+                PathPoint point = pointOnOpenU(relative, left, right, top, bottom, centerX, searching);
                 int childLeft = Math.round(point.x);
                 int childTop = Math.round(point.y);
                 child.layout(childLeft, childTop,
@@ -702,37 +727,39 @@ final class HistoryDisplayForwarder extends Forwarder {
         }
 
         private PathPoint pointOnOpenU(float relative, float left, float right,
-                                       float top, float bottom, float centerX) {
+                                       float top, float bottom, float centerX,
+                                       boolean searching) {
             float absolute = Math.abs(relative);
             float sign = relative < 0f ? -1f : 1f;
 
-            // Five-card bottom band around the selected item. The center item is the newest on
-            // first entry and is deliberately larger/brighter than its neighbours.
+            // The bottom/front band is the priority zone. During search the adapter is already
+            // relevance-ordered, with its highest-relevance result at the end; recency history uses
+            // the same end-of-list anchor. Rebuild refocusing keeps that priority item at center.
             if (absolute <= SQUARE_BOTTOM_BAND) {
                 float normalized = relative / SQUARE_BOTTOM_BAND;
                 float halfSpan = Math.max(1f, (right - left) / 2f);
                 float x = centerX + normalized * halfSpan;
                 float focus = 1f - Math.min(1f, absolute / (SQUARE_BOTTOM_BAND + 0.25f));
-                float scale = 0.82f + (0.18f * focus);
-                float alpha = 0.90f + (0.10f * focus);
+                float scale = (searching ? 0.88f : 0.85f)
+                        + ((searching ? 0.17f : 0.16f) * focus);
+                float alpha = 1f;
                 float rotationY = -normalized * 18f;
                 return new PathPoint(x, bottom, rotationY, 0f, scale, alpha,
-                        dp(3) + dp(11) * focus);
+                        dp(5) + dp(14) * focus);
             }
 
-            // After leaving the bottom band cards climb one of the two vertical sides and angle
-            // inward, matching the approved mockup. Spacing is fixed by the visible slot window,
-            // not by the total history size.
+            // Older/non-priority items keep the 3D depth by becoming progressively dimmer and
+            // slightly smaller as they climb the two sides.
             float sideRange = SQUARE_VISIBLE_RADIUS - SQUARE_BOTTOM_BAND;
             float sideProgress = Math.min(1f,
                     (absolute - SQUARE_BOTTOM_BAND) / Math.max(0.01f, sideRange));
             float x = sign > 0f ? right : left;
             float y = bottom - (bottom - top) * sideProgress;
             float rotationY = sign > 0f ? -55f : 55f;
-            float scale = 0.84f - (0.08f * sideProgress);
-            float alpha = 0.92f - (0.16f * sideProgress);
+            float scale = 0.86f - (0.08f * sideProgress);
+            float alpha = 0.92f - (0.14f * sideProgress);
             return new PathPoint(x, y, rotationY, -2f, scale, alpha,
-                    dp(2) + dp(2) * (1f - sideProgress));
+                    dp(2) + dp(3) * (1f - sideProgress));
         }
 
         @Override
