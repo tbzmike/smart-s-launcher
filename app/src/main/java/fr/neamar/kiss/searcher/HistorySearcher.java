@@ -12,8 +12,10 @@ import java.util.Set;
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ShortcutRecord;
+import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.utils.ShortcutUtil;
@@ -80,9 +82,49 @@ public class HistorySearcher extends Searcher {
         }
 
         List<Pojo> pojos = dataHandler.getHistory(activity, getMaxResultCount(), excludedPojoById);
+        pinMostRecentLaunch(activity, dataHandler, pojos, excludedPojoById);
 
         this.addResults(pojos);
         return null;
+    }
+
+    /**
+     * The user's last tap is stronger than the configured long-term history ranking.
+     * Keep that item at maximum relevance so the shared adapter places it at the
+     * first/focus position used by vertical, horizontal and Square-U renderers.
+     */
+    private void pinMostRecentLaunch(MainActivity activity, DataHandler dataHandler,
+                                     List<Pojo> pojos, Set<String> excludedPojoById) {
+        if (getMaxResultCount() <= 0) return;
+
+        List<ValuedHistoryRecord> mostRecent = DBHelper.getHistory(activity, 1, HistoryMode.RECENCY);
+        if (mostRecent.isEmpty()) return;
+
+        String mostRecentId = mostRecent.get(0).record;
+        if (mostRecentId == null || excludedPojoById.contains(mostRecentId)) return;
+
+        Pojo recentPojo = null;
+        for (Pojo pojo : pojos) {
+            if (mostRecentId.equals(pojo.id)) {
+                recentPojo = pojo;
+                break;
+            }
+        }
+
+        if (recentPojo == null) {
+            recentPojo = dataHandler.getItemById(mostRecentId);
+            if (recentPojo == null) return;
+
+            if (pojos.size() >= getMaxResultCount() && !pojos.isEmpty()) {
+                pojos.remove(pojos.size() - 1);
+            }
+            pojos.add(recentPojo);
+        }
+
+        // Searcher emits low relevance first and highest relevance last. All launcher
+        // history styles focus/scroll to that final item, so MAX_VALUE guarantees the
+        // just-launched app or shortcut remains immediately accessible.
+        recentPojo.relevance = Integer.MAX_VALUE;
     }
 
     @Override
