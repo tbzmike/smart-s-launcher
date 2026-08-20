@@ -2,7 +2,6 @@ package fr.neamar.kiss.adapter;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AbsListView;
@@ -19,11 +18,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
-import fr.neamar.kiss.R;
 import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
@@ -33,6 +28,7 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.LockedNotificationHistoryDialog;
+import fr.neamar.kiss.ui.TileVisualStyle;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.fuzzy.FuzzyFactory;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
@@ -76,32 +72,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
         Result<?> result = getItem(position);
         View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
-        ensureTileIcon(view, result, parent.getContext());
+        TileVisualStyle.apply(view, result, parent.getContext());
         if (parent instanceof AbsListView) applyVerticalHistorySizing(view, parent.getContext());
         return view;
-    }
-
-    /** Keep a drawable available even in hidden/sub-icon slots used by custom history cards. */
-    private void ensureTileIcon(View row, Result<?> result, Context context) {
-        int[] candidateIds = new int[]{
-                R.id.item_app_icon,
-                R.id.item_contact_icon,
-                R.id.item_setting_icon,
-                R.id.item_shortcut_icon,
-                R.id.item_notification_icon
-        };
-        ImageView fallbackTarget = null;
-        for (int id : candidateIds) {
-            View candidate = row.findViewById(id);
-            if (!(candidate instanceof ImageView)) continue;
-            ImageView image = (ImageView) candidate;
-            if (image.getDrawable() != null) return;
-            if (fallbackTarget == null) fallbackTarget = image;
-        }
-        if (fallbackTarget == null) return;
-        Drawable drawable = result.getDrawable(context);
-        if (drawable == null) drawable = context.getPackageManager().getDefaultActivityIcon();
-        fallbackTarget.setImageDrawable(drawable);
     }
 
     private void applyVerticalHistorySizing(View row, Context context) {
@@ -197,12 +170,19 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     public void updateWithPojos(@NonNull Context context, @NonNull List<Pojo> pojos,
                                 boolean isRefresh, String query) {
-        Map<Pojo, Result<?>> existingResults = this.results.stream()
-                .collect(Collectors.toMap(Result::getPojo, Function.identity()));
-        List<Result<?>> updatedResults = pojos.stream()
-                .filter(Objects::nonNull)
-                .map(pojo -> existingResults.getOrDefault(pojo, Result.fromPojo(parent, pojo)))
-                .collect(Collectors.toList());
+        // Search runs on every query change. Avoid streams/Collectors here to reduce temporary
+        // allocations and GC pressure while typing rapidly.
+        Map<Pojo, Result<?>> existingResults = new HashMap<>(Math.max(16, results.size() * 2));
+        for (Result<?> result : results) {
+            existingResults.put(result.getPojo(), result);
+        }
+
+        List<Result<?>> updatedResults = new ArrayList<>(pojos.size());
+        for (Pojo pojo : pojos) {
+            if (pojo == null) continue;
+            Result<?> existing = existingResults.get(pojo);
+            updatedResults.add(existing != null ? existing : Result.fromPojo(parent, pojo));
+        }
         updateResults(context, updatedResults, isRefresh, query);
     }
 
