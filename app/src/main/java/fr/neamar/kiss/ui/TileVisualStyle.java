@@ -39,6 +39,19 @@ public final class TileVisualStyle {
         Drawable icon = iconState.drawable;
         if (icon == null) return;
 
+        ImageView primary = findPrimaryIcon(row);
+        if (primary == null) return;
+
+        // Settings and curated "Feature:" rows use Android/system glyphs rather than app artwork.
+        // Adding the app-style halo and inset padding around these glyphs makes their geometry look
+        // squashed or boxed. Render them at their natural proportions instead.
+        if (primary.getId() == R.id.item_setting_icon) {
+            primary.setBackground(null);
+            primary.setPadding(0, 0, 0, 0);
+            primary.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            return;
+        }
+
         int accent;
         if (iconState.realIcon) {
             accent = ACCENT_CACHE.computeIfAbsent(result.getUniqueId(), ignored -> sampleAccent(icon));
@@ -48,15 +61,12 @@ public final class TileVisualStyle {
             accent = NEUTRAL_ACCENT;
         }
 
-        ImageView primary = findPrimaryIcon(row);
-        if (primary != null) {
-            GradientDrawable halo = new GradientDrawable(
-                    GradientDrawable.Orientation.TL_BR,
-                    new int[]{tone(accent, 1.20f, 88), tone(accent, 0.72f, 52)});
-            halo.setCornerRadius(dp(context, 14));
-            primary.setBackground(halo);
-            primary.setPadding(dp(context, 4), dp(context, 4), dp(context, 4), dp(context, 4));
-        }
+        GradientDrawable halo = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{tone(accent, 1.20f, 88), tone(accent, 0.72f, 52)});
+        halo.setCornerRadius(dp(context, 14));
+        primary.setBackground(halo);
+        primary.setPadding(dp(context, 4), dp(context, 4), dp(context, 4), dp(context, 4));
     }
 
     private static IconState ensureImmediateIcon(View row, Context context) {
