@@ -1,11 +1,15 @@
 package fr.neamar.kiss.searcher;
 
+import android.os.Handler;
+import android.os.Looper;
+
 import androidx.annotation.NonNull;
 
 import fr.neamar.kiss.MainActivity;
 
 public class SearchHandler {
 
+    private static final long QUERY_DEBOUNCE_MS = 45L;
     private static volatile SearchHandler instance;
 
     public static SearchHandler getInstance() {
@@ -19,48 +23,66 @@ public class SearchHandler {
         return instance;
     }
 
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private Runnable pendingQuery;
+
     private SearchHandler() {
     }
 
-    /**
-     * Last search type, needed for refresh
-     */
+    /** Last search type, needed for refresh. */
     private Searcher.Type lastSearchType;
 
-    /**
-     * Last search query, needed for refresh.
-     */
+    /** Last search query, needed for refresh. */
     private String lastSearchQuery;
 
-    /**
-     * Running search task.
-     */
+    /** Running search task. */
     private Searcher runningSearch;
 
     /**
-     * Create search task and execute.
-     *
-     * @param type      of search
-     * @param activity  the main activity
-     * @param query     the search query
-     * @param isRefresh true, if refresh of last search is needed
+     * Create search task and execute. Rapid query typing is very lightly debounced so obsolete
+     * searches do not repeatedly rebuild complex horizontal/Square-U history views.
      */
-    public void search(@NonNull Searcher.Type type, @NonNull MainActivity activity, String query, boolean isRefresh) {
-        cancelSearch();
+    public void search(@NonNull Searcher.Type type, @NonNull MainActivity activity,
+                       String query, boolean isRefresh) {
+        cancelPendingQuery();
+        cancelRunningSearch();
 
+        if (type == Searcher.Type.QUERY && !isRefresh) {
+            final String scheduledQuery = query;
+            pendingQuery = () -> {
+                pendingQuery = null;
+                startSearch(type, activity, scheduledQuery, false);
+            };
+            mainHandler.postDelayed(pendingQuery, QUERY_DEBOUNCE_MS);
+            return;
+        }
+
+        startSearch(type, activity, query, isRefresh);
+    }
+
+    private void startSearch(@NonNull Searcher.Type type, @NonNull MainActivity activity,
+                             String query, boolean isRefresh) {
         runningSearch = createSearcher(type, activity, query, isRefresh);
         runningSearch.setSearchDoneCallback((searcher, isCancelled) -> {
-            if (runningSearch == searcher) {
-                resetRunningSearch();
-            }
+            if (runningSearch == searcher) resetRunningSearch();
         });
         runningSearch.executeOnExecutor(Searcher.SEARCH_THREAD);
     }
 
-    /**
-     * Cancel last search if still running.
-     */
+    /** Cancel last search if still running. */
     public void cancelSearch() {
+        cancelPendingQuery();
+        cancelRunningSearch();
+    }
+
+    private void cancelPendingQuery() {
+        if (pendingQuery != null) {
+            mainHandler.removeCallbacks(pendingQuery);
+            pendingQuery = null;
+        }
+    }
+
+    private void cancelRunningSearch() {
         if (runningSearch != null) {
             runningSearch.cancel(true);
             resetRunningSearch();
@@ -72,7 +94,8 @@ public class SearchHandler {
     }
 
     @NonNull
-    private Searcher createSearcher(@NonNull Searcher.Type type, @NonNull MainActivity activity, String query, boolean isRefresh) {
+    private Searcher createSearcher(@NonNull Searcher.Type type, @NonNull MainActivity activity,
+                                    String query, boolean isRefresh) {
         if (isRefresh && lastSearchType != null) {
             type = this.lastSearchType;
             query = this.lastSearchQuery;
