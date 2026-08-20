@@ -63,11 +63,11 @@ public final class UiEditLock {
         }
 
         boolean locked = isLocked(context);
-        syncWorkspaceEditState(context, locked);
+        syncRuntimeState(context, locked);
         updateSummary(toggle, locked);
         toggle.setOnPreferenceChangeListener((preference, newValue) -> {
             boolean newLocked = Boolean.TRUE.equals(newValue);
-            syncWorkspaceEditState(context, newLocked);
+            syncRuntimeState(context, newLocked);
             updateSummary(toggle, newLocked);
             applyLockState(root, newLocked);
             return true;
@@ -78,7 +78,7 @@ public final class UiEditLock {
     /** Re-applies locking after a screen dynamically adds more UI preferences. */
     public static void refresh(@NonNull Context context, @NonNull PreferenceGroup root) {
         boolean locked = isLocked(context);
-        syncWorkspaceEditState(context, locked);
+        syncRuntimeState(context, locked);
         applyLockState(root, locked);
         Preference pref = root.findPreference(PREF_KEY);
         if (pref instanceof SwitchPreference) {
@@ -86,11 +86,12 @@ public final class UiEditLock {
         }
     }
 
-    /**
-     * Workspace edit entry points have their own runtime preferences. While the global lock is on,
-     * disable them too, then restore the user's previous choices when the global lock is released.
-     */
-    private static void syncWorkspaceEditState(@NonNull Context context, boolean locked) {
+    /** Ensure runtime edit entry points mirror the global lock even before Settings is opened. */
+    public static void syncRuntimeState(@NonNull Context context) {
+        syncRuntimeState(context, isLocked(context));
+    }
+
+    private static void syncRuntimeState(@NonNull Context context, boolean locked) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         SharedPreferences.Editor editor = prefs.edit();
         if (locked) {
