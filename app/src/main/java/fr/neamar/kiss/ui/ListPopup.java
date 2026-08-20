@@ -3,11 +3,13 @@ package fr.neamar.kiss.ui;
 import android.content.Context;
 import android.database.DataSetObserver;
 import android.graphics.Rect;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ListAdapter;
 import android.widget.PopupWindow;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.StringRes;
@@ -106,6 +108,7 @@ public class ListPopup extends PopupWindow {
     protected void updateItems() {
         LinearLayout layout = getLinearLayout();
         layout.removeAllViews();
+        if (mAdapter == null) return;
         int adapterCount = mAdapter.getCount();
         for (int i = 0; i < adapterCount; i += 1) {
             View view = mAdapter.getView(i, null, layout);
@@ -121,12 +124,29 @@ public class ListPopup extends PopupWindow {
         }
     }
 
+    private void appendResizeItem(View anchor) {
+        Object tag = anchor == null ? null : anchor.getTag();
+        if (!(tag instanceof ResizeTarget)) return;
+
+        LinearLayout layout = getLinearLayout();
+        TextView resize = (TextView) LayoutInflater.from(anchor.getContext())
+                .inflate(R.layout.popup_list_item, layout, false);
+        resize.setText("Resize");
+        resize.setContentDescription("Resize");
+        resize.setOnClickListener(v -> {
+            dismiss();
+            ((ResizeTarget) tag).beginResize();
+        });
+        layout.addView(resize);
+    }
+
     public void show(View anchor) {
         show(anchor, .5f);
     }
 
     public void show(View anchor, float anchorOverlap) {
         updateItems();
+        appendResizeItem(anchor);
 
         if (mSystemUiVisibilityHelper != null)
             mSystemUiVisibilityHelper.copyVisibility(getContentView());
