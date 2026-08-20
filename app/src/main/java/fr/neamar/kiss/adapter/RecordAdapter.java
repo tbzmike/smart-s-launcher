@@ -2,6 +2,7 @@ package fr.neamar.kiss.adapter;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AbsListView;
@@ -22,6 +23,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
@@ -72,9 +74,34 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     @Override
     @NonNull
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
-        View view = getItem(position).display(parent.getContext(), convertView, parent, fuzzyScore);
+        Result<?> result = getItem(position);
+        View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
+        ensureTileIcon(view, result, parent.getContext());
         if (parent instanceof AbsListView) applyVerticalHistorySizing(view, parent.getContext());
         return view;
+    }
+
+    /** Keep a drawable available even in hidden/sub-icon slots used by custom history cards. */
+    private void ensureTileIcon(View row, Result<?> result, Context context) {
+        int[] candidateIds = new int[]{
+                R.id.item_app_icon,
+                R.id.item_contact_icon,
+                R.id.item_setting_icon,
+                R.id.item_shortcut_icon,
+                R.id.item_notification_icon
+        };
+        ImageView fallbackTarget = null;
+        for (int id : candidateIds) {
+            View candidate = row.findViewById(id);
+            if (!(candidate instanceof ImageView)) continue;
+            ImageView image = (ImageView) candidate;
+            if (image.getDrawable() != null) return;
+            if (fallbackTarget == null) fallbackTarget = image;
+        }
+        if (fallbackTarget == null) return;
+        Drawable drawable = result.getDrawable(context);
+        if (drawable == null) drawable = context.getPackageManager().getDefaultActivityIcon();
+        fallbackTarget.setImageDrawable(drawable);
     }
 
     private void applyVerticalHistorySizing(View row, Context context) {
@@ -94,9 +121,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 if (currentMax >= threshold) {
                     int base = Math.max(threshold, currentMax);
                     int target = Math.max(dp(context, 24), base * percent / 100);
-                    lp.width = target;
-                    lp.height = target;
-                    view.setLayoutParams(lp);
+                    if (lp.width != target || lp.height != target) {
+                        lp.width = target;
+                        lp.height = target;
+                        view.setLayoutParams(lp);
+                    }
                 }
             }
             return;
