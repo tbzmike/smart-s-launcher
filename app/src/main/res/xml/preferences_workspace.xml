@@ -2,7 +2,16 @@
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
     app:title="Flexible workspace">
 
-    <PreferenceCategory app:title="Flexible panes">
+    <SwitchPreference
+        app:key="smart-ui-locked"
+        app:defaultValue="false"
+        app:disableDependentsState="true"
+        app:title="Lock launcher UI"
+        app:summary="When locked, workspace layout and editing settings cannot be changed" />
+
+    <PreferenceCategory
+        app:title="Flexible panes"
+        app:dependency="smart-ui-locked">
         <SwitchPreference
             app:key="smart-workspace-enabled"
             app:defaultValue="false"
