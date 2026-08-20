@@ -2,6 +2,13 @@
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
     app:title="Smart features">
 
+    <SwitchPreference
+        app:key="smart-ui-locked"
+        app:defaultValue="false"
+        app:disableDependentsState="true"
+        app:title="Lock launcher UI"
+        app:summary="When locked, appearance, animation, wallpaper and layout editing are disabled" />
+
     <PreferenceCategory app:title="@string/smart_notifications_title">
         <SwitchPreference
             app:defaultValue="true"
@@ -127,7 +134,9 @@
             app:title="@string/smart_keep_frozen_history" />
     </PreferenceCategory>
 
-    <PreferenceCategory app:title="@string/smart_animations_title">
+    <PreferenceCategory
+        app:title="@string/smart_animations_title"
+        app:dependency="smart-ui-locked">
         <SwitchPreference
             app:defaultValue="true"
             app:key="smart-animations-enabled"
@@ -207,7 +216,9 @@
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
-    <PreferenceCategory app:title="@string/smart_wallpaper_blur_title">
+    <PreferenceCategory
+        app:title="@string/smart_wallpaper_blur_title"
+        app:dependency="smart-ui-locked">
         <SwitchPreference
             app:defaultValue="false"
             app:key="smart-focus-blur-enabled"
