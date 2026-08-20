@@ -6,6 +6,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.os.AsyncTask;
 import android.text.TextUtils;
+import android.text.format.DateFormat;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -18,9 +19,12 @@ import android.widget.TextView;
 
 import java.lang.reflect.Field;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.R;
+import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.result.Result;
@@ -37,10 +41,12 @@ final class HistoryVisualEnhancer {
     private static final int TAG_LIVE_BACKGROUND = 0x534D4201;
     private static final int TAG_LIVE_TEXT = 0x534D4202;
     private static final int TAG_LIVE_PROGRESS = 0x534D4203;
+    private static final String LIST_STATS_SEPARATOR = " • Last ";
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final Set<String> liveLoadInFlight = new HashSet<>();
+    private boolean statsLoadInFlight;
 
     HistoryVisualEnhancer(MainActivity activity,
                           HistoryDisplayForwarder historyDisplayForwarder) {
@@ -72,11 +78,84 @@ final class HistoryVisualEnhancer {
 
         enhanceHistoryGroup(squareTrack, true);
         enhanceHistoryGroup(horizontalRow, false);
+        refreshListPresentation();
 
         if (notificationScroller != null) {
             notificationScroller.setBackground(buildDepthBackground(dp(20), true));
             notificationScroller.setElevation(dp(12));
             notificationScroller.setTranslationZ(dp(2));
+        }
+    }
+
+    /**
+     * Native list mode deliberately stays transparent. Launch statistics are loaded in one
+     * grouped background query and then applied only to currently visible rows.
+     */
+    private void refreshListPresentation() {
+        if (activity.list == null || activity.adapter == null) return;
+
+        for (int i = 0; i < activity.list.getChildCount(); i++) {
+            View row = activity.list.getChildAt(i);
+            row.setBackgroundColor(Color.TRANSPARENT);
+            row.setElevation(0f);
+            row.setTranslationZ(0f);
+        }
+
+        synchronized (this) {
+            if (statsLoadInFlight) return;
+            statsLoadInFlight = true;
+        }
+        AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
+            Map<String, LaunchStatsProvider.LaunchStats> stats =
+                    LaunchStatsProvider.loadAll(activity.getApplicationContext());
+            activity.runOnUiThread(() -> {
+                synchronized (HistoryVisualEnhancer.this) {
+                    statsLoadInFlight = false;
+                }
+                applyStatsToVisibleRows(stats);
+            });
+        });
+    }
+
+    private void applyStatsToVisibleRows(Map<String, LaunchStatsProvider.LaunchStats> stats) {
+        if (activity.list == null || activity.adapter == null) return;
+        int first = activity.list.getFirstVisiblePosition();
+        java.text.DateFormat timeFormat = DateFormat.getTimeFormat(activity);
+
+        for (int childIndex = 0; childIndex < activity.list.getChildCount(); childIndex++) {
+            int position = first + childIndex;
+            if (position < 0 || position >= activity.adapter.getCount()) continue;
+
+            View row = activity.list.getChildAt(childIndex);
+            row.setBackgroundColor(Color.TRANSPARENT);
+            row.setElevation(0f);
+            row.setTranslationZ(0f);
+
+            Result<?> result = activity.adapter.getItem(position);
+            if (!(result.getPojo() instanceof AppPojo)) continue;
+
+            TextView subtitle = row.findViewById(R.id.item_app_tag);
+            if (subtitle == null) continue;
+
+            String historyId = result.getPojo().getHistoryId();
+            LaunchStatsProvider.LaunchStats launchStats = stats.get(historyId);
+            String current = subtitle.getText() == null ? "" : subtitle.getText().toString();
+            int separator = current.indexOf(LIST_STATS_SEPARATOR);
+            String base = separator >= 0 ? current.substring(0, separator) : current;
+
+            if (launchStats == null || launchStats.lastLaunchTime <= 0) {
+                subtitle.setText(base);
+                continue;
+            }
+
+            StringBuilder text = new StringBuilder(base);
+            if (text.length() > 0) text.append(LIST_STATS_SEPARATOR);
+            else text.append("Last ");
+            text.append(timeFormat.format(new java.util.Date(launchStats.lastLaunchTime)));
+            text.append(" • ").append(launchStats.launchesToday);
+            text.append(launchStats.launchesToday == 1 ? " launch today" : " launches today");
+            subtitle.setText(text.toString());
+            subtitle.setVisibility(View.VISIBLE);
         }
     }
 
