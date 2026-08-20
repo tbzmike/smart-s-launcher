@@ -7,11 +7,9 @@ android {
     buildFeatures {
         buildConfig = true
     }
-
     compileSdk {
         version = release(36)
     }
-
     defaultConfig {
         applicationId 'com.tbzmike.smartslauncher'
         minSdk {
@@ -20,12 +18,10 @@ android {
         targetSdk {
             version = release(36)
         }
-        versionCode 281
-        versionName "3.28.53"
-
+        versionCode 282
+        versionName "3.28.54"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
-
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -34,7 +30,6 @@ android {
             keyPassword 'android'
         }
     }
-
     buildTypes {
         release {
             minifyEnabled true
@@ -49,18 +44,15 @@ android {
             applicationIdSuffix ".debug"
         }
     }
-
     compileOptions {
         coreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-
     lint {
         checkAllWarnings = true
         lintConfig = file('lint.xml')
     }
-
     testOptions {
         animationsDisabled = false
         unitTests {
@@ -71,18 +63,15 @@ android {
             }
         }
     }
-
     namespace = 'fr.neamar.kiss'
 }
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-
     androidTestImplementation 'androidx.test:runner:1.7.0'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.7.0'
     androidTestImplementation 'androidx.test:rules:1.7.0'
     androidTestImplementation 'androidx.test.ext:junit:1.3.0'
-
     implementation 'androidx.annotation:annotation:1.10.0'
     implementation 'androidx.appcompat:appcompat:1.7.1'
     implementation 'androidx.preference:preference:1.2.1'
@@ -90,11 +79,9 @@ dependencies {
     implementation 'androidx.core:core:1.17.0'
     implementation 'androidx.activity:activity:1.11.0'
     implementation 'androidx.fragment:fragment:1.8.9'
-
     testImplementation 'org.junit.jupiter:junit-jupiter:6.0.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'org.hamcrest:hamcrest-library:3.0'
-
     errorprone('com.google.errorprone:error_prone_core:2.49.0')
     runtimeOnly('com.google.errorprone:error_prone_annotations:2.49.0')
 }
