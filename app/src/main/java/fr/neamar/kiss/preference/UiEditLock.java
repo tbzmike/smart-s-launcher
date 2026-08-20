@@ -14,8 +14,8 @@ import androidx.preference.SwitchPreference;
 /**
  * Central lock for launcher appearance/layout editing.
  *
- * The same preference is used by Settings and direct on-home editing so the UI cannot be
- * changed from one path while another path is locked.
+ * The launcher surface is protected while Settings itself stays reachable so the user can
+ * always unlock the UI again. Navigation entries are never disabled by the lock.
  */
 public final class UiEditLock {
     public static final String PREF_KEY = "smart-ui-locked";
@@ -47,20 +47,9 @@ public final class UiEditLock {
                 || "theme-customisation".equals(rootKey);
     }
 
-    /** Adds the shared lock toggle to this screen and applies the current lock state. */
+    /** Adds the shared lock toggle to a UI-editing settings screen. */
     public static void install(@NonNull Context context, @NonNull PreferenceGroup root) {
-        Preference existing = root.findPreference(PREF_KEY);
-        SwitchPreference toggle;
-        if (existing instanceof SwitchPreference) {
-            toggle = (SwitchPreference) existing;
-        } else {
-            toggle = new SwitchPreference(context);
-            toggle.setKey(PREF_KEY);
-            toggle.setTitle("Lock launcher UI");
-            toggle.setDefaultValue(false);
-            toggle.setOrder(-20000);
-            root.addPreference(toggle);
-        }
+        SwitchPreference toggle = ensureToggle(context, root);
 
         boolean locked = isLocked(context);
         syncRuntimeState(context, locked);
@@ -73,6 +62,41 @@ public final class UiEditLock {
             return true;
         });
         applyLockState(root, locked);
+    }
+
+    /**
+     * Adds only the unlock control to the main KISS Settings page. The normal KISS Settings
+     * navigation is deliberately never disabled, otherwise the user could be locked out of the
+     * very screen required to turn the launcher lock off.
+     */
+    public static void installUnlockToggleOnly(@NonNull Context context,
+                                                @NonNull PreferenceGroup root) {
+        SwitchPreference toggle = ensureToggle(context, root);
+        boolean locked = isLocked(context);
+        updateSummary(toggle, locked);
+        toggle.setEnabled(true);
+        toggle.setOnPreferenceChangeListener((preference, newValue) -> {
+            boolean newLocked = Boolean.TRUE.equals(newValue);
+            syncRuntimeState(context, newLocked);
+            updateSummary(toggle, newLocked);
+            return true;
+        });
+    }
+
+    private static SwitchPreference ensureToggle(@NonNull Context context,
+                                                 @NonNull PreferenceGroup root) {
+        Preference existing = root.findPreference(PREF_KEY);
+        if (existing instanceof SwitchPreference) {
+            return (SwitchPreference) existing;
+        }
+
+        SwitchPreference toggle = new SwitchPreference(context);
+        toggle.setKey(PREF_KEY);
+        toggle.setTitle("Lock launcher UI");
+        toggle.setDefaultValue(false);
+        toggle.setOrder(-20000);
+        root.addPreference(toggle);
+        return toggle;
     }
 
     /** Re-applies locking after a screen dynamically adds more UI preferences. */
@@ -122,7 +146,7 @@ public final class UiEditLock {
 
     private static void updateSummary(@NonNull SwitchPreference toggle, boolean locked) {
         toggle.setSummary(locked
-                ? "Locked — all launcher editing is blocked, including resize, move, remove, uninstall, rename, favorites, tags and widget editing."
+                ? "Locked — launcher editing is blocked. KISS Settings remain accessible so you can unlock at any time."
                 : "Unlocked — launcher UI editing is available.");
     }
 
@@ -139,10 +163,16 @@ public final class UiEditLock {
                 child.setEnabled(true);
                 continue;
             }
+            // Never lock navigation into KISS/Smart S settings. A destination screen can disable
+            // its own editing controls, but the user must always be able to reach the unlock toggle.
+            if (child.getFragment() != null) {
+                child.setEnabled(true);
+                continue;
+            }
 
             child.setEnabled(!locked);
-            if (child instanceof PreferenceGroup && !locked) {
-                applyLockState((PreferenceGroup) child, false);
+            if (child instanceof PreferenceGroup) {
+                applyLockState((PreferenceGroup) child, locked);
             }
         }
     }
