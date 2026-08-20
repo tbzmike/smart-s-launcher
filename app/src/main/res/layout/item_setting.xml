@@ -30,12 +30,11 @@
         tools:textSize="@dimen/result_subtitle_size"
         tools:ignore="UnusedAttribute" />
 
-    <TextView
+    <fr.neamar.kiss.ui.AutoMarqueeTextView
         android:id="@+id/item_setting_name"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:ellipsize="end"
-        android:maxLines="1"
+        android:layout_weight="1"
         android:paddingEnd="2dp"
         android:paddingRight="2dp"
         android:paddingBottom="2dp"
