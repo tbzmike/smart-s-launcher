@@ -23,10 +23,14 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import fr.neamar.kiss.normalizer.StringNormalizer;
+import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.ui.LockedNotificationHistoryDialog;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.fuzzy.FuzzyFactory;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
@@ -120,11 +124,29 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     public void onLongClick(final int pos, View v) {
-        ListPopup menu = getItem(pos).getPopupMenu(v.getContext(), this, v);
+        if (pos < 0 || pos >= getCount()) return;
+        Result<?> result = getItem(pos);
+        Context context = v.getContext();
+
+        if (UiEditLock.isLocked(context)) {
+            String packageName = getNotificationPackageName(result.getPojo());
+            if (packageName != null) {
+                LockedNotificationHistoryDialog.showLatest(context, packageName);
+            }
+            return;
+        }
+
+        ListPopup menu = result.getPopupMenu(context, this, v);
         if (menu.getAdapter().getCount() > 0) {
             parent.registerPopup(menu);
             menu.show(v);
         }
+    }
+
+    private String getNotificationPackageName(Pojo pojo) {
+        if (pojo instanceof AppPojo) return ((AppPojo) pojo).packageName;
+        if (pojo instanceof ShortcutPojo) return ((ShortcutPojo) pojo).packageName;
+        return null;
     }
 
     public void onClick(final int position, View v) {
