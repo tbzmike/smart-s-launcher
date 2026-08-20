@@ -79,11 +79,11 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         getPreferenceScreen().addPreference(category);
 
         addSizeSlider(category, "smart-u-tile-size-percent", "Square-U tile size",
-                "Resize Square-U cards here or drag the T handle directly on a tile", 70, 150, 100);
+                "Resize Square-U cards without changing their icons", 70, 150, 100);
         addSizeSlider(category, "smart-u-icon-size-percent", "Square-U icon size",
-                "Resize icons here or drag the I handle directly on a Square-U tile", 60, 160, 100);
+                "Resize only icons inside Square-U cards", 60, 160, 100);
         addSizeSlider(category, "smart-u-notification-panel-size-percent", "Square-U notification box size",
-                "Resize the box here or drag the N handle directly on the notification box", 55, 150, 100);
+                "Resize only the middle notification box", 55, 150, 100);
         addSizeSlider(category, "smart-u-notification-content-size-percent", "Square-U notification content size",
                 "Resize notification rows and content independently of the box", 65, 140, 100);
         addSizeSlider(category, "smart-u-notification-gap-dp", "Square-U notification gap",
