@@ -38,7 +38,6 @@ public final class SmartAnimationEngine {
         SharedPreferences preferences = prefs(context);
         float speed = readSpeedMultiplier(preferences);
         speed = Math.max(0.05f, Math.min(3f, speed));
-        // A lower speed means a longer animation; a higher speed means a shorter animation.
         return Math.max(80L, Math.round(base / speed));
     }
 
@@ -79,12 +78,10 @@ public final class SmartAnimationEngine {
         animateViewIn(window.getDecorView(), preferenceKey, fallback);
     }
 
-    /** Animate non-Dialog popup content using the same popup preference as dialogs. */
     public static void animatePopupViewIn(View view) {
         animateViewIn(view, "smart-animation-popup-open", "scale");
     }
 
-    /** Animate non-Dialog popup content out, then run the actual dismiss action. */
     public static void animatePopupViewOut(View view, Runnable endAction) {
         if (view == null) {
             if (endAction != null) endAction.run();
@@ -291,18 +288,49 @@ public final class SmartAnimationEngine {
 
     public static void animateListMove(View child, int delta, boolean isNew) {
         if (child == null || !isEnabled(child.getContext())) return;
-        long duration = duration(child.getContext());
+        Context context = child.getContext();
+        long duration = duration(context);
         child.animate().cancel();
+
         if (isNew) {
+            reset(child);
+            String style = getStyle(context, "smart-animation-view-switch", "crossfade");
+            if ("none".equals(style)) return;
+
             child.setAlpha(0f);
-            child.setScaleY(0.92f);
-            child.setTranslationY(Math.min(48f, Math.max(-48f, delta)));
+            switch (style) {
+                case "slide":
+                    child.setTranslationX(dp(child, 40));
+                    child.setTranslationY(Math.min(72f, Math.max(-72f, delta * 1.5f)));
+                    break;
+                case "depth":
+                    child.setScaleX(1.08f);
+                    child.setScaleY(0.88f);
+                    child.setTranslationY(Math.min(56f, Math.max(-56f, delta)));
+                    break;
+                case "zoom":
+                    child.setScaleX(0.78f);
+                    child.setScaleY(0.78f);
+                    child.setTranslationY(Math.min(44f, Math.max(-44f, delta)));
+                    break;
+                case "crossfade":
+                default:
+                    child.setScaleX(0.95f);
+                    child.setScaleY(0.95f);
+                    child.setTranslationY(Math.min(64f, Math.max(-64f, delta * 1.35f)));
+                    break;
+            }
+
             child.animate()
                     .alpha(1f)
+                    .scaleX(1f)
                     .scaleY(1f)
+                    .translationX(0f)
                     .translationY(0f)
                     .setDuration(duration)
-                    .setInterpolator(new OvershootInterpolator(0.7f))
+                    .setInterpolator("depth".equals(style)
+                            ? new OvershootInterpolator(0.65f)
+                            : new DecelerateInterpolator())
                     .start();
         } else if (delta != 0) {
             child.setTranslationY(delta);
