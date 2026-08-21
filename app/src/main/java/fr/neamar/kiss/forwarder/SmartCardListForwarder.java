@@ -32,7 +32,8 @@ import fr.neamar.kiss.ui.SmartAnimationEngine;
  * frozen-app handling, shortcuts and accessibility remain wired through the existing result code.
  */
 final class SmartCardListForwarder extends Forwarder {
-    static final String PREF_ENABLED = "smart-card-list-enabled";
+    private static final String VERTICAL_CARDS = "vertical_cards";
+    private static final String LEGACY_PREF_ENABLED = "smart-card-list-enabled";
 
     private static final int ACCENT_SAMPLE_SIZE = 10;
     private final Map<Long, Integer> accentCache = new HashMap<>();
@@ -71,10 +72,12 @@ final class SmartCardListForwarder extends Forwarder {
         container.addView(scroller, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
                 Gravity.BOTTOM));
+        migrateLegacySelection();
         applyState(true);
     }
 
     void onResume() {
+        migrateLegacySelection();
         applyState(false);
         if (isEnabled()) rebuild();
     }
@@ -83,9 +86,19 @@ final class SmartCardListForwarder extends Forwarder {
         if (isEnabled()) rebuild();
     }
 
+    private void migrateLegacySelection() {
+        String mode = prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL);
+        if (prefs.getBoolean(LEGACY_PREF_ENABLED, false)
+                && HistoryDisplayForwarder.VERTICAL.equals(mode)) {
+            prefs.edit()
+                    .putString(HistoryDisplayForwarder.PREF_LAYOUT, VERTICAL_CARDS)
+                    .remove(LEGACY_PREF_ENABLED)
+                    .apply();
+        }
+    }
+
     private boolean isEnabled() {
-        return prefs.getBoolean(PREF_ENABLED, false)
-                && HistoryDisplayForwarder.VERTICAL.equals(
+        return VERTICAL_CARDS.equals(
                 prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL));
     }
 
@@ -123,8 +136,6 @@ final class SmartCardListForwarder extends Forwarder {
             }
         }
 
-        // Keep the newest/priority end visible, matching the launch-history behaviour of the
-        // other custom history renderers without changing DataHandler ordering.
         scroller.post(() -> scroller.fullScroll(View.FOCUS_DOWN));
     }
 
@@ -161,8 +172,6 @@ final class SmartCardListForwarder extends Forwarder {
         int accent = accentFor(result, iconDrawable);
         styleCard(card, radiusDp, accent);
 
-        // Keep the real result view alive inside the card. This is what preserves notification
-        // actions, app usage metadata, contact/shortcut semantics and feature/settings content.
         TextView primary = findPrimaryText(source);
         CharSequence label = primary != null ? primary.getText() : extractLabel(source);
         if (primary != null) primary.setVisibility(View.GONE);
@@ -173,8 +182,6 @@ final class SmartCardListForwarder extends Forwarder {
         sourceLp.setMargins(dp(6), dp(5), dp(6), dp(5));
         card.addView(source, sourceLp);
 
-        // Add a stable foreground icon/profile image. If the source provides contact or app
-        // artwork, resolveIcon() keeps that actual drawable instead of inventing content.
         if (iconDrawable != null) {
             ImageView icon = new ImageView(mainActivity);
             icon.setImageDrawable(iconDrawable);
@@ -215,8 +222,6 @@ final class SmartCardListForwarder extends Forwarder {
         card.setClickable(true);
         name.setClickable(true);
 
-        // A small details affordance expands/collapses the actual result content without opening
-        // another screen. It does not replace child notification buttons or their click wiring.
         TextView details = new TextView(mainActivity);
         details.setText("⋯");
         details.setTextColor(Color.WHITE);
