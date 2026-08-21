@@ -192,8 +192,7 @@ public final class UiLivePreviewPreference extends Preference
         }
 
         private void history(Canvas c, float w, float h) {
-            if (prefs.getBoolean("smart-card-list-enabled", false)
-                    && "vertical".equals(prefs.getString("smart-history-layout", "vertical"))) {
+            if ("vertical_cards".equals(prefs.getString("smart-history-layout", "vertical"))) {
                 smartCardList(c, w, h);
                 return;
             }
