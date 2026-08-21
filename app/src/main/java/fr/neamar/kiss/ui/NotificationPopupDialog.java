@@ -22,6 +22,7 @@ import android.widget.Toast;
 import java.util.List;
 
 import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 
 /**
  * Window-level notification viewer used by launcher timeline rows.
@@ -192,7 +193,15 @@ public final class NotificationPopupDialog {
             Button open = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
             if (open != null) {
                 open.setOnClickListener(v -> {
-                    if (NotificationListener.openNotification(context, snapshot.id)) {
+                    boolean opened = NotificationListener.openNotification(context, snapshot.id);
+                    if (!opened && packageName != null) {
+                        // Some apps post notifications without a usable content PendingIntent,
+                        // or invalidate it before the popup is opened. Preserve exact notification
+                        // routing first, then fall back to opening the owning app rather than
+                        // leaving a visibly working button that does nothing.
+                        opened = AppLaunchUtils.launchPackage(context, packageName);
+                    }
+                    if (opened) {
                         SmartAnimationEngine.dismissDialog(dialog);
                     } else {
                         Toast.makeText(context, "Unable to open this notification",
