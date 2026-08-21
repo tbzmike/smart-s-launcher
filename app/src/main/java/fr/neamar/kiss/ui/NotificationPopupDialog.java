@@ -6,6 +6,8 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -193,20 +195,24 @@ public final class NotificationPopupDialog {
             Button open = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
             if (open != null) {
                 open.setOnClickListener(v -> {
-                    boolean opened = NotificationListener.openNotification(context, snapshot.id);
-                    if (!opened && packageName != null) {
-                        // Some apps post notifications without a usable content PendingIntent,
-                        // or invalidate it before the popup is opened. Preserve exact notification
-                        // routing first, then fall back to opening the owning app rather than
-                        // leaving a visibly working button that does nothing.
-                        opened = AppLaunchUtils.launchPackage(context, packageName);
-                    }
-                    if (opened) {
-                        SmartAnimationEngine.dismissDialog(dialog);
-                    } else {
-                        Toast.makeText(context, "Unable to open this notification",
-                                Toast.LENGTH_SHORT).show();
-                    }
+                    // Release the modal window before dispatching the notification PendingIntent.
+                    // On recent Android versions a PendingIntent can report successful send while
+                    // its activity launch is suppressed if a modal launcher window is still on top.
+                    // Dispatch on the next main-loop turn, once the launcher Activity owns focus.
+                    open.setEnabled(false);
+                    SmartAnimationEngine.dismissDialog(dialog);
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        boolean opened = NotificationListener.openNotification(context, snapshot.id);
+                        if (!opened && packageName != null) {
+                            // Notifications are allowed to omit/cancel their content intent. In
+                            // that case, open the owning app rather than leaving a dead button.
+                            opened = AppLaunchUtils.launchPackage(context, packageName);
+                        }
+                        if (!opened) {
+                            Toast.makeText(context, "Unable to open this notification",
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    }, 90L);
                 });
             }
 
