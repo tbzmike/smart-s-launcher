@@ -26,9 +26,9 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 
 /**
- * Vertical Smart Card renderer. The card uses a deliberate icon/content/action layout while still
- * reusing the adapter's real notification row and expanded result view so existing click handlers,
- * notification actions, contacts, shortcuts, frozen-app behaviour and accessibility stay intact.
+ * Vertical Smart Card renderer. The visible card has its own deliberate layout, while the real
+ * adapter notification row and any remaining result controls are re-parented so their existing
+ * listeners and behaviour remain intact.
  */
 final class SmartCardListForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -168,12 +168,16 @@ final class SmartCardListForwarder extends Forwarder {
         cardLp.setMargins(dp(4), 0, dp(4), 0);
         wrapper.addView(card, cardLp);
 
-        Drawable iconDrawable = resolveIcon(source, result);
+        CharSequence rawLabel = extractLabel(source);
+        CharSequence label = cleanDisplayLabel(rawLabel);
+        CharSequence subtitle = extractSubtitle(source);
+
+        ImageView liveIcon = findIconView(source);
+        Drawable iconDrawable = liveIcon == null ? null : liveIcon.getDrawable();
+        if (iconDrawable == null) iconDrawable = result.getDrawable(mainActivity);
         int accent = accentFor(result, iconDrawable);
         styleCard(card, radiusDp, accent);
 
-        CharSequence label = extractLabel(source);
-        CharSequence subtitle = extractSubtitle(source);
         View notificationRow = source.findViewById(R.id.item_notification_row);
         boolean hasNotification = notificationRow != null
                 && notificationRow.getVisibility() == View.VISIBLE;
@@ -185,13 +189,29 @@ final class SmartCardListForwarder extends Forwarder {
         card.addView(mainRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        ImageView icon = new ImageView(mainActivity);
-        icon.setImageDrawable(iconDrawable);
-        icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        int iconSize = Math.min(dp(84), dp(62) * iconPercent / 100);
+        View iconView;
+        if (liveIcon != null) {
+            detachFromParent(liveIcon);
+            liveIcon.setVisibility(View.VISIBLE);
+            liveIcon.setAlpha(1f);
+            liveIcon.setScaleX(1f);
+            liveIcon.setScaleY(1f);
+            liveIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            if (liveIcon.getDrawable() == null && iconDrawable != null) {
+                liveIcon.setImageDrawable(iconDrawable);
+            }
+            iconView = liveIcon;
+        } else {
+            ImageView fallback = new ImageView(mainActivity);
+            fallback.setImageDrawable(iconDrawable != null
+                    ? iconDrawable : mainActivity.getPackageManager().getDefaultActivityIcon());
+            fallback.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            iconView = fallback;
+        }
+        int iconSize = Math.min(dp(88), dp(66) * iconPercent / 100);
         LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
-        iconLp.rightMargin = dp(13);
-        mainRow.addView(icon, iconLp);
+        iconLp.rightMargin = dp(14);
+        mainRow.addView(iconView, iconLp);
 
         LinearLayout center = new LinearLayout(mainActivity);
         center.setOrientation(LinearLayout.VERTICAL);
@@ -199,23 +219,15 @@ final class SmartCardListForwarder extends Forwarder {
         mainRow.addView(center, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        AutoMarqueeTextView cardTitle = new AutoMarqueeTextView(mainActivity);
-        cardTitle.setText(label);
-        cardTitle.setTextColor(Color.WHITE);
-        cardTitle.setTextSize(16f);
-        cardTitle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        cardTitle.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
-        center.addView(cardTitle, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(30)));
-
         if (!TextUtils.isEmpty(subtitle)) {
             AutoMarqueeTextView meta = new AutoMarqueeTextView(mainActivity);
             meta.setText(subtitle);
-            meta.setTextColor(Color.argb(220, 245, 245, 245));
-            meta.setTextSize(13f);
+            meta.setTextColor(Color.argb(230, 250, 250, 250));
+            meta.setTextSize(13.5f);
             meta.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            meta.setShadowLayer(dp(1), 0f, dp(1), Color.argb(170, 0, 0, 0));
             center.addView(meta, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(27)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(29)));
         }
 
         if (hasNotification) {
@@ -223,34 +235,45 @@ final class SmartCardListForwarder extends Forwarder {
             normalizeNotificationRow(notificationRow);
             LinearLayout.LayoutParams notificationLp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            notificationLp.topMargin = dp(4);
+            notificationLp.topMargin = TextUtils.isEmpty(subtitle) ? 0 : dp(4);
             center.addView(notificationRow, notificationLp);
         }
 
-        // Preserve every less-common result action (contact call/message, shortcut controls,
-        // feature/settings extras, etc.) in a clean collapsed details area instead of layering the
-        // complete legacy row over the card's main presentation.
-        prepareSourceForDetails(source, hasNotification ? notificationRow : null);
+        if (TextUtils.isEmpty(subtitle) && !hasNotification) {
+            TextView hint = new TextView(mainActivity);
+            hint.setText("Tap to open");
+            hint.setTextColor(Color.argb(150, 255, 255, 255));
+            hint.setTextSize(12f);
+            hint.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            center.addView(hint, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(26)));
+        }
+
+        prepareSourceForDetails(source);
         FrameLayout detailsPanel = new FrameLayout(mainActivity);
         detailsPanel.setVisibility(View.GONE);
         detailsPanel.setPadding(dp(4), dp(7), dp(4), dp(2));
         detailsPanel.addView(source, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        card.addView(detailsPanel, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView details = new TextView(mainActivity);
-        details.setText("⌄");
-        details.setTextColor(Color.WHITE);
-        details.setTextSize(18f);
-        details.setGravity(Gravity.CENTER);
-        details.setContentDescription("Show card details");
-        details.setBackground(makePill(accent));
-        LinearLayout.LayoutParams detailsLp = new LinearLayout.LayoutParams(dp(38), dp(30));
-        detailsLp.gravity = Gravity.END;
-        detailsLp.topMargin = dp(4);
-        card.addView(details, detailsLp);
-        details.setOnClickListener(v -> toggleDetails(detailsPanel, details));
+        boolean hasDetails = hasMeaningfulVisibleContent(source);
+        if (hasDetails) {
+            card.addView(detailsPanel, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            TextView details = new TextView(mainActivity);
+            details.setText("⌄");
+            details.setTextColor(Color.WHITE);
+            details.setTextSize(18f);
+            details.setGravity(Gravity.CENTER);
+            details.setContentDescription("Show card details");
+            details.setBackground(makePill(accent));
+            LinearLayout.LayoutParams detailsLp = new LinearLayout.LayoutParams(dp(38), dp(30));
+            detailsLp.gravity = Gravity.END;
+            detailsLp.topMargin = dp(4);
+            card.addView(details, detailsLp);
+            details.setOnClickListener(v -> toggleDetails(detailsPanel, details));
+        }
 
         AutoMarqueeTextView name = new AutoMarqueeTextView(mainActivity);
         name.setText(label);
@@ -282,14 +305,17 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void normalizeNotificationRow(View row) {
+        row.setVisibility(View.VISIBLE);
         row.setAlpha(1f);
         row.setScaleX(1f);
         row.setScaleY(1f);
+        row.setPadding(0, dp(2), 0, dp(2));
         TextView text = row.findViewById(R.id.item_notification_text);
         if (text != null) {
-            text.setMaxLines(3);
+            text.setMaxLines(4);
             text.setEllipsize(TextUtils.TruncateAt.END);
             text.setTextColor(Color.WHITE);
+            text.setTextSize(13f);
         }
         View read = row.findViewById(R.id.item_notification_read);
         if (read != null) {
@@ -298,14 +324,38 @@ final class SmartCardListForwarder extends Forwarder {
         }
     }
 
-    private void prepareSourceForDetails(View source, View movedNotificationRow) {
+    private void prepareSourceForDetails(View source) {
         View appIcon = source.findViewById(R.id.item_app_icon);
+        View notificationDot = source.findViewById(R.id.item_notification_dot);
         View appName = source.findViewById(R.id.item_app_name);
         View appTag = source.findViewById(R.id.item_app_tag);
+        View notification = source.findViewById(R.id.item_notification_row);
         if (appIcon != null) appIcon.setVisibility(View.GONE);
+        if (notificationDot != null) notificationDot.setVisibility(View.GONE);
         if (appName != null) appName.setVisibility(View.GONE);
         if (appTag != null) appTag.setVisibility(View.GONE);
-        if (movedNotificationRow != null) movedNotificationRow.setVisibility(View.VISIBLE);
+        if (notification != null && notification.getParent() == source) notification.setVisibility(View.GONE);
+    }
+
+    private boolean hasMeaningfulVisibleContent(View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return false;
+        if (view instanceof TextView) {
+            TextView text = (TextView) view;
+            if (TextUtils.isEmpty(text.getText())) return false;
+            String value = text.getText().toString().trim();
+            return !value.isEmpty()
+                    && !"Mark read".equalsIgnoreCase(value)
+                    && !"Open notification".equalsIgnoreCase(value);
+        }
+        if (view instanceof ImageView) {
+            return ((ImageView) view).getDrawable() != null;
+        }
+        if (!(view instanceof ViewGroup)) return view.isClickable();
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            if (hasMeaningfulVisibleContent(group.getChildAt(i))) return true;
+        }
+        return false;
     }
 
     private void toggleDetails(View detailsPanel, TextView control) {
@@ -350,6 +400,18 @@ final class SmartCardListForwarder extends Forwarder {
             return tag.getText();
         }
         return null;
+    }
+
+    private CharSequence cleanDisplayLabel(CharSequence raw) {
+        if (raw == null) return "Item";
+        String value = raw.toString().trim();
+        if (value.regionMatches(true, 0, "Ice Box:", 0, "Ice Box:".length())) {
+            value = value.substring("Ice Box:".length()).trim();
+            while (value.startsWith("❄") || value.startsWith("️")) {
+                value = value.substring(1).trim();
+            }
+        }
+        return value.isEmpty() ? raw : value;
     }
 
     private void pressAnimation(View card) {
@@ -431,25 +493,22 @@ final class SmartCardListForwarder extends Forwarder {
                 && !"Reply".equalsIgnoreCase(value);
     }
 
-    private Drawable resolveIcon(View source, Result<?> result) {
+    private ImageView findIconView(View source) {
         ImageView app = source.findViewById(R.id.item_app_icon);
-        Drawable drawable = app == null ? null : app.getDrawable();
-        if (drawable == null) drawable = findImage(source);
-        if (drawable == null) drawable = result.getDrawable(mainActivity);
-        if (drawable == null) drawable = mainActivity.getPackageManager().getDefaultActivityIcon();
-        return drawable;
+        if (app != null) return app;
+        return findFirstVisibleImage(source);
     }
 
-    private Drawable findImage(View view) {
-        if (view instanceof ImageView && view.getVisibility() == View.VISIBLE) {
-            Drawable d = ((ImageView) view).getDrawable();
-            if (d != null) return d;
+    private ImageView findFirstVisibleImage(View view) {
+        if (view instanceof ImageView
+                && view.getVisibility() == View.VISIBLE) {
+            return (ImageView) view;
         }
         if (!(view instanceof ViewGroup)) return null;
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
-            Drawable d = findImage(group.getChildAt(i));
-            if (d != null) return d;
+            ImageView found = findFirstVisibleImage(group.getChildAt(i));
+            if (found != null) return found;
         }
         return null;
     }
