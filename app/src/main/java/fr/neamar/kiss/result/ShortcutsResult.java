@@ -8,6 +8,7 @@ import android.content.pm.LauncherApps;
 import android.content.pm.ShortcutInfo;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
@@ -18,17 +19,23 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.preference.PreferenceManager;
 
 import java.net.URISyntaxException;
+import java.util.List;
 
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.IconsHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.adapter.RecordAdapter;
+import fr.neamar.kiss.db.NotificationHistoryRecord;
+import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.icons.IconPack;
+import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.ui.NotificationPopupDialog;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
@@ -39,6 +46,7 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     private static final String TAG = ShortcutsResult.class.getSimpleName();
+    private static final String VERTICAL_CARDS = "vertical_cards";
 
     private volatile Drawable icon = null;
     private volatile Drawable appDrawable = null;
@@ -79,7 +87,144 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             shortcutIcon.setImageDrawable(null);
         }
 
+        displaySmartCardTargetNotification(context, view);
         return view;
+    }
+
+    /**
+     * Vertical cards should represent the app behind an Ice Box shortcut, not Ice Box itself.
+     * This method is deliberately card-only so existing shortcut rendering in all other layouts
+     * remains unchanged.
+     */
+    private void displaySmartCardTargetNotification(Context context, View view) {
+        View row = view.findViewById(R.id.item_notification_row);
+        TextView text = view.findViewById(R.id.item_notification_text);
+        View markRead = view.findViewById(R.id.item_notification_read);
+        if (row == null || text == null || markRead == null) return;
+
+        String layout = PreferenceManager.getDefaultSharedPreferences(context)
+                .getString("smart-history-layout", "vertical");
+        if (!VERTICAL_CARDS.equals(layout)) {
+            row.setVisibility(View.GONE);
+            row.setOnClickListener(null);
+            text.setOnClickListener(null);
+            markRead.setOnClickListener(null);
+            return;
+        }
+
+        String targetPackage = resolveTargetPackageName(context);
+        if (TextUtils.isEmpty(targetPackage)) {
+            row.setVisibility(View.GONE);
+            return;
+        }
+
+        String groupKey = pojo.getUserHandle().getRealHandle().hashCode() + "|" + targetPackage;
+        String activeMessage = NotificationListener.getLatestMessage(context, groupKey);
+        List<NotificationHistoryRecord> history = SmartStateStore.queryNotifications(
+                context, targetPackage, null, 1);
+        String latestMessage = activeMessage == null ? "" : activeMessage.trim();
+        if (latestMessage.isEmpty() && !history.isEmpty()) {
+            NotificationHistoryRecord latest = history.get(0);
+            latestMessage = combineNotification(latest.title, latest.text);
+        }
+
+        if (latestMessage.isEmpty()) {
+            row.setVisibility(View.GONE);
+            row.setOnClickListener(null);
+            text.setOnClickListener(null);
+            markRead.setOnClickListener(null);
+            return;
+        }
+
+        text.setText(latestMessage);
+        row.setVisibility(View.VISIBLE);
+
+        List<NotificationListener.NotificationSnapshot> active =
+                NotificationListener.getGroupNotifications(context, groupKey);
+        if (!active.isEmpty()) {
+            View.OnClickListener popupClick = v -> NotificationPopupDialog.showGroup(context, groupKey);
+            row.setOnClickListener(popupClick);
+            text.setOnClickListener(popupClick);
+            markRead.setVisibility(View.VISIBLE);
+            markRead.setOnClickListener(v -> {
+                if (NotificationListener.markGroupRead(context, groupKey)) {
+                    row.setVisibility(View.GONE);
+                } else {
+                    Toast.makeText(context, "Unable to mark notification as read", Toast.LENGTH_SHORT).show();
+                }
+            });
+        } else {
+            // Historical message only: keep it visible on the card, but there is no active
+            // notification action to invoke or dismiss.
+            row.setOnClickListener(null);
+            text.setOnClickListener(null);
+            markRead.setOnClickListener(null);
+            markRead.setVisibility(View.GONE);
+        }
+    }
+
+    private String combineNotification(String title, String body) {
+        String cleanTitle = title == null ? "" : title.trim();
+        String cleanBody = body == null ? "" : body.trim();
+        if (cleanTitle.isEmpty()) return cleanBody;
+        if (cleanBody.isEmpty() || cleanTitle.equals(cleanBody)) return cleanTitle;
+        return cleanTitle + ": " + cleanBody;
+    }
+
+    /** Resolve the real app behind a shortcut when possible. */
+    @Nullable
+    public String resolveTargetPackageName(Context context) {
+        // First prefer the actual component encoded by the shortcut intent/activity.
+        if (pojo.isOreoShortcut()) {
+            ShortcutInfo shortcutInfo = getShortCut(context);
+            if (shortcutInfo != null && shortcutInfo.getActivity() != null) {
+                String packageName = shortcutInfo.getActivity().getPackageName();
+                if (!TextUtils.isEmpty(packageName) && !packageName.equals(pojo.packageName)) {
+                    return packageName;
+                }
+            }
+        } else {
+            try {
+                Intent intent = Intent.parseUri(pojo.intentUri, 0);
+                ComponentName componentName = PackageManagerUtils.getComponentName(context, intent);
+                if (componentName != null) {
+                    String packageName = componentName.getPackageName();
+                    if (!TextUtils.isEmpty(packageName) && !packageName.equals(pojo.packageName)) {
+                        return packageName;
+                    }
+                }
+            } catch (URISyntaxException | RuntimeException e) {
+                Log.w(TAG, "Unable to resolve shortcut target package for " + pojo.getName(), e);
+            }
+        }
+
+        // Ice Box shortcuts may intentionally route through Ice Box itself. In that case use the
+        // visible target app label to match the app that actually owns the notifications.
+        String targetLabel = cleanIceBoxLabel(pojo.getName());
+        if (!targetLabel.equals(pojo.getName())) {
+            for (String[] entry : SmartStateStore.getNotificationApps(context)) {
+                if (entry == null || entry.length < 2) continue;
+                String packageName = entry[0];
+                String appName = entry[1];
+                if (!TextUtils.isEmpty(packageName)
+                        && appName != null
+                        && targetLabel.equalsIgnoreCase(appName.trim())) {
+                    return packageName;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String cleanIceBoxLabel(String label) {
+        if (label == null) return "";
+        String value = label.trim();
+        if (!value.regionMatches(true, 0, "Ice Box:", 0, "Ice Box:".length())) return value;
+        value = value.substring("Ice Box:".length()).trim();
+        while (value.startsWith("❄") || value.startsWith("️")) {
+            value = value.substring(1).trim();
+        }
+        return value;
     }
 
     private Drawable getAppDrawable(Context context) {
