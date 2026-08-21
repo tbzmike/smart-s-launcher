@@ -1,5 +1,6 @@
 package fr.neamar.kiss.notification;
 
+import android.app.ActivityOptions;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.PendingIntent;
@@ -445,9 +446,23 @@ public class NotificationListener extends NotificationListenerService {
         PendingIntent contentIntent = sbn.getNotification().contentIntent;
         if (contentIntent == null) return false;
         try {
-            // Preserve the app's exact deep link/conversation target. Supplying a synthetic
-            // fill-in Intent here can change or invalidate routing for immutable PendingIntents.
-            contentIntent.send();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ActivityOptions options = ActivityOptions.makeBasic();
+                if (Build.VERSION.SDK_INT >= 36) {
+                    // Android 16: grant only while Smart S Launcher is visibly handling this
+                    // explicit user click. This is the platform-recommended restricted mode.
+                    options.setPendingIntentBackgroundActivityStartMode(
+                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE);
+                } else {
+                    // Android 14-15 equivalent; the narrower ALLOW_IF_VISIBLE mode does not
+                    // exist until API 36.
+                    options.setPendingIntentBackgroundActivityStartMode(
+                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                }
+                contentIntent.send(context, 0, null, null, null, null, options.toBundle());
+            } else {
+                contentIntent.send();
+            }
             return true;
         } catch (PendingIntent.CanceledException | RuntimeException e) {
             Log.w(TAG, "Notification content intent could not be opened", e);
