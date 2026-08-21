@@ -52,6 +52,13 @@ public final class AppLaunchUtils {
         if (packageName != null) ENABLED_STATE_CACHE.remove(packageName);
     }
 
+    private static void markPackageEnabled(String packageName) {
+        if (packageName != null) {
+            ENABLED_STATE_CACHE.put(packageName,
+                    new EnabledState(true, SystemClock.elapsedRealtime()));
+        }
+    }
+
     /** Enable a frozen current-user package without launching it. */
     public static boolean ensurePackageEnabled(Context context, String packageName) {
         if (isPackageEnabled(context, packageName)) return true;
@@ -66,7 +73,11 @@ public final class AppLaunchUtils {
             KissApplication.getApplication(context).getRootHandler().enableComponent(
                     packageName, launcher.activityInfo.name, userId);
         }
-        invalidatePackageState(packageName);
+
+        // Root/package-manager state can take a short moment to become visible through
+        // ApplicationInfo. Record the successful unfreeze immediately so the next UI bind does
+        // not re-mark the app as frozen and grayscale its icon while Android catches up.
+        markPackageEnabled(packageName);
         KissApplication.getApplication(context).getDataHandler().reloadApps();
         return true;
     }
