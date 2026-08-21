@@ -8,7 +8,6 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceManager;
 import androidx.preference.SeekBarPreference;
-import androidx.preference.SwitchPreference;
 
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.preference.UiLivePreviewPreference;
@@ -45,7 +44,6 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
     private void addSmartSectionEntries(@Nullable String rootKey) {
         if ("history_category".equals(rootKey)) {
             addHistoryLayoutPreference();
-            addSmartCardListPreference();
             addHistorySizingPreferences();
             addEntry("notifications", "Smart notifications & history",
                     "Timeline, notification actions, persistent history and notification search");
@@ -71,6 +69,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         preference.setTitle("App history layout");
         preference.setEntries(new CharSequence[]{
                 "Vertical list",
+                "Vertical cards",
                 "Horizontal icons",
                 "Horizontal cards",
                 "Horizontal app names",
@@ -78,6 +77,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         });
         preference.setEntryValues(new CharSequence[]{
                 "vertical",
+                "vertical_cards",
                 "horizontal_icons",
                 "horizontal_cards",
                 "horizontal_names",
@@ -92,27 +92,6 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         getPreferenceScreen().addPreference(preference);
     }
 
-    private void addSmartCardListPreference() {
-        String key = "smart-card-list-enabled";
-        if (findPreference(key) != null) return;
-
-        SwitchPreference preference = new SwitchPreference(requireContext());
-        preference.setKey(key);
-        preference.setTitle("Smart vertical card list");
-        preference.setSummary("Use rich 3D cards with the full name underneath while preserving list-view actions, notifications, usage details, contacts, shortcuts and frozen-app behaviour");
-        preference.setDefaultValue(false);
-        preference.setOnPreferenceChangeListener((changedPreference, newValue) -> {
-            if (Boolean.TRUE.equals(newValue)) {
-                PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
-                        .putString("smart-history-layout", "vertical")
-                        .apply();
-            }
-            markLayoutDirty();
-            return true;
-        });
-        getPreferenceScreen().addPreference(preference);
-    }
-
     private void addHistorySizingPreferences() {
         if (findPreference("smart-history-sizing-category") != null) return;
 
@@ -121,17 +100,17 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         category.setTitle("History layout sizing");
         getPreferenceScreen().addPreference(category);
 
-        addSizeSlider(category, "smart-list-card-height-percent", "Smart card height",
-                "Resize the vertical Smart Card List cards", 70, 170, 100);
-        addSizeSlider(category, "smart-list-card-icon-percent", "Smart card icon/profile size",
+        addSizeSlider(category, "smart-list-card-height-percent", "Vertical card height",
+                "Resize the Vertical Cards view", 70, 170, 100);
+        addSizeSlider(category, "smart-list-card-icon-percent", "Vertical card icon/profile size",
                 "Resize the foreground app icon or available profile artwork", 60, 180, 100);
-        addSizeSlider(category, "smart-list-card-name-percent", "Smart card name size",
+        addSizeSlider(category, "smart-list-card-name-percent", "Vertical card name size",
                 "Resize the full auto-scrolling name underneath each card", 70, 170, 100);
-        addSizeSlider(category, "smart-list-card-radius-dp", "Smart card corner radius",
+        addSizeSlider(category, "smart-list-card-radius-dp", "Vertical card corner radius",
                 "Adjust rounded card geometry", 6, 40, 22);
-        addSizeSlider(category, "smart-list-card-elevation-dp", "Smart card depth",
+        addSizeSlider(category, "smart-list-card-elevation-dp", "Vertical card depth",
                 "Adjust 3D elevation/shadow depth", 0, 24, 9);
-        addSizeSlider(category, "smart-list-card-spacing-dp", "Smart card spacing",
+        addSizeSlider(category, "smart-list-card-spacing-dp", "Vertical card spacing",
                 "Adjust vertical space between cards", 4, 36, 12);
 
         addSizeSlider(category, "smart-u-tile-size-percent", "Square-U tile size",
