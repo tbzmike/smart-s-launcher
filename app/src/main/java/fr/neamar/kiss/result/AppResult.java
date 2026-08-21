@@ -274,6 +274,19 @@ public class AppResult extends ResultWithTags<AppPojo> {
         return icon;
     }
 
+    private void clearVisibleDisabledFilter(@Nullable View parentView) {
+        if (parentView == null) return;
+        View candidate = parentView.findViewById(R.id.item_app_icon);
+        if (candidate == null) candidate = parentView.findViewById(R.id.favorite);
+        if (candidate instanceof ImageView) {
+            ImageView imageView = (ImageView) candidate;
+            Drawable visibleDrawable = imageView.getDrawable();
+            DrawableUtils.setDisabled(visibleDrawable, false);
+            imageView.clearColorFilter();
+            imageView.invalidate();
+        }
+    }
+
     @Override
     public void doLaunch(Context context, View v) {
         launchSucceeded = false;
@@ -290,6 +303,8 @@ public class AppResult extends ResultWithTags<AppPojo> {
                 return;
             }
             pojo.setDisabled(false);
+            DrawableUtils.setDisabled(icon, false);
+            clearVisibleDisabledFilter(v);
             clearIcon();
         }
 
@@ -309,8 +324,10 @@ public class AppResult extends ResultWithTags<AppPojo> {
             launcher.startMainActivity(getClassName(), pojo.userHandle.getRealHandle(), sourceBounds, opts);
             launchSucceeded = true;
             pojo.setDisabled(false);
-            // Normal launches do not mutate the app catalog. Frozen apps already trigger the
-            // required reload in ensurePackageEnabled(), so avoid a costly full reload here.
+            if (wasFrozen) {
+                clearVisibleDisabledFilter(v);
+                clearIcon();
+            }
         } catch (ActivityNotFoundException | NullPointerException | SecurityException e) {
             Log.w(TAG, "Unable to launch activity", e);
             // Never hide/exclude an app merely because IceBox froze it between index and tap.
