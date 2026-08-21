@@ -5,8 +5,6 @@ import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
-import android.os.Handler;
-import android.os.Looper;
 import android.text.format.DateFormat;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -271,21 +269,17 @@ public final class LockedNotificationHistoryDialog {
             Button open = new Button(context);
             open.setText("Open notification");
             open.setOnClickListener(v -> {
-                // The locked-UI notification viewer is a modal window. Dismiss it first so the
-                // launcher Activity regains focus before Android dispatches the notification's
-                // PendingIntent. This avoids apparently successful sends that never surface the
-                // destination Activity on newer Android versions.
-                open.setEnabled(false);
-                SmartAnimationEngine.dismissDialog(dialog);
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    boolean opened = NotificationListener.openNotification(
-                            context, record.notificationId);
-                    if (!opened) opened = AppLaunchUtils.launchPackage(context, packageName);
-                    if (!opened) {
-                        Toast.makeText(context, "Unable to open this notification",
-                                Toast.LENGTH_SHORT).show();
-                    }
-                }, 90L);
+                // Keep this visible launcher window alive while sending the notification. Android
+                // 14+ requires the sender to be in an eligible visible state for user-driven BAL.
+                boolean opened = NotificationListener.openNotification(
+                        context, record.notificationId);
+                if (!opened) opened = AppLaunchUtils.launchPackage(context, packageName);
+                if (opened) {
+                    SmartAnimationEngine.dismissDialog(dialog);
+                } else {
+                    Toast.makeText(context, "Unable to open this notification",
+                            Toast.LENGTH_SHORT).show();
+                }
             });
             buttons.addView(open);
             actionArea.addView(buttons);
@@ -297,8 +291,6 @@ public final class LockedNotificationHistoryDialog {
             Button open = new Button(context);
             open.setText("Open app");
             open.setOnClickListener(v -> {
-                // Use the same launch path as normal history rows so IceBox/frozen apps are
-                // enabled before launch and their enabled-state/icon cache is refreshed.
                 if (!AppLaunchUtils.launchPackage(context, packageName)) {
                     Toast.makeText(context, "App cannot be opened",
                             Toast.LENGTH_SHORT).show();
