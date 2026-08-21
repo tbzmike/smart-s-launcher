@@ -24,6 +24,7 @@ public class ForwarderManager extends Forwarder {
     private final TagsMenu tagsMenu;
     private final Notification notificationForwarder;
     private final HistoryDisplayForwarder historyDisplayForwarder;
+    private final SmartCardListForwarder smartCardListForwarder;
     private final SquareUInteractionController squareUInteractionController;
     private final HistoryVisualEnhancer historyVisualEnhancer;
 
@@ -39,6 +40,7 @@ public class ForwarderManager extends Forwarder {
         this.notificationForwarder = new Notification(mainActivity);
         this.tagsMenu = new TagsMenu(mainActivity);
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
+        this.smartCardListForwarder = new SmartCardListForwarder(mainActivity);
         this.squareUInteractionController = new SquareUInteractionController(
                 mainActivity, historyDisplayForwarder);
         this.historyVisualEnhancer = new HistoryVisualEnhancer(
@@ -54,6 +56,7 @@ public class ForwarderManager extends Forwarder {
         shortcutsForwarder.onCreate();
         tagsMenu.onCreate();
         historyDisplayForwarder.onCreate();
+        smartCardListForwarder.onCreate();
         squareUInteractionController.onCreate();
         historyVisualEnhancer.onCreate();
     }
@@ -69,6 +72,7 @@ public class ForwarderManager extends Forwarder {
         notificationForwarder.onResume();
         tagsMenu.onResume();
         historyDisplayForwarder.onResume();
+        smartCardListForwarder.onResume();
         squareUInteractionController.onResume();
         historyVisualEnhancer.onResume();
     }
@@ -119,6 +123,7 @@ public class ForwarderManager extends Forwarder {
     public void onDataSetChanged() {
         widgetsForwarder.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
+        smartCardListForwarder.onDataSetChanged();
         squareUInteractionController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
     }
