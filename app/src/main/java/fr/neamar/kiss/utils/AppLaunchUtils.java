@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Process;
 import android.os.SystemClock;
 
@@ -13,10 +15,12 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 import fr.neamar.kiss.KissApplication;
+import fr.neamar.kiss.MainActivity;
 
 public final class AppLaunchUtils {
     private static final int ANDROID_UID_USER_RANGE = 100000;
     private static final long ENABLED_STATE_CACHE_MS = 15000L;
+    private static final long PACKAGE_STATE_RECHECK_DELAY_MS = 450L;
     private static final ConcurrentHashMap<String, EnabledState> ENABLED_STATE_CACHE =
             new ConcurrentHashMap<>();
 
@@ -59,6 +63,32 @@ public final class AppLaunchUtils {
         }
     }
 
+    /**
+     * Refresh app/provider state and visible launcher results after a frozen app has been
+     * successfully enabled. The first refresh uses the known successful enable result so the
+     * currently visible icon immediately loses its disabled/grayscale state. A short delayed
+     * recheck then synchronizes with PackageManager after its state has had time to settle.
+     */
+    public static void refreshLauncherAfterEnable(Context context, String packageName) {
+        if (context == null || packageName == null || packageName.isEmpty()) return;
+        Context appContext = context.getApplicationContext();
+        markPackageEnabled(packageName);
+        notifyLauncherStateChanged(appContext);
+
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            invalidatePackageState(packageName);
+            boolean enabled = queryPackageEnabled(appContext, packageName);
+            ENABLED_STATE_CACHE.put(packageName,
+                    new EnabledState(enabled, SystemClock.elapsedRealtime()));
+            notifyLauncherStateChanged(appContext);
+        }, PACKAGE_STATE_RECHECK_DELAY_MS);
+    }
+
+    private static void notifyLauncherStateChanged(Context context) {
+        KissApplication.getApplication(context).getDataHandler().reloadApps();
+        context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+    }
+
     /** Enable a frozen current-user package without launching it. */
     public static boolean ensurePackageEnabled(Context context, String packageName) {
         if (isPackageEnabled(context, packageName)) return true;
@@ -75,10 +105,9 @@ public final class AppLaunchUtils {
         }
 
         // Root/package-manager state can take a short moment to become visible through
-        // ApplicationInfo. Record the successful unfreeze immediately so the next UI bind does
-        // not re-mark the app as frozen and grayscale its icon while Android catches up.
-        markPackageEnabled(packageName);
-        KissApplication.getApplication(context).getDataHandler().reloadApps();
+        // ApplicationInfo. Record the successful unfreeze immediately and refresh the launcher
+        // so visible history/U/list/favorite rows stop showing the disabled icon state.
+        refreshLauncherAfterEnable(context, packageName);
         return true;
     }
 
