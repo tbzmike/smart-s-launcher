@@ -30,8 +30,8 @@ import fr.neamar.kiss.ui.SmartAnimationEngine;
 
 /**
  * Vertical Smart Card renderer. The visible card has its own deliberate layout, while the real
- * adapter notification row and any remaining result controls are re-parented so their existing
- * listeners and behaviour remain intact.
+ * adapter notification controls are re-parented so their existing listeners and behaviour remain
+ * intact.
  */
 final class SmartCardListForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -132,11 +132,21 @@ final class SmartCardListForwarder extends Forwarder {
             View source = mainActivity.adapter.getView(position, null, column);
             View item = createCardItem(source, result, position);
             column.addView(item);
-            if (position >= Math.max(0, count - 16)) {
-                animateIn(item);
-            }
         }
-        scroller.post(() -> scroller.fullScroll(View.FOCUS_DOWN));
+
+        // Animate only after the hierarchy has been measured and the history has been scrolled to
+        // the newest items. Starting animations before layout made them finish before the user ever
+        // saw the cards on some devices.
+        scroller.post(() -> {
+            scroller.fullScroll(View.FOCUS_DOWN);
+            int childCount = column.getChildCount();
+            int first = Math.max(0, childCount - 16);
+            int visualIndex = 0;
+            for (int i = first; i < childCount; i++) {
+                View child = column.getChildAt(i);
+                animateIn(child, visualIndex++);
+            }
+        });
     }
 
     private View createCardItem(View source, Result<?> result, int adapterPosition) {
@@ -223,8 +233,6 @@ final class SmartCardListForwarder extends Forwarder {
         mainRow.addView(center, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        // Always show the actual full result name inside the tile. AutoMarqueeTextView scrolls
-        // only when it needs more horizontal space and stops when the launcher loses focus.
         AutoMarqueeTextView cardTitle = new AutoMarqueeTextView(mainActivity);
         cardTitle.setText(label);
         cardTitle.setTextColor(Color.WHITE);
@@ -247,12 +255,33 @@ final class SmartCardListForwarder extends Forwarder {
 
         TextView messageView = null;
         if (hasActiveNotification) {
-            detachFromParent(notificationRow);
-            messageView = normalizeNotificationRow(notificationRow, latestMessage);
-            LinearLayout.LayoutParams notificationLp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            notificationLp.topMargin = dp(3);
-            center.addView(notificationRow, notificationLp);
+            // Do not insert the legacy horizontal notification row into a narrow card. Its text and
+            // Mark Read button fight for the same width and caused the severe message cramping seen
+            // with System UI and other apps. Re-parent the real controls separately so their existing
+            // listeners remain intact while the message gets the full card width.
+            TextView activeText = notificationRow.findViewById(R.id.item_notification_text);
+            View read = notificationRow.findViewById(R.id.item_notification_read);
+            if (activeText != null) {
+                detachFromParent(activeText);
+                if (!TextUtils.isEmpty(latestMessage)) activeText.setText(latestMessage);
+                configureCollapsedMessage(activeText);
+                center.addView(activeText, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                messageView = activeText;
+            }
+            if (read != null) {
+                detachFromParent(read);
+                LinearLayout actions = new LinearLayout(mainActivity);
+                actions.setOrientation(LinearLayout.HORIZONTAL);
+                actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+                LinearLayout.LayoutParams actionRowLp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                actionRowLp.topMargin = dp(4);
+                center.addView(actions, actionRowLp);
+                actions.addView(read, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            notificationRow.setVisibility(View.GONE);
         } else if (hasMessage) {
             AutoMarqueeTextView lastMessage = new AutoMarqueeTextView(mainActivity);
             lastMessage.setText(latestMessage);
@@ -370,34 +399,18 @@ final class SmartCardListForwarder extends Forwarder {
         return text == null ? "" : text.toString().trim();
     }
 
-    private TextView normalizeNotificationRow(View row, String message) {
-        row.setVisibility(View.VISIBLE);
-        row.setAlpha(1f);
-        row.setScaleX(1f);
-        row.setScaleY(1f);
-        row.setPadding(0, dp(2), 0, dp(2));
-        TextView text = row.findViewById(R.id.item_notification_text);
-        if (text != null) {
-            if (!TextUtils.isEmpty(message)) text.setText(message);
-            configureCollapsedMessage(text);
-        }
-        View read = row.findViewById(R.id.item_notification_read);
-        if (read != null) {
-            ViewGroup.LayoutParams raw = read.getLayoutParams();
-            if (raw != null) raw.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-        }
-        return text;
-    }
-
     private void configureCollapsedMessage(TextView text) {
-        text.setSingleLine(true);
-        text.setMaxLines(1);
-        text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        text.setMarqueeRepeatLimit(-1);
-        text.setHorizontallyScrolling(true);
-        text.setSelected(true);
+        // Prefer readable use of the card's width. Two lines are allowed before expansion instead of
+        // forcing every active notification into one narrow marquee row beside an action button.
+        text.setSingleLine(false);
+        text.setMaxLines(2);
+        text.setEllipsize(TextUtils.TruncateAt.END);
+        text.setHorizontallyScrolling(false);
+        text.setSelected(false);
         text.setTextColor(Color.WHITE);
         text.setTextSize(13f);
+        text.setGravity(Gravity.START);
+        text.setPadding(0, dp(2), 0, dp(2));
     }
 
     private boolean messageNeedsExpansion(TextView text) {
@@ -405,7 +418,9 @@ final class SmartCardListForwarder extends Forwarder {
         if (TextUtils.isEmpty(value)) return false;
         int available = text.getWidth() - text.getPaddingLeft() - text.getPaddingRight();
         if (available <= 0) return true;
-        return text.getPaint().measureText(value.toString()) > available;
+        float measured = text.getPaint().measureText(value.toString());
+        int lines = Math.max(1, text.getMaxLines());
+        return measured > available * lines;
     }
 
     private void expandMessage(TextView text) {
@@ -433,7 +448,7 @@ final class SmartCardListForwarder extends Forwarder {
         hide(source, R.id.item_shortcut_icon);
         hide(source, R.id.item_shortcut_tag);
         View notification = source.findViewById(R.id.item_notification_row);
-        if (notification != null && notification.getParent() == source) notification.setVisibility(View.GONE);
+        if (notification != null) notification.setVisibility(View.GONE);
     }
 
     private void hide(View source, int id) {
@@ -471,6 +486,7 @@ final class SmartCardListForwarder extends Forwarder {
             control.setText("⌃");
             if (SmartAnimationEngine.isEnabled(mainActivity)) {
                 detailsPanel.animate().alpha(1f)
+                        .translationY(0f)
                         .setDuration(Math.max(90L, SmartAnimationEngine.duration(mainActivity) / 2))
                         .start();
             } else {
@@ -480,10 +496,12 @@ final class SmartCardListForwarder extends Forwarder {
             control.setText("⌄");
             if (SmartAnimationEngine.isEnabled(mainActivity)) {
                 detailsPanel.animate().alpha(0f)
+                        .translationY(dp(6))
                         .setDuration(Math.max(80L, SmartAnimationEngine.duration(mainActivity) / 2))
                         .withEndAction(() -> {
                             detailsPanel.setVisibility(View.GONE);
                             detailsPanel.setAlpha(1f);
+                            detailsPanel.setTranslationY(0f);
                         }).start();
             } else {
                 detailsPanel.setVisibility(View.GONE);
@@ -507,8 +525,6 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private CharSequence extractLabel(View source) {
-        // Settings/features use separate prefix and name views. Read the actual name first so a
-        // generic "Feature:" prefix can never become the card title.
         TextView settingName = source.findViewById(R.id.item_setting_name);
         if (useful(settingName)) {
             TextView prefix = source.findViewById(R.id.item_setting_prefix);
@@ -601,7 +617,7 @@ final class SmartCardListForwarder extends Forwarder {
     private void pressAnimation(View card) {
         if (!SmartAnimationEngine.isEnabled(mainActivity)) return;
         card.animate().cancel();
-        card.animate().scaleX(0.975f).scaleY(0.975f)
+        card.animate().scaleX(0.965f).scaleY(0.965f)
                 .setDuration(Math.max(65L, SmartAnimationEngine.duration(mainActivity) / 3))
                 .withEndAction(() -> card.animate().scaleX(1f).scaleY(1f)
                         .setDuration(Math.max(70L, SmartAnimationEngine.duration(mainActivity) / 3))
@@ -630,10 +646,8 @@ final class SmartCardListForwarder extends Forwarder {
         card.setClipToOutline(true);
     }
 
-    private void animateIn(View view) {
-        // Use the launcher's shared list animation engine so the master animation toggle and speed
-        // setting apply to Vertical Cards exactly as they do to other Smart S list movements.
-        SmartAnimationEngine.animateListMove(view, dp(12), true);
+    private void animateIn(View view, int index) {
+        SmartAnimationEngine.animateTileListItem(view, index);
     }
 
     private int accentFor(Result<?> result, Drawable drawable) {
