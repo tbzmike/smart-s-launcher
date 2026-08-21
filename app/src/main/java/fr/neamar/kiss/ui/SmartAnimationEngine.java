@@ -342,6 +342,86 @@ public final class SmartAnimationEngine {
         }
     }
 
+    /**
+     * Entrance animation for the vertical tile/card list. It intentionally uses the user's
+     * Smart Scroll Animation preference (Classic/Focus/Depth/Wave/Slide/Stack/Zoom/Tilt/Cascade)
+     * because these cards are list content, not a window switch. The stagger makes the effect
+     * visible after the card hierarchy has actually been laid out.
+     */
+    public static void animateTileListItem(View child, int index) {
+        if (child == null) return;
+        child.animate().cancel();
+        reset(child);
+        Context context = child.getContext();
+        if (!isEnabled(context)) return;
+
+        String style = getStyle(context, "smart-animation-scroll", "classic");
+        if ("none".equals(style)) return;
+
+        child.setAlpha(0f);
+        switch (style) {
+            case "focus":
+                child.setScaleX(0.86f);
+                child.setScaleY(0.86f);
+                break;
+            case "depth":
+                child.setScaleX(0.90f);
+                child.setScaleY(0.82f);
+                child.setTranslationY(dp(child, 42));
+                child.setRotationX(7f);
+                break;
+            case "wave":
+                child.setTranslationX(dp(child, (index & 1) == 0 ? 58 : -58));
+                child.setRotation((index & 1) == 0 ? 2.5f : -2.5f);
+                break;
+            case "slide":
+                child.setTranslationX(dp(child, 76));
+                break;
+            case "stack":
+                child.setScaleX(0.92f);
+                child.setScaleY(0.88f);
+                child.setTranslationY(dp(child, 58));
+                break;
+            case "zoom":
+                child.setScaleX(0.66f);
+                child.setScaleY(0.66f);
+                break;
+            case "tilt":
+                child.setTranslationX(dp(child, (index & 1) == 0 ? 42 : -42));
+                child.setRotationY((index & 1) == 0 ? 12f : -12f);
+                break;
+            case "cascade":
+                child.setTranslationY(dp(child, 52));
+                child.setScaleX(0.94f);
+                child.setScaleY(0.94f);
+                break;
+            case "classic":
+            default:
+                child.setTranslationY(dp(child, 34));
+                child.setScaleX(0.96f);
+                child.setScaleY(0.96f);
+                break;
+        }
+
+        long duration = Math.max(120L, duration(context));
+        long delay = Math.min(220L, Math.max(0, index) * ("cascade".equals(style) ? 38L : 24L));
+        child.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .translationX(0f)
+                .translationY(0f)
+                .rotation(0f)
+                .rotationX(0f)
+                .rotationY(0f)
+                .setStartDelay(delay)
+                .setDuration(duration)
+                .setInterpolator(("depth".equals(style) || "stack".equals(style))
+                        ? new OvershootInterpolator(0.7f)
+                        : new DecelerateInterpolator())
+                .start();
+    }
+
     public static void reset(View view) {
         view.setAlpha(1f);
         view.setScaleX(1f);
