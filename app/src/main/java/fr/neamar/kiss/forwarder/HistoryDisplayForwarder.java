@@ -31,6 +31,7 @@ import fr.neamar.kiss.ui.SmartAnimationEngine;
 final class HistoryDisplayForwarder extends Forwarder {
     static final String PREF_LAYOUT = "smart-history-layout";
     static final String VERTICAL = "vertical";
+    static final String VERTICAL_CARDS = "vertical_cards";
     static final String ICONS = "horizontal_icons";
     static final String CARDS = "horizontal_cards";
     static final String NAMES = "horizontal_names";
@@ -77,13 +78,13 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (SQUARE_U.equals(activeMode)) {
             applyNotificationPanelSizing();
             rebuildSquare();
-        } else if (!VERTICAL.equals(activeMode)) {
+        } else if (!VERTICAL.equals(activeMode) && !VERTICAL_CARDS.equals(activeMode)) {
             rebuildHorizontal();
         }
     }
 
     void onDataSetChanged() {
-        if (!VERTICAL.equals(activeMode)) rebuild();
+        if (!VERTICAL.equals(activeMode) && !VERTICAL_CARDS.equals(activeMode)) rebuild();
     }
 
     private void createHorizontalRenderer() {
@@ -174,17 +175,18 @@ final class HistoryDisplayForwarder extends Forwarder {
 
         activeMode = requested;
         boolean vertical = VERTICAL.equals(activeMode);
+        boolean verticalCards = VERTICAL_CARDS.equals(activeMode);
         boolean square = SQUARE_U.equals(activeMode);
-        boolean horizontal = !vertical && !square;
+        boolean horizontal = !vertical && !verticalCards && !square;
 
         mainActivity.list.setVisibility(vertical ? View.VISIBLE : View.GONE);
         if (edgeEffect != null) edgeEffect.setVisibility(vertical ? View.VISIBLE : View.GONE);
         scroller.setVisibility(horizontal ? View.VISIBLE : View.GONE);
         squareRoot.setVisibility(square ? View.VISIBLE : View.GONE);
 
-        if (!vertical) rebuild();
+        if (!vertical && !verticalCards) rebuild();
 
-        View incoming = vertical ? mainActivity.list : (square ? squareRoot : scroller);
+        View incoming = vertical ? mainActivity.list : (square ? squareRoot : (horizontal ? scroller : null));
         if (incoming != null && incoming.getVisibility() == View.VISIBLE) {
             SmartAnimationEngine.animateWindowSwitch(null, incoming);
         }
@@ -196,7 +198,7 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private void rebuild() {
-        if (mainActivity.adapter == null) return;
+        if (mainActivity.adapter == null || VERTICAL_CARDS.equals(activeMode)) return;
         if (SQUARE_U.equals(activeMode)) rebuildSquare();
         else rebuildHorizontal();
     }
