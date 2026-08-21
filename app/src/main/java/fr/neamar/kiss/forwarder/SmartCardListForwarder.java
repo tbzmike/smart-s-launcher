@@ -9,7 +9,6 @@ import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -134,7 +133,7 @@ final class SmartCardListForwarder extends Forwarder {
             View item = createCardItem(source, result, position);
             column.addView(item);
             if (position >= Math.max(0, count - 16)) {
-                animateIn(item, position - Math.max(0, count - 16));
+                animateIn(item);
             }
         }
         scroller.post(() -> scroller.fullScroll(View.FOCUS_DOWN));
@@ -172,8 +171,7 @@ final class SmartCardListForwarder extends Forwarder {
         cardLp.setMargins(dp(4), 0, dp(4), 0);
         wrapper.addView(card, cardLp);
 
-        CharSequence rawLabel = extractLabel(source);
-        CharSequence label = cleanDisplayLabel(rawLabel);
+        CharSequence label = cleanDisplayLabel(extractLabel(source));
         CharSequence subtitle = extractSubtitle(source);
 
         ImageView liveIcon = findIconView(source);
@@ -225,15 +223,26 @@ final class SmartCardListForwarder extends Forwarder {
         mainRow.addView(center, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
+        // Always show the actual full result name inside the tile. AutoMarqueeTextView scrolls
+        // only when it needs more horizontal space and stops when the launcher loses focus.
+        AutoMarqueeTextView cardTitle = new AutoMarqueeTextView(mainActivity);
+        cardTitle.setText(label);
+        cardTitle.setTextColor(Color.WHITE);
+        cardTitle.setTextSize(16f * namePercent / 100f);
+        cardTitle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        cardTitle.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
+        center.addView(cardTitle, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
+
         if (!TextUtils.isEmpty(subtitle)) {
             AutoMarqueeTextView meta = new AutoMarqueeTextView(mainActivity);
             meta.setText(subtitle);
-            meta.setTextColor(Color.argb(230, 250, 250, 250));
-            meta.setTextSize(13.5f);
+            meta.setTextColor(Color.argb(220, 250, 250, 250));
+            meta.setTextSize(13f);
             meta.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            meta.setShadowLayer(dp(1), 0f, dp(1), Color.argb(170, 0, 0, 0));
+            meta.setShadowLayer(dp(1), 0f, dp(1), Color.argb(160, 0, 0, 0));
             center.addView(meta, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(29)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(27)));
         }
 
         TextView messageView = null;
@@ -242,7 +251,7 @@ final class SmartCardListForwarder extends Forwarder {
             messageView = normalizeNotificationRow(notificationRow, latestMessage);
             LinearLayout.LayoutParams notificationLp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            notificationLp.topMargin = TextUtils.isEmpty(subtitle) ? 0 : dp(4);
+            notificationLp.topMargin = dp(3);
             center.addView(notificationRow, notificationLp);
         } else if (hasMessage) {
             AutoMarqueeTextView lastMessage = new AutoMarqueeTextView(mainActivity);
@@ -255,16 +264,14 @@ final class SmartCardListForwarder extends Forwarder {
             center.addView(lastMessage, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(31)));
             messageView = lastMessage;
-        }
-
-        if (TextUtils.isEmpty(subtitle) && !hasMessage) {
-            TextView hint = new TextView(mainActivity);
-            hint.setText("Tap to open");
-            hint.setTextColor(Color.argb(150, 255, 255, 255));
-            hint.setTextSize(12f);
-            hint.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            center.addView(hint, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(26)));
+        } else if (TextUtils.isEmpty(subtitle)) {
+            AutoMarqueeTextView context = new AutoMarqueeTextView(mainActivity);
+            context.setText(describeResult(source));
+            context.setTextColor(Color.argb(175, 255, 255, 255));
+            context.setTextSize(12f);
+            context.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            center.addView(context, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(25)));
         }
 
         prepareSourceForDetails(source);
@@ -322,10 +329,13 @@ final class SmartCardListForwarder extends Forwarder {
             return true;
         };
         card.setOnClickListener(launchOrExpand);
+        cardTitle.setOnClickListener(launchOrExpand);
         name.setOnClickListener(launchOrExpand);
         card.setOnLongClickListener(longPress);
+        cardTitle.setOnLongClickListener(longPress);
         name.setOnLongClickListener(longPress);
         card.setClickable(true);
+        cardTitle.setClickable(true);
         name.setClickable(true);
         return wrapper;
     }
@@ -413,16 +423,22 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void prepareSourceForDetails(View source) {
-        View appIcon = source.findViewById(R.id.item_app_icon);
-        View notificationDot = source.findViewById(R.id.item_notification_dot);
-        View appName = source.findViewById(R.id.item_app_name);
-        View appTag = source.findViewById(R.id.item_app_tag);
+        hide(source, R.id.item_app_icon);
+        hide(source, R.id.item_notification_dot);
+        hide(source, R.id.item_app_name);
+        hide(source, R.id.item_app_tag);
+        hide(source, R.id.item_setting_icon);
+        hide(source, R.id.item_setting_prefix);
+        hide(source, R.id.item_setting_name);
+        hide(source, R.id.item_shortcut_icon);
+        hide(source, R.id.item_shortcut_tag);
         View notification = source.findViewById(R.id.item_notification_row);
-        if (appIcon != null) appIcon.setVisibility(View.GONE);
-        if (notificationDot != null) notificationDot.setVisibility(View.GONE);
-        if (appName != null) appName.setVisibility(View.GONE);
-        if (appTag != null) appTag.setVisibility(View.GONE);
         if (notification != null && notification.getParent() == source) notification.setVisibility(View.GONE);
+    }
+
+    private void hide(View source, int id) {
+        View view = source.findViewById(id);
+        if (view != null) view.setVisibility(View.GONE);
     }
 
     private boolean hasMeaningfulVisibleContent(View view) {
@@ -484,10 +500,30 @@ final class SmartCardListForwarder extends Forwarder {
 
     private CharSequence extractSubtitle(View source) {
         TextView tag = source.findViewById(R.id.item_app_tag);
-        if (tag != null && tag.getVisibility() == View.VISIBLE && !TextUtils.isEmpty(tag.getText())) {
-            return tag.getText();
-        }
+        if (useful(tag)) return tag.getText();
+        TextView shortcutTag = source.findViewById(R.id.item_shortcut_tag);
+        if (useful(shortcutTag)) return shortcutTag.getText();
         return null;
+    }
+
+    private CharSequence extractLabel(View source) {
+        // Settings/features use separate prefix and name views. Read the actual name first so a
+        // generic "Feature:" prefix can never become the card title.
+        TextView settingName = source.findViewById(R.id.item_setting_name);
+        if (useful(settingName)) {
+            TextView prefix = source.findViewById(R.id.item_setting_prefix);
+            String prefixText = useful(prefix) ? prefix.getText().toString().trim() : "";
+            String nameText = settingName.getText().toString().trim();
+            if (!prefixText.isEmpty()) return prefixText + " " + nameText;
+            return nameText;
+        }
+
+        TextView appName = source.findViewById(R.id.item_app_name);
+        if (useful(appName)) return appName.getText();
+        TextView primary = findPrimaryText(source);
+        if (primary != null) return primary.getText();
+        CharSequence description = source.getContentDescription();
+        return TextUtils.isEmpty(description) ? "Item" : description;
     }
 
     private CharSequence cleanDisplayLabel(CharSequence raw) {
@@ -500,6 +536,66 @@ final class SmartCardListForwarder extends Forwarder {
             }
         }
         return value.isEmpty() ? raw : value;
+    }
+
+    private String describeResult(View source) {
+        TextView prefix = source.findViewById(R.id.item_setting_prefix);
+        if (useful(prefix)) {
+            String text = prefix.getText().toString().trim();
+            if (text.endsWith(":")) text = text.substring(0, text.length() - 1).trim();
+            if (!text.isEmpty()) return text + " shortcut";
+        }
+        if (source.findViewById(R.id.item_shortcut_icon) != null) return "App shortcut";
+        if (source.findViewById(R.id.item_setting_icon) != null) return "System shortcut";
+        return "Tap to open";
+    }
+
+    private TextView findPrimaryText(View view) {
+        if (view instanceof TextView && !(view instanceof android.widget.Button)) {
+            TextView text = (TextView) view;
+            if (useful(text) && text.getId() != R.id.item_setting_prefix) return text;
+        }
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            TextView found = findPrimaryText(group.getChildAt(i));
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private boolean useful(TextView text) {
+        if (text == null || text.getVisibility() != View.VISIBLE || TextUtils.isEmpty(text.getText())) return false;
+        int id = text.getId();
+        if (id == R.id.item_notification_text || id == R.id.item_notification_read) return false;
+        String value = text.getText().toString().trim();
+        return !value.isEmpty()
+                && !"Mark read".equalsIgnoreCase(value)
+                && !"Open notification".equalsIgnoreCase(value)
+                && !"Reply".equalsIgnoreCase(value);
+    }
+
+    private ImageView findIconView(View source) {
+        ImageView setting = source.findViewById(R.id.item_setting_icon);
+        if (setting != null) return setting;
+        ImageView shortcut = source.findViewById(R.id.item_shortcut_icon);
+        if (shortcut != null) return shortcut;
+        ImageView app = source.findViewById(R.id.item_app_icon);
+        if (app != null) return app;
+        return findFirstVisibleImage(source);
+    }
+
+    private ImageView findFirstVisibleImage(View view) {
+        if (view instanceof ImageView && view.getVisibility() == View.VISIBLE) {
+            return (ImageView) view;
+        }
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            ImageView found = findFirstVisibleImage(group.getChildAt(i));
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private void pressAnimation(View card) {
@@ -534,71 +630,10 @@ final class SmartCardListForwarder extends Forwarder {
         card.setClipToOutline(true);
     }
 
-    private void animateIn(View view, int index) {
-        if (!SmartAnimationEngine.isEnabled(mainActivity)) return;
-        view.animate().cancel();
-        view.setAlpha(0f);
-        view.setTranslationY(dp(12));
-        view.setScaleX(0.98f);
-        view.setScaleY(0.98f);
-        view.animate().alpha(1f).translationY(0f).scaleX(1f).scaleY(1f)
-                .setStartDelay(Math.min(120L, index * 14L))
-                .setDuration(SmartAnimationEngine.duration(mainActivity))
-                .setInterpolator(new DecelerateInterpolator()).start();
-    }
-
-    private CharSequence extractLabel(View source) {
-        TextView appName = source.findViewById(R.id.item_app_name);
-        if (useful(appName)) return appName.getText();
-        TextView primary = findPrimaryText(source);
-        if (primary != null) return primary.getText();
-        CharSequence description = source.getContentDescription();
-        return TextUtils.isEmpty(description) ? "Item" : description;
-    }
-
-    private TextView findPrimaryText(View view) {
-        if (view instanceof TextView && !(view instanceof android.widget.Button)) {
-            TextView text = (TextView) view;
-            if (useful(text)) return text;
-        }
-        if (!(view instanceof ViewGroup)) return null;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            TextView found = findPrimaryText(group.getChildAt(i));
-            if (found != null) return found;
-        }
-        return null;
-    }
-
-    private boolean useful(TextView text) {
-        if (text == null || text.getVisibility() != View.VISIBLE || TextUtils.isEmpty(text.getText())) return false;
-        int id = text.getId();
-        if (id == R.id.item_notification_text || id == R.id.item_notification_read) return false;
-        String value = text.getText().toString().trim();
-        return !value.isEmpty()
-                && !"Mark read".equalsIgnoreCase(value)
-                && !"Open notification".equalsIgnoreCase(value)
-                && !"Reply".equalsIgnoreCase(value);
-    }
-
-    private ImageView findIconView(View source) {
-        ImageView app = source.findViewById(R.id.item_app_icon);
-        if (app != null) return app;
-        return findFirstVisibleImage(source);
-    }
-
-    private ImageView findFirstVisibleImage(View view) {
-        if (view instanceof ImageView
-                && view.getVisibility() == View.VISIBLE) {
-            return (ImageView) view;
-        }
-        if (!(view instanceof ViewGroup)) return null;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            ImageView found = findFirstVisibleImage(group.getChildAt(i));
-            if (found != null) return found;
-        }
-        return null;
+    private void animateIn(View view) {
+        // Use the launcher's shared list animation engine so the master animation toggle and speed
+        // setting apply to Vertical Cards exactly as they do to other Smart S list movements.
+        SmartAnimationEngine.animateListMove(view, dp(12), true);
     }
 
     private int accentFor(Result<?> result, Drawable drawable) {
