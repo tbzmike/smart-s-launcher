@@ -17,10 +17,14 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.db.NotificationHistoryRecord;
+import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.result.AppResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
@@ -179,8 +183,10 @@ final class SmartCardListForwarder extends Forwarder {
         styleCard(card, radiusDp, accent);
 
         View notificationRow = source.findViewById(R.id.item_notification_row);
-        boolean hasNotification = notificationRow != null
+        boolean hasActiveNotification = notificationRow != null
                 && notificationRow.getVisibility() == View.VISIBLE;
+        String latestMessage = latestKnownNotificationMessage(result, source);
+        boolean hasMessage = !TextUtils.isEmpty(latestMessage);
 
         LinearLayout mainRow = new LinearLayout(mainActivity);
         mainRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -230,16 +236,28 @@ final class SmartCardListForwarder extends Forwarder {
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(29)));
         }
 
-        if (hasNotification) {
+        TextView messageView = null;
+        if (hasActiveNotification) {
             detachFromParent(notificationRow);
-            normalizeNotificationRow(notificationRow);
+            messageView = normalizeNotificationRow(notificationRow, latestMessage);
             LinearLayout.LayoutParams notificationLp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             notificationLp.topMargin = TextUtils.isEmpty(subtitle) ? 0 : dp(4);
             center.addView(notificationRow, notificationLp);
+        } else if (hasMessage) {
+            AutoMarqueeTextView lastMessage = new AutoMarqueeTextView(mainActivity);
+            lastMessage.setText(latestMessage);
+            lastMessage.setTextColor(Color.WHITE);
+            lastMessage.setTextSize(13f);
+            lastMessage.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            lastMessage.setPadding(0, dp(2), 0, dp(2));
+            lastMessage.setShadowLayer(dp(1), 0f, dp(1), Color.argb(150, 0, 0, 0));
+            center.addView(lastMessage, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31)));
+            messageView = lastMessage;
         }
 
-        if (TextUtils.isEmpty(subtitle) && !hasNotification) {
+        if (TextUtils.isEmpty(subtitle) && !hasMessage) {
             TextView hint = new TextView(mainActivity);
             hint.setText("Tap to open");
             hint.setTextColor(Color.argb(150, 255, 255, 255));
@@ -287,7 +305,15 @@ final class SmartCardListForwarder extends Forwarder {
         nameLp.setMargins(dp(10), dp(3), dp(10), 0);
         wrapper.addView(name, nameLp);
 
-        View.OnClickListener launch = v -> {
+        final TextView expandableMessage = messageView;
+        final boolean[] messageExpanded = {false};
+        View.OnClickListener launchOrExpand = v -> {
+            if (expandableMessage != null && !messageExpanded[0] && messageNeedsExpansion(expandableMessage)) {
+                pressAnimation(card);
+                expandMessage(expandableMessage);
+                messageExpanded[0] = true;
+                return;
+            }
             pressAnimation(card);
             mainActivity.adapter.onClick(adapterPosition, card);
         };
@@ -295,8 +321,8 @@ final class SmartCardListForwarder extends Forwarder {
             mainActivity.adapter.onLongClick(adapterPosition, card);
             return true;
         };
-        card.setOnClickListener(launch);
-        name.setOnClickListener(launch);
+        card.setOnClickListener(launchOrExpand);
+        name.setOnClickListener(launchOrExpand);
         card.setOnLongClickListener(longPress);
         name.setOnLongClickListener(longPress);
         card.setClickable(true);
@@ -304,7 +330,37 @@ final class SmartCardListForwarder extends Forwarder {
         return wrapper;
     }
 
-    private void normalizeNotificationRow(View row) {
+    private String latestKnownNotificationMessage(Result<?> result, View source) {
+        TextView active = source.findViewById(R.id.item_notification_text);
+        String activeMessage = active == null || active.getVisibility() != View.VISIBLE
+                ? "" : cleanText(active.getText());
+
+        if (result instanceof AppResult) {
+            String packageName = ((AppResult) result).getClassName().getPackageName();
+            List<NotificationHistoryRecord> history = SmartStateStore.queryNotifications(
+                    mainActivity, packageName, null, 1);
+            if (!history.isEmpty()) {
+                NotificationHistoryRecord latest = history.get(0);
+                String historical = combineNotification(latest.title, latest.text);
+                if (!historical.isEmpty()) return historical;
+            }
+        }
+        return activeMessage;
+    }
+
+    private String combineNotification(String title, String body) {
+        String cleanTitle = title == null ? "" : title.trim();
+        String cleanBody = body == null ? "" : body.trim();
+        if (cleanTitle.isEmpty()) return cleanBody;
+        if (cleanBody.isEmpty() || cleanTitle.equals(cleanBody)) return cleanTitle;
+        return cleanTitle + ": " + cleanBody;
+    }
+
+    private String cleanText(CharSequence text) {
+        return text == null ? "" : text.toString().trim();
+    }
+
+    private TextView normalizeNotificationRow(View row, String message) {
         row.setVisibility(View.VISIBLE);
         row.setAlpha(1f);
         row.setScaleX(1f);
@@ -312,16 +368,48 @@ final class SmartCardListForwarder extends Forwarder {
         row.setPadding(0, dp(2), 0, dp(2));
         TextView text = row.findViewById(R.id.item_notification_text);
         if (text != null) {
-            text.setMaxLines(4);
-            text.setEllipsize(TextUtils.TruncateAt.END);
-            text.setTextColor(Color.WHITE);
-            text.setTextSize(13f);
+            if (!TextUtils.isEmpty(message)) text.setText(message);
+            configureCollapsedMessage(text);
         }
         View read = row.findViewById(R.id.item_notification_read);
         if (read != null) {
             ViewGroup.LayoutParams raw = read.getLayoutParams();
             if (raw != null) raw.height = ViewGroup.LayoutParams.WRAP_CONTENT;
         }
+        return text;
+    }
+
+    private void configureCollapsedMessage(TextView text) {
+        text.setSingleLine(true);
+        text.setMaxLines(1);
+        text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        text.setMarqueeRepeatLimit(-1);
+        text.setHorizontallyScrolling(true);
+        text.setSelected(true);
+        text.setTextColor(Color.WHITE);
+        text.setTextSize(13f);
+    }
+
+    private boolean messageNeedsExpansion(TextView text) {
+        CharSequence value = text.getText();
+        if (TextUtils.isEmpty(value)) return false;
+        int available = text.getWidth() - text.getPaddingLeft() - text.getPaddingRight();
+        if (available <= 0) return true;
+        return text.getPaint().measureText(value.toString()) > available;
+    }
+
+    private void expandMessage(TextView text) {
+        text.setSelected(false);
+        text.setHorizontallyScrolling(false);
+        text.setSingleLine(false);
+        text.setMaxLines(Integer.MAX_VALUE);
+        text.setEllipsize(null);
+        ViewGroup.LayoutParams params = text.getLayoutParams();
+        if (params != null) {
+            params.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+            text.setLayoutParams(params);
+        }
+        text.requestLayout();
     }
 
     private void prepareSourceForDetails(View source) {
