@@ -88,7 +88,8 @@ public final class UiLivePreviewPreference extends Preference
         switch (type) {
             case TYPE_HISTORY:
                 return key.startsWith("smart-u-") || key.startsWith("smart-horizontal-")
-                        || key.startsWith("smart-list-") || "smart-history-layout".equals(key);
+                        || key.startsWith("smart-list-") || "smart-history-layout".equals(key)
+                        || "smart-card-list-enabled".equals(key);
             case TYPE_ANIMATIONS:
                 return key.startsWith("smart-animation-") || "smart-animations-enabled".equals(key);
             case TYPE_WORKSPACE:
@@ -122,7 +123,7 @@ public final class UiLivePreviewPreference extends Preference
 
     private String summary() {
         switch (type) {
-            case TYPE_HISTORY: return "Drag the controls below — size, icons, notification box and spacing update here immediately.";
+            case TYPE_HISTORY: return "Drag the controls below — card/list size, icons, names, notification box and spacing update here immediately.";
             case TYPE_ANIMATIONS: return "Animation style and speed replay here immediately.";
             case TYPE_WORKSPACE: return "Pane direction and split size update immediately.";
             case TYPE_WALLPAPER: return "Wallpaper, blur and focus changes update immediately.";
@@ -191,6 +192,12 @@ public final class UiLivePreviewPreference extends Preference
         }
 
         private void history(Canvas c, float w, float h) {
+            if (prefs.getBoolean("smart-card-list-enabled", false)
+                    && "vertical".equals(prefs.getString("smart-history-layout", "vertical"))) {
+                smartCardList(c, w, h);
+                return;
+            }
+
             int tilePct = number("smart-u-tile-size-percent", 100, 70, 150);
             int iconPct = number("smart-u-icon-size-percent", 100, 60, 160);
             int panelPct = number("smart-u-notification-panel-size-percent", 100, 55, 150);
@@ -223,6 +230,37 @@ public final class UiLivePreviewPreference extends Preference
             p.setColor(Color.rgb(52, 57, 68));
             c.drawRoundRect(new RectF(box.left + dp(8), box.top + dp(18), box.right - dp(8),
                     box.top + dp(18) + row), dp(6), dp(6), p);
+        }
+
+        private void smartCardList(Canvas c, float w, float h) {
+            int heightPct = number("smart-list-card-height-percent", 100, 70, 170);
+            int iconPct = number("smart-list-card-icon-percent", 100, 60, 180);
+            int namePct = number("smart-list-card-name-percent", 100, 70, 170);
+            int radius = number("smart-list-card-radius-dp", 22, 6, 40);
+            int spacing = number("smart-list-card-spacing-dp", 12, 4, 36);
+
+            float cardH = Math.min(h * .29f, dp(64) * heightPct / 100f);
+            float cardW = w - dp(30);
+            float nameH = dp(14) * namePct / 100f;
+            float y = dp(10);
+            for (int i = 0; i < 3 && y + cardH + nameH < h - dp(4); i++) {
+                RectF card = new RectF(dp(15), y, dp(15) + cardW, y + cardH);
+                int accent = i == 0 ? Color.rgb(77, 132, 239)
+                        : (i == 1 ? Color.rgb(72, 177, 125) : Color.rgb(183, 92, 195));
+                p.setColor(accent);
+                c.drawRoundRect(card, dp(radius), dp(radius), p);
+                p.setColor(Color.argb(120, 0, 0, 0));
+                c.drawRoundRect(new RectF(card.left + dp(5), card.top + cardH * .56f,
+                        card.right - dp(5), card.bottom - dp(6)), dp(8), dp(8), p);
+                float icon = Math.min(cardH * .38f, dp(26) * iconPct / 100f);
+                p.setColor(Color.WHITE);
+                c.drawCircle(card.right - dp(24), card.top + dp(23), icon / 2f, p);
+                p.setColor(Color.rgb(235, 239, 247));
+                float nameY = card.bottom + dp(8) + nameH / 2f;
+                c.drawRoundRect(new RectF(card.left + dp(24), nameY - dp(2),
+                        card.right - dp(24), nameY + dp(2)), dp(2), dp(2), p);
+                y += cardH + nameH + dp(spacing);
+            }
         }
 
         private void tile(Canvas c, float x, float y, float w, float h, float icon, int seed) {
