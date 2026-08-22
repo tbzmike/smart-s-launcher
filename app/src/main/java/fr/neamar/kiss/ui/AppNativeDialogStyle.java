@@ -7,9 +7,11 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.TextView;
@@ -39,12 +41,19 @@ public final class AppNativeDialogStyle {
         int accent = accentForPackage(context, packageName);
         Window window = dialog.getWindow();
         if (window != null) {
-            GradientDrawable bg = new GradientDrawable(
-                    GradientDrawable.Orientation.TL_BR,
-                    new int[]{tone(accent, 0.78f), tone(accent, 0.46f)});
-            bg.setCornerRadius(dp(context, 26));
-            bg.setStroke(dp(context, 1), toneAlpha(accent, 1.22f, 210));
-            window.setBackgroundDrawable(bg);
+            // AlertDialog's internal parent/content panels can keep their own opaque Material/system
+            // grey background even when the Window background is changed. Make the Window itself
+            // transparent, then paint the real parent panel so the app-derived surface is actually
+            // visible on Android 12-16 instead of being hidden behind the default grey dialog panel.
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            View decor = window.getDecorView();
+            View panel = findDialogPanel(decor, context);
+            if (panel != null) {
+                panel.setBackground(makeDialogBackground(context, accent));
+                clearChildPanelBackgrounds(panel, context);
+            } else if (decor != null) {
+                decor.setBackground(makeDialogBackground(context, accent));
+            }
         }
 
         TextView title = dialog.findViewById(context.getResources().getIdentifier("alertTitle", "id", "android"));
@@ -52,6 +61,50 @@ public final class AppNativeDialogStyle {
         styleButton(dialog.getButton(AlertDialog.BUTTON_POSITIVE), accent);
         styleButton(dialog.getButton(AlertDialog.BUTTON_NEGATIVE), accent);
         styleButton(dialog.getButton(AlertDialog.BUTTON_NEUTRAL), accent);
+    }
+
+    private static Drawable makeDialogBackground(Context context, int accent) {
+        GradientDrawable bg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{tone(accent, 0.92f), tone(accent, 0.50f)});
+        bg.setCornerRadius(dp(context, 26));
+        bg.setStroke(dp(context, 1), toneAlpha(accent, 1.30f, 225));
+        return bg;
+    }
+
+    private static View findDialogPanel(View root, Context context) {
+        if (root == null) return null;
+        int parentPanelId = context.getResources().getIdentifier("parentPanel", "id", "android");
+        if (parentPanelId != 0) {
+            View panel = root.findViewById(parentPanelId);
+            if (panel != null) return panel;
+        }
+        int customPanelId = context.getResources().getIdentifier("customPanel", "id", "android");
+        if (customPanelId != 0) {
+            View panel = root.findViewById(customPanelId);
+            if (panel != null && panel.getParent() instanceof View) return (View) panel.getParent();
+        }
+        int contentId = android.R.id.content;
+        View content = root.findViewById(contentId);
+        if (content != null && content.getParent() instanceof View) return (View) content.getParent();
+        return root;
+    }
+
+    private static void clearChildPanelBackgrounds(View root, Context context) {
+        if (!(root instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) root;
+        int topPanel = context.getResources().getIdentifier("topPanel", "id", "android");
+        int contentPanel = context.getResources().getIdentifier("contentPanel", "id", "android");
+        int buttonPanel = context.getResources().getIdentifier("buttonPanel", "id", "android");
+        int customPanel = context.getResources().getIdentifier("customPanel", "id", "android");
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            int id = child.getId();
+            if (id == topPanel || id == contentPanel || id == buttonPanel || id == customPanel) {
+                child.setBackgroundColor(Color.TRANSPARENT);
+            }
+            clearChildPanelBackgrounds(child, context);
+        }
     }
 
     public static void setReadableText(TextView view) {
