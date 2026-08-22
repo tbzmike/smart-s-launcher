@@ -4,68 +4,16 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <ImageView
-        android:id="@+id/battery_widget_background"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:scaleType="fitXY"
-        android:src="@drawable/battery_widget_material_you" />
+    <ImageView android:id="@+id/battery_widget_background" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:src="@drawable/battery_widget_material_you" />
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:gravity="center_vertical"
-        android:padding="16dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-            <TextView
-                android:id="@+id/battery_widget_percent"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="--%"
-                android:textColor="#FFFFFFFF"
-                android:textStyle="bold"
-                android:textSize="28sp" />
-            <TextView
-                android:id="@+id/battery_widget_state"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:text="Battery"
-                android:textColor="#FFE8EAED"
-                android:textStyle="bold"
-                android:textSize="14sp"
-                android:maxLines="1"
-                android:ellipsize="end" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:gravity="center_vertical" android:padding="16dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+            <TextView android:id="@+id/battery_widget_percent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="--%" android:textColor="#FFFFFFFF" android:textStyle="bold" android:textSize="28sp" />
+            <TextView android:id="@+id/battery_widget_state" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="12dp" android:text="Battery" android:textColor="#FFE8EAED" android:textStyle="bold" android:textSize="14sp" android:maxLines="1" android:ellipsize="end" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/battery_widget_line1"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="7dp"
-            android:text="Now: -- mA · -- left"
-            android:textColor="#FFFFFFFF"
-            android:textStyle="bold"
-            android:textSize="14sp"
-            android:maxLines="1"
-            android:ellipsize="end" />
-
-        <TextView
-            android:id="@+id/battery_widget_line2"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="3dp"
-            android:text="Avg: -- mA · --%/h · -- mAh"
-            android:textColor="#FFDADCE0"
-            android:textSize="12sp"
-            android:maxLines="2"
-            android:ellipsize="end" />
+        <TextView android:id="@+id/battery_widget_line1" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:text="Now: -- mA · -- left" android:textColor="#FFFFFFFF" android:textStyle="bold" android:textSize="14sp" android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/battery_widget_line2" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Avg: -- mA · --%/h · -- mAh" android:textColor="#FFDADCE0" android:textSize="12sp" android:maxLines="2" android:ellipsize="end" />
     </LinearLayout>
+
+    <TextView android:id="@+id/battery_widget_style" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="top|end" android:layout_marginTop="8dp" android:layout_marginEnd="12dp" android:padding="5dp" android:text="STYLE" android:textColor="#CCFFFFFF" android:textStyle="bold" android:textSize="9sp" />
 </FrameLayout>
