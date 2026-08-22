@@ -129,6 +129,7 @@ public final class NotificationPopupDialog {
         View nativeView = NotificationListener.createNativeNotificationView(
                 context, snapshot.id, nativeContainer, true);
         if (nativeView != null) {
+            AppNativeDialogStyle.styleNotificationContent(nativeView, packageName);
             nativeContainer.addView(nativeView, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             content.addView(nativeContainer, new LinearLayout.LayoutParams(
