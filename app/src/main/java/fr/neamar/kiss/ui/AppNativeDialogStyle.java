@@ -13,6 +13,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.Window;
 import android.widget.Button;
 import android.widget.ImageView;
@@ -39,22 +40,36 @@ public final class AppNativeDialogStyle {
 
     public static void styleDialog(AlertDialog dialog, String packageName) {
         if (dialog == null) return;
+        applyDialogStyle(dialog, packageName);
+
+        // Android 14-16 / vendor AlertDialog implementations can re-apply their Material/system
+        // surface after show(). Re-apply once on the next UI pass so Smart S' app colour remains
+        // the final visible surface instead of the platform grey shell.
+        Window window = dialog.getWindow();
+        if (window != null) {
+            View decor = window.getDecorView();
+            if (decor != null) decor.post(() -> applyDialogStyle(dialog, packageName));
+        }
+    }
+
+    private static void applyDialogStyle(AlertDialog dialog, String packageName) {
         Context context = dialog.getContext();
         int accent = accentForPackage(context, packageName);
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             View decor = window.getDecorView();
-            if (decor != null) {
-                // Paint the decor as well as the internal alert panel. Some Android 16 themes
-                // keep an opaque system-grey parent above parentPanel; styling both prevents that
-                // alternate notification expansion route from exposing the platform grey surface.
-                decor.setBackground(makeDialogBackground(context, accent));
-            }
             View panel = findDialogPanel(decor, context);
+
+            // Clear every system/theme background in the ancestry around AlertDialog's panel,
+            // then paint only the actual panel. This avoids the grey Material parent surface that
+            // appears specifically on the notification expand-arrow route.
             if (panel != null) {
+                clearAncestorChrome(panel, decor);
                 panel.setBackground(makeDialogBackground(context, accent));
                 clearChildPanelBackgrounds(panel, context);
+            } else if (decor != null) {
+                decor.setBackground(makeDialogBackground(context, accent));
             }
         }
 
@@ -63,6 +78,23 @@ public final class AppNativeDialogStyle {
         styleButton(dialog.getButton(AlertDialog.BUTTON_POSITIVE), accent);
         styleButton(dialog.getButton(AlertDialog.BUTTON_NEGATIVE), accent);
         styleButton(dialog.getButton(AlertDialog.BUTTON_NEUTRAL), accent);
+    }
+
+    /**
+     * Removes only AlertDialog wrapper backgrounds between the resolved panel and decor. Custom
+     * notification content is below the panel and is therefore left intact.
+     */
+    private static void clearAncestorChrome(View panel, View decor) {
+        View current = panel;
+        while (current != null) {
+            ViewParent parent = current.getParent();
+            if (!(parent instanceof View)) break;
+            View parentView = (View) parent;
+            if (parentView != decor) parentView.setBackgroundColor(Color.TRANSPARENT);
+            if (parentView == decor) break;
+            current = parentView;
+        }
+        if (decor != null) decor.setBackgroundColor(Color.TRANSPARENT);
     }
 
     /**
