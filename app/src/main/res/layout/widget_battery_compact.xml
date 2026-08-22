@@ -19,20 +19,23 @@
 
     <TextView
         android:id="@+id/battery_widget_state"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Battery"
         android:textColor="#FFE8EAED"
         android:textStyle="bold"
-        android:textSize="14sp" />
+        android:textSize="14sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
 
     <TextView
         android:id="@+id/battery_widget_line1"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:text="-- mA · -- W · --°C"
+        android:text="Now: -- mA"
         android:textColor="#FFFFFFFF"
+        android:textStyle="bold"
         android:textSize="13sp"
         android:maxLines="1"
         android:ellipsize="end" />
@@ -41,9 +44,9 @@
         android:id="@+id/battery_widget_line2"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="-- mV"
+        android:text="Avg: learning…"
         android:textColor="#FFBDC1C6"
         android:textSize="12sp"
-        android:maxLines="1"
+        android:maxLines="2"
         android:ellipsize="end" />
 </LinearLayout>
