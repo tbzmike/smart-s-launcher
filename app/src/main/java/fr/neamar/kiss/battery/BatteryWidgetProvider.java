@@ -36,9 +36,7 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
         int design = BatteryCapacityEstimator.designCapacityMah(context);
         double health = BatteryCapacityEstimator.healthPercent(context, cap);
 
-        RemoteViews v = new RemoteViews(context.getPackageName(), detailed
-                ? R.layout.widget_battery_detailed : R.layout.widget_battery_compact);
-        v.setImageViewResource(R.id.battery_widget_background, widgetBackground(context));
+        RemoteViews v = new RemoteViews(context.getPackageName(), widgetLayout(context, detailed));
         v.setTextViewText(R.id.battery_widget_percent, s.percent() + "%");
         String sessionAge = session.durationMs >= 60_000L ? " · " + formatDuration(session.durationMs) : "";
         v.setTextViewText(R.id.battery_widget_state, s.isCharging()
@@ -85,15 +83,25 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
         return v;
     }
 
-    public static int widgetBackground(Context context) {
-        String style = PreferenceManager.getDefaultSharedPreferences(context).getString(PREF_WIDGET_STYLE, "material_you");
-        if ("google_pill".equals(style)) return R.drawable.battery_widget_google_pill;
-        if ("squircle".equals(style)) return R.drawable.battery_widget_squircle;
-        if ("glass".equals(style)) return R.drawable.battery_widget_glass;
-        if ("soft_card".equals(style)) return R.drawable.battery_widget_soft_card;
-        if ("pixel".equals(style)) return R.drawable.battery_widget_pixel;
-        if ("stadium".equals(style)) return R.drawable.battery_widget_stadium;
-        return R.drawable.battery_widget_material_you;
+    private static int widgetLayout(Context context, boolean detailed) {
+        String style = PreferenceManager.getDefaultSharedPreferences(context)
+                .getString(PREF_WIDGET_STYLE, "material_you");
+        if (detailed) {
+            if ("google_pill".equals(style)) return R.layout.widget_battery_detailed_google_pill;
+            if ("squircle".equals(style)) return R.layout.widget_battery_detailed_squircle;
+            if ("glass".equals(style)) return R.layout.widget_battery_detailed_glass;
+            if ("soft_card".equals(style)) return R.layout.widget_battery_detailed_soft_card;
+            if ("stadium".equals(style)) return R.layout.widget_battery_detailed_stadium;
+            if ("pixel".equals(style)) return R.layout.widget_battery_detailed_pixel;
+            return R.layout.widget_battery_detailed;
+        }
+        if ("google_pill".equals(style)) return R.layout.widget_battery_compact_google_pill;
+        if ("squircle".equals(style)) return R.layout.widget_battery_compact_squircle;
+        if ("glass".equals(style)) return R.layout.widget_battery_compact_glass;
+        if ("soft_card".equals(style)) return R.layout.widget_battery_compact_soft_card;
+        if ("stadium".equals(style)) return R.layout.widget_battery_compact_stadium;
+        if ("pixel".equals(style)) return R.layout.widget_battery_compact_pixel;
+        return R.layout.widget_battery_compact;
     }
 
     private static String formatScreenLine(String label, double ma, double percentPerHour) {
