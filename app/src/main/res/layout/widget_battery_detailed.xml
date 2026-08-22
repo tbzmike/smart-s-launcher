@@ -23,13 +23,16 @@
             android:textSize="32sp" />
         <TextView
             android:id="@+id/battery_widget_state"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:layout_marginStart="12dp"
             android:text="Battery"
             android:textColor="#FFE8EAED"
             android:textStyle="bold"
-            android:textSize="15sp" />
+            android:textSize="15sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
     </LinearLayout>
 
     <TextView
@@ -37,29 +40,46 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:text="-- mA · -- W · --°C"
+        android:text="Now: -- mA"
         android:textColor="#FFFFFFFF"
-        android:textSize="14sp" />
+        android:textStyle="bold"
+        android:textSize="15sp" />
     <TextView
         android:id="@+id/battery_widget_line2"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="-- mV · Battery"
-        android:textColor="#FFDADCE0"
-        android:textSize="13sp" />
+        android:text="Avg: learning…"
+        android:textColor="#FFFFFFFF"
+        android:textSize="14sp" />
     <TextView
         android:id="@+id/battery_widget_line3"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="Capacity learning…"
-        android:textColor="#FFFFFFFF"
-        android:textSize="13sp" />
+        android:layout_marginTop="4dp"
+        android:text="Screen on: learning…"
+        android:textColor="#FFE8EAED"
+        android:textSize="14sp" />
     <TextView
         android:id="@+id/battery_widget_line4"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Health · history"
-        android:textColor="#FFBDC1C6"
+        android:text="Screen off: learning…"
+        android:textColor="#FFE8EAED"
+        android:textSize="14sp" />
+    <TextView
+        android:id="@+id/battery_widget_line5"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:text="-- W · --°C · -- mV"
+        android:textColor="#FFDADCE0"
         android:textSize="12sp" />
+    <TextView
+        android:id="@+id/battery_widget_line6"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Capacity / health learning…"
+        android:textColor="#FFBDC1C6"
+        android:textSize="11sp"
+        android:maxLines="2" />
 </LinearLayout>
