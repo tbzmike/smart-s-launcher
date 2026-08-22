@@ -4,6 +4,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -14,6 +15,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 /** Reuses the same icon-derived color idea as launcher tiles for notification dialogs. */
@@ -41,18 +43,18 @@ public final class AppNativeDialogStyle {
         int accent = accentForPackage(context, packageName);
         Window window = dialog.getWindow();
         if (window != null) {
-            // AlertDialog's internal parent/content panels can keep their own opaque Material/system
-            // grey background even when the Window background is changed. Make the Window itself
-            // transparent, then paint the real parent panel so the app-derived surface is actually
-            // visible on Android 12-16 instead of being hidden behind the default grey dialog panel.
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             View decor = window.getDecorView();
+            if (decor != null) {
+                // Paint the decor as well as the internal alert panel. Some Android 16 themes
+                // keep an opaque system-grey parent above parentPanel; styling both prevents that
+                // alternate notification expansion route from exposing the platform grey surface.
+                decor.setBackground(makeDialogBackground(context, accent));
+            }
             View panel = findDialogPanel(decor, context);
             if (panel != null) {
                 panel.setBackground(makeDialogBackground(context, accent));
                 clearChildPanelBackgrounds(panel, context);
-            } else if (decor != null) {
-                decor.setBackground(makeDialogBackground(context, accent));
             }
         }
 
@@ -61,6 +63,51 @@ public final class AppNativeDialogStyle {
         styleButton(dialog.getButton(AlertDialog.BUTTON_POSITIVE), accent);
         styleButton(dialog.getButton(AlertDialog.BUTTON_NEGATIVE), accent);
         styleButton(dialog.getButton(AlertDialog.BUTTON_NEUTRAL), accent);
+    }
+
+    /**
+     * Styles app-supplied notification RemoteViews inside Smart S. Android notifications may
+     * contain their own opaque grey root/background, so changing only the AlertDialog window is
+     * not enough. Tint container backgrounds while leaving image content intact.
+     */
+    public static void styleNotificationContent(View root, String packageName) {
+        if (root == null) return;
+        int accent = accentForPackage(root.getContext(), packageName);
+        GradientDrawable surface = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{toneAlpha(accent, 0.86f, 238), toneAlpha(accent, 0.54f, 238)});
+        surface.setCornerRadius(dp(root.getContext(), 18));
+        surface.setStroke(dp(root.getContext(), 1), toneAlpha(accent, 1.25f, 205));
+        root.setBackground(surface);
+        tintNotificationChildren(root, accent, true);
+    }
+
+    private static void tintNotificationChildren(View view, int accent, boolean root) {
+        if (view == null) return;
+
+        if (view instanceof TextView) {
+            setReadableText((TextView) view);
+        }
+
+        // Do not tint images: album art, sender avatars and app icons must remain faithful.
+        if (!root && view instanceof ViewGroup && !(view instanceof ImageView)) {
+            Drawable background = view.getBackground();
+            if (background != null) {
+                try {
+                    view.setBackgroundTintList(ColorStateList.valueOf(toneAlpha(accent, 0.70f, 224)));
+                } catch (RuntimeException ignored) {
+                    // A vendor RemoteViews background can reject tinting; the styled parent surface
+                    // still guarantees that uncovered areas use the app-derived colour.
+                }
+            }
+        }
+
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                tintNotificationChildren(group.getChildAt(i), accent, false);
+            }
+        }
     }
 
     private static Drawable makeDialogBackground(Context context, int accent) {
