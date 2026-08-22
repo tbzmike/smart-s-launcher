@@ -40,6 +40,7 @@ public final class NotificationPopupDialog {
             return;
         }
 
+        String packageName = NotificationListener.getNotificationPackage(context, notifications.get(0).id);
         LinearLayout list = new LinearLayout(context);
         list.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(context, 10);
@@ -60,6 +61,7 @@ public final class NotificationPopupDialog {
             row.setTextSize(15f);
             row.setPadding(pad, pad, pad, pad);
             row.setMaxLines(4);
+            AppNativeDialogStyle.setReadableText(row);
             row.setOnClickListener(v -> {
                 SmartAnimationEngine.dismissDialog(dialog);
                 showNotification(context, groupKey, snapshot);
@@ -72,6 +74,7 @@ public final class NotificationPopupDialog {
         scroll.addView(list);
         dialog.setView(scroll);
         showWide(dialog);
+        AppNativeDialogStyle.styleDialog(dialog, packageName);
         SmartAnimationEngine.animateDialogIn(dialog);
     }
 
@@ -104,6 +107,7 @@ public final class NotificationPopupDialog {
         title.setPadding(pad, 0, 0, 0);
         title.setText(snapshot.title == null || snapshot.title.trim().isEmpty()
                 ? "Notification" : snapshot.title);
+        AppNativeDialogStyle.setReadableText(title);
         heading.addView(title, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         content.addView(heading);
@@ -115,6 +119,7 @@ public final class NotificationPopupDialog {
             body.setTextSize(15f);
             body.setTextIsSelectable(true);
             body.setPadding(0, pad, 0, pad);
+            AppNativeDialogStyle.setReadableText(body);
             content.addView(body, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
@@ -137,6 +142,7 @@ public final class NotificationPopupDialog {
             EditText reply = new EditText(context);
             reply.setSingleLine(false);
             reply.setHint("Reply");
+            AppNativeDialogStyle.setReadableText(reply);
             replyArea.addView(reply, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             Button send = new Button(context);
@@ -177,9 +183,12 @@ public final class NotificationPopupDialog {
 
         dialog.setOnShowListener(ignored -> {
             detailPrefs.registerOnSharedPreferenceChangeListener(removalListener);
+            AppNativeDialogStyle.styleDialog(dialog, packageName);
+            int accent = AppNativeDialogStyle.accentForPackage(context, packageName);
 
             Button markRead = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
             if (markRead != null) {
+                AppNativeDialogStyle.styleButton(markRead, accent);
                 markRead.setOnClickListener(v -> {
                     if (NotificationListener.markNotificationRead(context, snapshot.id)) {
                         SmartAnimationEngine.dismissDialog(dialog);
@@ -192,10 +201,8 @@ public final class NotificationPopupDialog {
 
             Button open = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
             if (open != null) {
+                AppNativeDialogStyle.styleButton(open, accent);
                 open.setOnClickListener(v -> {
-                    // Keep the launcher visibly foreground while dispatching the user-requested
-                    // PendingIntent. Android 14+ background-activity-start rules use this visible
-                    // state when deciding whether a notification target may surface an Activity.
                     boolean opened = NotificationListener.openNotification(context, snapshot.id);
                     if (!opened && packageName != null) {
                         opened = AppLaunchUtils.launchPackage(context, packageName);
@@ -209,10 +216,15 @@ public final class NotificationPopupDialog {
                 });
             }
 
+            Button cancel = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            AppNativeDialogStyle.styleButton(cancel, accent);
+            AppNativeDialogStyle.styleButton(sendIfPresent(content), accent);
+
             if (NotificationListener.hasMarkAllReadAction(context, groupKey)) {
                 Button markAll = new Button(context);
                 markAll.setText("Mark all read");
                 markAll.setAllCaps(false);
+                AppNativeDialogStyle.styleButton(markAll, accent);
                 markAll.setOnClickListener(v -> {
                     if (NotificationListener.markAllRead(context, groupKey)) {
                         SmartAnimationEngine.dismissDialog(dialog);
@@ -230,7 +242,20 @@ public final class NotificationPopupDialog {
         dialog.setOnDismissListener(ignored ->
                 detailPrefs.unregisterOnSharedPreferenceChangeListener(removalListener));
         showWide(dialog);
+        AppNativeDialogStyle.styleDialog(dialog, packageName);
         SmartAnimationEngine.animateNotificationExpand(dialog);
+    }
+
+    private static Button sendIfPresent(View view) {
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child instanceof Button && "Reply".contentEquals(((Button) child).getText())) return (Button) child;
+            Button nested = sendIfPresent(child);
+            if (nested != null) return nested;
+        }
+        return null;
     }
 
     private static void showWide(AlertDialog dialog) {
