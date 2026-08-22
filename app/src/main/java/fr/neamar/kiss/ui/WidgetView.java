@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.util.SizeF;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 
@@ -19,9 +20,53 @@ public class WidgetView extends AppWidgetHostView {
     private CheckForLongPress mPendingCheckForLongPress;
     private float xPos;
     private float yPos;
+    private boolean protectScrollableGesture;
 
     public WidgetView(Context context) {
         super(context);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                // Collection widgets (calendar, mail, feeds, lists, etc.) must own their
+                // scrolling gesture.  Without this, a freeform/stack parent can steal MOVE
+                // events before the widget's ListView/RecyclerView gets a chance to scroll.
+                protectScrollableGesture = hasScrollableDescendant(this);
+                if (protectScrollableGesture && getParent() != null) {
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                }
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if (protectScrollableGesture && getParent() != null) {
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                }
+                break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                boolean handled = super.dispatchTouchEvent(ev);
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
+                protectScrollableGesture = false;
+                return handled;
+            default:
+                break;
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    private boolean hasScrollableDescendant(View view) {
+        if (view != this && (view.canScrollVertically(-1) || view.canScrollVertically(1)
+                || view.canScrollHorizontally(-1) || view.canScrollHorizontally(1))) {
+            return true;
+        }
+        if (!(view instanceof ViewGroup)) return false;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child.getVisibility() == View.VISIBLE && hasScrollableDescendant(child)) return true;
+        }
+        return false;
     }
 
     public boolean onInterceptTouchEvent(MotionEvent ev) {
