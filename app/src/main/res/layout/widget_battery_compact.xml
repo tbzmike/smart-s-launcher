@@ -1,52 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/battery_widget_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center_vertical"
-    android:padding="14dp"
-    android:background="#CC202124">
+    android:layout_height="match_parent">
 
-    <TextView
-        android:id="@+id/battery_widget_percent"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="--%"
-        android:textColor="#FFFFFFFF"
-        android:textStyle="bold"
-        android:textSize="28sp" />
-
-    <TextView
-        android:id="@+id/battery_widget_state"
+    <ImageView
+        android:id="@+id/battery_widget_background"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Battery"
-        android:textColor="#FFE8EAED"
-        android:textStyle="bold"
-        android:textSize="14sp"
-        android:maxLines="1"
-        android:ellipsize="end" />
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/battery_widget_material_you" />
 
-    <TextView
-        android:id="@+id/battery_widget_line1"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:text="Now: -- mA"
-        android:textColor="#FFFFFFFF"
-        android:textStyle="bold"
-        android:textSize="13sp"
-        android:maxLines="1"
-        android:ellipsize="end" />
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_vertical"
+        android:padding="16dp">
 
-    <TextView
-        android:id="@+id/battery_widget_line2"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Avg: learning…"
-        android:textColor="#FFBDC1C6"
-        android:textSize="12sp"
-        android:maxLines="2"
-        android:ellipsize="end" />
-</LinearLayout>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView
+                android:id="@+id/battery_widget_percent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="--%"
+                android:textColor="#FFFFFFFF"
+                android:textStyle="bold"
+                android:textSize="28sp" />
+            <TextView
+                android:id="@+id/battery_widget_state"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="12dp"
+                android:text="Battery"
+                android:textColor="#FFE8EAED"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/battery_widget_line1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:text="Now: -- mA · -- left"
+            android:textColor="#FFFFFFFF"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/battery_widget_line2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="Avg: -- mA · --%/h · -- mAh"
+            android:textColor="#FFDADCE0"
+            android:textSize="12sp"
+            android:maxLines="2"
+            android:ellipsize="end" />
+    </LinearLayout>
+</FrameLayout>
