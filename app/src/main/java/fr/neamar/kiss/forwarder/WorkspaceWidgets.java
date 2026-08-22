@@ -153,8 +153,11 @@ class WorkspaceWidgets extends Widgets {
     }
 
     private void syncDoneVisibility(FrameLayout frame, View done) {
+        // Child 0 is the live widget stack layer and child 1 is persistent stack-position chrome.
+        // Edit controls begin at child 2. Ignoring the first two keeps a stack's page indicator
+        // from being mistaken for an active resize/edit control.
         boolean editing = false;
-        for (int i = 1; i < frame.getChildCount(); i++) {
+        for (int i = 2; i < frame.getChildCount(); i++) {
             View child = frame.getChildAt(i);
             if (child != done && child.getVisibility() == View.VISIBLE) {
                 editing = true;
@@ -166,7 +169,8 @@ class WorkspaceWidgets extends Widgets {
     }
 
     private void finishWidgetEdit(FrameLayout frame, View done) {
-        for (int i = 1; i < frame.getChildCount(); i++) {
+        // Preserve child 1, the stack position indicator. Only actual edit controls are hidden.
+        for (int i = 2; i < frame.getChildCount(); i++) {
             View child = frame.getChildAt(i);
             if (child != done) child.setVisibility(View.GONE);
         }
