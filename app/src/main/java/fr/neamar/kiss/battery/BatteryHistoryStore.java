@@ -23,14 +23,47 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
         public final boolean screenOn;
         public final float temp;
         public final long currentUa;
+        public final long chargeUah;
 
-        SamplePoint(long ts, int level, boolean charging, boolean screenOn, float temp, long currentUa) {
+        SamplePoint(long ts, int level, boolean charging, boolean screenOn, float temp,
+                    long currentUa, long chargeUah) {
             this.ts = ts;
             this.level = level;
             this.charging = charging;
             this.screenOn = screenOn;
             this.temp = temp;
             this.currentUa = currentUa;
+            this.chargeUah = chargeUah;
+        }
+    }
+
+    public static final class CurrentSessionStats {
+        public final boolean charging;
+        public final long durationMs;
+        public final double averageCurrentMa;
+        public final double percentPerHour;
+        public final double totalMah;
+        public final double screenOnCurrentMa;
+        public final double screenOnPercentPerHour;
+        public final double screenOffCurrentMa;
+        public final double screenOffPercentPerHour;
+        public final long estimatedRemainingMs;
+
+        CurrentSessionStats(boolean charging, long durationMs, double averageCurrentMa,
+                            double percentPerHour, double totalMah,
+                            double screenOnCurrentMa, double screenOnPercentPerHour,
+                            double screenOffCurrentMa, double screenOffPercentPerHour,
+                            long estimatedRemainingMs) {
+            this.charging = charging;
+            this.durationMs = durationMs;
+            this.averageCurrentMa = averageCurrentMa;
+            this.percentPerHour = percentPerHour;
+            this.totalMah = totalMah;
+            this.screenOnCurrentMa = screenOnCurrentMa;
+            this.screenOnPercentPerHour = screenOnPercentPerHour;
+            this.screenOffCurrentMa = screenOffCurrentMa;
+            this.screenOffPercentPerHour = screenOffPercentPerHour;
+            this.estimatedRemainingMs = estimatedRemainingMs;
         }
     }
 
@@ -143,15 +176,113 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
     public List<SamplePoint> recentSamples(long windowMs, int max) {
         List<SamplePoint> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT ts,level,charging,screen_on,temp,current_ua FROM samples WHERE ts>? ORDER BY ts ASC LIMIT ?",
+                "SELECT ts,level,charging,screen_on,temp,current_ua,charge_uah FROM samples WHERE ts>? ORDER BY ts ASC LIMIT ?",
                 new String[]{Long.toString(System.currentTimeMillis() - windowMs), Integer.toString(Math.max(1, max))});
         try {
             while (c.moveToNext()) {
                 out.add(new SamplePoint(c.getLong(0), c.getInt(1), c.getInt(2) != 0, c.getInt(3) != 0,
-                        c.isNull(4) ? Float.NaN : c.getFloat(4), c.isNull(5) ? Long.MIN_VALUE : c.getLong(5)));
+                        c.isNull(4) ? Float.NaN : c.getFloat(4),
+                        c.isNull(5) ? Long.MIN_VALUE : c.getLong(5),
+                        c.isNull(6) ? Long.MIN_VALUE : c.getLong(6)));
             }
         } finally { c.close(); }
         return out;
+    }
+
+    public CurrentSessionStats currentSessionStats(BatterySnapshot current) {
+        List<SamplePoint> points = recentSamples(48L * 60L * 60L * 1000L, 1500);
+        if (points.isEmpty()) {
+            return new CurrentSessionStats(current.isCharging(), 0L, Double.NaN, Double.NaN,
+                    Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+                    current.isCharging() ? current.chargeTimeRemainingMs : Long.MIN_VALUE);
+        }
+
+        int start = points.size() - 1;
+        while (start > 0 && points.get(start - 1).charging == current.isCharging()) start--;
+        SamplePoint first = points.get(start);
+        long endMs = Math.max(current.timestamp, points.get(points.size() - 1).ts);
+        long durationMs = Math.max(0L, endMs - first.ts);
+        double hours = durationMs / 3_600_000.0;
+
+        double totalCurrent = 0.0;
+        int currentCount = 0;
+        double onCurrent = 0.0;
+        int onCount = 0;
+        double offCurrent = 0.0;
+        int offCount = 0;
+        SamplePoint lastWithCharge = null;
+        SamplePoint firstWithCharge = null;
+
+        for (int i = start; i < points.size(); i++) {
+            SamplePoint p = points.get(i);
+            if (p.charging != current.isCharging()) continue;
+            if (p.currentUa != Long.MIN_VALUE) {
+                double ma = Math.abs(p.currentUa) / 1000.0;
+                totalCurrent += ma;
+                currentCount++;
+                if (p.screenOn) {
+                    onCurrent += ma;
+                    onCount++;
+                } else {
+                    offCurrent += ma;
+                    offCount++;
+                }
+            }
+            if (p.chargeUah != Long.MIN_VALUE) {
+                if (firstWithCharge == null) firstWithCharge = p;
+                lastWithCharge = p;
+            }
+        }
+
+        double avgAbs = currentCount == 0 ? Double.NaN : totalCurrent / currentCount;
+        double avgSigned = Double.isNaN(avgAbs) ? Double.NaN : (current.isCharging() ? avgAbs : -avgAbs);
+        double onAbs = onCount == 0 ? Double.NaN : onCurrent / onCount;
+        double offAbs = offCount == 0 ? Double.NaN : offCurrent / offCount;
+        double onSigned = Double.isNaN(onAbs) ? Double.NaN : (current.isCharging() ? onAbs : -onAbs);
+        double offSigned = Double.isNaN(offAbs) ? Double.NaN : (current.isCharging() ? offAbs : -offAbs);
+
+        int deltaPercent = current.percent() - first.level;
+        double percentPerHour = hours >= (5.0 / 60.0) ? deltaPercent / hours : Double.NaN;
+        long capacityUah = estimatedFullCapacityUah();
+
+        double totalMah = Double.NaN;
+        if (firstWithCharge != null && lastWithCharge != null && firstWithCharge != lastWithCharge) {
+            long deltaUah = Math.abs(lastWithCharge.chargeUah - firstWithCharge.chargeUah);
+            if (deltaUah > 0) totalMah = deltaUah / 1000.0;
+        }
+        if (Double.isNaN(totalMah) && capacityUah > 0) {
+            totalMah = Math.abs(deltaPercent) * capacityUah / 100_000.0;
+        }
+
+        double onPercent = currentEquivalentPercentRate(onAbs, capacityUah, percentPerHour, avgAbs);
+        double offPercent = currentEquivalentPercentRate(offAbs, capacityUah, percentPerHour, avgAbs);
+        if (!current.isCharging()) {
+            if (!Double.isNaN(onPercent)) onPercent = -Math.abs(onPercent);
+            if (!Double.isNaN(offPercent)) offPercent = -Math.abs(offPercent);
+        }
+
+        long remainingMs = Long.MIN_VALUE;
+        if (current.isCharging()) {
+            remainingMs = current.chargeTimeRemainingMs;
+        } else if (!Double.isNaN(percentPerHour) && percentPerHour < -0.1) {
+            remainingMs = Math.round((current.percent() / Math.abs(percentPerHour)) * 3_600_000.0);
+        } else if (capacityUah > 0 && !Double.isNaN(avgAbs) && avgAbs > 1.0) {
+            double remainingMah = (capacityUah / 1000.0) * current.percent() / 100.0;
+            remainingMs = Math.round((remainingMah / avgAbs) * 3_600_000.0);
+        }
+
+        return new CurrentSessionStats(current.isCharging(), durationMs, avgSigned,
+                percentPerHour, totalMah, onSigned, onPercent, offSigned, offPercent, remainingMs);
+    }
+
+    private static double currentEquivalentPercentRate(double currentMa, long capacityUah,
+                                                       double overallPercentRate, double averageMa) {
+        if (Double.isNaN(currentMa)) return Double.NaN;
+        if (capacityUah > 0) return currentMa / (capacityUah / 1000.0) * 100.0;
+        if (!Double.isNaN(overallPercentRate) && !Double.isNaN(averageMa) && averageMa > 1.0) {
+            return Math.abs(overallPercentRate) * currentMa / averageMa;
+        }
+        return Double.NaN;
     }
 
     public List<SessionSummary> recentSessions(int maxSessions) {
