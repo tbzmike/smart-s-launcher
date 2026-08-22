@@ -10,6 +10,10 @@
         android:title="Battery Monitor"
         app:showAsAction="never" />
     <item
+        android:id="@+id/indexing_settings"
+        android:title="Indexing &amp; Search Index"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/smart_features"
         android:title="@string/smart_features_title"
         app:showAsAction="never" />
