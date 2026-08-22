@@ -74,6 +74,12 @@
             android:excludeFromRecents="true"
             android:parentActivityName=".MainActivity"
             android:theme="@style/SettingTheme" />
+        <activity
+            android:name=".BatteryHistoryActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".BatteryMonitorActivity"
+            android:theme="@style/SettingTheme" />
 
         <activity
             android:name=".NotificationHistoryActivity"
