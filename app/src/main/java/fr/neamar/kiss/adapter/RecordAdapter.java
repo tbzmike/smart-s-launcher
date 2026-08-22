@@ -26,9 +26,11 @@ import java.util.Map;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.preference.UiEditLock;
+import fr.neamar.kiss.result.CommunicationResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.ui.ListPopup;
@@ -53,10 +55,13 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     @Override
-    public int getViewTypeCount() { return 7; }
+    public int getViewTypeCount() { return 8; }
 
     @Override
-    public int getItemViewType(int position) { return Result.getItemViewType(getItem(position)); }
+    public int getItemViewType(int position) {
+        Result<?> result = getItem(position);
+        return result instanceof CommunicationResult ? 7 : Result.getItemViewType(result);
+    }
 
     @Override
     public boolean hasStableIds() { return true; }
@@ -266,7 +271,13 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         for (Pojo pojo : pojos) {
             if (pojo == null) continue;
             Result<?> existing = existingResults.get(pojo);
-            updatedResults.add(existing != null ? existing : Result.fromPojo(parent, pojo));
+            if (existing != null) {
+                updatedResults.add(existing);
+            } else if (pojo instanceof CommunicationPojo) {
+                updatedResults.add(new CommunicationResult((CommunicationPojo) pojo));
+            } else {
+                updatedResults.add(Result.fromPojo(parent, pojo));
+            }
         }
         updateResults(context, updatedResults, isRefresh, query);
     }
