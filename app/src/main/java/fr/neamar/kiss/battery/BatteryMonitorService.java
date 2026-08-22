@@ -19,7 +19,7 @@ import androidx.preference.PreferenceManager;
 
 import java.util.Locale;
 
-import fr.neamar.kiss.BatteryMonitorActivity;
+import fr.neamar.kiss.BatteryHistoryActivity;
 import fr.neamar.kiss.R;
 
 public final class BatteryMonitorService extends Service {
@@ -94,7 +94,7 @@ public final class BatteryMonitorService extends Service {
     }
 
     private Notification buildLiveNotification(BatterySnapshot s) {
-        Intent open = new Intent(this, BatteryMonitorActivity.class);
+        Intent open = new Intent(this, BatteryHistoryActivity.class);
         PendingIntent content = PendingIntent.getActivity(this, 0, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Intent stop = new Intent(this, BatteryMonitorService.class).setAction(ACTION_STOP);
@@ -129,7 +129,7 @@ public final class BatteryMonitorService extends Service {
                 .append("\nCapacity: ").append(capacity);
         if (design > 0) expanded.append(" / ").append(design).append(" mAh design");
         expanded.append(" · estimated health: ").append(healthText)
-                .append("\nTap for graphs, sessions, wear, reports and app-activity correlation.");
+                .append("\nTap for Daily / Weekly / Monthly history, sessions, wear and reports.");
 
         return new NotificationCompat.Builder(this, CHANNEL_LIVE)
                 .setSmallIcon(R.mipmap.ic_launcher)
@@ -142,7 +142,7 @@ public final class BatteryMonitorService extends Service {
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setShowWhen(false)
-                .addAction(0, "Open monitor", content)
+                .addAction(0, "Open history", content)
                 .addAction(0, "Stop monitor", stopPi)
                 .build();
     }
@@ -205,7 +205,7 @@ public final class BatteryMonitorService extends Service {
     private void postAlert(String title, String text) {
         NotificationManager nm = notificationManager();
         if (nm == null) return;
-        Intent open = new Intent(this, BatteryMonitorActivity.class);
+        Intent open = new Intent(this, BatteryHistoryActivity.class);
         PendingIntent content = PendingIntent.getActivity(this, 2, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         nm.notify(ALERT_ID, new NotificationCompat.Builder(this, CHANNEL_ALERTS)
