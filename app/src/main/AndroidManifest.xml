@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -85,6 +87,12 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:parentActivityName=".BatteryMonitorActivity"
+            android:theme="@style/SettingTheme" />
+        <activity
+            android:name=".IndexingSettingsActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".SettingsActivity"
             android:theme="@style/SettingTheme" />
 
         <activity
