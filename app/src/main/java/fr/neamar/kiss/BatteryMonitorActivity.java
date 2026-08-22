@@ -25,6 +25,7 @@ import androidx.preference.PreferenceManager;
 
 import java.util.Locale;
 
+import fr.neamar.kiss.battery.BatteryCapacityEstimator;
 import fr.neamar.kiss.battery.BatteryHistoryStore;
 import fr.neamar.kiss.battery.BatteryMonitorEngine;
 import fr.neamar.kiss.battery.BatteryMonitorService;
@@ -111,7 +112,7 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
         tempAlarmLabel = bodyText(); root.addView(tempAlarmLabel);
         SeekBar temp = new SeekBar(this);
         temp.setMax(25);
-        temp.setProgress(Math.round(prefs.getFloat("smart-battery-temp-alarm", 42f) - 30f));
+        temp.setProgress(Math.max(0, Math.min(25, Math.round(prefs.getFloat("smart-battery-temp-alarm", 42f) - 30f))));
         temp.setOnSeekBarChangeListener(new SimpleSeekListener() {
             @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 float value = 30f + progress;
@@ -125,6 +126,7 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
         start.setText("Enable live notification monitor");
         start.setOnClickListener(v -> {
             prefs.edit().putBoolean("smart-battery-monitor-enabled", true).apply();
+            requestNotificationPermissionIfNeeded();
             BatteryMonitorStarter.ensureRunning(this);
         });
         root.addView(start);
@@ -136,7 +138,8 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
         root.addView(stop);
 
         TextView note = bodyText();
-        note.setText("Measured values come from Android/device hardware. Capacity, health trends and usage baselines are learned from stored charging/discharging samples; unsupported hardware values are shown as unavailable rather than invented.");
+        note.setPadding(0, dp(18), 0, 0);
+        note.setText("Measured values come from Android/device hardware. Capacity, health trends, screen-on/off drain and anomaly baselines are learned from stored samples. Unsupported hardware values are shown as unavailable rather than invented.");
         root.addView(note);
         return scroll;
     }
@@ -147,29 +150,46 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
         String avg = Double.isNaN(s.averageCurrentMa()) ? "Unavailable" : String.format(Locale.US, "%.0f mA", s.averageCurrentMa());
         String power = Double.isNaN(s.powerW()) ? "Unavailable" : String.format(Locale.US, "%.2f W", s.powerW());
         String time = s.chargeTimeRemainingMs == Long.MIN_VALUE ? "Unavailable" : formatDuration(s.chargeTimeRemainingMs);
+        String temperature = Float.isNaN(s.temperatureC) ? "Unavailable" : String.format(Locale.US, "%.1f°C", s.temperatureC);
         live.setText("Battery: " + s.percent() + "%\nState: " + (s.isCharging() ? "Charging" : "Discharging")
                 + " via " + BatteryMonitorEngine.sourceName(s.plugged)
                 + "\nCurrent now: " + current + "\nAverage current: " + avg + "\nPower: " + power
-                + "\nTemperature: " + String.format(Locale.US, "%.1f°C", s.temperatureC)
-                + "\nVoltage: " + s.voltageMv + " mV\nTime to full: " + time);
+                + "\nTemperature: " + temperature
+                + "\nVoltage: " + (s.voltageMv > 0 ? s.voltageMv + " mV" : "Unavailable") + "\nTime to full: " + time);
 
         long estimated = store.estimatedFullCapacityUah();
+        int design = BatteryCapacityEstimator.designCapacityMah(this);
+        double healthPercent = BatteryCapacityEstimator.healthPercent(this, estimated);
         String cap = estimated > 0 ? String.format(Locale.US, "%.0f mAh", estimated / 1000.0) : "Learning — needs charging ranges of at least 15%";
         String counter = s.chargeCounterUah == Long.MIN_VALUE ? "Unavailable" : String.format(Locale.US, "%.0f mAh", s.chargeCounterUah / 1000.0);
         String energy = s.energyNwh == Long.MIN_VALUE ? "Unavailable" : String.format(Locale.US, "%.2f Wh", s.energyNwh / 1_000_000.0);
         String cycles = s.cycleCount < 0 ? "Unavailable on this device" : Integer.toString(s.cycleCount);
         health.setText("Android health: " + BatteryMonitorEngine.healthName(s.health)
+                + "\nDesign capacity: " + (design > 0 ? design + " mAh" : "Unavailable")
+                + "\nEstimated full capacity: " + cap
+                + "\nEstimated health: " + (Double.isNaN(healthPercent) ? "Learning…" : String.format(Locale.US, "%.1f%%", healthPercent))
                 + "\nCharge counter: " + counter + "\nEnergy counter: " + energy
-                + "\nEstimated full capacity: " + cap + "\nCycle count: " + cycles);
+                + "\nCycle count: " + cycles);
 
         double avgDrain = store.averageDrainMa24h();
+        double screenOn = store.averageScreenOnDrainMa24h();
+        double screenOff = store.averageScreenOffDrainMa24h();
+        double charging = store.averageChargeMa24h();
         double avgTemp = store.averageTemperature24h();
         history.setText("Stored samples: " + store.sampleCount()
-                + "\n24h average discharge current: " + (Double.isNaN(avgDrain) ? "Learning…" : String.format(Locale.US, "%.0f mA", avgDrain))
+                + "\n24h average discharge: " + formatMa(avgDrain)
+                + "\nScreen-on drain: " + formatMa(screenOn)
+                + "\nScreen-off drain: " + formatMa(screenOff)
+                + "\nCharging-rate baseline: " + formatMa(charging)
                 + "\n24h average temperature: " + (Double.isNaN(avgTemp) ? "Learning…" : String.format(Locale.US, "%.1f°C", avgTemp))
+                + "\nSmart alerts: high heat · high drain · slow charging · charge target"
                 + "\nHistory retention: 120 days\nAdaptive sampling: 1 min charging / 3 min discharging");
         chargeAlarmLabel.setText("Alert at " + prefs.getInt("smart-battery-charge-alarm", 80) + "%");
         tempAlarmLabel.setText(String.format(Locale.US, "Alert at %.0f°C", prefs.getFloat("smart-battery-temp-alarm", 42f)));
+    }
+
+    private String formatMa(double value) {
+        return Double.isNaN(value) ? "Learning…" : String.format(Locale.US, "%.0f mA", value);
     }
 
     private TextView sectionTitle(String text) {
