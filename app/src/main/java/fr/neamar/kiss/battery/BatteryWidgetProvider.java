@@ -8,6 +8,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.widget.RemoteViews;
 
+import androidx.preference.PreferenceManager;
+
 import java.util.Locale;
 
 import fr.neamar.kiss.BatteryHistoryActivity;
@@ -15,6 +17,8 @@ import fr.neamar.kiss.BatteryMonitorActivity;
 import fr.neamar.kiss.R;
 
 public class BatteryWidgetProvider extends AppWidgetProvider {
+    public static final String PREF_WIDGET_STYLE = "smart-battery-widget-style";
+
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
         for (int id : ids) manager.updateAppWidget(id, build(context, false));
@@ -33,6 +37,7 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
 
         RemoteViews v = new RemoteViews(context.getPackageName(), detailed
                 ? R.layout.widget_battery_detailed : R.layout.widget_battery_compact);
+        v.setImageViewResource(R.id.battery_widget_background, widgetBackground(context));
         v.setTextViewText(R.id.battery_widget_percent, s.percent() + "%");
         String sessionAge = session.durationMs >= 60_000L ? " · " + formatDuration(session.durationMs) : "";
         v.setTextViewText(R.id.battery_widget_state, s.isCharging()
@@ -49,37 +54,22 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
 
         String avg = Double.isNaN(session.averageCurrentMa) ? "Avg: learning…"
                 : String.format(Locale.US, "Avg: %+.0f mA", session.averageCurrentMa);
-        if (!Double.isNaN(session.percentPerHour)) {
-            avg += String.format(Locale.US, " · %+.1f%%/h", session.percentPerHour);
-        }
-        if (!Double.isNaN(session.totalMah)) {
-            avg += String.format(Locale.US, " · %+.0f mAh total",
-                    s.isCharging() ? session.totalMah : -session.totalMah);
-        }
+        if (!Double.isNaN(session.percentPerHour)) avg += String.format(Locale.US, " · %+.1f%%/h", session.percentPerHour);
+        if (!Double.isNaN(session.totalMah)) avg += String.format(Locale.US, " · %+.0f mAh total", s.isCharging() ? session.totalMah : -session.totalMah);
         v.setTextViewText(R.id.battery_widget_line2, avg);
 
         if (detailed) {
-            String screenOn = formatScreenLine("Screen on", session.screenOnCurrentMa,
-                    session.screenOnPercentPerHour);
-            String screenOff = formatScreenLine("Screen off", session.screenOffCurrentMa,
-                    session.screenOffPercentPerHour);
-            v.setTextViewText(R.id.battery_widget_line3, screenOn);
-            v.setTextViewText(R.id.battery_widget_line4, screenOff);
-
-            String temp = Float.isNaN(s.temperatureC) ? "—°C"
-                    : String.format(Locale.US, "%.1f°C", s.temperatureC);
+            v.setTextViewText(R.id.battery_widget_line3, formatScreenLine("Screen on", session.screenOnCurrentMa, session.screenOnPercentPerHour));
+            v.setTextViewText(R.id.battery_widget_line4, formatScreenLine("Screen off", session.screenOffCurrentMa, session.screenOffPercentPerHour));
+            String temp = Float.isNaN(s.temperatureC) ? "—°C" : String.format(Locale.US, "%.1f°C", s.temperatureC);
             String voltage = s.voltageMv > 0 ? s.voltageMv + " mV" : "— mV";
-            String power = Double.isNaN(s.powerW()) ? "— W"
-                    : String.format(Locale.US, "%.2f W", s.powerW());
+            String power = Double.isNaN(s.powerW()) ? "— W" : String.format(Locale.US, "%.2f W", s.powerW());
             v.setTextViewText(R.id.battery_widget_line5, power + " · " + temp + " · " + voltage);
-
             String capacity = cap > 0 ? String.format(Locale.US, "%.0f mAh", cap / 1000.0) : "learning";
-            String healthText = Double.isNaN(health) ? "health learning"
-                    : String.format(Locale.US, "health %.1f%%", health);
+            String healthText = Double.isNaN(health) ? "health learning" : String.format(Locale.US, "health %.1f%%", health);
             String designText = design > 0 ? " / " + design + " design" : "";
-            String cycles = String.format(Locale.US, " · 30d cycles %.2f", cycles30);
-            v.setTextViewText(R.id.battery_widget_line6,
-                    "Capacity " + capacity + designText + " · " + healthText + cycles);
+            v.setTextViewText(R.id.battery_widget_line6, "Capacity " + capacity + designText + " · " + healthText
+                    + String.format(Locale.US, " · 30d cycles %.2f", cycles30));
         }
 
         Intent open = new Intent(context, detailed ? BatteryHistoryActivity.class : BatteryMonitorActivity.class);
@@ -89,12 +79,20 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
         return v;
     }
 
+    public static int widgetBackground(Context context) {
+        String style = PreferenceManager.getDefaultSharedPreferences(context).getString(PREF_WIDGET_STYLE, "material_you");
+        if ("google_pill".equals(style)) return R.drawable.battery_widget_google_pill;
+        if ("squircle".equals(style)) return R.drawable.battery_widget_squircle;
+        if ("glass".equals(style)) return R.drawable.battery_widget_glass;
+        if ("soft_card".equals(style)) return R.drawable.battery_widget_soft_card;
+        if ("pixel".equals(style)) return R.drawable.battery_widget_pixel;
+        if ("stadium".equals(style)) return R.drawable.battery_widget_stadium;
+        return R.drawable.battery_widget_material_you;
+    }
+
     private static String formatScreenLine(String label, double ma, double percentPerHour) {
-        String text = Double.isNaN(ma) ? label + ": learning…"
-                : String.format(Locale.US, "%s: %+.0f mA", label, ma);
-        if (!Double.isNaN(percentPerHour)) {
-            text += String.format(Locale.US, " · %+.1f%%/h", percentPerHour);
-        }
+        String text = Double.isNaN(ma) ? label + ": learning…" : String.format(Locale.US, "%s: %+.0f mA", label, ma);
+        if (!Double.isNaN(percentPerHour)) text += String.format(Locale.US, " · %+.1f%%/h", percentPerHour);
         return text;
     }
 
