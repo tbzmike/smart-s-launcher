@@ -13,8 +13,10 @@ import android.text.SpannableString;
 import android.text.TextWatcher;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.AbsListView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -41,6 +43,7 @@ import java.util.Set;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.SemanticHints;
 
@@ -48,9 +51,11 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     private LinearLayout tabs;
     private EditText search;
     private ListView list;
+    private View rootView;
     private final List<NotificationHistoryRecord> records = new ArrayList<>();
     private String selectedPackage;
     private boolean selectedPermanent;
+    private int lastFirstVisible = -1;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -60,6 +65,9 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         buildUi();
         rebuildTabs();
         refresh();
+        if (rootView != null) {
+            rootView.post(() -> SmartAnimationEngine.animateWindowSwitch(null, rootView));
+        }
     }
 
     @Override
@@ -83,6 +91,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     private void buildUi() {
         int pad = dp(12);
         LinearLayout root = new LinearLayout(this);
+        rootView = root;
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(pad, pad, pad, pad);
         root.setBackgroundColor(Color.argb(158, 0, 0, 0));
@@ -120,6 +129,30 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         list.setCacheColorHint(Color.TRANSPARENT);
         list.setAdapter(new HistoryAdapter());
         list.setOnItemClickListener((parent, view, position, id) -> openNotificationTarget(records.get(position)));
+        list.setOnScrollListener(new AbsListView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(AbsListView view, int scrollState) { }
+
+            @Override
+            public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount,
+                                 int totalItemCount) {
+                if (visibleItemCount <= 0) return;
+                if (lastFirstVisible < 0) {
+                    lastFirstVisible = firstVisibleItem;
+                    return;
+                }
+                if (firstVisibleItem == lastFirstVisible) return;
+
+                boolean movingDown = firstVisibleItem > lastFirstVisible;
+                int childIndex = movingDown ? visibleItemCount - 1 : 0;
+                View child = view.getChildAt(childIndex);
+                if (child != null) {
+                    int animationIndex = movingDown ? childIndex : 0;
+                    SmartAnimationEngine.animateTileListItem(child, animationIndex);
+                }
+                lastFirstVisible = firstVisibleItem;
+            }
+        });
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         search.addTextChangedListener(new TextWatcher() {
@@ -168,7 +201,20 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         }
         records.clear();
         records.addAll(SmartStateStore.queryNotifications(this, selectedPackage, terms, selectedPermanent, 2000));
-        if (list != null && list.getAdapter() instanceof BaseAdapter) ((BaseAdapter) list.getAdapter()).notifyDataSetChanged();
+        if (list != null && list.getAdapter() instanceof BaseAdapter) {
+            ((BaseAdapter) list.getAdapter()).notifyDataSetChanged();
+            lastFirstVisible = -1;
+            list.post(this::animateVisibleRows);
+        }
+    }
+
+    private void animateVisibleRows() {
+        if (list == null || !SmartAnimationEngine.isEnabled(this)) return;
+        int count = list.getChildCount();
+        for (int i = 0; i < count; i++) {
+            View child = list.getChildAt(i);
+            if (child != null) SmartAnimationEngine.animateTileListItem(child, i);
+        }
     }
 
     private String getSearchQuery() {
