@@ -10,6 +10,7 @@ import android.widget.RemoteViews;
 
 import java.util.Locale;
 
+import fr.neamar.kiss.BatteryHistoryActivity;
 import fr.neamar.kiss.BatteryMonitorActivity;
 import fr.neamar.kiss.R;
 
@@ -81,8 +82,8 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
                     "Capacity " + capacity + designText + " · " + healthText + cycles);
         }
 
-        Intent open = new Intent(context, BatteryMonitorActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(context, 22, open,
+        Intent open = new Intent(context, detailed ? BatteryHistoryActivity.class : BatteryMonitorActivity.class);
+        PendingIntent pi = PendingIntent.getActivity(context, detailed ? 23 : 22, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         v.setOnClickPendingIntent(R.id.battery_widget_root, pi);
         return v;
