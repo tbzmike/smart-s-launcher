@@ -55,10 +55,12 @@ public final class LockedNotificationHistoryDialog {
         private final TextView title;
         private final TextView time;
         private final TextView body;
+        private final TextView hint;
         private final LinearLayout nativeArea;
         private final LinearLayout actionArea;
         private final ScrollView scroll;
         private final AlertDialog dialog;
+        private final int accent;
 
         private int index;
         private float downY;
@@ -67,6 +69,7 @@ public final class LockedNotificationHistoryDialog {
             this.context = context;
             this.packageName = packageName;
             this.records = records;
+            this.accent = AppNativeDialogStyle.accentForPackage(context, packageName);
 
             int pad = dp(14);
             content = new LinearLayout(context);
@@ -95,10 +98,12 @@ public final class LockedNotificationHistoryDialog {
             title = new TextView(context);
             title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             title.setTextSize(17f);
+            AppNativeDialogStyle.setReadableText(title);
             headingText.addView(title);
 
             time = new TextView(context);
             time.setTextSize(12f);
+            AppNativeDialogStyle.setReadableText(time);
             headingText.addView(time);
 
             header.addView(headingText, new LinearLayout.LayoutParams(
@@ -107,6 +112,7 @@ public final class LockedNotificationHistoryDialog {
             counter = new TextView(context);
             counter.setTextSize(12f);
             counter.setGravity(Gravity.END);
+            AppNativeDialogStyle.setReadableText(counter);
             header.addView(counter);
             content.addView(header);
 
@@ -114,6 +120,7 @@ public final class LockedNotificationHistoryDialog {
             body.setTextSize(15f);
             body.setTextIsSelectable(true);
             body.setPadding(0, pad, 0, pad);
+            AppNativeDialogStyle.setReadableText(body);
             content.addView(body, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -127,11 +134,12 @@ public final class LockedNotificationHistoryDialog {
             content.addView(actionArea, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-            TextView hint = new TextView(context);
+            hint = new TextView(context);
             hint.setText("Swipe up: older   •   Swipe down: newer");
             hint.setGravity(Gravity.CENTER);
             hint.setTextSize(12f);
             hint.setPadding(0, pad, 0, 0);
+            AppNativeDialogStyle.setReadableText(hint);
             content.addView(hint);
 
             scroll = new ScrollView(context);
@@ -148,6 +156,7 @@ public final class LockedNotificationHistoryDialog {
         void show() {
             render();
             dialog.show();
+            AppNativeDialogStyle.styleDialog(dialog, packageName);
             Window window = dialog.getWindow();
             if (window != null) {
                 WindowManager.LayoutParams lp = window.getAttributes();
@@ -229,11 +238,13 @@ public final class LockedNotificationHistoryDialog {
                 EditText reply = new EditText(context);
                 reply.setHint("Reply");
                 reply.setSingleLine(false);
+                AppNativeDialogStyle.setReadableText(reply);
                 replyRow.addView(reply, new LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
                 Button send = new Button(context);
                 send.setText("Reply");
+                AppNativeDialogStyle.styleButton(send, accent);
                 send.setOnClickListener(v -> {
                     String message = reply.getText().toString();
                     if (message.trim().isEmpty()) return;
@@ -256,6 +267,7 @@ public final class LockedNotificationHistoryDialog {
 
             Button markRead = new Button(context);
             markRead.setText("Mark read");
+            AppNativeDialogStyle.styleButton(markRead, accent);
             markRead.setOnClickListener(v -> {
                 if (NotificationListener.markNotificationRead(context, record.notificationId)) {
                     render();
@@ -268,9 +280,8 @@ public final class LockedNotificationHistoryDialog {
 
             Button open = new Button(context);
             open.setText("Open notification");
+            AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                // Keep this visible launcher window alive while sending the notification. Android
-                // 14+ requires the sender to be in an eligible visible state for user-driven BAL.
                 boolean opened = NotificationListener.openNotification(
                         context, record.notificationId);
                 if (!opened) opened = AppLaunchUtils.launchPackage(context, packageName);
@@ -290,6 +301,7 @@ public final class LockedNotificationHistoryDialog {
             buttons.setGravity(Gravity.END);
             Button open = new Button(context);
             open.setText("Open app");
+            AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
                 if (!AppLaunchUtils.launchPackage(context, packageName)) {
                     Toast.makeText(context, "App cannot be opened",
