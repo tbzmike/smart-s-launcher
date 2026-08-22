@@ -35,9 +35,11 @@ public final class BatteryMonitorService extends Service {
 
     private final Runnable sampler = new Runnable() {
         @Override public void run() {
-            sampleNow();
-            BatterySnapshot s = BatteryMonitorEngine.read(BatteryMonitorService.this);
-            long interval = s.isCharging() ? 60_000L : 180_000L;
+            BatterySnapshot s = sampleNow();
+            long interval;
+            if (s.isCharging()) interval = 60_000L;
+            else if (s.percent() <= 15) interval = 90_000L;
+            else interval = 180_000L;
             handler.postDelayed(this, interval);
         }
     };
@@ -81,13 +83,14 @@ public final class BatteryMonitorService extends Service {
         return (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
     }
 
-    private void sampleNow() {
+    private BatterySnapshot sampleNow() {
         BatterySnapshot s = BatteryMonitorEngine.read(this);
         store.add(s);
         NotificationManager nm = notificationManager();
         if (nm != null) nm.notify(LIVE_ID, buildLiveNotification(s));
         BatteryWidgetProvider.updateAll(this);
         checkAlerts(s);
+        return s;
     }
 
     private Notification buildLiveNotification(BatterySnapshot s) {
@@ -100,22 +103,46 @@ public final class BatteryMonitorService extends Service {
 
         String current = Double.isNaN(s.currentMa()) ? "current unavailable"
                 : String.format(Locale.US, "%.0f mA", Math.abs(s.currentMa()));
-        String power = Double.isNaN(s.powerW()) ? ""
-                : String.format(Locale.US, " · %.2f W", s.powerW());
-        String text = current + power + " · " + String.format(Locale.US, "%.1f°C", s.temperatureC)
-                + " · " + s.voltageMv + " mV";
+        String power = Double.isNaN(s.powerW()) ? "— W"
+                : String.format(Locale.US, "%.2f W", s.powerW());
+        String temp = Float.isNaN(s.temperatureC) ? "temp unavailable"
+                : String.format(Locale.US, "%.1f°C", s.temperatureC);
+        String voltage = s.voltageMv > 0 ? s.voltageMv + " mV" : "voltage unavailable";
         String state = s.isCharging() ? "Charging" : "Discharging";
+        String source = BatteryMonitorEngine.sourceName(s.plugged);
+        String timeToFull = s.chargeTimeRemainingMs == Long.MIN_VALUE ? "—"
+                : formatDuration(s.chargeTimeRemainingMs);
+        long estimated = store.estimatedFullCapacityUah();
+        int design = BatteryCapacityEstimator.designCapacityMah(this);
+        double health = BatteryCapacityEstimator.healthPercent(this, estimated);
+        String capacity = estimated > 0 ? String.format(Locale.US, "%.0f mAh", estimated / 1000.0) : "learning";
+        String healthText = Double.isNaN(health) ? "learning" : String.format(Locale.US, "%.1f%%", health);
+        String screenOn = formatMa(store.averageScreenOnDrainMa24h());
+        String screenOff = formatMa(store.averageScreenOffDrainMa24h());
+
+        String collapsed = current + " · " + power + " · " + temp;
+        StringBuilder expanded = new StringBuilder();
+        expanded.append(current).append(" · ").append(power).append(" · ").append(temp).append(" · ").append(voltage)
+                .append("\nSource: ").append(source);
+        if (s.isCharging()) expanded.append(" · time to full: ").append(timeToFull);
+        expanded.append("\n24h drain — screen on: ").append(screenOn).append(" · screen off: ").append(screenOff)
+                .append("\nCapacity: ").append(capacity);
+        if (design > 0) expanded.append(" / ").append(design).append(" mAh design");
+        expanded.append(" · estimated health: ").append(healthText)
+                .append("\nTap for graphs, sessions, wear, reports and app-activity correlation.");
 
         return new NotificationCompat.Builder(this, CHANNEL_LIVE)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle("Battery " + s.percent() + "% · " + state)
-                .setContentText(text)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(text + "\nTap for health, history, capacity and charging details."))
+                .setContentText(collapsed)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(expanded.toString()))
                 .setContentIntent(content)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setShowWhen(false)
+                .addAction(0, "Open monitor", content)
                 .addAction(0, "Stop monitor", stopPi)
                 .build();
     }
@@ -157,6 +184,15 @@ public final class BatteryMonitorService extends Service {
         }
     }
 
+    private String formatMa(double value) {
+        return Double.isNaN(value) ? "learning" : String.format(Locale.US, "%.0f mA", value);
+    }
+
+    private String formatDuration(long ms) {
+        long minutes = Math.max(0L, ms / 60_000L);
+        return (minutes / 60) + "h " + (minutes % 60) + "m";
+    }
+
     private void maybePostRateLimited(String key, String title, String text) {
         SharedPreferences p = PreferenceManager.getDefaultSharedPreferences(this);
         String pref = "smart-battery-alert-last-" + key;
@@ -169,11 +205,15 @@ public final class BatteryMonitorService extends Service {
     private void postAlert(String title, String text) {
         NotificationManager nm = notificationManager();
         if (nm == null) return;
+        Intent open = new Intent(this, BatteryMonitorActivity.class);
+        PendingIntent content = PendingIntent.getActivity(this, 2, open,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         nm.notify(ALERT_ID, new NotificationCompat.Builder(this, CHANNEL_ALERTS)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(title)
                 .setContentText(text)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                .setContentIntent(content)
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .build());
@@ -185,11 +225,11 @@ public final class BatteryMonitorService extends Service {
         if (nm == null) return;
         NotificationChannel live = new NotificationChannel(CHANNEL_LIVE, "Battery monitor",
                 NotificationManager.IMPORTANCE_LOW);
-        live.setDescription("Live battery usage, charging rate and temperature");
+        live.setDescription("Live battery usage, charging rate, health and temperature");
         nm.createNotificationChannel(live);
         NotificationChannel alerts = new NotificationChannel(CHANNEL_ALERTS, "Battery alerts",
                 NotificationManager.IMPORTANCE_HIGH);
-        alerts.setDescription("Charge target, heat and abnormal battery warnings");
+        alerts.setDescription("Charge target, heat, abnormal drain and charging warnings");
         nm.createNotificationChannel(alerts);
     }
 }
