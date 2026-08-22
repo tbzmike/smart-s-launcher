@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
@@ -76,10 +77,14 @@ public final class BatteryMonitorService extends Service {
     @Override
     public IBinder onBind(Intent intent) { return null; }
 
+    private NotificationManager notificationManager() {
+        return (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+    }
+
     private void sampleNow() {
         BatterySnapshot s = BatteryMonitorEngine.read(this);
         store.add(s);
-        NotificationManager nm = getSystemService(NotificationManager.class);
+        NotificationManager nm = notificationManager();
         if (nm != null) nm.notify(LIVE_ID, buildLiveNotification(s));
         BatteryWidgetProvider.updateAll(this);
         checkAlerts(s);
@@ -127,21 +132,48 @@ public final class BatteryMonitorService extends Service {
         } else if (!s.isCharging() || s.percent() < Math.max(0, chargeAlarm - 3)) {
             p.edit().putBoolean("smart-battery-charge-alarm-latched", false).apply();
         }
-        if (s.temperatureC >= tempAlarm && !tempLatched) {
+        if (!Float.isNaN(s.temperatureC) && s.temperatureC >= tempAlarm && !tempLatched) {
             postAlert("Battery temperature warning", String.format(Locale.US, "Battery temperature is %.1f°C.", s.temperatureC));
             p.edit().putBoolean("smart-battery-temp-alarm-latched", true).apply();
-        } else if (s.temperatureC < tempAlarm - 2f) {
+        } else if (!Float.isNaN(s.temperatureC) && s.temperatureC < tempAlarm - 2f) {
             p.edit().putBoolean("smart-battery-temp-alarm-latched", false).apply();
+        }
+
+        if (!Double.isNaN(s.currentMa())) {
+            double now = Math.abs(s.currentMa());
+            if (!s.isCharging()) {
+                double baseline = store.averageDrainMa24h();
+                if (!Double.isNaN(baseline) && baseline > 100 && now > baseline * 2.2) {
+                    maybePostRateLimited("drain", "Abnormal battery drain",
+                            String.format(Locale.US, "Current drain %.0f mA is much higher than your 24h baseline %.0f mA.", now, baseline));
+                }
+            } else {
+                double baseline = store.averageChargeMa24h();
+                if (!Double.isNaN(baseline) && baseline > 300 && now < baseline * 0.45) {
+                    maybePostRateLimited("slow", "Charging slower than usual",
+                            String.format(Locale.US, "Current charge rate %.0f mA is well below your 24h baseline %.0f mA.", now, baseline));
+                }
+            }
         }
     }
 
+    private void maybePostRateLimited(String key, String title, String text) {
+        SharedPreferences p = PreferenceManager.getDefaultSharedPreferences(this);
+        String pref = "smart-battery-alert-last-" + key;
+        long now = System.currentTimeMillis();
+        if (now - p.getLong(pref, 0L) < 3_600_000L) return;
+        p.edit().putLong(pref, now).apply();
+        postAlert(title, text);
+    }
+
     private void postAlert(String title, String text) {
-        NotificationManager nm = getSystemService(NotificationManager.class);
+        NotificationManager nm = notificationManager();
         if (nm == null) return;
         nm.notify(ALERT_ID, new NotificationCompat.Builder(this, CHANNEL_ALERTS)
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(title)
                 .setContentText(text)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .build());
@@ -149,7 +181,7 @@ public final class BatteryMonitorService extends Service {
 
     private void createChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationManager nm = getSystemService(NotificationManager.class);
+        NotificationManager nm = notificationManager();
         if (nm == null) return;
         NotificationChannel live = new NotificationChannel(CHANNEL_LIVE, "Battery monitor",
                 NotificationManager.IMPORTANCE_LOW);
