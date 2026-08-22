@@ -23,6 +23,9 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.index.CommunicationIndexStore;
+import fr.neamar.kiss.index.CommunicationIndexer;
+import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.SearchPojo;
 import fr.neamar.kiss.pojo.SearchPojoType;
@@ -59,6 +62,7 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
     public SearchProvider(Context context) {
         this.context = context.getApplicationContext();
         this.prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        CommunicationIndexer.ensureDefaults(this.context);
         reload();
     }
 
@@ -88,6 +92,7 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
     private List<Pojo> getResults(String query) {
         List<Pojo> records = new ArrayList<>();
 
+        addCommunicationIndexResults(query, records);
         addClipboardSuggestions(query, records);
 
         SearchPojo resolvedAction = getResolvedIntentAction(query);
@@ -118,6 +123,42 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
             if (URLUtil.isValidUrl(guessedUrl)) records.add(createUrlQuerySearchPojo(guessedUrl));
         }
         return records;
+    }
+
+    private void addCommunicationIndexResults(String query, List<Pojo> records) {
+        if (!prefs.getBoolean(CommunicationIndexer.PREF_ENABLED, true)) return;
+        if (query == null || query.trim().length() < 2) return;
+        if (CommunicationIndexer.needsRefresh(context)) {
+            android.os.AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> CommunicationIndexer.rebuild(context));
+        }
+        int limit = Math.max(5, Math.min(200, prefs.getInt(CommunicationIndexer.PREF_LIMIT, 40)));
+        try (CommunicationIndexStore store = new CommunicationIndexStore(context)) {
+            for (CommunicationPojo item : store.search(query, limit)) {
+                String url;
+                String label;
+                switch (item.kind) {
+                    case CALL:
+                        if (item.address.isEmpty()) continue;
+                        url = Uri.fromParts("tel", item.address, null).toString();
+                        label = "Call history · " + item.getName();
+                        break;
+                    case SMS:
+                        if (item.address.isEmpty()) continue;
+                        url = Uri.fromParts("smsto", item.address, null).toString();
+                        label = "Message · " + item.getName();
+                        break;
+                    case TRUECALLER_NOTIFICATION:
+                    default:
+                        url = "https://www.truecaller.com";
+                        label = "Truecaller · " + item.getName();
+                        break;
+                }
+                SearchPojo pojo = new SearchPojo("search://communication/" + item.id.hashCode(), "", url, SearchPojoType.URL_QUERY);
+                pojo.relevance = item.relevance;
+                pojo.setName(label, false);
+                records.add(pojo);
+            }
+        }
     }
 
     private void addClipboardSuggestions(String query, List<Pojo> records) {
@@ -202,10 +243,6 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         }
     }
 
-    /**
-     * Tiny offline intent classifier for natural phrases. It intentionally handles only high-confidence
-     * patterns; ambiguous text still falls through to normal KISS universal search.
-     */
     @Nullable
     private SearchPojo getNaturalLanguageAction(String query) {
         String trimmed = query.trim();
