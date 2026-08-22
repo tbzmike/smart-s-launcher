@@ -14,6 +14,7 @@ import java.util.Locale;
 
 import fr.neamar.kiss.BatteryHistoryActivity;
 import fr.neamar.kiss.BatteryMonitorActivity;
+import fr.neamar.kiss.BatteryWidgetStyleActivity;
 import fr.neamar.kiss.R;
 
 public class BatteryWidgetProvider extends AppWidgetProvider {
@@ -76,6 +77,11 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
         PendingIntent pi = PendingIntent.getActivity(context, detailed ? 23 : 22, open,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         v.setOnClickPendingIntent(R.id.battery_widget_root, pi);
+
+        Intent style = new Intent(context, BatteryWidgetStyleActivity.class);
+        PendingIntent stylePi = PendingIntent.getActivity(context, detailed ? 25 : 24, style,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        v.setOnClickPendingIntent(R.id.battery_widget_style, stylePi);
         return v;
     }
 
