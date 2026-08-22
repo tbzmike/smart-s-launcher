@@ -102,6 +102,10 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
             }
             return true;
         }
+        if (item.getItemId() == R.id.battery_monitor) {
+            startActivity(new Intent(this, BatteryMonitorActivity.class));
+            return true;
+        }
         if (item.getItemId() == R.id.smart_features) {
             openSmartFeaturesSettings();
             return true;
