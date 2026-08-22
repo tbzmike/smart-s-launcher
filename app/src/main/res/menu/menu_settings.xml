@@ -6,6 +6,10 @@
         android:title="Unlock launcher UI"
         app:showAsAction="always|withText" />
     <item
+        android:id="@+id/battery_monitor"
+        android:title="Battery Monitor"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/smart_features"
         android:title="@string/smart_features_title"
         app:showAsAction="never" />
