@@ -11,6 +11,9 @@
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.ACCESS_HIDDEN_PROFILES" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
@@ -64,6 +67,13 @@
         </activity>
 
         <activity
+            android:name=".BatteryMonitorActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/SettingTheme" />
+
+        <activity
             android:name=".NotificationHistoryActivity"
             android:exported="false"
             android:excludeFromRecents="true"
@@ -107,6 +117,21 @@
             android:exported="true"
             android:grantUriPermissions="true" />
 
+        <receiver
+            android:name=".battery.BatteryWidgetProvider"
+            android:exported="false"
+            android:label="Smart S Battery · Compact">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/battery_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".battery.BatteryDetailedWidgetProvider"
+            android:exported="false"
+            android:label="Smart S Battery · Detailed">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/battery_widget_detailed_info" />
+        </receiver>
+
         <receiver android:name=".broadcast.LocaleChangedReceiver" android:enabled="true" android:exported="true">
             <intent-filter><action android:name="android.intent.action.LOCALE_CHANGED" /></intent-filter>
         </receiver>
@@ -124,6 +149,15 @@
         <service android:name=".dataprovider.AppProvider" />
         <service android:name=".dataprovider.ContactsProvider" />
         <service android:name=".dataprovider.ShortcutsProvider" />
+
+        <service
+            android:name=".battery.BatteryMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Continuous local battery telemetry for Smart S battery monitor" />
+        </service>
 
         <service
             android:name=".notification.NotificationListener"
