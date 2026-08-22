@@ -18,6 +18,7 @@ import java.text.DateFormat;
 import java.util.Date;
 
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.utils.AppLaunchUtils;
@@ -95,4 +96,6 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
     }
 
     @Override protected boolean isAllowedAsFavorite() { return false; }
+    @Override protected boolean canRemoveFromHistory(Context context) { return false; }
+    @Override protected boolean canHaveCustomIcon(Context context, IconPack iconPack) { return false; }
 }
