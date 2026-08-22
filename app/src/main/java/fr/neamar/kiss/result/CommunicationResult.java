@@ -27,7 +27,7 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 public final class CommunicationResult extends Result<CommunicationPojo> {
     private volatile Drawable icon;
 
-    CommunicationResult(@NonNull CommunicationPojo pojo) { super(pojo); }
+    public CommunicationResult(@NonNull CommunicationPojo pojo) { super(pojo); }
 
     @NonNull @Override
     public View display(Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
