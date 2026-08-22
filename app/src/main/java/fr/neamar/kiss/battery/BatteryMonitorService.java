@@ -119,14 +119,30 @@ public final class BatteryMonitorService extends Service {
         String healthText = Double.isNaN(health) ? "learning" : String.format(Locale.US, "%.1f%%", health);
         String screenOn = formatMa(store.averageScreenOnDrainMa24h());
         String screenOff = formatMa(store.averageScreenOffDrainMa24h());
+        BatteryHistoryStore.CurrentSessionStats session = store.currentSessionStats(s);
+        String speed = formatPercentRate(session.percentPerHour, s.isCharging());
+        String sessionAverage = formatSignedMa(session.averageCurrentMa);
+        String remaining = session.estimatedRemainingMs == Long.MIN_VALUE
+                ? "learning" : formatDuration(session.estimatedRemainingMs);
+        String likelyCause = s.isCharging() ? "" : BatteryUsageAnalyzer.likelyDrainCause(this, 60L * 60L * 1000L);
 
-        String collapsed = current + " · " + power + " · " + temp;
+        String collapsed;
+        if (s.isCharging()) {
+            collapsed = current + " · Charge " + speed + " · " + temp;
+        } else {
+            collapsed = current + " · Drain " + speed + " · " + temp;
+        }
+
         StringBuilder expanded = new StringBuilder();
         expanded.append(current).append(" · ").append(power).append(" · ").append(temp).append(" · ").append(voltage)
+                .append("\n").append(s.isCharging() ? "Charge speed: " : "Drain speed: ").append(speed)
+                .append(" · session avg: ").append(sessionAverage)
+                .append(" · remaining: ").append(remaining)
                 .append("\nSource: ").append(source);
         if (s.isCharging()) expanded.append(" · time to full: ").append(timeToFull);
-        expanded.append("\n24h drain — screen on: ").append(screenOn).append(" · screen off: ").append(screenOff)
-                .append("\nCapacity: ").append(capacity);
+        expanded.append("\n24h drain — screen on: ").append(screenOn).append(" · screen off: ").append(screenOff);
+        if (!s.isCharging()) expanded.append("\nLikely app contributor: ").append(likelyCause);
+        expanded.append("\nCapacity: ").append(capacity);
         if (design > 0) expanded.append(" / ").append(design).append(" mAh design");
         expanded.append(" · estimated health: ").append(healthText)
                 .append("\nTap for Daily / Weekly / Monthly history, sessions, wear and reports.");
@@ -171,8 +187,11 @@ public final class BatteryMonitorService extends Service {
             if (!s.isCharging()) {
                 double baseline = store.averageDrainMa24h();
                 if (!Double.isNaN(baseline) && baseline > 100 && now > baseline * 2.2) {
+                    String culprit = BatteryUsageAnalyzer.likelyDrainCause(this, 60L * 60L * 1000L);
                     maybePostRateLimited("drain", "Abnormal battery drain",
-                            String.format(Locale.US, "Current drain %.0f mA is much higher than your 24h baseline %.0f mA.", now, baseline));
+                            String.format(Locale.US,
+                                    "Current drain %.0f mA is much higher than your 24h baseline %.0f mA. Likely app contributor: %s.",
+                                    now, baseline, culprit));
                 }
             } else {
                 double baseline = store.averageChargeMa24h();
@@ -186,6 +205,16 @@ public final class BatteryMonitorService extends Service {
 
     private String formatMa(double value) {
         return Double.isNaN(value) ? "learning" : String.format(Locale.US, "%.0f mA", value);
+    }
+
+    private String formatSignedMa(double value) {
+        return Double.isNaN(value) ? "learning" : String.format(Locale.US, "%+.0f mA", value);
+    }
+
+    private String formatPercentRate(double value, boolean charging) {
+        if (Double.isNaN(value)) return "learning";
+        double normalized = charging ? Math.abs(value) : -Math.abs(value);
+        return String.format(Locale.US, "%+.1f%%/h", normalized);
     }
 
     private String formatDuration(long ms) {
@@ -225,7 +254,7 @@ public final class BatteryMonitorService extends Service {
         if (nm == null) return;
         NotificationChannel live = new NotificationChannel(CHANNEL_LIVE, "Battery monitor",
                 NotificationManager.IMPORTANCE_LOW);
-        live.setDescription("Live battery usage, charging rate, health and temperature");
+        live.setDescription("Live battery usage, drain speed, charging rate, health and temperature");
         nm.createNotificationChannel(live);
         NotificationChannel alerts = new NotificationChannel(CHANNEL_ALERTS, "Battery alerts",
                 NotificationManager.IMPORTANCE_HIGH);
