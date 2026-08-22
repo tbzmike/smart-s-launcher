@@ -155,6 +155,13 @@ public final class LockedNotificationHistoryDialog {
 
         void show() {
             render();
+            dialog.setOnShowListener(ignored -> {
+                // This path is separate from NotificationPopupDialog. Apply the app-derived
+                // surface only after Android has created the real AlertDialog panel hierarchy.
+                AppNativeDialogStyle.styleDialog(dialog, packageName);
+                AppNativeDialogStyle.styleButton(
+                        dialog.getButton(AlertDialog.BUTTON_NEGATIVE), accent);
+            });
             dialog.show();
             AppNativeDialogStyle.styleDialog(dialog, packageName);
             Window window = dialog.getWindow();
@@ -218,6 +225,7 @@ public final class LockedNotificationHistoryDialog {
                 View nativeView = NotificationListener.createNativeNotificationView(
                         context, record.notificationId, nativeArea, true);
                 if (nativeView != null) {
+                    AppNativeDialogStyle.styleNotificationContent(nativeView, packageName);
                     nativeArea.addView(nativeView, new LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -225,6 +233,12 @@ public final class LockedNotificationHistoryDialog {
                 addActiveActions(record);
             } else {
                 addOpenAppAction();
+            }
+
+            // Re-apply the same app colour when swiping between stored notifications so a newly
+            // inflated native RemoteViews tree cannot reintroduce a grey background.
+            if (dialog.isShowing()) {
+                AppNativeDialogStyle.styleDialog(dialog, packageName);
             }
         }
 
