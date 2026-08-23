@@ -27,6 +27,7 @@ public class ForwarderManager extends Forwarder {
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final SmartCardListForwarder smartCardListForwarder;
     private final VerticalCardGroupResizeController verticalCardGroupResizeController;
+    private final VerticalCardNotificationHistoryForwarder verticalCardNotificationHistoryForwarder;
     private final SquareUHostFullscreenController squareUHostFullscreenController;
     private final SquareUStabilityController squareUStabilityController;
     private final SquareUEdgeBoundsController squareUEdgeBoundsController;
@@ -48,6 +49,7 @@ public class ForwarderManager extends Forwarder {
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
         this.smartCardListForwarder = new SmartCardListForwarder(mainActivity);
         this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(mainActivity, smartCardListForwarder);
+        this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
         this.squareUHostFullscreenController = new SquareUHostFullscreenController(mainActivity, historyDisplayForwarder);
         this.squareUStabilityController = new SquareUStabilityController(mainActivity, historyDisplayForwarder);
         this.squareUEdgeBoundsController = new SquareUEdgeBoundsController(mainActivity, historyDisplayForwarder);
@@ -67,6 +69,7 @@ public class ForwarderManager extends Forwarder {
         squareUHostFullscreenController.onCreate();
         smartCardListForwarder.onCreate();
         verticalCardGroupResizeController.onCreate();
+        verticalCardNotificationHistoryForwarder.onCreate();
         squareUStabilityController.onCreate();
         squareUEdgeBoundsController.onCreate();
         historyVisualEnhancer.onCreate();
@@ -87,6 +90,7 @@ public class ForwarderManager extends Forwarder {
         squareUHostFullscreenController.onResume();
         smartCardListForwarder.onResume();
         verticalCardGroupResizeController.onResume();
+        verticalCardNotificationHistoryForwarder.onResume();
         squareUStabilityController.onResume();
         squareUEdgeBoundsController.onResume();
         historyVisualEnhancer.onResume();
@@ -96,6 +100,7 @@ public class ForwarderManager extends Forwarder {
     public void onPause() {
         uNotificationHistoryLongPressForwarder.onPause();
         lockedHistoryGestureBridge.onPause();
+        verticalCardNotificationHistoryForwarder.onPause();
         verticalCardGroupResizeController.onPause();
         squareUEdgeBoundsController.onPause();
         squareUStabilityController.onPause();
@@ -126,6 +131,7 @@ public class ForwarderManager extends Forwarder {
         historyDisplayForwarder.onDataSetChanged();
         smartCardListForwarder.onDataSetChanged();
         verticalCardGroupResizeController.onDataSetChanged();
+        verticalCardNotificationHistoryForwarder.onDataSetChanged();
         squareUStabilityController.onDataSetChanged();
         squareUEdgeBoundsController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
@@ -141,6 +147,7 @@ public class ForwarderManager extends Forwarder {
     public void onDestroy() {
         uNotificationHistoryLongPressForwarder.onDestroy();
         lockedHistoryGestureBridge.onDestroy();
+        verticalCardNotificationHistoryForwarder.onDestroy();
         verticalCardGroupResizeController.onDestroy();
         squareUEdgeBoundsController.onDestroy();
         squareUStabilityController.onDestroy();
@@ -153,6 +160,7 @@ public class ForwarderManager extends Forwarder {
         favoritesForwarder.onConfigurationChanged(newConfig);
         squareUHostFullscreenController.onConfigurationChanged();
         verticalCardGroupResizeController.onConfigurationChanged();
+        verticalCardNotificationHistoryForwarder.onConfigurationChanged();
         squareUStabilityController.onConfigurationChanged();
         squareUEdgeBoundsController.onConfigurationChanged();
         uNotificationHistoryLongPressForwarder.onConfigurationChanged();
