@@ -9,6 +9,9 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherApps;
+import android.graphics.ColorFilter;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
@@ -40,13 +43,20 @@ import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationPopupDialog;
 import fr.neamar.kiss.utils.AppLaunchUtils;
-import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class AppResult extends ResultWithTags<AppPojo> {
     private static final String TAG = AppResult.class.getSimpleName();
+    private static final ColorFilter FROZEN_ICON_FILTER;
+
+    static {
+        ColorMatrix matrix = new ColorMatrix();
+        matrix.setSaturation(0f);
+        FROZEN_ICON_FILTER = new ColorMatrixColorFilter(matrix);
+    }
+
     private volatile Drawable icon = null;
     private boolean launchSucceeded = true;
 
@@ -68,8 +78,13 @@ public class AppResult extends ResultWithTags<AppPojo> {
         displayTags(context, fuzzyScore, tagsView);
 
         ImageView appIcon = view.findViewById(R.id.item_app_icon);
-        if (!isHideIcons(context)) this.setAsyncDrawable(appIcon);
-        else appIcon.setImageDrawable(null);
+        if (!isHideIcons(context)) {
+            this.setAsyncDrawable(appIcon);
+            applyFrozenIconFilter(appIcon);
+        } else {
+            appIcon.setImageDrawable(null);
+            appIcon.clearColorFilter();
+        }
 
         displayNotificationDot(context, view, false);
         displayNotificationMessage(context, view);
@@ -80,7 +95,19 @@ public class AppResult extends ResultWithTags<AppPojo> {
     public void inflateFavorite(@NonNull Context context, @NonNull View favoriteView) {
         refreshLiveDisabledState(context);
         super.inflateFavorite(context, favoriteView);
+        ImageView favoriteIcon = favoriteView.findViewById(R.id.favorite);
+        applyFrozenIconFilter(favoriteIcon);
         displayNotificationDot(context, favoriteView, true);
+    }
+
+    /**
+     * Frozen state is a property of the visible icon only. The cached Drawable remains full-color
+     * so card/tile accent extraction and glass/3D backgrounds continue using the app's real colors.
+     */
+    private void applyFrozenIconFilter(@Nullable ImageView imageView) {
+        if (imageView == null) return;
+        if (pojo.isDisabled()) imageView.setColorFilter(FROZEN_ICON_FILTER);
+        else imageView.clearColorFilter();
     }
 
     private void displayNotificationDot(Context context, View view, boolean isFavorite) {
@@ -270,7 +297,8 @@ public class AppResult extends ResultWithTags<AppPojo> {
                 }
             }
         }
-        DrawableUtils.setDisabled(icon, pojo.isDisabled());
+        // Never desaturate the cached drawable itself. Tile/card accent extraction must continue
+        // seeing the real app colors; only the ImageView is greyed by applyFrozenIconFilter().
         return icon;
     }
 
@@ -280,8 +308,6 @@ public class AppResult extends ResultWithTags<AppPojo> {
         if (candidate == null) candidate = parentView.findViewById(R.id.favorite);
         if (candidate instanceof ImageView) {
             ImageView imageView = (ImageView) candidate;
-            Drawable visibleDrawable = imageView.getDrawable();
-            DrawableUtils.setDisabled(visibleDrawable, false);
             imageView.clearColorFilter();
             imageView.invalidate();
         }
@@ -298,12 +324,11 @@ public class AppResult extends ResultWithTags<AppPojo> {
             }
             if (!AppLaunchUtils.ensurePackageEnabled(context, pojo.packageName)) {
                 pojo.setDisabled(true);
-                clearIcon();
+                applyFrozenIconFilter(findVisibleIcon(v));
                 Toast.makeText(context, "Unable to enable " + pojo.getName(), Toast.LENGTH_LONG).show();
                 return;
             }
             pojo.setDisabled(false);
-            DrawableUtils.setDisabled(icon, false);
             clearVisibleDisabledFilter(v);
             clearIcon();
         }
@@ -318,21 +343,26 @@ public class AppResult extends ResultWithTags<AppPojo> {
                 if (potentialIcon == null) potentialIcon = v.findViewById(R.id.favorite);
                 if (potentialIcon != null) {
                     sourceBounds = getViewBounds(potentialIcon);
-                    opts = ActivityOptions.makeClipRevealAnimation(potentialIcon, 0, 0, potentialIcon.getMeasuredWidth(), potentialIcon.getMeasuredHeight()).toBundle();
+                    opts = ActivityOptions.makeClipRevealAnimation(potentialIcon, 0, 0,
+                            potentialIcon.getMeasuredWidth(), potentialIcon.getMeasuredHeight()).toBundle();
                 }
             }
             launcher.startMainActivity(getClassName(), pojo.userHandle.getRealHandle(), sourceBounds, opts);
-            launchSucceeded = true;
-            pojo.setDisabled(false);
-            if (wasFrozen) {
-                clearVisibleDisabledFilter(v);
-                clearIcon();
-            }
+            markLaunchSucceeded(wasFrozen, v);
         } catch (ActivityNotFoundException | NullPointerException | SecurityException e) {
             Log.w(TAG, "Unable to launch activity", e);
+
+            // Immediately after IceBox/root unfreezes a package, LauncherApps can lag behind the
+            // PackageManager state. Try the package launch intent before treating the app as broken.
+            if (wasFrozen && AppLaunchUtils.launchPackage(context, pojo.packageName)) {
+                markLaunchSucceeded(true, v);
+                return;
+            }
+
             // Never hide/exclude an app merely because IceBox froze it between index and tap.
             if (!AppLaunchUtils.isPackageEnabled(context, pojo.packageName)) {
                 pojo.setDisabled(true);
+                applyFrozenIconFilter(findVisibleIcon(v));
                 clearIcon();
                 KissApplication.getApplication(context).getDataHandler().reloadApps();
             } else {
@@ -342,6 +372,23 @@ public class AppResult extends ResultWithTags<AppPojo> {
             }
             Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
         }
+    }
+
+    private void markLaunchSucceeded(boolean wasFrozen, @Nullable View parentView) {
+        launchSucceeded = true;
+        pojo.setDisabled(false);
+        if (wasFrozen) {
+            clearVisibleDisabledFilter(parentView);
+            clearIcon();
+        }
+    }
+
+    @Nullable
+    private ImageView findVisibleIcon(@Nullable View parentView) {
+        if (parentView == null) return null;
+        View candidate = parentView.findViewById(R.id.item_app_icon);
+        if (candidate == null) candidate = parentView.findViewById(R.id.favorite);
+        return candidate instanceof ImageView ? (ImageView) candidate : null;
     }
 
     @Override
