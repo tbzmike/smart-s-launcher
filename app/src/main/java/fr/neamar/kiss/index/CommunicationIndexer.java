@@ -16,8 +16,10 @@ import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -39,7 +41,7 @@ public final class CommunicationIndexer {
 
     private static final String TRUECALLER_PACKAGE = "com.truecaller";
     private static final int INITIAL_CALL_HISTORY_ROWS = 20;
-    private static final int TRUECALLER_NAME_ENRICHMENT_VERSION = 1;
+    private static final int TRUECALLER_NAME_ENRICHMENT_VERSION = 2;
     private static final long NEWEST_CALL_CHECK_THROTTLE_MS = 5_000L;
     private static final long TRUECALLER_TIME_MATCH_WINDOW_MS = 90_000L;
     private static final Pattern PHONE_PATTERN = Pattern.compile("\\+?[0-9][0-9\\s().-]{5,}[0-9]");
@@ -216,11 +218,47 @@ public final class CommunicationIndexer {
             return;
         }
 
-        List<TruecallerNameHint> hints = buildTruecallerHints(truecallerRecords);
+        List<String> callNumbers = new ArrayList<>(calls.size());
         for (CallRow row : calls) {
-            String displayName = hasUsefulCachedName(row.cachedName, row.number)
-                    ? row.cachedName.trim()
-                    : resolveTruecallerName(row, calls, hints);
+            if (!TextUtils.isEmpty(row.number)) callNumbers.add(row.number);
+        }
+        Map<String, String> readableTruecallerNames =
+                CallerIdentityResolver.loadReadableTruecallerNames(context, callNumbers);
+        Map<String, String> contactNameCache = new HashMap<>();
+        List<TruecallerNameHint> notificationHints = buildTruecallerHints(truecallerRecords);
+
+        for (CallRow row : calls) {
+            String displayName = "";
+
+            // 1) The Android CallLog's own name is authoritative when it is a real identity.
+            if (hasUsefulCachedName(row.cachedName, row.number)) {
+                displayName = row.cachedName.trim();
+            }
+
+            // 2) If the installed Truecaller build exposes an exported/readable provider with an
+            // exact number/name row, use it. No private authority or schema is hard-coded.
+            if (TextUtils.isEmpty(displayName)) {
+                displayName = CallerIdentityResolver.getTruecallerProviderName(
+                        row.number, readableTruecallerNames);
+            }
+
+            // 3) PhoneLookup can expose saved contacts and any caller identities synchronized into
+            // Android's shared contacts database. Cache per number so repeated calls stay cheap.
+            if (TextUtils.isEmpty(displayName) && !TextUtils.isEmpty(row.number)) {
+                String cachedContact = contactNameCache.get(row.number);
+                if (cachedContact == null) {
+                    cachedContact = CallerIdentityResolver.getAndroidContactName(context, row.number);
+                    contactNameCache.put(row.number, cachedContact);
+                }
+                displayName = cachedContact;
+            }
+
+            // 4/5) Finally use captured Truecaller notification evidence: exact number first, then
+            // a unique unambiguous time match. Never infer across multiple possible calls.
+            if (TextUtils.isEmpty(displayName)) {
+                displayName = resolveTruecallerName(row, calls, notificationHints);
+            }
+
             if (TextUtils.isEmpty(displayName)) displayName = row.number;
 
             String body = callType(row.type) + " call · " + row.duration + " sec";
@@ -247,11 +285,9 @@ public final class CommunicationIndexer {
     }
 
     private static boolean hasUsefulCachedName(String cachedName, String number) {
-        if (TextUtils.isEmpty(cachedName)) return false;
+        if (!CallerIdentityResolver.isUsableName(cachedName)) return false;
         String clean = cachedName.trim();
-        if (clean.isEmpty()) return false;
-        if (!TextUtils.isEmpty(number) && phoneNumbersMatch(clean, number)) return false;
-        return !"unknown".equalsIgnoreCase(clean) && !"private number".equalsIgnoreCase(clean);
+        return TextUtils.isEmpty(number) || !phoneNumbersMatch(clean, number);
     }
 
     private static List<TruecallerNameHint> buildTruecallerHints(
@@ -299,7 +335,6 @@ public final class CommunicationIndexer {
             if (TextUtils.isEmpty(uniqueName)) {
                 uniqueName = hint.name;
             } else if (!uniqueName.equalsIgnoreCase(hint.name)) {
-                // More than one different Truecaller identity could describe this call.
                 return "";
             }
         }
@@ -358,19 +393,16 @@ public final class CommunicationIndexer {
 
         clean = clean.replaceFirst("(?i)^truecaller\\s*[:\\-·]?\\s*", "");
         clean = clean.replaceFirst("(?i)^call\\s+from\\s+", "");
+        clean = clean.replaceFirst("(?i)^calling(?:\\.\\.)?\\s*[:\\-·]?\\s*", "");
         clean = clean.replaceFirst("(?i)\\s+(?:is\\s+)?calling(?:\\.\\.\\.)?.*$", "");
-        clean = clean.replaceFirst("(?i)\\s+(?:called you|missed call|incoming call|outgoing call).*$", "");
+        clean = clean.replaceFirst("(?i)\\s+(?:called you|missed call|incoming call|outgoing call|blocked call|rejected call).*$", "");
         clean = clean.replaceFirst("(?i)\\s*[·|\\-]\\s*\\+?[0-9][0-9\\s().-]{5,}[0-9].*$", "");
         clean = clean.trim();
 
         if (clean.startsWith("\"") && clean.endsWith("\"") && clean.length() > 1) {
             clean = clean.substring(1, clean.length() - 1).trim();
         }
-        if (clean.length() < 2 || clean.length() > 80) return "";
-        String lower = clean.toLowerCase(Locale.ROOT);
-        if (lower.equals("truecaller") || lower.equals("calling") || lower.equals("unknown")
-                || lower.equals("unknown caller") || lower.startsWith("tap to ")
-                || lower.startsWith("open truecaller")) return "";
+        if (!CallerIdentityResolver.isUsableName(clean)) return "";
         if (!TextUtils.isEmpty(number) && phoneNumbersMatch(clean, number)) return "";
         if (!TextUtils.isEmpty(extractPhoneNumber(clean))) return "";
         return clean;
