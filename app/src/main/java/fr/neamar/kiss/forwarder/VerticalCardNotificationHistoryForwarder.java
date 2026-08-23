@@ -1,5 +1,6 @@
 package fr.neamar.kiss.forwarder;
 
+import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,6 +31,7 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
+    private static final String STATS_MARKER = "  •  Last: ";
 
     private final SmartCardListForwarder smartCardListForwarder;
     private ViewGroup column;
@@ -148,8 +150,16 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
         String historyId = result.getPojo().getHistoryId();
         LaunchHistoryStatsStore.Stats stats = launchStats.get(historyId);
-        String appName = result.getPojo().getName();
-        if (appName == null || appName.trim().isEmpty()) appName = "App";
+
+        // Preserve SmartCardListForwarder's cleaned display label. On later global-layout passes the
+        // strip already contains stats, so take only the stable name prefix to avoid duplication.
+        String currentText = strip.getText() == null ? "" : strip.getText().toString().trim();
+        int marker = currentText.indexOf(STATS_MARKER);
+        String appName = marker > 0 ? currentText.substring(0, marker).trim() : currentText;
+        if (appName.isEmpty()) {
+            appName = result.getPojo().getName();
+            if (appName == null || appName.trim().isEmpty()) appName = "App";
+        }
 
         String last;
         int today = 0;
@@ -160,7 +170,10 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             today = stats.launchesToday;
         }
         String times = today == 1 ? "1 time today" : today + " times today";
-        strip.setText(appName + "  •  Last: " + last + "  •  Launched: " + times);
+        String summary = appName + STATS_MARKER + last + "  •  Launched: " + times;
+        if (!TextUtils.equals(strip.getText(), summary)) {
+            strip.setText(summary);
+        }
         strip.setContentDescription(appName + ", last launched " + last + ", launched " + times);
     }
 
