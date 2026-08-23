@@ -23,6 +23,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.result.AppResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
@@ -134,9 +135,6 @@ final class SmartCardListForwarder extends Forwarder {
             column.addView(item);
         }
 
-        // Animate only after the hierarchy has been measured and the history has been scrolled to
-        // the newest items. Starting animations before layout made them finish before the user ever
-        // saw the cards on some devices.
         scroller.post(() -> {
             scroller.fullScroll(View.FOCUS_DOWN);
             int childCount = column.getChildCount();
@@ -183,6 +181,11 @@ final class SmartCardListForwarder extends Forwarder {
 
         CharSequence label = cleanDisplayLabel(extractLabel(source));
         CharSequence subtitle = extractSubtitle(source);
+        CommunicationPojo call = result.getPojo() instanceof CommunicationPojo
+                ? (CommunicationPojo) result.getPojo() : null;
+        if (call != null && call.kind == CommunicationPojo.Kind.CALL) {
+            label = callSummary(call);
+        }
 
         ImageView liveIcon = findIconView(source);
         Drawable iconDrawable = liveIcon == null ? null : liveIcon.getDrawable();
@@ -255,10 +258,6 @@ final class SmartCardListForwarder extends Forwarder {
 
         TextView messageView = null;
         if (hasActiveNotification) {
-            // Do not insert the legacy horizontal notification row into a narrow card. Its text and
-            // Mark Read button fight for the same width and caused the severe message cramping seen
-            // with System UI and other apps. Re-parent the real controls separately so their existing
-            // listeners remain intact while the message gets the full card width.
             TextView activeText = notificationRow.findViewById(R.id.item_notification_text);
             View read = notificationRow.findViewById(R.id.item_notification_read);
             if (activeText != null) {
@@ -301,6 +300,20 @@ final class SmartCardListForwarder extends Forwarder {
             context.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             center.addView(context, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(25)));
+        }
+
+        if (call != null && call.kind == CommunicationPojo.Kind.CALL
+                && hasDistinctCallerName(call)) {
+            AutoMarqueeTextView callerName = new AutoMarqueeTextView(mainActivity);
+            callerName.setText(call.displayName);
+            callerName.setTextColor(Color.WHITE);
+            callerName.setTextSize(15f * namePercent / 100f);
+            callerName.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            callerName.setPadding(0, dp(3), 0, dp(1));
+            callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
+            callerName.setContentDescription("Caller: " + call.displayName);
+            center.addView(callerName, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
         }
 
         prepareSourceForDetails(source);
@@ -369,6 +382,20 @@ final class SmartCardListForwarder extends Forwarder {
         return wrapper;
     }
 
+    private CharSequence callSummary(CommunicationPojo call) {
+        StringBuilder summary = new StringBuilder("Call");
+        if (!TextUtils.isEmpty(call.address)) summary.append(" · ").append(call.address);
+        if (!TextUtils.isEmpty(call.body)) summary.append(" · ").append(call.body);
+        return summary.toString();
+    }
+
+    private boolean hasDistinctCallerName(CommunicationPojo call) {
+        if (call == null || TextUtils.isEmpty(call.displayName)) return false;
+        String name = call.displayName.trim();
+        if (name.isEmpty()) return false;
+        return TextUtils.isEmpty(call.address) || !name.equalsIgnoreCase(call.address.trim());
+    }
+
     private String latestKnownNotificationMessage(Result<?> result, View source) {
         TextView active = source.findViewById(R.id.item_notification_text);
         String activeMessage = active == null || active.getVisibility() != View.VISIBLE
@@ -400,8 +427,6 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void configureCollapsedMessage(TextView text) {
-        // Prefer readable use of the card's width. Two lines are allowed before expansion instead of
-        // forcing every active notification into one narrow marquee row beside an action button.
         text.setSingleLine(false);
         text.setMaxLines(2);
         text.setEllipsize(TextUtils.TruncateAt.END);
