@@ -33,6 +33,7 @@ public class ForwarderManager extends Forwarder {
     private final SquareUEdgeBoundsController squareUEdgeBoundsController;
     private final HistoryVisualEnhancer historyVisualEnhancer;
     private final UNotificationHistoryLongPressForwarder uNotificationHistoryLongPressForwarder;
+    private final CommunicationHistoryForwarder communicationHistoryForwarder;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -55,6 +56,7 @@ public class ForwarderManager extends Forwarder {
         this.squareUEdgeBoundsController = new SquareUEdgeBoundsController(mainActivity, historyDisplayForwarder);
         this.historyVisualEnhancer = new HistoryVisualEnhancer(mainActivity, historyDisplayForwarder);
         this.uNotificationHistoryLongPressForwarder = new UNotificationHistoryLongPressForwarder(mainActivity, historyDisplayForwarder);
+        this.communicationHistoryForwarder = new CommunicationHistoryForwarder(mainActivity);
     }
 
     public void onCreate() {
@@ -86,6 +88,7 @@ public class ForwarderManager extends Forwarder {
         lockedHistoryGestureBridge.onResume();
         notificationForwarder.onResume();
         tagsMenu.onResume();
+        communicationHistoryForwarder.onResume();
         historyDisplayForwarder.onResume();
         squareUHostFullscreenController.onResume();
         smartCardListForwarder.onResume();
