@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.os.SystemClock;
 import android.provider.CallLog;
 import android.provider.Telephony;
 
@@ -32,6 +33,9 @@ public final class CommunicationIndexer {
 
     private static final String TRUECALLER_PACKAGE = "com.truecaller";
     private static final int INITIAL_CALL_HISTORY_ROWS = 20;
+    private static final long NEWEST_CALL_CHECK_THROTTLE_MS = 5_000L;
+    private static long lastNewestCallCheckElapsed;
+    private static long cachedNewestCallTime;
 
     private CommunicationIndexer() { }
 
@@ -57,16 +61,27 @@ public final class CommunicationIndexer {
         return System.currentTimeMillis() - lastRefresh > 15 * 60_000L;
     }
 
-    private static long newestCallTime(Context context) {
+    private static synchronized long newestCallTime(Context context) {
+        long elapsed = SystemClock.elapsedRealtime();
+        if (elapsed - lastNewestCallCheckElapsed < NEWEST_CALL_CHECK_THROTTLE_MS) {
+            return cachedNewestCallTime;
+        }
+        lastNewestCallCheckElapsed = elapsed;
+
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG)
-                != PackageManager.PERMISSION_GRANTED) return 0L;
+                != PackageManager.PERMISSION_GRANTED) {
+            cachedNewestCallTime = 0L;
+            return 0L;
+        }
         try (Cursor c = context.getContentResolver().query(
                 CallLog.Calls.CONTENT_URI,
                 new String[]{CallLog.Calls.DATE},
                 null, null,
                 CallLog.Calls.DATE + " DESC")) {
-            return c != null && c.moveToFirst() ? c.getLong(0) : 0L;
+            cachedNewestCallTime = c != null && c.moveToFirst() ? c.getLong(0) : 0L;
+            return cachedNewestCallTime;
         } catch (RuntimeException ignored) {
+            cachedNewestCallTime = 0L;
             return 0L;
         }
     }
@@ -132,13 +147,19 @@ public final class CommunicationIndexer {
             newHistoryIds = new ArrayList<>(newHistoryIds.subList(0, INITIAL_CALL_HISTORY_ROWS));
         }
 
-        // Query order is newest -> oldest. KISS recency is based on history insertion order, so
-        // import oldest -> newest and the final visible order matches the real phone call order.
-        Collections.reverse(newHistoryIds);
-        for (String historyId : newHistoryIds) {
-            DBHelper.insertHistory(context, "call-log", historyId);
+        boolean keepPhoneHistory = prefs.getBoolean("enable-phone-history", false);
+        boolean freezeHistory = prefs.getBoolean("freeze-history", false);
+        if (keepPhoneHistory && !freezeHistory) {
+            // Query order is newest -> oldest. KISS recency is based on history insertion order, so
+            // import oldest -> newest and the final visible order matches the real phone call order.
+            Collections.reverse(newHistoryIds);
+            for (String historyId : newHistoryIds) {
+                DBHelper.insertHistory(context, "call-log", historyId);
+            }
         }
 
+        // Advance the marker even while history is frozen/disabled. Calls that occurred while the
+        // user intentionally disabled/froze phone history should not flood history later.
         if (newestSeenTime > lastSyncedTime) {
             prefs.edit().putLong(PREF_CALL_HISTORY_LAST_SYNCED_TIME, newestSeenTime).apply();
         }
@@ -162,7 +183,7 @@ public final class CommunicationIndexer {
                 Telephony.Sms.DATE, Telephony.Sms.TYPE};
         try (Cursor c = context.getContentResolver().query(Telephony.Sms.CONTENT_URI, projection,
                 Telephony.Sms.DATE + ">?", new String[]{Long.toString(cutoff)},
-                Telephony.Sms.DATE + " DESC")) {
+                CallLog.Calls.DATE + " DESC")) {
             if (c == null) return;
             while (c.moveToNext()) {
                 String address = c.getString(1);
