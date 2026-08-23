@@ -17,9 +17,10 @@ import androidx.preference.PreferenceManager;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,7 +42,7 @@ public final class CommunicationIndexer {
 
     private static final String TRUECALLER_PACKAGE = "com.truecaller";
     private static final int INITIAL_CALL_HISTORY_ROWS = 20;
-    private static final int TRUECALLER_NAME_ENRICHMENT_VERSION = 2;
+    private static final int TRUECALLER_NAME_ENRICHMENT_VERSION = 3;
     private static final long NEWEST_CALL_CHECK_THROTTLE_MS = 5_000L;
     private static final long TRUECALLER_TIME_MATCH_WINDOW_MS = 90_000L;
     private static final Pattern PHONE_PATTERN = Pattern.compile("\\+?[0-9][0-9\\s().-]{5,}[0-9]");
@@ -222,9 +223,37 @@ public final class CommunicationIndexer {
         for (CallRow row : calls) {
             if (!TextUtils.isEmpty(row.number)) callNumbers.add(row.number);
         }
+
         Map<String, String> readableTruecallerNames =
                 CallerIdentityResolver.loadReadableTruecallerNames(context, callNumbers);
         Map<String, String> contactNameCache = new HashMap<>();
+        List<String> rootCandidates = new ArrayList<>();
+        Set<String> rootCandidateKeys = new HashSet<>();
+
+        // Do the cheap deterministic sources first so root is invoked only for numbers that remain
+        // unknown after CallLog, exported Truecaller providers and Android Contacts.
+        for (CallRow row : calls) {
+            if (TextUtils.isEmpty(row.number)) continue;
+            if (hasUsefulCachedName(row.cachedName, row.number)) continue;
+            if (!TextUtils.isEmpty(CallerIdentityResolver.getTruecallerProviderName(
+                    row.number, readableTruecallerNames))) continue;
+
+            String contact = contactNameCache.get(row.number);
+            if (contact == null) {
+                contact = CallerIdentityResolver.getAndroidContactName(context, row.number);
+                contactNameCache.put(row.number, contact);
+            }
+            if (!TextUtils.isEmpty(contact)) continue;
+
+            String normalized = PhoneNumberUtils.normalizeNumber(row.number);
+            if (!TextUtils.isEmpty(normalized) && rootCandidateKeys.add(normalized)) {
+                rootCandidates.add(row.number);
+            }
+        }
+
+        Map<String, String> rootTruecallerNames = rootCandidates.isEmpty()
+                ? Collections.emptyMap()
+                : RootTruecallerCacheResolver.loadNames(context, rootCandidates);
         List<TruecallerNameHint> notificationHints = buildTruecallerHints(truecallerRecords);
 
         for (CallRow row : calls) {
@@ -235,15 +264,15 @@ public final class CommunicationIndexer {
                 displayName = row.cachedName.trim();
             }
 
-            // 2) If the installed Truecaller build exposes an exported/readable provider with an
-            // exact number/name row, use it. No private authority or schema is hard-coded.
+            // 2) Use an exact number/name row from an exported/readable Truecaller provider when
+            // the installed Truecaller build exposes one.
             if (TextUtils.isEmpty(displayName)) {
                 displayName = CallerIdentityResolver.getTruecallerProviderName(
                         row.number, readableTruecallerNames);
             }
 
-            // 3) PhoneLookup can expose saved contacts and any caller identities synchronized into
-            // Android's shared contacts database. Cache per number so repeated calls stay cheap.
+            // 3) PhoneLookup can expose saved contacts and identities synchronized into Android's
+            // shared contacts database.
             if (TextUtils.isEmpty(displayName) && !TextUtils.isEmpty(row.number)) {
                 String cachedContact = contactNameCache.get(row.number);
                 if (cachedContact == null) {
@@ -253,8 +282,14 @@ public final class CommunicationIndexer {
                 displayName = cachedContact;
             }
 
-            // 4/5) Finally use captured Truecaller notification evidence: exact number first, then
-            // a unique unambiguous time match. Never infer across multiple possible calls.
+            // 4) Root-assisted local Truecaller cache lookup. This only reads copied database files
+            // and never modifies Truecaller's private storage.
+            if (TextUtils.isEmpty(displayName)) {
+                displayName = RootTruecallerCacheResolver.getName(row.number, rootTruecallerNames);
+            }
+
+            // 5/6) Captured Truecaller notification evidence: exact number first, then a unique
+            // unambiguous time match. Never infer across multiple possible calls.
             if (TextUtils.isEmpty(displayName)) {
                 displayName = resolveTruecallerName(row, calls, notificationHints);
             }
