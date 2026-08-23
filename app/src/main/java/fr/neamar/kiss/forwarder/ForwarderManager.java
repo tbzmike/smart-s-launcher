@@ -27,6 +27,7 @@ public class ForwarderManager extends Forwarder {
     private final SmartCardListForwarder smartCardListForwarder;
     private final SquareUInteractionController squareUInteractionController;
     private final HistoryVisualEnhancer historyVisualEnhancer;
+    private final SmartUFoundationForwarder smartUFoundationForwarder;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -45,6 +46,8 @@ public class ForwarderManager extends Forwarder {
                 mainActivity, historyDisplayForwarder);
         this.historyVisualEnhancer = new HistoryVisualEnhancer(
                 mainActivity, historyDisplayForwarder);
+        this.smartUFoundationForwarder = new SmartUFoundationForwarder(
+                mainActivity, historyDisplayForwarder);
     }
 
     public void onCreate() {
@@ -59,6 +62,7 @@ public class ForwarderManager extends Forwarder {
         smartCardListForwarder.onCreate();
         squareUInteractionController.onCreate();
         historyVisualEnhancer.onCreate();
+        smartUFoundationForwarder.onCreate();
     }
 
     public void onStart() {
@@ -75,9 +79,11 @@ public class ForwarderManager extends Forwarder {
         smartCardListForwarder.onResume();
         squareUInteractionController.onResume();
         historyVisualEnhancer.onResume();
+        smartUFoundationForwarder.onResume();
     }
 
     public void onPause() {
+        smartUFoundationForwarder.onPause();
         squareUInteractionController.onPause();
         experienceTweaks.onPause();
         notificationForwarder.onPause();
@@ -126,6 +132,7 @@ public class ForwarderManager extends Forwarder {
         smartCardListForwarder.onDataSetChanged();
         squareUInteractionController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
+        smartUFoundationForwarder.onDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
@@ -146,6 +153,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
+        smartUFoundationForwarder.onDestroy();
         squareUInteractionController.onDestroy();
         widgetsForwarder.onDestroy();
     }
