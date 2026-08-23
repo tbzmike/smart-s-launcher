@@ -1,11 +1,14 @@
 package fr.neamar.kiss.forwarder;
 
+import android.graphics.Rect;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
+import android.view.TouchDelegate;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.Button;
+import android.widget.ImageView;
 
 import java.lang.reflect.Field;
 import java.util.Collections;
@@ -27,7 +30,8 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
  *  - long-press on a card with saved history opens that app's saved history first;
  *  - notification-result cards open saved history when tapped;
  *  - action buttons (for example Mark read) keep their own click listeners;
- *  - the strip below each card shows app/shortcut name, last launch time and launches today.
+ *  - the strip below each card shows app/shortcut name, last launch time and launches today;
+ *  - a single tap on a normal app/shortcut icon launches immediately with an enlarged hit target.
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -112,6 +116,7 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             final int adapterPosition = position;
 
             applyLaunchStats(wrapper, result);
+            applyEasyIconTap(wrapper, result, adapterPosition);
 
             View.OnLongClickListener historyFirstLongPress = v -> {
                 if (mainActivity.adapter.showNotificationHistoryIfAvailable(adapterPosition, v)) {
@@ -130,6 +135,49 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
                 applyNotificationClickRecursively(wrapper, notificationClick);
             }
         }
+    }
+
+    /**
+     * Normal app/shortcut icons should behave as strong single-tap launch targets. Keep the visible
+     * icon size unchanged, but enlarge its invisible touch rectangle so a slightly off-centre tap is
+     * still accepted. The enclosing ScrollView can still intercept a real drag, so vertical scrolling
+     * does not become an accidental launch.
+     */
+    private void applyEasyIconTap(View wrapper, Result<?> result, int adapterPosition) {
+        if (wrapper == null || result == null || result.getPojo() == null
+                || result.getPojo() instanceof NotificationPojo) return;
+
+        ImageView icon = findFirstVisibleImage(wrapper);
+        if (icon == null) return;
+
+        icon.setClickable(true);
+        icon.setOnClickListener(v -> mainActivity.adapter.onClick(adapterPosition, v));
+
+        if (!(icon.getParent() instanceof ViewGroup)) return;
+        ViewGroup touchParent = (ViewGroup) icon.getParent();
+        touchParent.post(() -> {
+            if (icon.getParent() != touchParent || !icon.isShown()) return;
+            Rect hit = new Rect();
+            icon.getHitRect(hit);
+            int extra = Math.round(18f * mainActivity.getResources().getDisplayMetrics().density);
+            hit.left -= extra;
+            hit.top -= extra;
+            hit.right += extra;
+            hit.bottom += extra;
+            touchParent.setTouchDelegate(new TouchDelegate(hit, icon));
+        });
+    }
+
+    private ImageView findFirstVisibleImage(View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return null;
+        if (view instanceof ImageView) return (ImageView) view;
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            ImageView found = findFirstVisibleImage(group.getChildAt(i));
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private void applyLaunchStats(View wrapper, Result<?> result) {
