@@ -4,6 +4,8 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -14,18 +16,23 @@ import android.widget.TextView;
 
 import fr.neamar.kiss.MainActivity;
 
-/** U-style-only contextual action row for the currently focused Square-U result. */
+/** U-style-only contextual actions and vertical gestures for the focused Square-U result. */
 final class SmartUActionForwarder extends Forwarder {
     private static final String PREF_LAYOUT = "smart-history-layout";
     private static final String SQUARE_U = "square_u";
     private static final String TAG_ACTIONS = "smart-u-action-row";
 
     private ViewGroup squareTrack;
+    private ScrollView notificationScroller;
     private LinearLayout notificationCenter;
     private LinearLayout actionRow;
+    private View selectedCard;
     private int selectedIndex = -1;
     private boolean listenerInstalled;
     private boolean refreshPosted;
+    private float gestureDownX;
+    private float gestureDownY;
+    private boolean verticalGestureConsumed;
 
     SmartUActionForwarder(MainActivity mainActivity) {
         super(mainActivity);
@@ -75,6 +82,7 @@ final class SmartUActionForwarder extends Forwarder {
             View content = scroller.getChildCount() > 0 ? scroller.getChildAt(0) : null;
             if (!(content instanceof LinearLayout)) continue;
             squareTrack = track;
+            notificationScroller = scroller;
             notificationCenter = (LinearLayout) content;
             return;
         }
@@ -110,6 +118,7 @@ final class SmartUActionForwarder extends Forwarder {
 
     private void updateSelection() {
         if (squareTrack == null || squareTrack.getChildCount() == 0) {
+            clearSelectedCardGesture();
             selectedIndex = -1;
             setActionEnabled(false);
             return;
@@ -130,7 +139,55 @@ final class SmartUActionForwarder extends Forwarder {
             }
         }
         selectedIndex = best;
+        View nextSelected = best >= 0 && best < squareTrack.getChildCount()
+                ? squareTrack.getChildAt(best) : null;
+        if (selectedCard != nextSelected) {
+            clearSelectedCardGesture();
+            selectedCard = nextSelected;
+            installSelectedCardGesture();
+        }
         setActionEnabled(best >= 0);
+    }
+
+    private void installSelectedCardGesture() {
+        if (selectedCard == null) return;
+        selectedCard.setOnTouchListener((v, event) -> {
+            if (!isUStyle() || v != selectedCard) return false;
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    gestureDownX = event.getX();
+                    gestureDownY = event.getY();
+                    verticalGestureConsumed = false;
+                    return false;
+                case MotionEvent.ACTION_MOVE:
+                    if (verticalGestureConsumed) return true;
+                    float dx = event.getX() - gestureDownX;
+                    float dy = event.getY() - gestureDownY;
+                    float threshold = dp(42);
+                    if (Math.abs(dy) >= threshold && Math.abs(dy) > Math.abs(dx) * 1.25f) {
+                        verticalGestureConsumed = true;
+                        v.setPressed(false);
+                        v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);
+                        if (dy < 0f) showSelectedActions();
+                        else showSelectedDetails();
+                        return true;
+                    }
+                    return false;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    boolean consumed = verticalGestureConsumed;
+                    verticalGestureConsumed = false;
+                    return consumed;
+                default:
+                    return verticalGestureConsumed;
+            }
+        });
+    }
+
+    private void clearSelectedCardGesture() {
+        if (selectedCard != null) selectedCard.setOnTouchListener(null);
+        selectedCard = null;
+        verticalGestureConsumed = false;
     }
 
     private void ensureActionRow() {
@@ -155,10 +212,15 @@ final class SmartUActionForwarder extends Forwarder {
         actions.setOnClickListener(v -> showSelectedActions());
         actions.setTag("smart-u-actions");
 
+        TextView details = createChip("Details");
+        details.setOnClickListener(v -> showSelectedDetails());
+        details.setTag("smart-u-details");
+
         LinearLayout.LayoutParams chip = new LinearLayout.LayoutParams(0, dp(38), 1f);
-        chip.setMargins(dp(4), 0, dp(4), 0);
+        chip.setMargins(dp(3), 0, dp(3), 0);
         actionRow.addView(open, chip);
         actionRow.addView(actions, chip);
+        actionRow.addView(details, chip);
 
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -171,7 +233,7 @@ final class SmartUActionForwarder extends Forwarder {
         TextView chip = new TextView(mainActivity);
         chip.setText(text);
         chip.setTextColor(Color.WHITE);
-        chip.setTextSize(13.5f);
+        chip.setTextSize(13f);
         chip.setGravity(Gravity.CENTER);
         chip.setSingleLine(true);
         chip.setEllipsize(TextUtils.TruncateAt.END);
@@ -188,19 +250,34 @@ final class SmartUActionForwarder extends Forwarder {
     }
 
     private void openSelected() {
-        if (!isUStyle() || selectedIndex < 0 || mainActivity.adapter == null
-                || selectedIndex >= mainActivity.adapter.getCount()) return;
-        View card = squareTrack != null && selectedIndex < squareTrack.getChildCount()
-                ? squareTrack.getChildAt(selectedIndex) : null;
-        mainActivity.adapter.onClick(selectedIndex, card != null ? card : actionRow);
+        if (!hasValidSelection()) return;
+        View card = selectedCard != null ? selectedCard : actionRow;
+        mainActivity.adapter.onClick(selectedIndex, card);
     }
 
     private void showSelectedActions() {
-        if (!isUStyle() || selectedIndex < 0 || mainActivity.adapter == null
-                || selectedIndex >= mainActivity.adapter.getCount()) return;
-        View card = squareTrack != null && selectedIndex < squareTrack.getChildCount()
-                ? squareTrack.getChildAt(selectedIndex) : null;
-        mainActivity.adapter.onLongClick(selectedIndex, card != null ? card : actionRow);
+        if (!hasValidSelection()) return;
+        View card = selectedCard != null ? selectedCard : actionRow;
+        mainActivity.adapter.onLongClick(selectedIndex, card);
+    }
+
+    private void showSelectedDetails() {
+        if (!isUStyle() || notificationScroller == null || notificationCenter == null) return;
+        int targetY = Math.max(0, notificationCenter.getMeasuredHeight() - notificationScroller.getHeight());
+        notificationScroller.smoothScrollTo(0, targetY);
+        if (selectedCard != null) {
+            selectedCard.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        }
+        if (actionRow != null) {
+            actionRow.animate().cancel();
+            actionRow.setAlpha(0.82f);
+            actionRow.animate().alpha(1f).setDuration(140L).start();
+        }
+    }
+
+    private boolean hasValidSelection() {
+        return isUStyle() && selectedIndex >= 0 && mainActivity.adapter != null
+                && selectedIndex < mainActivity.adapter.getCount();
     }
 
     private void setActionEnabled(boolean enabled) {
@@ -212,6 +289,7 @@ final class SmartUActionForwarder extends Forwarder {
     }
 
     private void removeActionRow() {
+        clearSelectedCardGesture();
         selectedIndex = -1;
         if (actionRow != null && actionRow.getParent() instanceof ViewGroup) {
             ((ViewGroup) actionRow.getParent()).removeView(actionRow);
