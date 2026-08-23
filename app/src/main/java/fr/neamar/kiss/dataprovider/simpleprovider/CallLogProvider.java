@@ -141,12 +141,12 @@ public final class CallLogProvider extends SimpleProvider<CallLogPojo> {
             candidates = new ArrayList<>(candidates.subList(0, INITIAL_HISTORY_ROWS));
         }
 
-        // Cache order is newest -> oldest. Insert oldest -> newest so DB _id recency order mirrors
-        // the actual call chronology even though KISS's RECENCY mode sorts by history row id.
+        // Cache order is newest -> oldest. Insert oldest -> newest so KISS's normal _id-based
+        // recency order mirrors the actual call chronology. The last-synced call id guarantees a
+        // real call row is imported only once, without any database migration or duplicate polling.
         Collections.reverse(candidates);
         for (CallLogPojo pojo : candidates) {
-            DBHelper.insertExternalHistoryIfMissing(
-                    context, "call-log", pojo.getHistoryId(), pojo.callTimestamp);
+            DBHelper.insertHistory(context, "call-log", pojo.getHistoryId());
         }
 
         if (maxSeenId > lastSyncedId) {
