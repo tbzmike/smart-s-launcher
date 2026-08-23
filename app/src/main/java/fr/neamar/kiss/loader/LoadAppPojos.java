@@ -110,31 +110,54 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
             SmartStateStore.rememberApp(ctx, activity.packageName, activity.name, app.getName(), currentSerial);
         }
 
-        // Persistent catalog is the final safety net: a frozen package can disappear from both
-        // LauncherApps and intent queries, but it is still installed and must stay searchable.
-        // The catalog is package-canonical, so only one remembered launcher component is restored.
+        // Persistent catalog is the final safety net. IceBox can hide a disabled package from both
+        // LauncherApps and launcher-intent queries, and on some ROMs even getActivityInfo() for the
+        // remembered launcher component can temporarily fail while the package itself is still
+        // installed. Installed-but-hidden is a frozen state, never an uninstall: retain the exact
+        // remembered app://package/activity identity so its history tile cannot disappear.
         for (AppCatalogRecord remembered : SmartStateStore.getRememberedApps(ctx, currentSerial)) {
             String packageKey = packageKey(currentSerial, remembered.packageName);
             if (seenPackages.contains(packageKey)) continue;
+
+            final ApplicationInfo info;
             try {
-                ApplicationInfo info = pm.getApplicationInfo(remembered.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+                info = pm.getApplicationInfo(remembered.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+            } catch (PackageManager.NameNotFoundException e) {
+                // Only package absence proves uninstall. This is the only catalog-forget path.
+                SmartStateStore.forgetPackage(ctx, remembered.packageName);
+                continue;
+            }
+
+            boolean packageEnabled = info.enabled && !PackageManagerUtils.isAppSuspended(info);
+            try {
+                int state = pm.getApplicationEnabledSetting(remembered.packageName);
+                packageEnabled = packageEnabled
+                        && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                        && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                        && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
+            } catch (IllegalArgumentException ignored) {
+                packageEnabled = false;
+            }
+
+            boolean activityVisible = false;
+            try {
                 ActivityInfo activityInfo = pm.getActivityInfo(
                         new android.content.ComponentName(remembered.packageName, remembered.activityName),
                         PackageManager.MATCH_DISABLED_COMPONENTS);
-                if (!activityInfo.exported) continue;
-
-                boolean disabled = !info.enabled || PackageManagerUtils.isAppSuspended(info);
-                AppPojo app = createPojo(currentUser, remembered.packageName, remembered.activityName,
-                        remembered.label, disabled,
-                        excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
-                // If a launcher activity vanished from all normal queries, treat it as frozen until
-                // a live launch/reconciliation proves otherwise.
-                app.setDisabled(true);
-                apps.add(app);
-                seenPackages.add(packageKey);
-            } catch (PackageManager.NameNotFoundException e) {
-                SmartStateStore.forgetPackage(ctx, remembered.packageName);
+                activityVisible = activityInfo.exported && activityInfo.enabled;
+            } catch (PackageManager.NameNotFoundException ignored) {
+                // IceBox/ROM package visibility can hide the launcher activity while preserving the
+                // installed package. Keep the remembered component instead of deleting the app.
             }
+
+            AppPojo app = createPojo(currentUser, remembered.packageName, remembered.activityName,
+                    remembered.label, !(packageEnabled && activityVisible),
+                    excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
+            // Reaching the catalog means all normal launcher discovery paths missed this package.
+            // Treat it as frozen until live reconciliation proves it enabled again.
+            app.setDisabled(true);
+            apps.add(app);
+            seenPackages.add(packageKey);
         }
 
         Map<String, AppRecord> customApps = DBHelper.getCustomAppData(ctx);
