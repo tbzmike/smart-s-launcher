@@ -23,20 +23,25 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 
 /**
- * Opt-in flexible launcher workspace. It reuses the existing history/results and widget containers
- * and only reparents them when the feature is enabled. The normal KISS layout remains untouched
- * when the workspace preference is disabled.
+ * Opt-in flexible launcher workspace. The original two-pane path is preserved exactly as the
+ * default. Four-pane mode is a separate opt-in geometry that keeps the existing history/results
+ * and widget containers authoritative instead of cloning/replacing them.
  */
 public final class SmartWorkspaceController {
     public static final String PREF_ENABLED = "smart-workspace-enabled";
+    public static final String PREF_LAYOUT_MODE = "smart-workspace-layout-mode";
     public static final String PREF_ORIENTATION = "smart-workspace-orientation";
     public static final String PREF_PRIMARY_CONTENT = "smart-workspace-primary-content";
     public static final String PREF_SPLIT_PERCENT = "smart-workspace-split-percent";
+    public static final String PREF_QUADRANT_COLUMN_PERCENT = "smart-workspace-quadrant-column-percent";
+    public static final String PREF_QUADRANT_ROW_PERCENT = "smart-workspace-quadrant-row-percent";
     public static final String PREF_DRAGGABLE = "smart-workspace-draggable";
     public static final String PREF_EMPTY_ADD_WIDGET = "smart-workspace-empty-add-widget";
     public static final String PREF_EMPTY_GESTURES = "smart-workspace-empty-gestures";
     public static final String PREF_FREE_WIDGET_RESIZE = "smart-workspace-free-widget-resize";
 
+    private static final String LAYOUT_TWO_PANE = "two-pane";
+    private static final String LAYOUT_QUADRANTS = "quadrants";
     private static final String PREF_WIDGET_SIZE_PREFIX = "smart-workspace-widget-size-";
     private static final int MIN_PANE_PERCENT = 15;
     private static final int MAX_PANE_PERCENT = 85;
@@ -49,6 +54,14 @@ public final class SmartWorkspaceController {
     private final View secondPane;
     private final View divider;
     private final boolean horizontal;
+    private final boolean quadrantMode;
+    private final LinearLayout topRow;
+    private final LinearLayout bottomRow;
+    private final View thirdPane;
+    private final View fourthPane;
+    private final View topColumnDivider;
+    private final View bottomColumnDivider;
+    private final View rowDivider;
     private final Set<Integer> resizeConfiguredWidgetIds = new HashSet<>();
 
     private AppWidgetHostView resizingWidget;
@@ -64,7 +77,15 @@ public final class SmartWorkspaceController {
                                      View firstPane,
                                      View secondPane,
                                      View divider,
-                                     boolean horizontal) {
+                                     boolean horizontal,
+                                     boolean quadrantMode,
+                                     LinearLayout topRow,
+                                     LinearLayout bottomRow,
+                                     View thirdPane,
+                                     View fourthPane,
+                                     View topColumnDivider,
+                                     View bottomColumnDivider,
+                                     View rowDivider) {
         this.activity = activity;
         this.prefs = prefs;
         this.workspace = workspace;
@@ -73,16 +94,20 @@ public final class SmartWorkspaceController {
         this.secondPane = secondPane;
         this.divider = divider;
         this.horizontal = horizontal;
+        this.quadrantMode = quadrantMode;
+        this.topRow = topRow;
+        this.bottomRow = bottomRow;
+        this.thirdPane = thirdPane;
+        this.fourthPane = fourthPane;
+        this.topColumnDivider = topColumnDivider;
+        this.bottomColumnDivider = bottomColumnDivider;
+        this.rowDivider = rowDivider;
     }
 
     public static boolean isEnabled(SharedPreferences prefs) {
         return prefs.getBoolean(PREF_ENABLED, false);
     }
 
-    /**
-     * Install the split workspace once for this Activity. Safe no-op when disabled or if the
-     * expected legacy layout is not present.
-     */
     public static SmartWorkspaceController install(MainActivity activity) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
         if (!isEnabled(prefs)) return null;
@@ -121,24 +146,36 @@ public final class SmartWorkspaceController {
         widgetScroller.addView(widgetArea, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        boolean widgetsFirst = "widgets".equals(prefs.getString(PREF_PRIMARY_CONTENT, "history"));
+        View firstPane = widgetsFirst ? widgetScroller : historyPane;
+        View secondPane = widgetsFirst ? historyPane : widgetScroller;
+
+        String layoutMode = prefs.getString(PREF_LAYOUT_MODE, LAYOUT_TWO_PANE);
+        if (LAYOUT_QUADRANTS.equals(layoutMode)) {
+            return installQuadrants(activity, prefs, root, widgetArea, historyPane, widgetScroller,
+                    firstPane, secondPane, emptyView);
+        }
+
+        return installTwoPane(activity, prefs, root, widgetArea, historyPane, widgetScroller,
+                firstPane, secondPane, emptyView);
+    }
+
+    private static SmartWorkspaceController installTwoPane(MainActivity activity,
+                                                            SharedPreferences prefs,
+                                                            ViewGroup root,
+                                                            ViewGroup widgetArea,
+                                                            FrameLayout historyPane,
+                                                            ScrollView widgetScroller,
+                                                            View firstPane,
+                                                            View secondPane,
+                                                            View emptyView) {
         boolean horizontal = !"vertical".equals(prefs.getString(PREF_ORIENTATION, "horizontal"));
         LinearLayout workspace = new LinearLayout(activity);
         workspace.setOrientation(horizontal ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         workspace.setWeightSum(100f);
         workspace.setClipChildren(false);
         workspace.setClipToPadding(false);
-
-        RelativeLayout.LayoutParams workspaceParams = new RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        workspaceParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
-        workspaceParams.addRule(RelativeLayout.ABOVE, R.id.externalFavoriteBar);
-        int margin = dp(activity, 10);
-        workspaceParams.setMargins(margin, margin, margin, margin);
-        root.addView(workspace, 0, workspaceParams);
-
-        boolean widgetsFirst = "widgets".equals(prefs.getString(PREF_PRIMARY_CONTENT, "history"));
-        View firstPane = widgetsFirst ? widgetScroller : historyPane;
-        View secondPane = widgetsFirst ? historyPane : widgetScroller;
+        addWorkspaceToRoot(activity, root, workspace);
 
         int splitPercent = clamp(prefs.getInt(PREF_SPLIT_PERCENT, 50), MIN_PANE_PERCENT, MAX_PANE_PERCENT);
         workspace.addView(firstPane, paneParams(horizontal, splitPercent));
@@ -149,11 +186,96 @@ public final class SmartWorkspaceController {
         workspace.addView(secondPane, paneParams(horizontal, 100 - splitPercent));
 
         SmartWorkspaceController controller = new SmartWorkspaceController(
-                activity, prefs, workspace, widgetArea, firstPane, secondPane, divider, horizontal);
+                activity, prefs, workspace, widgetArea, firstPane, secondPane, divider, horizontal,
+                false, null, null, null, null, null, null, null);
         controller.configureDivider();
         controller.configureEmptySurfaces(historyPane, emptyView, widgetScroller, widgetArea, workspace);
         controller.observeWidgetPaneSize();
         return controller;
+    }
+
+    private static SmartWorkspaceController installQuadrants(MainActivity activity,
+                                                              SharedPreferences prefs,
+                                                              ViewGroup root,
+                                                              ViewGroup widgetArea,
+                                                              FrameLayout historyPane,
+                                                              ScrollView widgetScroller,
+                                                              View firstPane,
+                                                              View secondPane,
+                                                              View emptyView) {
+        LinearLayout workspace = new LinearLayout(activity);
+        workspace.setOrientation(LinearLayout.VERTICAL);
+        workspace.setWeightSum(100f);
+        workspace.setClipChildren(false);
+        workspace.setClipToPadding(false);
+        addWorkspaceToRoot(activity, root, workspace);
+
+        LinearLayout topRow = new LinearLayout(activity);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        topRow.setWeightSum(100f);
+        topRow.setClipChildren(false);
+        topRow.setClipToPadding(false);
+
+        LinearLayout bottomRow = new LinearLayout(activity);
+        bottomRow.setOrientation(LinearLayout.HORIZONTAL);
+        bottomRow.setWeightSum(100f);
+        bottomRow.setClipChildren(false);
+        bottomRow.setClipToPadding(false);
+
+        FrameLayout thirdPane = createEmptyQuadrant(activity, "Smart S workspace pane 3");
+        FrameLayout fourthPane = createEmptyQuadrant(activity, "Smart S workspace pane 4");
+
+        int columnPercent = clamp(prefs.getInt(PREF_QUADRANT_COLUMN_PERCENT, 50),
+                MIN_PANE_PERCENT, MAX_PANE_PERCENT);
+        int rowPercent = clamp(prefs.getInt(PREF_QUADRANT_ROW_PERCENT, 50),
+                MIN_PANE_PERCENT, MAX_PANE_PERCENT);
+
+        topRow.addView(firstPane, quadrantPaneParams(columnPercent));
+        View topColumnDivider = new View(activity);
+        topColumnDivider.setContentDescription("Resize Smart S workspace columns");
+        topRow.addView(topColumnDivider, quadrantColumnDividerParams(activity));
+        topRow.addView(secondPane, quadrantPaneParams(100 - columnPercent));
+
+        bottomRow.addView(thirdPane, quadrantPaneParams(columnPercent));
+        View bottomColumnDivider = new View(activity);
+        bottomColumnDivider.setContentDescription("Resize Smart S workspace columns");
+        bottomRow.addView(bottomColumnDivider, quadrantColumnDividerParams(activity));
+        bottomRow.addView(fourthPane, quadrantPaneParams(100 - columnPercent));
+
+        workspace.addView(topRow, quadrantRowParams(rowPercent));
+        View rowDivider = new View(activity);
+        rowDivider.setContentDescription("Resize Smart S workspace rows");
+        workspace.addView(rowDivider, quadrantRowDividerParams(activity));
+        workspace.addView(bottomRow, quadrantRowParams(100 - rowPercent));
+
+        SmartWorkspaceController controller = new SmartWorkspaceController(
+                activity, prefs, workspace, widgetArea, firstPane, secondPane, null, false,
+                true, topRow, bottomRow, thirdPane, fourthPane,
+                topColumnDivider, bottomColumnDivider, rowDivider);
+        controller.configureQuadrantDividers();
+        controller.configureEmptySurfaces(historyPane, emptyView, widgetScroller, widgetArea, workspace);
+        controller.configureGestureOnly(thirdPane, fourthPane);
+        controller.observeWidgetPaneSize();
+        return controller;
+    }
+
+    private static FrameLayout createEmptyQuadrant(MainActivity activity, String description) {
+        FrameLayout pane = new FrameLayout(activity);
+        pane.setClipChildren(false);
+        pane.setClipToPadding(false);
+        pane.setContentDescription(description);
+        pane.setFocusable(true);
+        return pane;
+    }
+
+    private static void addWorkspaceToRoot(MainActivity activity, ViewGroup root, LinearLayout workspace) {
+        RelativeLayout.LayoutParams workspaceParams = new RelativeLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        workspaceParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+        workspaceParams.addRule(RelativeLayout.ABOVE, R.id.externalFavoriteBar);
+        int margin = dp(activity, 10);
+        workspaceParams.setMargins(margin, margin, margin, margin);
+        root.addView(workspace, 0, workspaceParams);
     }
 
     private void configureEmptySurfaces(View... surfaces) {
@@ -161,12 +283,15 @@ public final class SmartWorkspaceController {
         boolean longPressWidgetsEnabled = prefs.getBoolean(PREF_EMPTY_ADD_WIDGET, true);
         for (View surface : surfaces) {
             if (surface == null) continue;
-            if (gesturesEnabled) {
-                surface.setOnTouchListener(activity);
-            }
-            if (longPressWidgetsEnabled) {
-                activity.registerForContextMenu(surface);
-            }
+            if (gesturesEnabled) surface.setOnTouchListener(activity);
+            if (longPressWidgetsEnabled) activity.registerForContextMenu(surface);
+        }
+    }
+
+    private void configureGestureOnly(View... surfaces) {
+        if (!prefs.getBoolean(PREF_EMPTY_GESTURES, true)) return;
+        for (View surface : surfaces) {
+            if (surface != null) surface.setOnTouchListener(activity);
         }
     }
 
@@ -202,6 +327,74 @@ public final class SmartWorkspaceController {
         });
     }
 
+    private void configureQuadrantDividers() {
+        boolean draggable = prefs.getBoolean(PREF_DRAGGABLE, true);
+        if (!draggable) {
+            hideDivider(topColumnDivider);
+            hideDivider(bottomColumnDivider);
+            hideDivider(rowDivider);
+            return;
+        }
+
+        configureColumnDivider(topColumnDivider);
+        configureColumnDivider(bottomColumnDivider);
+        configureRowDivider(rowDivider);
+    }
+
+    private void hideDivider(View view) {
+        if (view == null) return;
+        view.setClickable(false);
+        view.setOnTouchListener(null);
+        view.setBackgroundColor(Color.TRANSPARENT);
+        view.setVisibility(View.GONE);
+    }
+
+    private void configureColumnDivider(View view) {
+        view.setVisibility(View.VISIBLE);
+        view.setBackgroundColor(Color.argb(105, 255, 255, 255));
+        view.setClickable(true);
+        view.setOnTouchListener((dividerView, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    workspace.requestDisallowInterceptTouchEvent(true);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    updateQuadrantColumnFromTouch(event);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    workspace.requestDisallowInterceptTouchEvent(false);
+                    updateQuadrantColumnFromTouch(event);
+                    return true;
+                default:
+                    return false;
+            }
+        });
+    }
+
+    private void configureRowDivider(View view) {
+        view.setVisibility(View.VISIBLE);
+        view.setBackgroundColor(Color.argb(105, 255, 255, 255));
+        view.setClickable(true);
+        view.setOnTouchListener((dividerView, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    workspace.requestDisallowInterceptTouchEvent(true);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    updateQuadrantRowFromTouch(event);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    workspace.requestDisallowInterceptTouchEvent(false);
+                    updateQuadrantRowFromTouch(event);
+                    return true;
+                default:
+                    return false;
+            }
+        });
+    }
+
     private void updateSplitFromTouch(MotionEvent event) {
         int[] location = new int[2];
         workspace.getLocationOnScreen(location);
@@ -216,9 +409,49 @@ public final class SmartWorkspaceController {
         prefs.edit().putInt(PREF_SPLIT_PERCENT, percent).apply();
     }
 
+    private void updateQuadrantColumnFromTouch(MotionEvent event) {
+        int[] location = new int[2];
+        workspace.getLocationOnScreen(location);
+        int dividerSize = Math.max(topColumnDivider.getWidth(), bottomColumnDivider.getWidth());
+        int usable = Math.max(1, workspace.getWidth() - dividerSize);
+        float coordinate = event.getRawX() - location[0];
+        int percent = clamp(Math.round((coordinate / usable) * 100f), MIN_PANE_PERCENT, MAX_PANE_PERCENT);
+        applyQuadrantColumnSplit(percent);
+        prefs.edit().putInt(PREF_QUADRANT_COLUMN_PERCENT, percent).apply();
+    }
+
+    private void updateQuadrantRowFromTouch(MotionEvent event) {
+        int[] location = new int[2];
+        workspace.getLocationOnScreen(location);
+        int usable = Math.max(1, workspace.getHeight() - rowDivider.getHeight());
+        float coordinate = event.getRawY() - location[1];
+        int percent = clamp(Math.round((coordinate / usable) * 100f), MIN_PANE_PERCENT, MAX_PANE_PERCENT);
+        applyQuadrantRowSplit(percent);
+        prefs.edit().putInt(PREF_QUADRANT_ROW_PERCENT, percent).apply();
+    }
+
     private void applySplit(int firstPercent) {
         firstPane.setLayoutParams(paneParams(horizontal, firstPercent));
         secondPane.setLayoutParams(paneParams(horizontal, 100 - firstPercent));
+        workspace.requestLayout();
+        workspace.post(this::updateWidgetSizeHints);
+    }
+
+    private void applyQuadrantColumnSplit(int leftPercent) {
+        if (!quadrantMode) return;
+        firstPane.setLayoutParams(quadrantPaneParams(leftPercent));
+        secondPane.setLayoutParams(quadrantPaneParams(100 - leftPercent));
+        thirdPane.setLayoutParams(quadrantPaneParams(leftPercent));
+        fourthPane.setLayoutParams(quadrantPaneParams(100 - leftPercent));
+        topRow.requestLayout();
+        bottomRow.requestLayout();
+        workspace.post(this::updateWidgetSizeHints);
+    }
+
+    private void applyQuadrantRowSplit(int topPercent) {
+        if (!quadrantMode) return;
+        topRow.setLayoutParams(quadrantRowParams(topPercent));
+        bottomRow.setLayoutParams(quadrantRowParams(100 - topPercent));
         workspace.requestLayout();
         workspace.post(this::updateWidgetSizeHints);
     }
@@ -234,9 +467,6 @@ public final class SmartWorkspaceController {
         widgetArea.post(this::updateWidgetSizeHints);
     }
 
-    /**
-     * Tell widget providers their actual visible size after pane or widget resizing.
-     */
     private void updateWidgetSizeHints() {
         float density = activity.getResources().getDisplayMetrics().density;
         for (int i = 0; i < widgetArea.getChildCount(); i++) {
@@ -377,6 +607,22 @@ public final class SmartWorkspaceController {
             return new LinearLayout.LayoutParams(size, ViewGroup.LayoutParams.MATCH_PARENT);
         }
         return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, size);
+    }
+
+    private static LinearLayout.LayoutParams quadrantPaneParams(int weight) {
+        return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, weight);
+    }
+
+    private static LinearLayout.LayoutParams quadrantRowParams(int weight) {
+        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, weight);
+    }
+
+    private static LinearLayout.LayoutParams quadrantColumnDividerParams(MainActivity activity) {
+        return new LinearLayout.LayoutParams(dp(activity, 8), ViewGroup.LayoutParams.MATCH_PARENT);
+    }
+
+    private static LinearLayout.LayoutParams quadrantRowDividerParams(MainActivity activity) {
+        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(activity, 8));
     }
 
     private static int clamp(int value, int min, int max) {
