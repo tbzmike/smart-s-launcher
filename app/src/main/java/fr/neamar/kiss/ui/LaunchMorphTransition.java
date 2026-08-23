@@ -10,8 +10,6 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
-import android.os.Handler;
-import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -26,9 +24,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Launcher-owned app launch transition.
  *
- * A snapshot of the exact tapped tile is flipped in 3D, turned to its reverse face and then
- * expanded from its real bounds to the launcher window. The real launch is handed off during the
- * expansion so Android can replace the launcher window without mutating the underlying tile.
+ * The exact tapped tile is snapshotted, the real source is temporarily hidden, then the snapshot
+ * performs a complete visible 3D flip before it expands to the launcher window. The target app is
+ * not started until the flip and expansion have both completed, so Android cannot replace the
+ * launcher before the user sees the transition.
  */
 public final class LaunchMorphTransition {
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
@@ -36,7 +35,7 @@ public final class LaunchMorphTransition {
     private LaunchMorphTransition() {}
 
     /**
-     * Runs a left/right 3D flip followed by a full-window expansion.
+     * Runs a complete left/right 3D flip followed by a full-window expansion.
      * Returns false when the transition cannot safely be constructed; callers must launch directly.
      */
     public static boolean start(Context context, View source, Runnable launchAction) {
@@ -81,13 +80,14 @@ public final class LaunchMorphTransition {
         float startY = sourceLocation[1] - hostLocation[1];
         int startWidth = source.getWidth();
         int startHeight = source.getHeight();
+        float sourceAlpha = source.getAlpha();
 
         FrameLayout overlay = new FrameLayout(context);
         overlay.setClickable(true);
         overlay.setFocusable(false);
         overlay.setClipChildren(false);
         overlay.setClipToPadding(false);
-        overlay.setCameraDistance(18_000f * context.getResources().getDisplayMetrics().density);
+        overlay.setCameraDistance(14_000f * context.getResources().getDisplayMetrics().density);
 
         ImageView face = new ImageView(context);
         face.setImageBitmap(snapshot);
@@ -107,18 +107,23 @@ public final class LaunchMorphTransition {
             return false;
         }
 
-        // Pivot from the outer edge toward the centre: left-side tiles flip left -> right,
-        // right-side tiles flip right -> left.
+        // The source must disappear once its identical overlay exists. Otherwise the unchanged real
+        // tile remains visible behind the edge-on snapshot and visually masks the flip.
+        source.setAlpha(0f);
+
         float sourceCenterX = startX + startWidth / 2f;
         boolean leftToRight = sourceCenterX <= host.getWidth() / 2f;
         overlay.setPivotX(leftToRight ? 0f : startWidth);
         overlay.setPivotY(startHeight / 2f);
-        float firstHalfRotation = leftToRight ? 90f : -90f;
-        float secondHalfStart = -firstHalfRotation;
+        float frontEdge = leftToRight ? 90f : -90f;
+        float backEdge = -frontEdge;
 
-        long base = Math.max(110L, SmartAnimationEngine.duration(context));
-        long flipHalf = Math.max(75L, Math.min(130L, base * 2 / 3));
-        long expandDuration = Math.max(150L, Math.min(250L, base + 70L));
+        // Deliberately slower than the previous transition: each half of the flip is independently
+        // visible before any scaling starts.
+        long base = Math.max(140L, SmartAnimationEngine.duration(context));
+        long flipHalf = Math.max(145L, Math.min(220L, base));
+        long backHold = 55L;
+        long expandDuration = Math.max(210L, Math.min(330L, base + 100L));
 
         AtomicBoolean launched = new AtomicBoolean(false);
         Runnable launchOnce = () -> {
@@ -126,85 +131,137 @@ public final class LaunchMorphTransition {
             try {
                 launchAction.run();
             } catch (RuntimeException error) {
-                cleanup(host, overlay, snapshot);
+                cleanup(host, overlay, source, sourceAlpha, snapshot);
                 throw error;
             }
         };
 
-        ObjectAnimator flipOut = ObjectAnimator.ofFloat(overlay, View.ROTATION_Y, 0f, firstHalfRotation);
-        flipOut.setDuration(flipHalf);
-        flipOut.setInterpolator(new AccelerateDecelerateInterpolator());
+        ObjectAnimator flipFront = ObjectAnimator.ofFloat(
+                overlay, View.ROTATION_Y, 0f, frontEdge);
+        flipFront.setDuration(flipHalf);
+        flipFront.setInterpolator(new AccelerateDecelerateInterpolator());
 
-        flipOut.addListener(new AnimatorListenerAdapter() {
+        flipFront.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
                 if (overlay.getParent() == null) {
+                    restoreSource(source, sourceAlpha);
                     recycle(snapshot);
                     RUNNING.set(false);
                     launchOnce.run();
                     return;
                 }
 
-                // Reverse face: retain the tile identity but alter the surface so the midpoint
-                // visibly reads as the back of the card before it becomes the launch surface.
-                face.setColorFilter(Color.argb(58, 255, 255, 255));
+                // At the edge, swap to a clearly different reverse surface and begin the second
+                // half from the opposite 90-degree edge. Together these phases read as a full 180°
+                // physical card turn rather than a brief tilt.
                 GradientDrawable back = new GradientDrawable();
-                back.setColor(Color.rgb(18, 18, 20));
+                back.setColor(Color.rgb(20, 20, 24));
                 back.setCornerRadius(Math.min(startWidth, startHeight) * 0.12f);
                 overlay.setBackground(back);
-                overlay.setRotationY(secondHalfStart);
+                face.setColorFilter(Color.argb(78, 210, 225, 255));
+                face.setAlpha(0.82f);
+                overlay.setRotationY(backEdge);
 
-                float targetCenterX = host.getWidth() / 2f;
-                float targetCenterY = host.getHeight() / 2f;
-                float startCenterX = startX + startWidth / 2f;
-                float startCenterY = startY + startHeight / 2f;
-                float scaleX = host.getWidth() / (float) startWidth;
-                float scaleY = host.getHeight() / (float) startHeight;
-
-                overlay.setPivotX(startWidth / 2f);
-                overlay.setPivotY(startHeight / 2f);
-
-                AnimatorSet expand = new AnimatorSet();
-                expand.playTogether(
-                        ObjectAnimator.ofFloat(overlay, View.ROTATION_Y, secondHalfStart, 0f),
-                        ObjectAnimator.ofFloat(overlay, View.SCALE_X, 1f, scaleX),
-                        ObjectAnimator.ofFloat(overlay, View.SCALE_Y, 1f, scaleY),
-                        ObjectAnimator.ofFloat(overlay, View.TRANSLATION_X, 0f, targetCenterX - startCenterX),
-                        ObjectAnimator.ofFloat(overlay, View.TRANSLATION_Y, 0f, targetCenterY - startCenterY)
-                );
-                expand.setDuration(expandDuration);
-                expand.setInterpolator(new DecelerateInterpolator(1.35f));
-
-                // Handoff happens during expansion: the morph remains visible while Android starts
-                // the target app, then the real app window naturally replaces the launcher.
-                new Handler(Looper.getMainLooper()).postDelayed(
-                        launchOnce, Math.max(80L, expandDuration * 58L / 100L));
-
-                expand.addListener(new AnimatorListenerAdapter() {
+                ObjectAnimator flipBack = ObjectAnimator.ofFloat(
+                        overlay, View.ROTATION_Y, backEdge, 0f);
+                flipBack.setDuration(flipHalf);
+                flipBack.setInterpolator(new AccelerateDecelerateInterpolator());
+                flipBack.addListener(new AnimatorListenerAdapter() {
                     @Override
                     public void onAnimationEnd(Animator animation) {
-                        launchOnce.run();
-                        overlay.postDelayed(() -> cleanup(host, overlay, snapshot), 220L);
+                        if (overlay.getParent() == null) {
+                            restoreSource(source, sourceAlpha);
+                            recycle(snapshot);
+                            RUNNING.set(false);
+                            launchOnce.run();
+                            return;
+                        }
+                        // Give the completed back face a short readable beat before morphing it.
+                        overlay.postDelayed(() -> startExpansion(
+                                host, overlay, source, sourceAlpha, snapshot, face,
+                                startX, startY, startWidth, startHeight,
+                                expandDuration, launchOnce), backHold);
                     }
 
                     @Override
                     public void onAnimationCancel(Animator animation) {
                         launchOnce.run();
-                        cleanup(host, overlay, snapshot);
+                        cleanup(host, overlay, source, sourceAlpha, snapshot);
                     }
                 });
-                expand.start();
+                flipBack.start();
             }
 
             @Override
             public void onAnimationCancel(Animator animation) {
                 launchOnce.run();
-                cleanup(host, overlay, snapshot);
+                cleanup(host, overlay, source, sourceAlpha, snapshot);
             }
         });
 
-        flipOut.start();
+        flipFront.start();
         return true;
+    }
+
+    private static void startExpansion(ViewGroup host,
+                                       FrameLayout overlay,
+                                       View source,
+                                       float sourceAlpha,
+                                       Bitmap snapshot,
+                                       ImageView face,
+                                       float startX,
+                                       float startY,
+                                       int startWidth,
+                                       int startHeight,
+                                       long expandDuration,
+                                       Runnable launchOnce) {
+        if (overlay.getParent() == null) {
+            cleanup(host, overlay, source, sourceAlpha, snapshot);
+            launchOnce.run();
+            return;
+        }
+
+        float targetCenterX = host.getWidth() / 2f;
+        float targetCenterY = host.getHeight() / 2f;
+        float startCenterX = startX + startWidth / 2f;
+        float startCenterY = startY + startHeight / 2f;
+        float scaleX = host.getWidth() / (float) startWidth;
+        float scaleY = host.getHeight() / (float) startHeight;
+
+        overlay.setPivotX(startWidth / 2f);
+        overlay.setPivotY(startHeight / 2f);
+        overlay.setRotationY(0f);
+
+        AnimatorSet expand = new AnimatorSet();
+        expand.playTogether(
+                ObjectAnimator.ofFloat(overlay, View.SCALE_X, 1f, scaleX),
+                ObjectAnimator.ofFloat(overlay, View.SCALE_Y, 1f, scaleY),
+                ObjectAnimator.ofFloat(overlay, View.TRANSLATION_X,
+                        0f, targetCenterX - startCenterX),
+                ObjectAnimator.ofFloat(overlay, View.TRANSLATION_Y,
+                        0f, targetCenterY - startCenterY),
+                ObjectAnimator.ofFloat(face, View.ALPHA, face.getAlpha(), 0.94f)
+        );
+        expand.setDuration(expandDuration);
+        expand.setInterpolator(new DecelerateInterpolator(1.25f));
+        expand.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                // Critical sequencing rule: Android is asked to open the target only after the
+                // complete live flip and full-screen morph have visibly finished.
+                launchOnce.run();
+                overlay.postDelayed(
+                        () -> cleanup(host, overlay, source, sourceAlpha, snapshot), 420L);
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                launchOnce.run();
+                cleanup(host, overlay, source, sourceAlpha, snapshot);
+            }
+        });
+        expand.start();
     }
 
     private static Activity findActivity(Context context) {
@@ -218,12 +275,20 @@ public final class LaunchMorphTransition {
         return current instanceof Activity ? (Activity) current : null;
     }
 
-    private static void cleanup(ViewGroup host, View overlay, Bitmap bitmap) {
+    private static void cleanup(ViewGroup host, View overlay, View source,
+                                float sourceAlpha, Bitmap bitmap) {
         try {
             if (overlay.getParent() == host) host.removeView(overlay);
         } catch (RuntimeException ignored) { }
+        restoreSource(source, sourceAlpha);
         recycle(bitmap);
         RUNNING.set(false);
+    }
+
+    private static void restoreSource(View source, float alpha) {
+        try {
+            if (source != null) source.setAlpha(alpha);
+        } catch (RuntimeException ignored) { }
     }
 
     private static void recycle(Bitmap bitmap) {
