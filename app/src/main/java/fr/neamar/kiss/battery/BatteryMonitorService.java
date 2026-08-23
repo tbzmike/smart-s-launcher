@@ -99,51 +99,33 @@ public final class BatteryMonitorService extends Service {
         Intent stop = new Intent(this, BatteryMonitorService.class).setAction(ACTION_STOP);
         PendingIntent stopPi = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        String current = Double.isNaN(s.currentMa()) ? "current unavailable" : String.format(Locale.US, "%.0f mA", Math.abs(s.currentMa()));
-        String power = Double.isNaN(s.powerW()) ? "— W" : String.format(Locale.US, "%.2f W", s.powerW());
-        String temp = Float.isNaN(s.temperatureC) ? "temp unavailable" : String.format(Locale.US, "%.1f°C", s.temperatureC);
-        String voltage = s.voltageMv > 0 ? s.voltageMv + " mV" : "voltage unavailable";
-        String state = s.isCharging() ? "Charging" : "Discharging";
-        String source = BatteryMonitorEngine.sourceName(s.plugged);
-        String timeToFull = s.chargeTimeRemainingMs == Long.MIN_VALUE ? "—" : formatDuration(s.chargeTimeRemainingMs);
-        long estimated = store.estimatedFullCapacityUah();
-        int design = BatteryCapacityEstimator.designCapacityMah(this);
-        double health = BatteryCapacityEstimator.healthPercent(this, estimated);
-        String capacity = estimated > 0 ? String.format(Locale.US, "%.0f mAh", estimated / 1000.0) : "learning";
-        String healthText = Double.isNaN(health) ? "learning" : String.format(Locale.US, "%.1f%%", health);
-        String screenOn = formatMa(store.averageScreenOnDrainMa24h());
-        String screenOff = formatMa(store.averageScreenOffDrainMa24h());
+        String current = Double.isNaN(s.currentMa())
+                ? "unavailable"
+                : String.format(Locale.US, "%.0f mA", s.currentMa());
+        String charge = s.chargeCounterUah == Long.MIN_VALUE
+                ? "unavailable"
+                : String.format(Locale.US, "%.0f mAh", s.chargeCounterUah / 1000.0);
+        String temp = Float.isNaN(s.temperatureC)
+                ? "unavailable"
+                : String.format(Locale.US, "%.1f°C", s.temperatureC);
+
+        // The notification intentionally calculates only the two session rates the user needs at a
+        // glance. Capacity, health, 24h averages, source, remaining time and app attribution stay in
+        // BatteryMonitorActivity and are not recomputed merely to populate the foreground notice.
         BatteryHistoryStore.CurrentSessionStats session = store.currentSessionStats(s);
-        String speed = formatPercentRate(session.percentPerHour, s.isCharging());
-        String screenOnSpeed = formatPercentRate(session.screenOnPercentPerHour, s.isCharging());
-        String screenOffSpeed = formatPercentRate(session.screenOffPercentPerHour, s.isCharging());
-        String sessionAverage = formatSignedMa(session.averageCurrentMa);
-        String remaining = session.estimatedRemainingMs == Long.MIN_VALUE ? "learning" : formatDuration(session.estimatedRemainingMs);
-        String likelyCause = s.isCharging() ? "" : BatteryUsageAnalyzer.likelyDrainCause(this, 60L * 60L * 1000L);
+        String screenOn = formatPercentRate(session.screenOnPercentPerHour, s.isCharging());
+        String screenOff = formatPercentRate(session.screenOffPercentPerHour, s.isCharging());
 
-        String collapsed;
-        if (s.isCharging()) collapsed = current + " · Charge " + speed + " · " + temp;
-        else collapsed = current + " · Drain " + speed + " · " + temp;
-
-        StringBuilder expanded = new StringBuilder();
-        expanded.append(current).append(" · ").append(power).append(" · ").append(temp).append(" · ").append(voltage)
-                .append("\n").append(s.isCharging() ? "Overall charge speed: " : "Overall drain speed: ").append(speed)
-                .append(" · session avg: ").append(sessionAverage).append(" · remaining: ").append(remaining)
-                .append("\nScreen-on ").append(s.isCharging() ? "charge" : "drain").append(" speed: ").append(screenOnSpeed)
-                .append(" · Screen-off ").append(s.isCharging() ? "charge" : "drain").append(" speed: ").append(screenOffSpeed)
-                .append("\nSource: ").append(source);
-        if (s.isCharging()) expanded.append(" · time to full: ").append(timeToFull);
-        expanded.append("\n24h current — screen on: ").append(screenOn).append(" · screen off: ").append(screenOff);
-        if (!s.isCharging()) expanded.append("\nLikely app contributor: ").append(likelyCause);
-        expanded.append("\nCapacity: ").append(capacity);
-        if (design > 0) expanded.append(" / ").append(design).append(" mAh design");
-        expanded.append(" · estimated health: ").append(healthText)
-                .append("\nPower-aware sampling: 2m charging · 5m screen-on · 15m screen-off")
-                .append("\nTap for Daily / Weekly / Monthly history, sessions, wear and reports.");
+        String title = "Battery " + s.percent() + "% · " + temp;
+        String collapsed = "Current " + current + " · Screen on " + screenOn + " · Screen off " + screenOff;
+        String expanded = "Battery: " + s.percent() + "% · " + temp
+                + "\nCurrent: " + current + " · Charge: " + charge
+                + "\nScreen on: " + screenOn
+                + "\nScreen off: " + screenOff;
 
         return new NotificationCompat.Builder(this, CHANNEL_LIVE).setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle("Battery " + s.percent() + "% · " + state).setContentText(collapsed)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(expanded.toString())).setContentIntent(content)
+                .setContentTitle(title).setContentText(collapsed)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(expanded)).setContentIntent(content)
                 .setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_STATUS)
                 .setPriority(NotificationCompat.PRIORITY_LOW).setShowWhen(false)
                 .addAction(0, "Open history", content).addAction(0, "Stop monitor", stopPi).build();
@@ -199,7 +181,7 @@ public final class BatteryMonitorService extends Service {
     private void createChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return; NotificationManager nm = notificationManager(); if (nm == null) return;
         NotificationChannel live = new NotificationChannel(CHANNEL_LIVE, "Battery monitor", NotificationManager.IMPORTANCE_LOW);
-        live.setDescription("Live battery usage, drain speed, charging rate, health and temperature"); nm.createNotificationChannel(live);
+        live.setDescription("Battery level, temperature, current and screen-on/off rate"); nm.createNotificationChannel(live);
         NotificationChannel alerts = new NotificationChannel(CHANNEL_ALERTS, "Battery alerts", NotificationManager.IMPORTANCE_HIGH);
         alerts.setDescription("Charge target, heat, abnormal drain and charging warnings"); nm.createNotificationChannel(alerts);
     }
