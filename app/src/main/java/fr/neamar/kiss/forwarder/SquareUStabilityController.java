@@ -31,8 +31,8 @@ final class SquareUStabilityController {
     private static final String TAG = SquareUStabilityController.class.getSimpleName();
     private static final String PREF_LAYOUT = "smart-history-layout";
     private static final String SQUARE_U = "square_u";
-    private static final float BOTTOM_BAND = 2.0f;
-    private static final float VISIBLE_RADIUS = 5.6f;
+    private static final float BOTTOM_BAND = 2.55f;
+    private static final float VISIBLE_RADIUS = 6.15f;
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
@@ -135,12 +135,18 @@ final class SquareUStabilityController {
         final int count = squareTrack.getChildCount();
         final float rotationOffset = readRotationOffset();
         final float centerX = width * 0.50f;
-        final float leftCenterX = width * 0.18f;
-        final float rightCenterX = width * 0.82f;
-        final float topCenterY = height * 0.34f;
-        final float bottomCenterY = height * 0.73f;
-        final float maxVisualWidth = Math.min(dp(136), width * 0.28f);
-        final float maxVisualHeight = Math.min(dp(174), height * 0.18f);
+
+        // Use almost the entire launcher canvas. The visible card body still has a small inset,
+        // but the U no longer collapses into the middle third of the display.
+        final float leftCenterX = Math.max(dp(54), width * 0.095f);
+        final float rightCenterX = Math.min(width - dp(54), width * 0.905f);
+        final float topCenterY = height * 0.285f;
+        final float bottomCenterY = Math.min(height - dp(118), height * 0.865f);
+        final float bottomHalfSpan = Math.min(width * 0.405f,
+                Math.max(dp(110), (rightCenterX - leftCenterX) * 0.50f));
+
+        final float maxVisualWidth = Math.min(dp(142), width * 0.235f);
+        final float maxVisualHeight = Math.min(dp(180), height * 0.175f);
 
         for (int i = 0; i < count; i++) {
             View card = squareTrack.getChildAt(i);
@@ -162,26 +168,28 @@ final class SquareUStabilityController {
 
             if (absolute <= BOTTOM_BAND) {
                 float normalized = relative / BOTTOM_BAND;
-                desiredCenterX = centerX + normalized * (width * 0.30f);
-                desiredCenterY = bottomCenterY - Math.abs(normalized) * dp(12);
+                desiredCenterX = centerX + normalized * bottomHalfSpan;
+                // A shallow bowl keeps the front of the U close to the favourites row without
+                // making every bottom card sit on one perfectly flat line.
+                desiredCenterY = bottomCenterY - Math.abs(normalized) * dp(18);
                 focus = 1f - Math.min(1f, absolute / BOTTOM_BAND);
-                rotationY = -normalized * 20f;
-                depthScale = 0.92f + 0.13f * focus;
+                rotationY = -normalized * 17f;
+                depthScale = 0.94f + 0.11f * focus;
             } else {
                 float sideProgress = Math.min(1f,
                         (absolute - BOTTOM_BAND) / Math.max(0.01f, VISIBLE_RADIUS - BOTTOM_BAND));
                 desiredCenterX = relative < 0f ? leftCenterX : rightCenterX;
                 desiredCenterY = bottomCenterY - (bottomCenterY - topCenterY) * sideProgress;
                 focus = 0f;
-                rotationY = relative < 0f ? 32f : -32f;
-                depthScale = 0.90f - 0.10f * sideProgress;
+                rotationY = relative < 0f ? 27f : -27f;
+                depthScale = 0.91f - 0.085f * sideProgress;
             }
 
             float normalizer = 1f;
             if (card.getWidth() > 0) normalizer = Math.min(normalizer, maxVisualWidth / card.getWidth());
             if (card.getHeight() > 0) normalizer = Math.min(normalizer, maxVisualHeight / card.getHeight());
             normalizer = Math.min(1f, normalizer);
-            float scale = Math.max(0.50f, depthScale * normalizer);
+            float scale = Math.max(0.54f, depthScale * normalizer);
 
             float desiredLeft = desiredCenterX - card.getWidth() / 2f;
             float desiredTop = desiredCenterY - card.getHeight() / 2f;
@@ -194,13 +202,14 @@ final class SquareUStabilityController {
             card.setScaleX(scale);
             card.setScaleY(scale);
             card.setAlpha(absolute <= BOTTOM_BAND
-                    ? 1f : Math.max(0.72f, 0.94f - 0.18f * ((absolute - BOTTOM_BAND) / (VISIBLE_RADIUS - BOTTOM_BAND))));
+                    ? 1f : Math.max(0.76f, 0.96f - 0.16f * ((absolute - BOTTOM_BAND)
+                    / (VISIBLE_RADIUS - BOTTOM_BAND))));
             card.setTranslationZ(dp(3) + dp(16) * focus);
 
             if (card instanceof ViewGroup) stabilizeCardContent((ViewGroup) card);
         }
 
-        stabilizeNotificationPanel(width, height);
+        stabilizeNotificationPanel(width, height, topCenterY, bottomCenterY);
     }
 
     private void stabilizeCardContent(ViewGroup card) {
@@ -226,14 +235,18 @@ final class SquareUStabilityController {
         }
     }
 
-    private void stabilizeNotificationPanel(int width, int height) {
+    private void stabilizeNotificationPanel(int width, int height,
+                                            float topCenterY, float bottomCenterY) {
         if (notificationScroller == null) return;
-        int maxWidth = Math.max(dp(150), width - dp(40));
+
+        // The notification center occupies the open space inside the expanded U. Its size is
+        // independent of the U width so it cannot pull the card track back toward the middle.
+        int maxWidth = Math.max(dp(190), width - dp(110));
         int panelWidth = Math.min(maxWidth,
-                Math.max(dp(150), Math.min(dp(300), Math.round(width * 0.58f))));
-        int panelHeight = Math.max(dp(120),
-                Math.min(dp(210), Math.round(height * 0.18f)));
-        int topMargin = Math.max(dp(90), Math.round(height * 0.42f));
+                Math.max(dp(220), Math.min(dp(340), Math.round(width * 0.49f))));
+        int availableInnerHeight = Math.max(dp(150), Math.round(bottomCenterY - topCenterY));
+        int panelHeight = Math.min(dp(220), Math.max(dp(150), Math.round(availableInnerHeight * 0.42f)));
+        int topMargin = Math.round(topCenterY + (bottomCenterY - topCenterY) * 0.34f);
 
         ViewGroup.LayoutParams raw = notificationScroller.getLayoutParams();
         boolean needsLayout = !(raw instanceof FrameLayout.LayoutParams);
