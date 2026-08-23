@@ -6,6 +6,7 @@ public final class CommunicationPojo extends Pojo {
     public final Kind kind;
     public final String packageName;
     public final String address;
+    public final String displayName;
     public final String body;
     public final long timestamp;
     public final String notificationId;
@@ -17,21 +18,19 @@ public final class CommunicationPojo extends Pojo {
         this.kind = kind;
         this.packageName = packageName == null ? "" : packageName;
         this.address = address == null ? "" : address;
+        this.displayName = displayName == null || displayName.trim().isEmpty()
+                ? this.address : displayName.trim();
         this.body = body == null ? "" : body;
         this.timestamp = timestamp;
         this.notificationId = notificationId == null ? "" : notificationId;
-        String name = displayName == null || displayName.trim().isEmpty() ? this.address : displayName.trim();
-        String searchable = name;
+        String searchable = this.displayName;
         if (!this.address.isEmpty() && !searchable.contains(this.address)) searchable += " " + this.address;
         if (!this.body.isEmpty()) searchable += " " + this.body;
         setName(searchable.trim());
     }
 
     public String primaryLabel() {
-        String full = getName();
-        if (full == null) return "";
-        int split = full.indexOf(' ');
-        return split > 0 ? full.substring(0, split) : full;
+        return displayName;
     }
 
     @Override public String getHistoryId() { return id; }
