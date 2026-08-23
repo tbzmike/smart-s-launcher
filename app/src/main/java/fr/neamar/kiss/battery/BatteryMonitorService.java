@@ -109,9 +109,6 @@ public final class BatteryMonitorService extends Service {
                 ? "unavailable"
                 : String.format(Locale.US, "%.1f°C", s.temperatureC);
 
-        // The notification intentionally calculates only the two session rates the user needs at a
-        // glance. Capacity, health, 24h averages, source, remaining time and app attribution stay in
-        // BatteryMonitorActivity and are not recomputed merely to populate the foreground notice.
         BatteryHistoryStore.CurrentSessionStats session = store.currentSessionStats(s);
         String screenOn = formatPercentRate(session.screenOnPercentPerHour, s.isCharging());
         String screenOff = formatPercentRate(session.screenOffPercentPerHour, s.isCharging());
@@ -158,18 +155,17 @@ public final class BatteryMonitorService extends Service {
         }
     }
 
-    private String formatMa(double value) { return Double.isNaN(value) ? "learning" : String.format(Locale.US, "%.0f mA", value); }
-    private String formatSignedMa(double value) { return Double.isNaN(value) ? "learning" : String.format(Locale.US, "%+.0f mA", value); }
     private String formatPercentRate(double value, boolean charging) {
         if (Double.isNaN(value)) return "learning";
         double normalized = charging ? Math.abs(value) : -Math.abs(value);
         return String.format(Locale.US, "%+.1f%%/h", normalized);
     }
-    private String formatDuration(long ms) { long minutes = Math.max(0L, ms / 60_000L); return (minutes / 60) + "h " + (minutes % 60) + "m"; }
+
     private void maybePostRateLimited(String key, String title, String text) {
         SharedPreferences p = PreferenceManager.getDefaultSharedPreferences(this); String pref = "smart-battery-alert-last-" + key; long now = System.currentTimeMillis();
         if (now - p.getLong(pref, 0L) < 3_600_000L) return; p.edit().putLong(pref, now).apply(); postAlert(title, text);
     }
+
     private void postAlert(String title, String text) {
         NotificationManager nm = notificationManager(); if (nm == null) return;
         Intent open = new Intent(this, BatteryHistoryActivity.class);
@@ -178,6 +174,7 @@ public final class BatteryMonitorService extends Service {
                 .setContentTitle(title).setContentText(text).setStyle(new NotificationCompat.BigTextStyle().bigText(text))
                 .setContentIntent(content).setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_HIGH).build());
     }
+
     private void createChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return; NotificationManager nm = notificationManager(); if (nm == null) return;
         NotificationChannel live = new NotificationChannel(CHANNEL_LIVE, "Battery monitor", NotificationManager.IMPORTANCE_LOW);
