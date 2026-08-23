@@ -31,8 +31,12 @@ import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
@@ -142,7 +146,17 @@ public class Favorites extends Forwarder {
         favoriteAdapter.setFavorites(favoritesPojo.stream().map(pojo -> Result.fromPojo(mainActivity, pojo)).collect(Collectors.toList()));
     }
 
-    private void onClick(View v, Result<?> result) { result.fastLaunch(mainActivity, v); v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); }
+    private void onClick(View v, Result<?> result) {
+        Pojo pojo = result.getPojo();
+        boolean morphLaunch = pojo instanceof AppPojo
+                || pojo instanceof ShortcutPojo
+                || pojo instanceof DisabledAppPojo;
+        if (!morphLaunch || !LaunchMorphTransition.start(
+                mainActivity, v, () -> result.fastLaunch(mainActivity, v))) {
+            result.fastLaunch(mainActivity, v);
+        }
+        v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+    }
 
     private boolean onLongClick(View v, Result<?> result) {
         if (NotificationHistoryResolver.showForPojo(mainActivity, result.getPojo())) return true;
