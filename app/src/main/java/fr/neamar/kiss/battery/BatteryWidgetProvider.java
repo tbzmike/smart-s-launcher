@@ -22,7 +22,10 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
 
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
-        for (int id : ids) manager.updateAppWidget(id, build(context, false));
+        if (ids != null && ids.length > 0) {
+            RemoteViews views = build(context, false);
+            for (int id : ids) manager.updateAppWidget(id, views);
+        }
         BatteryMonitorStarter.ensureRunning(context);
     }
 
@@ -31,10 +34,10 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
         BatteryHistoryStore store = new BatteryHistoryStore(context);
         long cap = store.estimatedFullCapacityUah();
         BatteryHistoryStore.CurrentSessionStats session = store.currentSessionStats(s);
-        double cycles30 = store.equivalentChargeCycles(30L * 86_400_000L);
+        double cycles30 = detailed ? store.equivalentChargeCycles(30L * 86_400_000L) : Double.NaN;
         store.close();
-        int design = BatteryCapacityEstimator.designCapacityMah(context);
-        double health = BatteryCapacityEstimator.healthPercent(context, cap);
+        int design = detailed ? BatteryCapacityEstimator.designCapacityMah(context) : -1;
+        double health = detailed ? BatteryCapacityEstimator.healthPercent(context, cap) : Double.NaN;
 
         RemoteViews v = new RemoteViews(context.getPackageName(), widgetLayout(context, detailed));
         v.setTextViewText(R.id.battery_widget_percent, s.percent() + "%");
@@ -119,9 +122,19 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
 
     public static void updateAll(Context context) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
+
         ComponentName compact = new ComponentName(context, BatteryWidgetProvider.class);
-        for (int id : manager.getAppWidgetIds(compact)) manager.updateAppWidget(id, build(context, false));
+        int[] compactIds = manager.getAppWidgetIds(compact);
+        if (compactIds.length > 0) {
+            RemoteViews compactViews = build(context, false);
+            for (int id : compactIds) manager.updateAppWidget(id, compactViews);
+        }
+
         ComponentName detailed = new ComponentName(context, BatteryDetailedWidgetProvider.class);
-        for (int id : manager.getAppWidgetIds(detailed)) manager.updateAppWidget(id, build(context, true));
+        int[] detailedIds = manager.getAppWidgetIds(detailed);
+        if (detailedIds.length > 0) {
+            RemoteViews detailedViews = build(context, true);
+            for (int id : detailedIds) manager.updateAppWidget(id, detailedViews);
+        }
     }
 }
