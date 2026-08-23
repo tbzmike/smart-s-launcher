@@ -1,5 +1,6 @@
 package fr.neamar.kiss.result;
 
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
@@ -72,30 +73,70 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
     @Override protected void doLaunch(Context context, View v) {
         switch (pojo.kind) {
             case CALL:
-                if (!pojo.address.isEmpty()) {
-                    Intent dial = new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(pojo.address)));
-                    dial.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    context.startActivity(dial);
-                    return;
-                }
+                if (!pojo.address.isEmpty() && openCallInApp(context, v)) return;
                 break;
             case SMS:
                 if (!pojo.address.isEmpty()) {
-                    Intent sms = new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(pojo.address)));
+                    Intent sms = new Intent(Intent.ACTION_SENDTO,
+                            Uri.parse("smsto:" + Uri.encode(pojo.address)));
                     sms.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    context.startActivity(sms);
-                    return;
+                    setSourceBounds(sms, v);
+                    try {
+                        context.startActivity(sms);
+                        return;
+                    } catch (ActivityNotFoundException | SecurityException ignored) { }
                 }
                 break;
             case TRUECALLER_NOTIFICATION:
-                if (!pojo.notificationId.isEmpty() && NotificationListener.openNotification(context, pojo.notificationId)) return;
-                if (!pojo.packageName.isEmpty() && AppLaunchUtils.launchPackage(context, pojo.packageName)) return;
+                if (!pojo.notificationId.isEmpty()
+                        && NotificationListener.openNotification(context, pojo.notificationId)) return;
+                if (!pojo.packageName.isEmpty()
+                        && AppLaunchUtils.launchPackage(context, pojo.packageName)) return;
                 break;
         }
         Toast.makeText(context, "Unable to open this communication item", Toast.LENGTH_SHORT).show();
     }
 
+    private boolean openCallInApp(Context context, View v) {
+        Uri tel = Uri.parse("tel:" + Uri.encode(pojo.address));
+        PackageManager pm = context.getPackageManager();
+
+        // CommunicationIndexer stores the owning phone app package for call-log rows (currently
+        // Truecaller). Try an explicit tel: deep link first. Because the package is pinned, this
+        // path cannot resolve to a browser.
+        if (!pojo.packageName.isEmpty()) {
+            Intent appNumber = new Intent(Intent.ACTION_VIEW, tel)
+                    .setPackage(pojo.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            setSourceBounds(appNumber, v);
+            if (pm.resolveActivity(appNumber, PackageManager.MATCH_DEFAULT_ONLY) != null) {
+                try {
+                    context.startActivity(appNumber);
+                    return true;
+                } catch (ActivityNotFoundException | SecurityException ignored) { }
+            }
+
+            // Some versions of Truecaller do not publicly expose a number-specific VIEW intent.
+            // In that case open the app itself rather than changing this call-history item into a
+            // web URL. This is still the user's requested app-first behavior.
+            if (AppLaunchUtils.launchPackage(context, pojo.packageName)) return true;
+        }
+
+        // Truecaller missing/unavailable: use Android's dialer resolution. This remains tel:, never
+        // http/https, so call history cannot fall through to a web browser.
+        Intent dial = new Intent(Intent.ACTION_DIAL, tel).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        setSourceBounds(dial, v);
+        try {
+            context.startActivity(dial);
+            return true;
+        } catch (ActivityNotFoundException | SecurityException ignored) {
+            return false;
+        }
+    }
+
     @Override protected boolean isAllowedAsFavorite() { return false; }
-    @Override protected boolean canRemoveFromHistory(Context context) { return false; }
+    @Override protected boolean canRemoveFromHistory(Context context) {
+        return pojo.kind == CommunicationPojo.Kind.CALL;
+    }
     @Override protected boolean canHaveCustomIcon(Context context, IconPack iconPack) { return false; }
 }
