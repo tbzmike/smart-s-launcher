@@ -25,6 +25,7 @@ public class ForwarderManager extends Forwarder {
     private final Notification notificationForwarder;
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final SmartCardListForwarder smartCardListForwarder;
+    private final VerticalCardGroupResizeController verticalCardGroupResizeController;
     private final SquareUHostFullscreenController squareUHostFullscreenController;
     private final SquareUStabilityController squareUStabilityController;
     private final SquareUEdgeBoundsController squareUEdgeBoundsController;
@@ -43,6 +44,8 @@ public class ForwarderManager extends Forwarder {
         this.tagsMenu = new TagsMenu(mainActivity);
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
         this.smartCardListForwarder = new SmartCardListForwarder(mainActivity);
+        this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(
+                mainActivity, smartCardListForwarder);
         this.squareUHostFullscreenController = new SquareUHostFullscreenController(
                 mainActivity, historyDisplayForwarder);
         this.squareUStabilityController = new SquareUStabilityController(
@@ -64,6 +67,7 @@ public class ForwarderManager extends Forwarder {
         historyDisplayForwarder.onCreate();
         squareUHostFullscreenController.onCreate();
         smartCardListForwarder.onCreate();
+        verticalCardGroupResizeController.onCreate();
         squareUStabilityController.onCreate();
         squareUEdgeBoundsController.onCreate();
         historyVisualEnhancer.onCreate();
@@ -82,12 +86,14 @@ public class ForwarderManager extends Forwarder {
         historyDisplayForwarder.onResume();
         squareUHostFullscreenController.onResume();
         smartCardListForwarder.onResume();
+        verticalCardGroupResizeController.onResume();
         squareUStabilityController.onResume();
         squareUEdgeBoundsController.onResume();
         historyVisualEnhancer.onResume();
     }
 
     public void onPause() {
+        verticalCardGroupResizeController.onPause();
         squareUEdgeBoundsController.onPause();
         squareUStabilityController.onPause();
         squareUHostFullscreenController.onPause();
@@ -129,6 +135,7 @@ public class ForwarderManager extends Forwarder {
         squareUHostFullscreenController.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
         smartCardListForwarder.onDataSetChanged();
+        verticalCardGroupResizeController.onDataSetChanged();
         squareUStabilityController.onDataSetChanged();
         squareUEdgeBoundsController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
@@ -152,6 +159,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
+        verticalCardGroupResizeController.onDestroy();
         squareUEdgeBoundsController.onDestroy();
         squareUStabilityController.onDestroy();
         squareUHostFullscreenController.onDestroy();
@@ -162,6 +170,7 @@ public class ForwarderManager extends Forwarder {
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
         squareUHostFullscreenController.onConfigurationChanged();
+        verticalCardGroupResizeController.onConfigurationChanged();
         squareUStabilityController.onConfigurationChanged();
         squareUEdgeBoundsController.onConfigurationChanged();
     }
