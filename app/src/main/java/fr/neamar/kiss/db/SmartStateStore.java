@@ -8,6 +8,7 @@ import android.database.sqlite.SQLiteFullException;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -41,8 +42,6 @@ public final class SmartStateStore {
         values.put("user_serial", userSerial);
         SQLiteDatabase database = db(context);
 
-        // Smart S exposes one launcher entry per package/profile. Remove stale aliases/internal
-        // launcher activities before remembering the current canonical launch component.
         database.delete("app_catalog",
                 "package=? AND user_serial=? AND class<>?",
                 new String[]{packageName, Long.toString(userSerial), activityName});
@@ -104,6 +103,11 @@ public final class SmartStateStore {
                                         @NonNull String packageName, @NonNull String appName,
                                         @Nullable String title, @Nullable String body, long postTime,
                                         boolean permanent) {
+        if (!PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean("enable-notification-history", false)) {
+            return;
+        }
+
         ContentValues values = new ContentValues();
         values.put("notification_id", notificationId);
         values.put("package", packageName);
@@ -112,8 +116,6 @@ public final class SmartStateStore {
         values.put("body", body == null ? "" : body);
         values.put("post_time", postTime);
         values.put("is_permanent", permanent ? 1 : 0);
-        // There is deliberately no notification-count cap. Re-posts/reconnects for the same
-        // notification update its stored content instead of duplicating the same event.
         try {
             SQLiteDatabase database = db(context);
             if (permanent) {
@@ -163,7 +165,9 @@ public final class SmartStateStore {
                 if (i > 0) where.append(" OR ");
                 where.append("app_name LIKE ? OR title LIKE ? OR body LIKE ?");
                 String like = "%" + terms.get(i) + "%";
-                args.add(like); args.add(like); args.add(like);
+                args.add(like);
+                args.add(like);
+                args.add(like);
             }
             where.append(')');
         }
