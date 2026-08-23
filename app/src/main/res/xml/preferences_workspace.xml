@@ -19,9 +19,18 @@
             app:summary="Use resizable launcher panes instead of one fixed full-screen content area" />
 
         <ListPreference
+            app:key="smart-workspace-layout-mode"
+            app:defaultValue="two-pane"
+            app:title="Workspace layout"
+            app:entries="@array/smart_workspace_layout_entries"
+            app:entryValues="@array/smart_workspace_layout_values"
+            app:dependency="smart-workspace-enabled"
+            app:useSimpleSummaryProvider="true" />
+
+        <ListPreference
             app:key="smart-workspace-orientation"
             app:defaultValue="horizontal"
-            app:title="Split direction"
+            app:title="Two-pane split direction"
             app:entries="@array/smart_workspace_orientation_entries"
             app:entryValues="@array/smart_workspace_orientation_values"
             app:dependency="smart-workspace-enabled"
@@ -39,8 +48,28 @@
         <SeekBarPreference
             app:key="smart-workspace-split-percent"
             app:defaultValue="50"
-            app:title="First pane size (%)"
-            app:summary="Initial size of the first pane; the divider can also be dragged directly on the launcher"
+            app:title="Two-pane first pane size (%)"
+            app:summary="Used only by the existing two-pane layout; its saved value is preserved when switching to four panes"
+            app:min="15"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true"
+            app:dependency="smart-workspace-enabled" />
+
+        <SeekBarPreference
+            app:key="smart-workspace-quadrant-column-percent"
+            app:defaultValue="50"
+            app:title="Four-pane left column size (%)"
+            app:summary="Used only by Four panes / quadrants; drag either vertical divider on the launcher to adjust both rows"
+            app:min="15"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true"
+            app:dependency="smart-workspace-enabled" />
+
+        <SeekBarPreference
+            app:key="smart-workspace-quadrant-row-percent"
+            app:defaultValue="50"
+            app:title="Four-pane top row size (%)"
+            app:summary="Used only by Four panes / quadrants; drag the horizontal divider to resize top and bottom rows"
             app:min="15"
             app:seekBarIncrement="1"
             app:showSeekBarValue="true"
@@ -50,7 +79,7 @@
             app:key="smart-workspace-draggable"
             app:defaultValue="true"
             app:title="Resizable divider"
-            app:summary="Drag the divider continuously between 15% and 85%; when disabled the divider is completely hidden"
+            app:summary="Two-pane: resize one divider. Four-pane: resize synchronized columns plus the row divider. Limits remain 15% to 85%."
             app:dependency="smart-workspace-enabled" />
 
         <SwitchPreference
@@ -75,13 +104,18 @@
             app:dependency="smart-workspace-enabled" />
 
         <Preference
+            app:title="Four-pane behavior"
+            app:summary="Four-pane mode creates a true 2 × 2 workspace. Existing apps/history and widgets remain authoritative live panes; the two additional quadrants are independent empty workspace surfaces with KISS gestures. Switching back restores the saved two-pane layout."
+            app:selectable="false" />
+
+        <Preference
             app:title="Freeform widget behavior"
             app:summary="Workspace widgets use a separate Smart S host: resize from left, right, top, bottom or any corner; move widgets freely; handles disappear outside edit mode. Legacy KISS widget sizing remains only for legacy mode."
             app:selectable="false" />
 
         <Preference
             app:title="Pane architecture"
-            app:summary="Apps &amp; history and Android widgets can occupy either pane. The workspace foundation is designed for more Smart S panels and widgets later."
+            app:summary="Apps &amp; history and Android widgets keep their existing live containers. Four-pane mode extends the geometry without replacing or duplicating those authoritative views."
             app:selectable="false" />
     </PreferenceCategory>
 </PreferenceScreen>
