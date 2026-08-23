@@ -31,6 +31,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class LaunchMorphTransition {
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
+    private static final String PREF_FLIP_SPEED = "smart-launch-flip-speed";
+    private static final float DEFAULT_FLIP_SPEED = 0.85f;
 
     private LaunchMorphTransition() {}
 
@@ -107,8 +109,8 @@ public final class LaunchMorphTransition {
             return false;
         }
 
-        // The source must disappear once its identical overlay exists. Otherwise the unchanged real
-        // tile remains visible behind the edge-on snapshot and visually masks the flip.
+        // Once the identical overlay exists, hide the real tile. Leaving it visible underneath the
+        // edge-on snapshot makes the 3D turn look like a flicker instead of a physical card flip.
         source.setAlpha(0f);
 
         float sourceCenterX = startX + startWidth / 2f;
@@ -118,11 +120,15 @@ public final class LaunchMorphTransition {
         float frontEdge = leftToRight ? 90f : -90f;
         float backEdge = -frontEdge;
 
-        // Deliberately slower than the previous transition: each half of the flip is independently
-        // visible before any scaling starts.
         long base = Math.max(140L, SmartAnimationEngine.duration(context));
-        long flipHalf = Math.max(145L, Math.min(220L, base));
-        long backHold = 55L;
+        long rawFlipHalf = Math.max(145L, Math.min(220L, base));
+        float flipSpeed = readFlipSpeed(context);
+        // Lower speed values intentionally produce longer, more visible flip halves. The default
+        // (0.85x) is slightly slower than the previous fixed timing without delaying app launch
+        // excessively. User choice affects only the flip, not the expansion/handoff.
+        long flipHalf = Math.max(120L,
+                Math.min(380L, Math.round(rawFlipHalf / flipSpeed)));
+        long backHold = 60L;
         long expandDuration = Math.max(210L, Math.min(330L, base + 100L));
 
         AtomicBoolean launched = new AtomicBoolean(false);
@@ -204,6 +210,17 @@ public final class LaunchMorphTransition {
         return true;
     }
 
+    private static float readFlipSpeed(Context context) {
+        String raw = SmartAnimationEngine.getStyle(
+                context, PREF_FLIP_SPEED, Float.toString(DEFAULT_FLIP_SPEED));
+        try {
+            float value = Float.parseFloat(raw);
+            return Math.max(0.45f, Math.min(1.60f, value));
+        } catch (NumberFormatException ignored) {
+            return DEFAULT_FLIP_SPEED;
+        }
+    }
+
     private static void startExpansion(ViewGroup host,
                                        FrameLayout overlay,
                                        View source,
@@ -248,8 +265,8 @@ public final class LaunchMorphTransition {
         expand.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
-                // Critical sequencing rule: Android is asked to open the target only after the
-                // complete live flip and full-screen morph have visibly finished.
+                // Android is asked to open the target only after the complete live flip and
+                // full-screen morph have visibly finished.
                 launchOnce.run();
                 overlay.postDelayed(
                         () -> cleanup(host, overlay, source, sourceAlpha, snapshot), 420L);
