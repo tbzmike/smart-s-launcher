@@ -9,7 +9,6 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Rect;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
@@ -32,6 +31,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * expansion so Android can replace the launcher window without mutating the underlying tile.
  */
 public final class LaunchMorphTransition {
+    private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
+
     private LaunchMorphTransition() {}
 
     /**
@@ -42,13 +43,21 @@ public final class LaunchMorphTransition {
         if (context == null || source == null || launchAction == null) return false;
         if (!SmartAnimationEngine.isEnabled(context) || !source.isShown()
                 || source.getWidth() <= 1 || source.getHeight() <= 1) return false;
+        if (!RUNNING.compareAndSet(false, true)) return true;
 
         Activity activity = findActivity(context);
-        if (activity == null || activity.isFinishing()) return false;
+        if (activity == null || activity.isFinishing()) {
+            RUNNING.set(false);
+            return false;
+        }
         Window window = activity.getWindow();
-        if (window == null) return false;
+        if (window == null) {
+            RUNNING.set(false);
+            return false;
+        }
         View decor = window.getDecorView();
         if (!(decor instanceof ViewGroup) || decor.getWidth() <= 1 || decor.getHeight() <= 1) {
+            RUNNING.set(false);
             return false;
         }
 
@@ -58,6 +67,7 @@ public final class LaunchMorphTransition {
             Canvas canvas = new Canvas(snapshot);
             source.draw(canvas);
         } catch (RuntimeException | OutOfMemoryError error) {
+            RUNNING.set(false);
             return false;
         }
 
@@ -89,7 +99,13 @@ public final class LaunchMorphTransition {
         lp.leftMargin = Math.round(startX);
         lp.topMargin = Math.round(startY);
         lp.gravity = Gravity.TOP | Gravity.START;
-        host.addView(overlay, lp);
+        try {
+            host.addView(overlay, lp);
+        } catch (RuntimeException error) {
+            recycle(snapshot);
+            RUNNING.set(false);
+            return false;
+        }
 
         // Pivot from the outer edge toward the centre: left-side tiles flip left -> right,
         // right-side tiles flip right -> left.
@@ -106,7 +122,13 @@ public final class LaunchMorphTransition {
 
         AtomicBoolean launched = new AtomicBoolean(false);
         Runnable launchOnce = () -> {
-            if (launched.compareAndSet(false, true)) launchAction.run();
+            if (!launched.compareAndSet(false, true)) return;
+            try {
+                launchAction.run();
+            } catch (RuntimeException error) {
+                cleanup(host, overlay, snapshot);
+                throw error;
+            }
         };
 
         ObjectAnimator flipOut = ObjectAnimator.ofFloat(overlay, View.ROTATION_Y, 0f, firstHalfRotation);
@@ -118,12 +140,13 @@ public final class LaunchMorphTransition {
             public void onAnimationEnd(Animator animation) {
                 if (overlay.getParent() == null) {
                     recycle(snapshot);
+                    RUNNING.set(false);
                     launchOnce.run();
                     return;
                 }
 
-                // Reverse face: keep the captured visual identity but darken/tint it slightly so
-                // the card visibly reads as having flipped to its back before morphing full-screen.
+                // Reverse face: retain the tile identity but alter the surface so the midpoint
+                // visibly reads as the back of the card before it becomes the launch surface.
                 face.setColorFilter(Color.argb(58, 255, 255, 255));
                 GradientDrawable back = new GradientDrawable();
                 back.setColor(Color.rgb(18, 18, 20));
@@ -138,8 +161,6 @@ public final class LaunchMorphTransition {
                 float scaleX = host.getWidth() / (float) startWidth;
                 float scaleY = host.getHeight() / (float) startHeight;
 
-                // During expansion the pivot becomes the tile centre so scaling lands exactly on
-                // the full launcher window regardless of the flip direction.
                 overlay.setPivotX(startWidth / 2f);
                 overlay.setPivotY(startHeight / 2f);
 
@@ -154,8 +175,8 @@ public final class LaunchMorphTransition {
                 expand.setDuration(expandDuration);
                 expand.setInterpolator(new DecelerateInterpolator(1.35f));
 
-                // Launch late enough for the user to see the flip/expansion, but before the overlay
-                // finishes so a slower app launch is covered by the morph surface.
+                // Handoff happens during expansion: the morph remains visible while Android starts
+                // the target app, then the real app window naturally replaces the launcher.
                 new Handler(Looper.getMainLooper()).postDelayed(
                         launchOnce, Math.max(80L, expandDuration * 58L / 100L));
 
@@ -173,6 +194,12 @@ public final class LaunchMorphTransition {
                     }
                 });
                 expand.start();
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                launchOnce.run();
+                cleanup(host, overlay, snapshot);
             }
         });
 
@@ -196,6 +223,7 @@ public final class LaunchMorphTransition {
             if (overlay.getParent() == host) host.removeView(overlay);
         } catch (RuntimeException ignored) { }
         recycle(bitmap);
+        RUNNING.set(false);
     }
 
     private static void recycle(Bitmap bitmap) {
