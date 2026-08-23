@@ -29,6 +29,7 @@ public class ForwarderManager extends Forwarder {
     private final HistoryVisualEnhancer historyVisualEnhancer;
     private final SmartUFoundationForwarder smartUFoundationForwarder;
     private final SmartUIntelligenceForwarder smartUIntelligenceForwarder;
+    private final SmartUFinalPolishForwarder smartUFinalPolishForwarder;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -51,6 +52,8 @@ public class ForwarderManager extends Forwarder {
                 mainActivity, historyDisplayForwarder);
         this.smartUIntelligenceForwarder = new SmartUIntelligenceForwarder(
                 mainActivity, historyDisplayForwarder);
+        this.smartUFinalPolishForwarder = new SmartUFinalPolishForwarder(
+                mainActivity, historyDisplayForwarder);
     }
 
     public void onCreate() {
@@ -67,6 +70,7 @@ public class ForwarderManager extends Forwarder {
         historyVisualEnhancer.onCreate();
         smartUFoundationForwarder.onCreate();
         smartUIntelligenceForwarder.onCreate();
+        smartUFinalPolishForwarder.onCreate();
     }
 
     public void onStart() {
@@ -85,9 +89,11 @@ public class ForwarderManager extends Forwarder {
         historyVisualEnhancer.onResume();
         smartUFoundationForwarder.onResume();
         smartUIntelligenceForwarder.onResume();
+        smartUFinalPolishForwarder.onResume();
     }
 
     public void onPause() {
+        smartUFinalPolishForwarder.onPause();
         smartUFoundationForwarder.onPause();
         squareUInteractionController.onPause();
         experienceTweaks.onPause();
@@ -131,6 +137,7 @@ public class ForwarderManager extends Forwarder {
         historyVisualEnhancer.onDataSetChanged();
         smartUFoundationForwarder.onDataSetChanged();
         smartUIntelligenceForwarder.onDataSetChanged();
+        smartUFinalPolishForwarder.onDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
@@ -152,6 +159,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
+        smartUFinalPolishForwarder.onDestroy();
         smartUIntelligenceForwarder.onDestroy();
         smartUFoundationForwarder.onDestroy();
         squareUInteractionController.onDestroy();
@@ -162,5 +170,6 @@ public class ForwarderManager extends Forwarder {
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
         smartUIntelligenceForwarder.onConfigurationChanged();
+        smartUFinalPolishForwarder.onConfigurationChanged();
     }
 }
