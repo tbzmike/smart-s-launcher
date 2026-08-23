@@ -52,12 +52,43 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                     "Smart Focus blur, icon tracking, blur strength and performance");
             addWorkspaceEntry();
         } else if ("ux-holder".equals(rootKey)) {
+            addTileFlipSpeedPreference();
             addEntry("animations", "Smart animations & transitions",
                     "Scrolling, windows, popups, notifications, switching and numeric animation speed");
         } else if ("advanced".equals(rootKey)) {
             addEntry("frozen", "Frozen apps & app state",
                     "IceBox-safe detection, disabled app launching and background state refresh");
         }
+    }
+
+    private void addTileFlipSpeedPreference() {
+        String key = "smart-launch-flip-speed";
+        if (findPreference(key) != null) return;
+
+        ListPreference preference = new ListPreference(requireContext());
+        preference.setKey(key);
+        preference.setTitle("Tile flip speed");
+        preference.setSummary("Speed of the live tile flip before an app or shortcut opens");
+        preference.setEntries(new CharSequence[]{
+                "Very slow",
+                "Slow",
+                "Slightly slow",
+                "Normal",
+                "Fast",
+                "Very fast"
+        });
+        preference.setEntryValues(new CharSequence[]{
+                "0.55",
+                "0.70",
+                "0.85",
+                "1.00",
+                "1.20",
+                "1.45"
+        });
+        // Slightly slower than the previous fixed timing so the 3D turn is clearly visible.
+        preference.setDefaultValue("0.85");
+        preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        getPreferenceScreen().addPreference(preference);
     }
 
     private void addHistoryLayoutPreference() {
