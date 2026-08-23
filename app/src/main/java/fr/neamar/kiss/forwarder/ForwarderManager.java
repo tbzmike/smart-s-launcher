@@ -25,7 +25,7 @@ public class ForwarderManager extends Forwarder {
     private final Notification notificationForwarder;
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final SmartCardListForwarder smartCardListForwarder;
-    private final SquareUInteractionController squareUInteractionController;
+    private final SquareUStabilityController squareUStabilityController;
     private final HistoryVisualEnhancer historyVisualEnhancer;
 
     public ForwarderManager(MainActivity mainActivity) {
@@ -41,7 +41,7 @@ public class ForwarderManager extends Forwarder {
         this.tagsMenu = new TagsMenu(mainActivity);
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
         this.smartCardListForwarder = new SmartCardListForwarder(mainActivity);
-        this.squareUInteractionController = new SquareUInteractionController(
+        this.squareUStabilityController = new SquareUStabilityController(
                 mainActivity, historyDisplayForwarder);
         this.historyVisualEnhancer = new HistoryVisualEnhancer(
                 mainActivity, historyDisplayForwarder);
@@ -57,7 +57,7 @@ public class ForwarderManager extends Forwarder {
         tagsMenu.onCreate();
         historyDisplayForwarder.onCreate();
         smartCardListForwarder.onCreate();
-        squareUInteractionController.onCreate();
+        squareUStabilityController.onCreate();
         historyVisualEnhancer.onCreate();
     }
 
@@ -73,12 +73,12 @@ public class ForwarderManager extends Forwarder {
         tagsMenu.onResume();
         historyDisplayForwarder.onResume();
         smartCardListForwarder.onResume();
-        squareUInteractionController.onResume();
+        squareUStabilityController.onResume();
         historyVisualEnhancer.onResume();
     }
 
     public void onPause() {
-        squareUInteractionController.onPause();
+        squareUStabilityController.onPause();
         experienceTweaks.onPause();
         notificationForwarder.onPause();
     }
@@ -116,7 +116,7 @@ public class ForwarderManager extends Forwarder {
         widgetsForwarder.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
         smartCardListForwarder.onDataSetChanged();
-        squareUInteractionController.onDataSetChanged();
+        squareUStabilityController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
     }
 
@@ -138,12 +138,13 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
-        squareUInteractionController.onDestroy();
+        squareUStabilityController.onDestroy();
         widgetsForwarder.onDestroy();
     }
 
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
+        squareUStabilityController.onConfigurationChanged();
     }
 }
