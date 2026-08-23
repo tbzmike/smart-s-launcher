@@ -33,7 +33,7 @@ import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.URIUtils;
 import fr.neamar.kiss.utils.URLUtils;
 
-public class SearchProvider extends SimpleProvider<SearchPojo> {
+public class SearchProvider extends SimpleProvider<Pojo> {
     private final SharedPreferences prefs;
 
     public static Set<String> getDefaultSearchProviders(Context context) {
@@ -89,6 +89,30 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         searcher.addResults(getResults(s));
     }
 
+    @Override
+    public boolean mayFindById(String id) {
+        return id != null && id.startsWith(CommunicationIndexStore.ID_PREFIX);
+    }
+
+    @Override
+    public Pojo findById(String id) {
+        if (!mayFindById(id)) return null;
+        String raw = id.substring(CommunicationIndexStore.ID_PREFIX.length());
+        try (CommunicationIndexStore store = new CommunicationIndexStore(context)) {
+            int slash = raw.indexOf('/');
+            if (slash > 0 && slash < raw.length() - 1) {
+                String source = raw.substring(0, slash);
+                String sourceId = raw.substring(slash + 1);
+                return store.findBySourceId(source, sourceId);
+            }
+            try {
+                return store.find(Long.parseLong(raw));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+    }
+
     private List<Pojo> getResults(String query) {
         List<Pojo> records = new ArrayList<>();
 
@@ -133,31 +157,10 @@ public class SearchProvider extends SimpleProvider<SearchPojo> {
         }
         int limit = Math.max(5, Math.min(200, prefs.getInt(CommunicationIndexer.PREF_LIMIT, 40)));
         try (CommunicationIndexStore store = new CommunicationIndexStore(context)) {
-            for (CommunicationPojo item : store.search(query, limit)) {
-                String url;
-                String label;
-                switch (item.kind) {
-                    case CALL:
-                        if (item.address.isEmpty()) continue;
-                        url = Uri.fromParts("tel", item.address, null).toString();
-                        label = "Call history · " + item.getName();
-                        break;
-                    case SMS:
-                        if (item.address.isEmpty()) continue;
-                        url = Uri.fromParts("smsto", item.address, null).toString();
-                        label = "Message · " + item.getName();
-                        break;
-                    case TRUECALLER_NOTIFICATION:
-                    default:
-                        url = "https://www.truecaller.com";
-                        label = "Truecaller · " + item.getName();
-                        break;
-                }
-                SearchPojo pojo = new SearchPojo("search://communication/" + item.id.hashCode(), "", url, SearchPojoType.URL_QUERY);
-                pojo.relevance = item.relevance;
-                pojo.setName(label, false);
-                records.add(pojo);
-            }
+            // Keep communication records as CommunicationPojo. Converting them to SearchPojo made
+            // Truecaller items URL results ("Visit") and could route them to a browser instead of
+            // CommunicationResult's app-aware launch behavior.
+            records.addAll(store.search(query, limit));
         }
     }
 
