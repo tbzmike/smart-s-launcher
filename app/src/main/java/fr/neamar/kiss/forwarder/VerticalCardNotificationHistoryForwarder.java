@@ -17,7 +17,11 @@ import java.util.Map;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.LaunchHistoryStatsStore;
+import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
+import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
@@ -31,7 +35,7 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
  *  - notification-result cards open saved history when tapped;
  *  - action buttons (for example Mark read) keep their own click listeners;
  *  - the strip below each card shows app/shortcut name, last launch time and launches today;
- *  - a single tap on a normal app/shortcut icon launches immediately with an enlarged hit target.
+ *  - a single tap on an app/frozen-app/shortcut icon launches immediately with a larger hit target.
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -127,8 +131,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             };
             applyLongPressRecursively(wrapper, historyFirstLongPress);
 
-            // A NotificationPojo is itself a notification tile. Tapping anywhere on its visual
-            // surface must use RecordAdapter.onClick(), whose first action is saved app history.
             if (result.getPojo() instanceof NotificationPojo) {
                 View.OnClickListener notificationClick = v ->
                         mainActivity.adapter.onClick(adapterPosition, v);
@@ -137,15 +139,14 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         }
     }
 
-    /**
-     * Normal app/shortcut icons should behave as strong single-tap launch targets. Keep the visible
-     * icon size unchanged, but enlarge its invisible touch rectangle so a slightly off-centre tap is
-     * still accepted. The enclosing ScrollView can still intercept a real drag, so vertical scrolling
-     * does not become an accidental launch.
-     */
     private void applyEasyIconTap(View wrapper, Result<?> result, int adapterPosition) {
-        if (wrapper == null || result == null || result.getPojo() == null
-                || result.getPojo() instanceof NotificationPojo) return;
+        if (wrapper == null || result == null || result.getPojo() == null) return;
+        Pojo pojo = result.getPojo();
+        if (!(pojo instanceof AppPojo)
+                && !(pojo instanceof ShortcutPojo)
+                && !(pojo instanceof DisabledAppPojo)) {
+            return;
+        }
 
         ImageView icon = findFirstVisibleImage(wrapper);
         if (icon == null) return;
@@ -185,8 +186,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         ViewGroup group = (ViewGroup) wrapper;
         AutoMarqueeTextView strip = null;
 
-        // SmartCardListForwarder deliberately places the between-card name strip as a direct child
-        // of the wrapper after the card. Reuse that exact space instead of adding card height.
         for (int i = group.getChildCount() - 1; i >= 0; i--) {
             View child = group.getChildAt(i);
             if (child instanceof AutoMarqueeTextView) {
@@ -198,9 +197,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
         String historyId = result.getPojo().getHistoryId();
         LaunchHistoryStatsStore.Stats stats = launchStats.get(historyId);
-
-        // Preserve SmartCardListForwarder's cleaned display label. On later global-layout passes the
-        // strip already contains stats, so take only the stable name prefix to avoid duplication.
         String currentText = strip.getText() == null ? "" : strip.getText().toString().trim();
         int marker = currentText.indexOf(STATS_MARKER);
         String appName = marker > 0 ? currentText.substring(0, marker).trim() : currentText;
@@ -219,9 +215,7 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         }
         String times = today == 1 ? "1 time today" : today + " times today";
         String summary = appName + STATS_MARKER + last + "  •  Launched: " + times;
-        if (!TextUtils.equals(strip.getText(), summary)) {
-            strip.setText(summary);
-        }
+        if (!TextUtils.equals(strip.getText(), summary)) strip.setText(summary);
         strip.setContentDescription(appName + ", last launched " + last + ", launched " + times);
     }
 
