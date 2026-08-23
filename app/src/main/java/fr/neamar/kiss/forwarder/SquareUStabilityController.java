@@ -139,7 +139,7 @@ final class SquareUStabilityController {
         final float rightCenterX = width * 0.82f;
         final float topCenterY = height * 0.34f;
         final float bottomCenterY = height * 0.73f;
-        final float maxVisualWidth = Math.min(dp(136), width * 0.24f);
+        final float maxVisualWidth = Math.min(dp(136), width * 0.28f);
         final float maxVisualHeight = Math.min(dp(174), height * 0.18f);
 
         for (int i = 0; i < count; i++) {
@@ -181,7 +181,7 @@ final class SquareUStabilityController {
             if (card.getWidth() > 0) normalizer = Math.min(normalizer, maxVisualWidth / card.getWidth());
             if (card.getHeight() > 0) normalizer = Math.min(normalizer, maxVisualHeight / card.getHeight());
             normalizer = Math.min(1f, normalizer);
-            float scale = Math.max(0.72f, depthScale * normalizer);
+            float scale = Math.max(0.50f, depthScale * normalizer);
 
             float desiredLeft = desiredCenterX - card.getWidth() / 2f;
             float desiredTop = desiredCenterY - card.getHeight() / 2f;
@@ -228,12 +228,33 @@ final class SquareUStabilityController {
 
     private void stabilizeNotificationPanel(int width, int height) {
         if (notificationScroller == null) return;
-        int panelWidth = Math.min(dp(330), Math.max(dp(220), Math.round(width * 0.56f)));
-        int panelHeight = Math.min(dp(230), Math.max(dp(160), Math.round(height * 0.20f)));
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                panelWidth, panelHeight, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        lp.topMargin = Math.max(dp(90), Math.round(height * 0.43f));
-        notificationScroller.setLayoutParams(lp);
+        int maxWidth = Math.max(dp(150), width - dp(40));
+        int panelWidth = Math.min(maxWidth,
+                Math.max(dp(150), Math.min(dp(300), Math.round(width * 0.58f))));
+        int panelHeight = Math.max(dp(120),
+                Math.min(dp(210), Math.round(height * 0.18f)));
+        int topMargin = Math.max(dp(90), Math.round(height * 0.42f));
+
+        ViewGroup.LayoutParams raw = notificationScroller.getLayoutParams();
+        boolean needsLayout = !(raw instanceof FrameLayout.LayoutParams);
+        FrameLayout.LayoutParams lp;
+        if (raw instanceof FrameLayout.LayoutParams) {
+            lp = (FrameLayout.LayoutParams) raw;
+            needsLayout = lp.width != panelWidth || lp.height != panelHeight
+                    || lp.gravity != (Gravity.TOP | Gravity.CENTER_HORIZONTAL)
+                    || lp.topMargin != topMargin;
+        } else {
+            lp = new FrameLayout.LayoutParams(panelWidth, panelHeight);
+        }
+        if (needsLayout) {
+            lp.width = panelWidth;
+            lp.height = panelHeight;
+            lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            lp.topMargin = topMargin;
+            lp.bottomMargin = 0;
+            notificationScroller.setLayoutParams(lp);
+        }
+
         notificationScroller.setScaleX(1f);
         notificationScroller.setScaleY(1f);
         notificationScroller.setTranslationX(0f);
