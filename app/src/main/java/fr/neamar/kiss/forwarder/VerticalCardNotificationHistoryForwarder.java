@@ -28,14 +28,6 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
 /**
  * Makes notification-history behavior explicit on the custom Vertical Cards renderer and enriches
  * the existing between-card label with launch activity from the KISS history table.
- *
- * SmartCardListForwarder builds its own card hierarchy, so relying only on ListView/RecordAdapter
- * routing is not enough. This bridge runs after each Vertical Cards rebuild and guarantees that:
- *  - long-press on a card with saved history opens that app's saved history first;
- *  - notification-result cards open saved history when tapped;
- *  - action buttons (for example Mark read) keep their own click listeners;
- *  - the strip below each card shows app/shortcut name, last launch time and launches today;
- *  - a single tap on an app/frozen-app/shortcut icon launches immediately with a larger hit target.
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -152,7 +144,9 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         if (icon == null) return;
 
         icon.setClickable(true);
-        icon.setOnClickListener(v -> mainActivity.adapter.onClick(adapterPosition, v));
+        // Forward the whole card wrapper as the launch source so the new transition flips and
+        // expands the actual tile, while the enlarged invisible icon hit target remains intact.
+        icon.setOnClickListener(v -> mainActivity.adapter.onClick(adapterPosition, wrapper));
 
         if (!(icon.getParent() instanceof ViewGroup)) return;
         ViewGroup touchParent = (ViewGroup) icon.getParent();
