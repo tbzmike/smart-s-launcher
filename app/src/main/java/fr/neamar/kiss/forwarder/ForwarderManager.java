@@ -30,6 +30,7 @@ public class ForwarderManager extends Forwarder {
     private final SmartUFoundationForwarder smartUFoundationForwarder;
     private final SmartUIntelligenceForwarder smartUIntelligenceForwarder;
     private final SmartUFinalPolishForwarder smartUFinalPolishForwarder;
+    private final SmartUIntegrationAuditForwarder smartUIntegrationAuditForwarder;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -54,6 +55,8 @@ public class ForwarderManager extends Forwarder {
                 mainActivity, historyDisplayForwarder);
         this.smartUFinalPolishForwarder = new SmartUFinalPolishForwarder(
                 mainActivity, historyDisplayForwarder);
+        this.smartUIntegrationAuditForwarder = new SmartUIntegrationAuditForwarder(
+                mainActivity, historyDisplayForwarder, smartUIntelligenceForwarder);
     }
 
     public void onCreate() {
@@ -71,6 +74,7 @@ public class ForwarderManager extends Forwarder {
         smartUFoundationForwarder.onCreate();
         smartUIntelligenceForwarder.onCreate();
         smartUFinalPolishForwarder.onCreate();
+        smartUIntegrationAuditForwarder.onCreate();
     }
 
     public void onStart() {
@@ -90,9 +94,11 @@ public class ForwarderManager extends Forwarder {
         smartUFoundationForwarder.onResume();
         smartUIntelligenceForwarder.onResume();
         smartUFinalPolishForwarder.onResume();
+        smartUIntegrationAuditForwarder.onResume();
     }
 
     public void onPause() {
+        smartUIntegrationAuditForwarder.onPause();
         smartUFinalPolishForwarder.onPause();
         smartUFoundationForwarder.onPause();
         squareUInteractionController.onPause();
@@ -138,6 +144,7 @@ public class ForwarderManager extends Forwarder {
         smartUFoundationForwarder.onDataSetChanged();
         smartUIntelligenceForwarder.onDataSetChanged();
         smartUFinalPolishForwarder.onDataSetChanged();
+        smartUIntegrationAuditForwarder.onDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
@@ -159,6 +166,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
+        smartUIntegrationAuditForwarder.onDestroy();
         smartUFinalPolishForwarder.onDestroy();
         smartUIntelligenceForwarder.onDestroy();
         smartUFoundationForwarder.onDestroy();
@@ -171,5 +179,6 @@ public class ForwarderManager extends Forwarder {
         favoritesForwarder.onConfigurationChanged(newConfig);
         smartUIntelligenceForwarder.onConfigurationChanged();
         smartUFinalPolishForwarder.onConfigurationChanged();
+        smartUIntegrationAuditForwarder.onConfigurationChanged();
     }
 }
