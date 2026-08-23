@@ -5,6 +5,8 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -17,69 +19,115 @@ import androidx.preference.PreferenceManager;
 import java.lang.reflect.Field;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.utils.Log;
 
 /**
  * Deterministic stability layer for Square-U.
  *
- * HistoryDisplayForwarder remains responsible for the carousel and rotation offset. This class
- * normalizes the final visible geometry after layout so legacy/custom resize state cannot create
- * oversized front cards, paper-thin rear cards, runaway offsets, or a notification panel that
- * obscures the launcher controls.
+ * HistoryDisplayForwarder remains responsible for carousel ordering/rotation. This class owns the
+ * final stable U footprint only. A two-finger pinch can resize that whole footprint while the UI
+ * edit lock is off; individual cards are never persistently stretched here.
  */
 final class SquareUStabilityController {
     private static final String TAG = SquareUStabilityController.class.getSimpleName();
     private static final String PREF_LAYOUT = "smart-history-layout";
+    private static final String PREF_FOOTPRINT_SCALE = "smart-u-footprint-scale";
     private static final String SQUARE_U = "square_u";
     private static final float BOTTOM_BAND = 2.55f;
     private static final float VISIBLE_RADIUS = 6.15f;
+    private static final float MIN_FOOTPRINT_SCALE = 0.78f;
+    private static final float MAX_FOOTPRINT_SCALE = 1.28f;
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final SharedPreferences prefs;
+    private final ScaleGestureDetector scaleDetector;
 
     private ViewGroup squareTrack;
     private ScrollView notificationScroller;
     private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
+    private float footprintScale;
+    private boolean scalingGesture;
 
     SquareUStabilityController(MainActivity activity,
                                HistoryDisplayForwarder historyDisplayForwarder) {
         this.activity = activity;
         this.historyDisplayForwarder = historyDisplayForwarder;
         this.prefs = PreferenceManager.getDefaultSharedPreferences(activity);
+        this.footprintScale = clamp(prefs.getFloat(PREF_FOOTPRINT_SCALE, 1f),
+                MIN_FOOTPRINT_SCALE, MAX_FOOTPRINT_SCALE);
+        this.scaleDetector = new ScaleGestureDetector(activity,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScaleBegin(ScaleGestureDetector detector) {
+                        if (!isUStyle() || UiEditLock.isLocked(activity)) return false;
+                        scalingGesture = true;
+                        return true;
+                    }
+
+                    @Override
+                    public boolean onScale(ScaleGestureDetector detector) {
+                        if (!scalingGesture || UiEditLock.isLocked(activity)) return false;
+                        float factor = detector.getScaleFactor();
+                        if (!Float.isFinite(factor) || factor <= 0f) return false;
+                        float next = clamp(footprintScale * factor,
+                                MIN_FOOTPRINT_SCALE, MAX_FOOTPRINT_SCALE);
+                        if (Math.abs(next - footprintScale) < 0.001f) return true;
+                        footprintScale = next;
+                        applyStableGeometry();
+                        return true;
+                    }
+
+                    @Override
+                    public void onScaleEnd(ScaleGestureDetector detector) {
+                        if (scalingGesture) {
+                            prefs.edit().putFloat(PREF_FOOTPRINT_SCALE, footprintScale).apply();
+                        }
+                        scalingGesture = false;
+                    }
+                });
     }
 
     void onCreate() {
         resolveViews();
         attachObserver();
+        installPinchResize();
         refreshSoon();
     }
 
     void onResume() {
+        footprintScale = clamp(prefs.getFloat(PREF_FOOTPRINT_SCALE, footprintScale),
+                MIN_FOOTPRINT_SCALE, MAX_FOOTPRINT_SCALE);
         resolveViews();
         attachObserver();
+        installPinchResize();
         refreshSoon();
     }
 
     void onPause() {
-        // No animator or polling loop is owned here.
+        scalingGesture = false;
     }
 
     void onDataSetChanged() {
         resolveViews();
         attachObserver();
+        installPinchResize();
         refreshSoon();
     }
 
     void onConfigurationChanged() {
         resolveViews();
+        installPinchResize();
         refreshSoon();
     }
 
     void onDestroy() {
         detachObserver();
+        if (squareTrack != null) squareTrack.setOnTouchListener(null);
         squareTrack = null;
         notificationScroller = null;
+        scalingGesture = false;
     }
 
     private boolean isUStyle() {
@@ -89,6 +137,7 @@ final class SquareUStabilityController {
     private void resolveViews() {
         ViewGroup newTrack = readField("squareTrack", ViewGroup.class);
         if (newTrack != squareTrack) {
+            if (squareTrack != null) squareTrack.setOnTouchListener(null);
             detachObserver();
             squareTrack = newTrack;
         }
@@ -121,6 +170,30 @@ final class SquareUStabilityController {
         layoutListener = null;
     }
 
+    /**
+     * Observe two-finger gestures without replacing SquareTrackLayout's normal one-finger carousel.
+     * Returning true only for the active multi-touch gesture prevents a pinch from being interpreted
+     * as a horizontal U swipe.
+     */
+    private void installPinchResize() {
+        if (squareTrack == null) return;
+        squareTrack.setOnTouchListener((view, event) -> {
+            if (!isUStyle()) return false;
+            if (UiEditLock.isLocked(activity)) {
+                scalingGesture = false;
+                return false;
+            }
+            scaleDetector.onTouchEvent(event);
+            boolean multiTouch = event.getPointerCount() > 1;
+            boolean consume = scalingGesture || multiTouch;
+            if ((event.getActionMasked() == MotionEvent.ACTION_UP
+                    || event.getActionMasked() == MotionEvent.ACTION_CANCEL) && !multiTouch) {
+                scalingGesture = false;
+            }
+            return consume;
+        });
+    }
+
     private void refreshSoon() {
         if (squareTrack != null) squareTrack.post(this::applyStableGeometry);
     }
@@ -136,14 +209,23 @@ final class SquareUStabilityController {
         final float rotationOffset = readRotationOffset();
         final float centerX = width * 0.50f;
 
-        // Use almost the entire launcher canvas. The visible card body still has a small inset,
-        // but the U no longer collapses into the middle third of the display.
-        final float leftCenterX = Math.max(dp(54), width * 0.095f);
-        final float rightCenterX = Math.min(width - dp(54), width * 0.905f);
-        final float topCenterY = height * 0.285f;
-        final float bottomCenterY = Math.min(height - dp(118), height * 0.865f);
-        final float bottomHalfSpan = Math.min(width * 0.405f,
-                Math.max(dp(110), (rightCenterX - leftCenterX) * 0.50f));
+        // footprintScale changes the path span rather than multiplying individual card sizes.
+        // Pinch-out therefore stretches the U toward the edges/bottom without recreating the old
+        // giant-card and thin-wall distortion.
+        final float horizontalRadius = Math.min(width * 0.475f,
+                width * 0.405f * footprintScale);
+        final float leftCenterX = centerX - horizontalRadius;
+        final float rightCenterX = centerX + horizontalRadius;
+
+        final float baseTop = height * 0.285f;
+        final float baseBottom = Math.min(height - dp(74), height * 0.895f);
+        final float verticalCenter = (baseTop + baseBottom) * 0.5f;
+        final float verticalHalf = (baseBottom - baseTop) * 0.5f;
+        final float stretchedHalf = Math.min(height * 0.34f, verticalHalf * footprintScale);
+        final float topCenterY = Math.max(height * 0.22f, verticalCenter - stretchedHalf);
+        final float bottomCenterY = Math.min(height - dp(58), verticalCenter + stretchedHalf);
+        final float bottomHalfSpan = Math.min(width * 0.47f,
+                horizontalRadius * 1.02f);
 
         final float maxVisualWidth = Math.min(dp(142), width * 0.235f);
         final float maxVisualHeight = Math.min(dp(180), height * 0.175f);
@@ -169,25 +251,29 @@ final class SquareUStabilityController {
             if (absolute <= BOTTOM_BAND) {
                 float normalized = relative / BOTTOM_BAND;
                 desiredCenterX = centerX + normalized * bottomHalfSpan;
-                // A shallow bowl keeps the front of the U close to the favourites row without
-                // making every bottom card sit on one perfectly flat line.
                 desiredCenterY = bottomCenterY - Math.abs(normalized) * dp(18);
                 focus = 1f - Math.min(1f, absolute / BOTTOM_BAND);
                 rotationY = -normalized * 17f;
                 depthScale = 0.94f + 0.11f * focus;
             } else {
                 float sideProgress = Math.min(1f,
-                        (absolute - BOTTOM_BAND) / Math.max(0.01f, VISIBLE_RADIUS - BOTTOM_BAND));
+                        (absolute - BOTTOM_BAND) / Math.max(0.01f,
+                                VISIBLE_RADIUS - BOTTOM_BAND));
                 desiredCenterX = relative < 0f ? leftCenterX : rightCenterX;
-                desiredCenterY = bottomCenterY - (bottomCenterY - topCenterY) * sideProgress;
+                desiredCenterY = bottomCenterY
+                        - (bottomCenterY - topCenterY) * sideProgress;
                 focus = 0f;
                 rotationY = relative < 0f ? 27f : -27f;
                 depthScale = 0.91f - 0.085f * sideProgress;
             }
 
             float normalizer = 1f;
-            if (card.getWidth() > 0) normalizer = Math.min(normalizer, maxVisualWidth / card.getWidth());
-            if (card.getHeight() > 0) normalizer = Math.min(normalizer, maxVisualHeight / card.getHeight());
+            if (card.getWidth() > 0) {
+                normalizer = Math.min(normalizer, maxVisualWidth / card.getWidth());
+            }
+            if (card.getHeight() > 0) {
+                normalizer = Math.min(normalizer, maxVisualHeight / card.getHeight());
+            }
             normalizer = Math.min(1f, normalizer);
             float scale = Math.max(0.54f, depthScale * normalizer);
 
@@ -202,8 +288,8 @@ final class SquareUStabilityController {
             card.setScaleX(scale);
             card.setScaleY(scale);
             card.setAlpha(absolute <= BOTTOM_BAND
-                    ? 1f : Math.max(0.76f, 0.96f - 0.16f * ((absolute - BOTTOM_BAND)
-                    / (VISIBLE_RADIUS - BOTTOM_BAND))));
+                    ? 1f : Math.max(0.76f, 0.96f - 0.16f
+                    * ((absolute - BOTTOM_BAND) / (VISIBLE_RADIUS - BOTTOM_BAND))));
             card.setTranslationZ(dp(3) + dp(16) * focus);
 
             if (card instanceof ViewGroup) stabilizeCardContent((ViewGroup) card);
@@ -239,14 +325,14 @@ final class SquareUStabilityController {
                                             float topCenterY, float bottomCenterY) {
         if (notificationScroller == null) return;
 
-        // The notification center occupies the open space inside the expanded U. Its size is
-        // independent of the U width so it cannot pull the card track back toward the middle.
         int maxWidth = Math.max(dp(190), width - dp(110));
         int panelWidth = Math.min(maxWidth,
                 Math.max(dp(220), Math.min(dp(340), Math.round(width * 0.49f))));
         int availableInnerHeight = Math.max(dp(150), Math.round(bottomCenterY - topCenterY));
-        int panelHeight = Math.min(dp(220), Math.max(dp(150), Math.round(availableInnerHeight * 0.42f)));
-        int topMargin = Math.round(topCenterY + (bottomCenterY - topCenterY) * 0.34f);
+        int panelHeight = Math.min(dp(220),
+                Math.max(dp(150), Math.round(availableInnerHeight * 0.42f)));
+        int topMargin = Math.round(topCenterY
+                + (bottomCenterY - topCenterY) * 0.34f);
 
         ViewGroup.LayoutParams raw = notificationScroller.getLayoutParams();
         boolean needsLayout = !(raw instanceof FrameLayout.LayoutParams);
@@ -276,7 +362,8 @@ final class SquareUStabilityController {
 
         GradientDrawable background = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.argb(232, 38, 43, 54), Color.argb(238, 17, 20, 28), Color.argb(242, 8, 10, 15)});
+                new int[]{Color.argb(232, 38, 43, 54),
+                        Color.argb(238, 17, 20, 28), Color.argb(242, 8, 10, 15)});
         background.setCornerRadius(dp(20));
         background.setStroke(dp(1), Color.argb(210, 205, 218, 242));
         notificationScroller.setBackground(background);
@@ -299,6 +386,10 @@ final class SquareUStabilityController {
         while (value > half) value -= count;
         while (value < -half) value += count;
         return value;
+    }
+
+    private float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private int dp(int value) {
