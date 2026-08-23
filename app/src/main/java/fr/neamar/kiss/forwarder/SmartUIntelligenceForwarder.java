@@ -8,7 +8,6 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -399,10 +398,12 @@ final class SmartUIntelligenceForwarder {
             boolean favorite = favoriteIds.contains(result.getFavoriteId());
             if (!TextUtils.isEmpty(query)) {
                 int recency = (count - 1) - i;
-                float extra = recency == 0 ? 1.06f : (recency <= 2 ? 1.025f : 1f);
-                card.setScaleX(card.getScaleX() * extra);
-                card.setScaleY(card.getScaleY() * extra);
-                if (recency == 0) card.setTranslationZ(Math.max(card.getTranslationZ(), dp(38)));
+                if (recency == 0) {
+                    card.setAlpha(1f);
+                    card.setTranslationZ(Math.max(card.getTranslationZ(), dp(38)));
+                } else if (recency <= 2) {
+                    card.setTranslationZ(Math.max(card.getTranslationZ(), dp(22)));
+                }
             } else if (favorite && card != selectedCard) {
                 card.setTranslationZ(Math.max(card.getTranslationZ(), dp(14)));
             }
