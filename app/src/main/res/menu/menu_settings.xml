@@ -12,7 +12,7 @@
     <item
         android:id="@+id/indexing_settings"
         android:title="Indexing &amp; Search Index"
-        app:showAsAction="always|withText" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/smart_features"
         android:title="@string/smart_features_title"
