@@ -14,6 +14,7 @@ import fr.neamar.kiss.pojo.CommunicationPojo;
 public final class CommunicationIndexStore extends SQLiteOpenHelper {
     private static final String DB = "smart_index.db";
     private static final int VERSION = 1;
+    public static final String ID_PREFIX = "communication://";
 
     public static final class Stats {
         public final int total;
@@ -56,41 +57,62 @@ public final class CommunicationIndexStore extends SQLiteOpenHelper {
         if (cutoff > 0) getWritableDatabase().delete("communication_index", "event_time<?", new String[]{Long.toString(cutoff)});
     }
 
+    public static String stableId(String source, String sourceId) {
+        return ID_PREFIX + source + "/" + sourceId;
+    }
+
     public List<CommunicationPojo> search(String query, int limit) {
         String q = query == null ? "" : query.trim();
         if (q.length() < 2) return new ArrayList<>();
         String like = "%" + q.replace("%", "\\%").replace("_", "\\_") + "%";
         List<CommunicationPojo> out = new ArrayList<>();
         try (Cursor c = getReadableDatabase().query("communication_index",
-                new String[]{"_id","source","package_name","address","display_name","body","event_time","notification_id"},
+                new String[]{"source","source_id","package_name","address","display_name","body","event_time","notification_id"},
                 "display_name LIKE ? ESCAPE '\\' OR address LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\'",
                 new String[]{like, like, like}, null, null, "event_time DESC", Integer.toString(Math.max(1, limit)))) {
             while (c.moveToNext()) {
-                long id = c.getLong(0);
-                String source = c.getString(1);
-                CommunicationPojo.Kind kind = "call".equals(source) ? CommunicationPojo.Kind.CALL
-                        : "sms".equals(source) ? CommunicationPojo.Kind.SMS
-                        : CommunicationPojo.Kind.TRUECALLER_NOTIFICATION;
-                CommunicationPojo p = new CommunicationPojo("communication://" + id, kind,
-                        c.getString(2), c.getString(3), c.getString(4), c.getString(5), c.getLong(6), c.getString(7));
-                p.relevance = 24;
-                out.add(p);
+                CommunicationPojo p = fromCursor(c, true);
+                if (p != null) {
+                    p.relevance = 24;
+                    out.add(p);
+                }
             }
         }
         return out;
     }
 
+    /** Resolve the new stable communication://source/source_id identity. */
+    public CommunicationPojo findBySourceId(String source, String sourceId) {
+        if (source == null || sourceId == null) return null;
+        try (Cursor c = getReadableDatabase().query("communication_index",
+                new String[]{"source","source_id","package_name","address","display_name","body","event_time","notification_id"},
+                "source=? AND source_id=?", new String[]{source, sourceId}, null, null, null, "1")) {
+            return c.moveToFirst() ? fromCursor(c, true) : null;
+        }
+    }
+
+    /** Keep legacy numeric communication://<row-id> records resolvable for old saved history. */
     public CommunicationPojo find(long id) {
         try (Cursor c = getReadableDatabase().query("communication_index",
-                new String[]{"source","package_name","address","display_name","body","event_time","notification_id"},
+                new String[]{"source","source_id","package_name","address","display_name","body","event_time","notification_id"},
                 "_id=?", new String[]{Long.toString(id)}, null, null, null)) {
             if (!c.moveToFirst()) return null;
-            String source = c.getString(0);
-            CommunicationPojo.Kind kind = "call".equals(source) ? CommunicationPojo.Kind.CALL
-                    : "sms".equals(source) ? CommunicationPojo.Kind.SMS
-                    : CommunicationPojo.Kind.TRUECALLER_NOTIFICATION;
-            return new CommunicationPojo("communication://" + id, kind, c.getString(1), c.getString(2), c.getString(3), c.getString(4), c.getLong(5), c.getString(6));
+            CommunicationPojo p = fromCursor(c, false);
+            if (p == null) return null;
+            return new CommunicationPojo(ID_PREFIX + id, p.kind, p.packageName, p.address,
+                    p.getName(), p.body, p.timestamp, p.notificationId);
         }
+    }
+
+    private CommunicationPojo fromCursor(Cursor c, boolean stableIdentity) {
+        String source = c.getString(0);
+        String sourceId = c.getString(1);
+        CommunicationPojo.Kind kind = "call".equals(source) ? CommunicationPojo.Kind.CALL
+                : "sms".equals(source) ? CommunicationPojo.Kind.SMS
+                : CommunicationPojo.Kind.TRUECALLER_NOTIFICATION;
+        String id = stableIdentity ? stableId(source, sourceId) : ID_PREFIX + sourceId;
+        return new CommunicationPojo(id, kind,
+                c.getString(2), c.getString(3), c.getString(4), c.getString(5), c.getLong(6), c.getString(7));
     }
 
     public Stats stats() {
