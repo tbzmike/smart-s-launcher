@@ -12,8 +12,8 @@ import fr.neamar.kiss.utils.Log;
 
 /**
  * Temporarily removes resultLayout's horizontal margins while Square-U is active so the U
- * renderer and resize handles can use the physical screen width. The original margins are
- * restored for every other history style and on pause/destroy.
+ * renderer and resize handles can use the physical screen width. The original margins and clipping
+ * policy are restored for every other history style and on pause/destroy.
  */
 final class SquareUHostFullscreenController {
     private static final String TAG = SquareUHostFullscreenController.class.getSimpleName();
@@ -30,6 +30,8 @@ final class SquareUHostFullscreenController {
     private int originalRight;
     private int originalStart;
     private int originalEnd;
+    private boolean originalClipChildren;
+    private boolean originalClipToPadding;
     private boolean expanded;
 
     SquareUHostFullscreenController(MainActivity activity,
@@ -85,7 +87,7 @@ final class SquareUHostFullscreenController {
         restore();
         host = next;
         captured = false;
-        captureOriginalMargins();
+        captureOriginalState();
     }
 
     private <T> T readField(String name, Class<T> type) {
@@ -100,7 +102,7 @@ final class SquareUHostFullscreenController {
         }
     }
 
-    private void captureOriginalMargins() {
+    private void captureOriginalState() {
         if (host == null || captured) return;
         ViewGroup.LayoutParams raw = host.getLayoutParams();
         if (!(raw instanceof ViewGroup.MarginLayoutParams)) return;
@@ -109,6 +111,8 @@ final class SquareUHostFullscreenController {
         originalRight = lp.rightMargin;
         originalStart = lp.getMarginStart();
         originalEnd = lp.getMarginEnd();
+        originalClipChildren = host.getClipChildren();
+        originalClipToPadding = host.getClipToPadding();
         captured = true;
     }
 
@@ -119,25 +123,24 @@ final class SquareUHostFullscreenController {
     }
 
     private void expand() {
-        captureOriginalMargins();
+        captureOriginalState();
         if (!captured || host == null) return;
         ViewGroup.LayoutParams raw = host.getLayoutParams();
         if (!(raw instanceof ViewGroup.MarginLayoutParams)) return;
         ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) raw;
-        if (lp.leftMargin == 0 && lp.rightMargin == 0
-                && lp.getMarginStart() == 0 && lp.getMarginEnd() == 0) {
-            expanded = true;
-            return;
+        boolean marginsAlreadyZero = lp.leftMargin == 0 && lp.rightMargin == 0
+                && lp.getMarginStart() == 0 && lp.getMarginEnd() == 0;
+        if (!marginsAlreadyZero) {
+            lp.leftMargin = 0;
+            lp.rightMargin = 0;
+            lp.setMarginStart(0);
+            lp.setMarginEnd(0);
+            host.setLayoutParams(lp);
         }
-        lp.leftMargin = 0;
-        lp.rightMargin = 0;
-        lp.setMarginStart(0);
-        lp.setMarginEnd(0);
-        host.setLayoutParams(lp);
         host.setClipChildren(false);
         host.setClipToPadding(false);
         expanded = true;
-        host.requestLayout();
+        if (!marginsAlreadyZero) host.requestLayout();
     }
 
     private void restore() {
@@ -150,8 +153,10 @@ final class SquareUHostFullscreenController {
             lp.setMarginStart(originalStart);
             lp.setMarginEnd(originalEnd);
             host.setLayoutParams(lp);
-            host.requestLayout();
         }
+        host.setClipChildren(originalClipChildren);
+        host.setClipToPadding(originalClipToPadding);
+        host.requestLayout();
         expanded = false;
     }
 }
