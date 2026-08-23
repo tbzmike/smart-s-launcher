@@ -8,6 +8,8 @@ import android.database.Cursor;
 import android.os.SystemClock;
 import android.provider.CallLog;
 import android.provider.Telephony;
+import android.telephony.PhoneNumberUtils;
+import android.text.TextUtils;
 
 import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
@@ -15,6 +17,9 @@ import androidx.preference.PreferenceManager;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
@@ -34,8 +39,40 @@ public final class CommunicationIndexer {
     private static final String TRUECALLER_PACKAGE = "com.truecaller";
     private static final int INITIAL_CALL_HISTORY_ROWS = 20;
     private static final long NEWEST_CALL_CHECK_THROTTLE_MS = 5_000L;
+    private static final long TRUECALLER_TIME_MATCH_WINDOW_MS = 90_000L;
+    private static final Pattern PHONE_PATTERN = Pattern.compile("\\+?[0-9][0-9\\s().-]{5,}[0-9]");
     private static long lastNewestCallCheckElapsed;
     private static long cachedNewestCallTime;
+
+    private static final class CallRow {
+        final String sourceId;
+        final String number;
+        final String cachedName;
+        final long when;
+        final int type;
+        final long duration;
+
+        CallRow(String sourceId, String number, String cachedName, long when, int type, long duration) {
+            this.sourceId = sourceId;
+            this.number = number == null ? "" : number;
+            this.cachedName = cachedName == null ? "" : cachedName;
+            this.when = when;
+            this.type = type;
+            this.duration = duration;
+        }
+    }
+
+    private static final class TruecallerNameHint {
+        final String name;
+        final String number;
+        final long when;
+
+        TruecallerNameHint(String name, String number, long when) {
+            this.name = name == null ? "" : name;
+            this.number = number == null ? "" : number;
+            this.when = when;
+        }
+    }
 
     private CommunicationIndexer() { }
 
@@ -58,8 +95,6 @@ public final class CommunicationIndexer {
 
         if (p.getBoolean(PREF_CALLS, true)
                 && !p.contains(PREF_CALL_HISTORY_LAST_SYNCED_TIME)) {
-            // One-time migration for builds that already had a communication index before call
-            // records became first-class Recent History entries.
             return true;
         }
 
@@ -97,13 +132,22 @@ public final class CommunicationIndexer {
         ensureDefaults(context);
         SharedPreferences p = PreferenceManager.getDefaultSharedPreferences(context);
         if (!p.getBoolean(PREF_ENABLED, true)) return;
+
         CommunicationIndexStore store = new CommunicationIndexStore(context);
         try {
             store.clear();
             long cutoff = cutoff(p);
-            if (p.getBoolean(PREF_CALLS, true)) indexCalls(context, store, cutoff, p);
+            List<NotificationHistoryRecord> truecallerRecords = p.getBoolean(PREF_TRUECALLER, true)
+                    ? loadTruecallerNotifications(context, cutoff)
+                    : Collections.emptyList();
+
+            if (p.getBoolean(PREF_CALLS, true)) {
+                indexCalls(context, store, cutoff, p, truecallerRecords);
+            }
             if (p.getBoolean(PREF_SMS, true)) indexSms(context, store, cutoff);
-            if (p.getBoolean(PREF_TRUECALLER, true)) indexTruecallerNotifications(context, store, cutoff);
+            if (p.getBoolean(PREF_TRUECALLER, true)) {
+                indexTruecallerNotifications(store, truecallerRecords);
+            }
             store.trimOlderThan(cutoff);
             p.edit().putLong(PREF_LAST, System.currentTimeMillis()).apply();
         } finally {
@@ -116,14 +160,28 @@ public final class CommunicationIndexer {
         return System.currentTimeMillis() - days * 86_400_000L;
     }
 
+    private static List<NotificationHistoryRecord> loadTruecallerNotifications(Context context, long cutoff) {
+        List<NotificationHistoryRecord> all = SmartStateStore.queryNotifications(
+                context, TRUECALLER_PACKAGE, null, 10000);
+        if (all.isEmpty()) return all;
+
+        List<NotificationHistoryRecord> filtered = new ArrayList<>();
+        for (NotificationHistoryRecord record : all) {
+            if (record != null && record.postTime >= cutoff) filtered.add(record);
+        }
+        return filtered;
+    }
+
     private static void indexCalls(Context context, CommunicationIndexStore store, long cutoff,
-                                   SharedPreferences prefs) {
+                                   SharedPreferences prefs,
+                                   List<NotificationHistoryRecord> truecallerRecords) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG)
                 != PackageManager.PERMISSION_GRANTED) return;
 
         long lastSyncedTime = prefs.getLong(PREF_CALL_HISTORY_LAST_SYNCED_TIME, 0L);
         long newestSeenTime = lastSyncedTime;
         List<String> newHistoryIds = new ArrayList<>();
+        List<CallRow> calls = new ArrayList<>();
 
         String[] projection = {CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.CACHED_NAME,
                 CallLog.Calls.DATE, CallLog.Calls.TYPE, CallLog.Calls.DURATION};
@@ -132,48 +190,187 @@ public final class CommunicationIndexer {
                 CallLog.Calls.DATE + " DESC")) {
             if (c == null) return;
             while (c.moveToNext()) {
-                String sourceId = Long.toString(c.getLong(0));
-                String number = c.getString(1);
-                String name = c.getString(2);
-                long when = c.getLong(3);
-                int type = c.getInt(4);
-                long duration = c.getLong(5);
-                String body = callType(type) + " call · " + duration + " sec";
-                store.put("call", sourceId, TRUECALLER_PACKAGE, number, name, body, when, "");
-
-                newestSeenTime = Math.max(newestSeenTime, when);
-                if (lastSyncedTime == 0L || when > lastSyncedTime) {
-                    newHistoryIds.add(CommunicationIndexStore.stableId("call", sourceId));
+                CallRow row = new CallRow(
+                        Long.toString(c.getLong(0)), c.getString(1), c.getString(2),
+                        c.getLong(3), c.getInt(4), c.getLong(5));
+                calls.add(row);
+                newestSeenTime = Math.max(newestSeenTime, row.when);
+                if (lastSyncedTime == 0L || row.when > lastSyncedTime) {
+                    newHistoryIds.add(CommunicationIndexStore.stableId("call", row.sourceId));
                 }
             }
         } catch (RuntimeException ignored) {
             return;
         }
 
+        List<TruecallerNameHint> hints = buildTruecallerHints(truecallerRecords);
+        for (CallRow row : calls) {
+            String displayName = hasUsefulCachedName(row.cachedName, row.number)
+                    ? row.cachedName.trim()
+                    : resolveTruecallerName(context, row, calls, hints);
+            if (TextUtils.isEmpty(displayName)) displayName = row.number;
+
+            String body = callType(row.type) + " call · " + row.duration + " sec";
+            store.put("call", row.sourceId, TRUECALLER_PACKAGE, row.number,
+                    displayName, body, row.when, "");
+        }
+
         if (lastSyncedTime == 0L && newHistoryIds.size() > INITIAL_CALL_HISTORY_ROWS) {
             newHistoryIds = new ArrayList<>(newHistoryIds.subList(0, INITIAL_CALL_HISTORY_ROWS));
         }
 
-        // "Index phone call history" is the authoritative switch for real CallLog records. The
-        // old enable-phone-history preference belongs to the legacy contact-based incoming-call
-        // hook and must not silently block this newer call-history feature.
         if (!prefs.getBoolean("freeze-history", false)) {
-            // Query order is newest -> oldest. KISS recency is based on history insertion order, so
-            // import oldest -> newest and the final visible order matches the real phone call order.
             Collections.reverse(newHistoryIds);
             for (String historyId : newHistoryIds) {
                 DBHelper.insertHistory(context, "call-log", historyId);
             }
         }
 
-        // Advance the marker even while history is frozen. Calls that occurred while the user
-        // intentionally froze history should not flood Recent History later.
         if (newestSeenTime > lastSyncedTime) {
             prefs.edit().putLong(PREF_CALL_HISTORY_LAST_SYNCED_TIME, newestSeenTime).apply();
         } else if (!prefs.contains(PREF_CALL_HISTORY_LAST_SYNCED_TIME)) {
-            // Mark an empty-call-log migration complete so launcher resume does not rebuild forever.
             prefs.edit().putLong(PREF_CALL_HISTORY_LAST_SYNCED_TIME, 0L).apply();
         }
+    }
+
+    private static boolean hasUsefulCachedName(String cachedName, String number) {
+        if (TextUtils.isEmpty(cachedName)) return false;
+        String clean = cachedName.trim();
+        if (clean.isEmpty()) return false;
+        if (!TextUtils.isEmpty(number) && phoneNumbersMatch(clean, number)) return false;
+        return !"unknown".equalsIgnoreCase(clean) && !"private number".equalsIgnoreCase(clean);
+    }
+
+    private static List<TruecallerNameHint> buildTruecallerHints(
+            List<NotificationHistoryRecord> records) {
+        if (records == null || records.isEmpty()) return Collections.emptyList();
+
+        List<TruecallerNameHint> hints = new ArrayList<>();
+        for (NotificationHistoryRecord record : records) {
+            if (record == null) continue;
+            String combined = safe(record.title) + "\n" + safe(record.text);
+            String number = extractPhoneNumber(combined);
+            String name = extractTruecallerName(record.title, record.text, number);
+            if (!TextUtils.isEmpty(name)) {
+                hints.add(new TruecallerNameHint(name, number, record.postTime));
+            }
+        }
+        return hints;
+    }
+
+    private static String resolveTruecallerName(Context context, CallRow row,
+                                                List<CallRow> allCalls,
+                                                List<TruecallerNameHint> hints) {
+        if (TextUtils.isEmpty(row.number) || hints.isEmpty()) return "";
+
+        TruecallerNameHint bestExact = null;
+        long bestExactDistance = Long.MAX_VALUE;
+        for (TruecallerNameHint hint : hints) {
+            if (TextUtils.isEmpty(hint.number)) continue;
+            if (!phoneNumbersMatch(row.number, hint.number)) continue;
+            long distance = Math.abs(row.when - hint.when);
+            if (distance < bestExactDistance) {
+                bestExactDistance = distance;
+                bestExact = hint;
+            }
+        }
+        if (bestExact != null) return bestExact.name;
+
+        String uniqueName = "";
+        long bestDistance = Long.MAX_VALUE;
+        for (TruecallerNameHint hint : hints) {
+            if (!TextUtils.isEmpty(hint.number)) continue;
+            long distance = Math.abs(row.when - hint.when);
+            if (distance > TRUECALLER_TIME_MATCH_WINDOW_MS) continue;
+            if (!isUniqueCallNearHint(row, allCalls, hint.when)) continue;
+
+            if (TextUtils.isEmpty(uniqueName)) {
+                uniqueName = hint.name;
+                bestDistance = distance;
+            } else if (!uniqueName.equalsIgnoreCase(hint.name)) {
+                if (distance < bestDistance) {
+                    // Conflicting names around the same call are not safe to infer.
+                    return "";
+                }
+            } else if (distance < bestDistance) {
+                bestDistance = distance;
+            }
+        }
+        return uniqueName;
+    }
+
+    private static boolean isUniqueCallNearHint(CallRow target, List<CallRow> allCalls, long hintTime) {
+        int matches = 0;
+        for (CallRow candidate : allCalls) {
+            if (Math.abs(candidate.when - hintTime) <= TRUECALLER_TIME_MATCH_WINDOW_MS) {
+                matches++;
+                if (candidate != target || matches > 1) {
+                    if (matches > 1) return false;
+                }
+            }
+        }
+        return matches == 1;
+    }
+
+    private static boolean phoneNumbersMatch(String first, String second) {
+        if (TextUtils.isEmpty(first) || TextUtils.isEmpty(second)) return false;
+        String a = PhoneNumberUtils.normalizeNumber(first);
+        String b = PhoneNumberUtils.normalizeNumber(second);
+        if (TextUtils.isEmpty(a) || TextUtils.isEmpty(b)) return false;
+        if (a.equals(b)) return true;
+        try {
+            return PhoneNumberUtils.compare(first, second);
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private static String extractPhoneNumber(String value) {
+        if (TextUtils.isEmpty(value)) return "";
+        Matcher matcher = PHONE_PATTERN.matcher(value);
+        while (matcher.find()) {
+            String candidate = matcher.group();
+            String normalized = PhoneNumberUtils.normalizeNumber(candidate);
+            if (!TextUtils.isEmpty(normalized) && normalized.replace("+", "").length() >= 7) {
+                return candidate.trim();
+            }
+        }
+        return "";
+    }
+
+    private static String extractTruecallerName(String title, String text, String number) {
+        String fromTitle = cleanTruecallerName(title, number);
+        if (!TextUtils.isEmpty(fromTitle)) return fromTitle;
+        return cleanTruecallerName(text, number);
+    }
+
+    private static String cleanTruecallerName(String value, String number) {
+        if (TextUtils.isEmpty(value)) return "";
+        String clean = value.replace('\n', ' ').trim();
+        if (clean.isEmpty()) return "";
+
+        clean = clean.replaceFirst("(?i)^truecaller\\s*[:\\-·]?\\s*", "");
+        clean = clean.replaceFirst("(?i)^call\\s+from\\s+", "");
+        clean = clean.replaceFirst("(?i)\\s+(?:is\\s+)?calling(?:\\.\\.\\.)?.*$", "");
+        clean = clean.replaceFirst("(?i)\\s+(?:called you|missed call|incoming call|outgoing call).*$", "");
+        clean = clean.replaceFirst("(?i)\\s*[·|\\-]\\s*\\+?[0-9][0-9\\s().-]{5,}[0-9].*$", "");
+        clean = clean.trim();
+
+        if (clean.startsWith("\"") && clean.endsWith("\"") && clean.length() > 1) {
+            clean = clean.substring(1, clean.length() - 1).trim();
+        }
+        if (clean.length() < 2 || clean.length() > 80) return "";
+        String lower = clean.toLowerCase(Locale.ROOT);
+        if (lower.equals("truecaller") || lower.equals("calling") || lower.equals("unknown")
+                || lower.equals("unknown caller") || lower.startsWith("tap to ")
+                || lower.startsWith("open truecaller")) return "";
+        if (!TextUtils.isEmpty(number) && phoneNumbersMatch(clean, number)) return "";
+        if (!TextUtils.isEmpty(extractPhoneNumber(clean))) return "";
+        return clean;
+    }
+
+    private static String safe(String value) {
+        return value == null ? "" : value;
     }
 
     private static String callType(int type) {
@@ -207,16 +404,16 @@ public final class CommunicationIndexer {
         } catch (RuntimeException ignored) { }
     }
 
-    private static void indexTruecallerNotifications(Context context, CommunicationIndexStore store,
-                                                     long cutoff) {
-        List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
-                context, TRUECALLER_PACKAGE, null, 10000);
-        for (NotificationHistoryRecord r : records) {
-            if (r.postTime < cutoff) continue;
-            String display = r.title == null || r.title.trim().isEmpty() ? "Truecaller" : r.title;
-            String body = r.text == null ? "" : r.text;
-            store.put("truecaller", Long.toString(r.dbId), TRUECALLER_PACKAGE, "", display, body,
-                    r.postTime, r.notificationId);
+    private static void indexTruecallerNotifications(CommunicationIndexStore store,
+                                                     List<NotificationHistoryRecord> records) {
+        for (NotificationHistoryRecord record : records) {
+            String number = extractPhoneNumber(safe(record.title) + "\n" + safe(record.text));
+            String name = extractTruecallerName(record.title, record.text, number);
+            String display = !TextUtils.isEmpty(name) ? name
+                    : TextUtils.isEmpty(record.title) ? "Truecaller" : record.title.trim();
+            String body = record.text == null ? "" : record.text;
+            store.put("truecaller", Long.toString(record.dbId), TRUECALLER_PACKAGE, number,
+                    display, body, record.postTime, record.notificationId);
         }
     }
 }
