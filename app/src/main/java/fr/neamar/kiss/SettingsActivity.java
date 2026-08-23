@@ -57,6 +57,10 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         setContentView(R.layout.activity_toolbar_content);
 
         Toolbar toolbar = findViewById(R.id.main_toolbar);
+        // Keep the overflow popup readable regardless of the active launcher/day-night theme.
+        // The popup itself uses an explicit high-contrast theme instead of inheriting a
+        // translucent/light background with light text from the launcher theme.
+        toolbar.setPopupTheme(R.style.SettingsPopupTheme);
         setSupportActionBar(toolbar);
 
         ActionBar actionBar = getSupportActionBar();
