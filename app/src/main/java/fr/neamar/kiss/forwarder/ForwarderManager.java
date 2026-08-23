@@ -26,6 +26,7 @@ public class ForwarderManager extends Forwarder {
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final SmartCardListForwarder smartCardListForwarder;
     private final SquareUStabilityController squareUStabilityController;
+    private final SquareUEdgeBoundsController squareUEdgeBoundsController;
     private final HistoryVisualEnhancer historyVisualEnhancer;
 
     public ForwarderManager(MainActivity mainActivity) {
@@ -43,6 +44,8 @@ public class ForwarderManager extends Forwarder {
         this.smartCardListForwarder = new SmartCardListForwarder(mainActivity);
         this.squareUStabilityController = new SquareUStabilityController(
                 mainActivity, historyDisplayForwarder);
+        this.squareUEdgeBoundsController = new SquareUEdgeBoundsController(
+                mainActivity, historyDisplayForwarder);
         this.historyVisualEnhancer = new HistoryVisualEnhancer(
                 mainActivity, historyDisplayForwarder);
     }
@@ -58,6 +61,7 @@ public class ForwarderManager extends Forwarder {
         historyDisplayForwarder.onCreate();
         smartCardListForwarder.onCreate();
         squareUStabilityController.onCreate();
+        squareUEdgeBoundsController.onCreate();
         historyVisualEnhancer.onCreate();
     }
 
@@ -74,10 +78,12 @@ public class ForwarderManager extends Forwarder {
         historyDisplayForwarder.onResume();
         smartCardListForwarder.onResume();
         squareUStabilityController.onResume();
+        squareUEdgeBoundsController.onResume();
         historyVisualEnhancer.onResume();
     }
 
     public void onPause() {
+        squareUEdgeBoundsController.onPause();
         squareUStabilityController.onPause();
         experienceTweaks.onPause();
         notificationForwarder.onPause();
@@ -117,6 +123,7 @@ public class ForwarderManager extends Forwarder {
         historyDisplayForwarder.onDataSetChanged();
         smartCardListForwarder.onDataSetChanged();
         squareUStabilityController.onDataSetChanged();
+        squareUEdgeBoundsController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
     }
 
@@ -138,6 +145,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
+        squareUEdgeBoundsController.onDestroy();
         squareUStabilityController.onDestroy();
         widgetsForwarder.onDestroy();
     }
@@ -146,5 +154,6 @@ public class ForwarderManager extends Forwarder {
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
         squareUStabilityController.onConfigurationChanged();
+        squareUEdgeBoundsController.onConfigurationChanged();
     }
 }
