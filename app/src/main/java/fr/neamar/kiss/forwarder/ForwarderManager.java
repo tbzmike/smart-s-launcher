@@ -27,10 +27,6 @@ public class ForwarderManager extends Forwarder {
     private final SmartCardListForwarder smartCardListForwarder;
     private final SquareUInteractionController squareUInteractionController;
     private final HistoryVisualEnhancer historyVisualEnhancer;
-    private final SmartUFoundationForwarder smartUFoundationForwarder;
-    private final SmartUIntelligenceForwarder smartUIntelligenceForwarder;
-    private final SmartUFinalPolishForwarder smartUFinalPolishForwarder;
-    private final SmartUIntegrationAuditForwarder smartUIntegrationAuditForwarder;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -49,14 +45,6 @@ public class ForwarderManager extends Forwarder {
                 mainActivity, historyDisplayForwarder);
         this.historyVisualEnhancer = new HistoryVisualEnhancer(
                 mainActivity, historyDisplayForwarder);
-        this.smartUFoundationForwarder = new SmartUFoundationForwarder(
-                mainActivity, historyDisplayForwarder);
-        this.smartUIntelligenceForwarder = new SmartUIntelligenceForwarder(
-                mainActivity, historyDisplayForwarder);
-        this.smartUFinalPolishForwarder = new SmartUFinalPolishForwarder(
-                mainActivity, historyDisplayForwarder);
-        this.smartUIntegrationAuditForwarder = new SmartUIntegrationAuditForwarder(
-                mainActivity, historyDisplayForwarder, smartUIntelligenceForwarder);
     }
 
     public void onCreate() {
@@ -71,10 +59,6 @@ public class ForwarderManager extends Forwarder {
         smartCardListForwarder.onCreate();
         squareUInteractionController.onCreate();
         historyVisualEnhancer.onCreate();
-        smartUFoundationForwarder.onCreate();
-        smartUIntelligenceForwarder.onCreate();
-        smartUFinalPolishForwarder.onCreate();
-        smartUIntegrationAuditForwarder.onCreate();
     }
 
     public void onStart() {
@@ -91,16 +75,9 @@ public class ForwarderManager extends Forwarder {
         smartCardListForwarder.onResume();
         squareUInteractionController.onResume();
         historyVisualEnhancer.onResume();
-        smartUFoundationForwarder.onResume();
-        smartUIntelligenceForwarder.onResume();
-        smartUFinalPolishForwarder.onResume();
-        smartUIntegrationAuditForwarder.onResume();
     }
 
     public void onPause() {
-        smartUIntegrationAuditForwarder.onPause();
-        smartUFinalPolishForwarder.onPause();
-        smartUFoundationForwarder.onPause();
         squareUInteractionController.onPause();
         experienceTweaks.onPause();
         notificationForwarder.onPause();
@@ -141,10 +118,6 @@ public class ForwarderManager extends Forwarder {
         smartCardListForwarder.onDataSetChanged();
         squareUInteractionController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
-        smartUFoundationForwarder.onDataSetChanged();
-        smartUIntelligenceForwarder.onDataSetChanged();
-        smartUFinalPolishForwarder.onDataSetChanged();
-        smartUIntegrationAuditForwarder.onDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
@@ -154,7 +127,6 @@ public class ForwarderManager extends Forwarder {
     public void onFavoriteChange() {
         favoritesForwarder.onFavoriteChange();
         experienceTweaks.onFavoriteChange();
-        smartUIntelligenceForwarder.onFavoriteChange();
     }
 
     public void onDisplayKissBar(boolean display) {
@@ -166,10 +138,6 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
-        smartUIntegrationAuditForwarder.onDestroy();
-        smartUFinalPolishForwarder.onDestroy();
-        smartUIntelligenceForwarder.onDestroy();
-        smartUFoundationForwarder.onDestroy();
         squareUInteractionController.onDestroy();
         widgetsForwarder.onDestroy();
     }
@@ -177,8 +145,5 @@ public class ForwarderManager extends Forwarder {
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
-        smartUIntelligenceForwarder.onConfigurationChanged();
-        smartUFinalPolishForwarder.onConfigurationChanged();
-        smartUIntegrationAuditForwarder.onConfigurationChanged();
     }
 }
