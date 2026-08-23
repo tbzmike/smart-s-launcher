@@ -40,6 +40,7 @@ import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.TileVisualStyle;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
+import fr.neamar.kiss.utils.SocialMessagePresentation;
 import fr.neamar.kiss.utils.fuzzy.FuzzyFactory;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
@@ -63,10 +64,39 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
         Result<?> result = getItem(position);
         View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
+        if (result.getPojo() instanceof NotificationPojo) {
+            configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
+        }
         configureOverflowText(view);
         if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
         if (parent instanceof AbsListView) { TileVisualStyle.apply(view, result, parent.getContext()); applyVerticalHistorySizing(view, parent.getContext()); }
         return view;
+    }
+
+    private void configureSocialMessageCard(View view, NotificationPojo notification) {
+        SocialMessagePresentation presentation = SocialMessagePresentation.resolve(view.getContext(), notification);
+        if (!presentation.message) return;
+
+        TextView app = view.findViewById(R.id.item_notification_app);
+        TextView title = view.findViewById(R.id.item_notification_title);
+        TextView text = view.findViewById(R.id.item_notification_text);
+        View nativeContainer = view.findViewById(R.id.item_notification_native_container);
+
+        // Keep the existing notification tile, icon, colors, mark-read action and popup wiring.
+        // Only replace the compact presentation for a verified conversation/social message.
+        if (app != null) app.setText(presentation.headline);
+        if (title != null) {
+            title.setText(presentation.preview);
+            title.setVisibility(TextUtils.isEmpty(presentation.preview) ? View.GONE : View.VISIBLE);
+            title.setSingleLine(true);
+            title.setMaxLines(1);
+            title.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+            title.setMarqueeRepeatLimit(-1);
+            title.setHorizontallyScrolling(true);
+            title.setSelected(true);
+        }
+        if (text != null) text.setVisibility(View.GONE);
+        if (nativeContainer != null) nativeContainer.setVisibility(View.GONE);
     }
 
     private void configureNotificationTileClick(View view, Result<?> result) {
