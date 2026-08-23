@@ -3,6 +3,7 @@ package fr.neamar.kiss.utils;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.text.TextUtils;
 
 import java.net.URISyntaxException;
 import java.util.LinkedHashSet;
@@ -16,7 +17,7 @@ import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.ui.LockedNotificationHistoryDialog;
 
-/** Resolves notification history to the real target application, not a launcher/wrapper app. */
+/** Resolves notification history to the real target application, never a wrapper by accident. */
 public final class NotificationHistoryResolver {
     private NotificationHistoryResolver() {}
 
@@ -27,14 +28,28 @@ public final class NotificationHistoryResolver {
 
     public static String resolvePackage(Context context, Pojo pojo) {
         if (context == null || pojo == null) return null;
-        if (pojo instanceof DisabledAppPojo) return preferIfHasHistory(context, ((DisabledAppPojo) pojo).targetPackage);
-        if (pojo instanceof NotificationPojo) return preferIfHasHistory(context, ((NotificationPojo) pojo).packageName);
-        if (pojo instanceof AppPojo) return preferIfHasHistory(context, ((AppPojo) pojo).packageName);
-        if (pojo instanceof ShortcutPojo) return resolveShortcutPackage(context, (ShortcutPojo) pojo);
+        if (pojo instanceof DisabledAppPojo) {
+            return preferIfHasHistory(context, ((DisabledAppPojo) pojo).targetPackage);
+        }
+        if (pojo instanceof NotificationPojo) {
+            return preferIfHasHistory(context, ((NotificationPojo) pojo).packageName);
+        }
+        if (pojo instanceof AppPojo) {
+            return preferIfHasHistory(context, ((AppPojo) pojo).packageName);
+        }
+        if (pojo instanceof ShortcutPojo) {
+            return resolveShortcutPackage(context, (ShortcutPojo) pojo);
+        }
         return null;
     }
 
     private static String resolveShortcutPackage(Context context, ShortcutPojo shortcut) {
+        // Android/Oreo wrapper shortcuts are resolved while ShortcutInfo still exposes the actual
+        // launch intents. Once a real target was captured, it is authoritative.
+        if (!TextUtils.isEmpty(shortcut.targetPackage)) {
+            return preferIfHasHistory(context, shortcut.targetPackage);
+        }
+
         Set<String> candidates = new LinkedHashSet<>();
         if (!shortcut.isOreoShortcut()) {
             try {
@@ -43,27 +58,53 @@ public final class NotificationHistoryResolver {
                 if (intent.getPackage() != null) candidates.add(intent.getPackage());
                 if (intent.getComponent() != null) candidates.add(intent.getComponent().getPackageName());
             } catch (URISyntaxException | RuntimeException ignored) {
-                // Shortcut owner remains the final fallback below.
+                // Handled below. IceBox wrappers are deliberately not allowed to fall back.
             }
         }
 
-        // Wrapper-owned shortcuts (for example IceBox) may encode the real target app in extras.
-        // Always prefer a different history-owning package before the shortcut owner itself.
         for (String candidate : candidates) {
-            if (!shortcut.packageName.equals(candidate) && hasHistory(context, candidate)) return candidate;
+            if (!shortcut.packageName.equals(candidate) && hasHistory(context, candidate)) {
+                return candidate;
+            }
         }
-        if (hasHistory(context, shortcut.packageName)) return shortcut.packageName;
-        return null;
+
+        // Hard rule: an IceBox-published shortcut represents the frozen app it launches. If that
+        // target cannot be verified, showing IceBox history would be incorrect, so show nothing.
+        if (ShortcutUtil.isIceBoxPublisher(context, shortcut.packageName)) return null;
+
+        // Ordinary app-owned shortcuts (e.g. a Chrome shortcut owned by Chrome) legitimately map
+        // to their publisher when no distinct target exists.
+        return hasHistory(context, shortcut.packageName) ? shortcut.packageName : null;
     }
 
     private static void collectStringExtras(Bundle extras, Set<String> candidates) {
         if (extras == null) return;
         for (String key : extras.keySet()) {
-            Object value = extras.get(key);
-            if (value instanceof String) {
-                String candidate = ((String) value).trim();
-                if (looksLikePackageName(candidate)) candidates.add(candidate);
+            Object value;
+            try { value = extras.get(key); }
+            catch (RuntimeException ignored) { continue; }
+            if (value instanceof Intent) {
+                Intent nested = (Intent) value;
+                if (nested.getPackage() != null) candidates.add(nested.getPackage());
+                if (nested.getComponent() != null) candidates.add(nested.getComponent().getPackageName());
+                collectStringExtras(nested.getExtras(), candidates);
+            } else if (value instanceof String) {
+                addCandidateString((String) value, candidates);
             }
+        }
+    }
+
+    private static void addCandidateString(String raw, Set<String> candidates) {
+        if (raw == null) return;
+        String value = raw.trim();
+        if (looksLikePackageName(value)) {
+            candidates.add(value);
+            return;
+        }
+        int slash = value.indexOf('/');
+        if (slash > 0) {
+            String prefix = value.substring(0, slash);
+            if (looksLikePackageName(prefix)) candidates.add(prefix);
         }
     }
 
@@ -81,7 +122,7 @@ public final class NotificationHistoryResolver {
     }
 
     public static boolean hasHistory(Context context, String packageName) {
-        if (context == null || packageName == null || packageName.isEmpty()) return false;
+        if (context == null || TextUtils.isEmpty(packageName)) return false;
         return !SmartStateStore.queryNotifications(context, packageName, null, 1).isEmpty();
     }
 }
