@@ -45,7 +45,9 @@ public final class LockedNotificationHistoryDialog {
     }
 
     private static final class Session {
-        private static final float SWIPE_THRESHOLD_DP = 44f;
+        // Lower than the previous 44dp threshold so deliberate short/slow swipes register reliably.
+        private static final float SWIPE_THRESHOLD_DP = 24f;
+        private static final float SWIPE_AXIS_BIAS = 1.10f;
 
         private final Context context;
         private final String packageName;
@@ -63,6 +65,7 @@ public final class LockedNotificationHistoryDialog {
         private final int accent;
 
         private int index;
+        private float downX;
         private float downY;
 
         Session(Context context, String packageName, List<NotificationHistoryRecord> records) {
@@ -142,10 +145,11 @@ public final class LockedNotificationHistoryDialog {
             AppNativeDialogStyle.setReadableText(hint);
             content.addView(hint);
 
-            scroll = new ScrollView(context);
+            // Observe the complete dispatch stream, including gestures that begin over nested
+            // notification RemoteViews/buttons/text. The old OnTouchListener could miss those.
+            scroll = new HistorySwipeScrollView(context);
             scroll.setFillViewport(false);
             scroll.addView(content);
-            scroll.setOnTouchListener(this::onTouch);
 
             dialog = new AlertDialog.Builder(context)
                     .setView(scroll)
@@ -156,8 +160,6 @@ public final class LockedNotificationHistoryDialog {
         void show() {
             render();
             dialog.setOnShowListener(ignored -> {
-                // This path is separate from NotificationPopupDialog. Apply the app-derived
-                // surface only after Android has created the real AlertDialog panel hierarchy.
                 AppNativeDialogStyle.styleDialog(dialog, packageName);
                 AppNativeDialogStyle.styleButton(
                         dialog.getButton(AlertDialog.BUTTON_NEGATIVE), accent);
@@ -174,30 +176,60 @@ public final class LockedNotificationHistoryDialog {
             SmartAnimationEngine.animateNotificationExpand(dialog);
         }
 
-        private boolean onTouch(View view, MotionEvent event) {
+        /**
+         * Observe a potential history swipe without stealing ordinary taps or horizontal movement.
+         * A completed, clearly vertical swipe changes the current history record and consumes only
+         * that ACTION_UP; ordinary ScrollView scrolling and button taps continue through Android.
+         */
+        private boolean handleSwipeEvent(MotionEvent event) {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
+                    downX = event.getRawX();
                     downY = event.getRawY();
                     return false;
                 case MotionEvent.ACTION_UP:
-                    float delta = event.getRawY() - downY;
+                    float deltaX = event.getRawX() - downX;
+                    float deltaY = event.getRawY() - downY;
+                    float absX = Math.abs(deltaX);
+                    float absY = Math.abs(deltaY);
                     float threshold = dpFloat(SWIPE_THRESHOLD_DP);
-                    if (Math.abs(delta) < threshold) return false;
-                    if (delta < 0f && index < records.size() - 1) {
+                    if (absY < threshold || absY <= absX * SWIPE_AXIS_BIAS) return false;
+
+                    if (deltaY < 0f && index < records.size() - 1) {
                         index++;
                         render();
                         scroll.scrollTo(0, 0);
                         return true;
                     }
-                    if (delta > 0f && index > 0) {
+                    if (deltaY > 0f && index > 0) {
                         index--;
                         render();
                         scroll.scrollTo(0, 0);
                         return true;
                     }
                     return false;
+                case MotionEvent.ACTION_CANCEL:
+                    downX = 0f;
+                    downY = 0f;
+                    return false;
                 default:
                     return false;
+            }
+        }
+
+        /**
+         * dispatchTouchEvent() sees the whole popup subtree, so swipes that start on body text,
+         * native notification content or action rows are still observable.
+         */
+        private final class HistorySwipeScrollView extends ScrollView {
+            HistorySwipeScrollView(Context context) {
+                super(context);
+            }
+
+            @Override
+            public boolean dispatchTouchEvent(MotionEvent event) {
+                if (handleSwipeEvent(event)) return true;
+                return super.dispatchTouchEvent(event);
             }
         }
 
@@ -235,8 +267,6 @@ public final class LockedNotificationHistoryDialog {
                 addOpenAppAction();
             }
 
-            // Re-apply the same app colour when swiping between stored notifications so a newly
-            // inflated native RemoteViews tree cannot reintroduce a grey background.
             if (dialog.isShowing()) {
                 AppNativeDialogStyle.styleDialog(dialog, packageName);
             }
