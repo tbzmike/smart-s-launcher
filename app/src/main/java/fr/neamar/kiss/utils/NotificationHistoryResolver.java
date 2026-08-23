@@ -44,9 +44,23 @@ public final class NotificationHistoryResolver {
     }
 
     private static String resolveShortcutPackage(Context context, ShortcutPojo shortcut) {
-        // Android/Oreo wrapper shortcuts are resolved while ShortcutInfo still exposes the actual
-        // launch intents. Once a real target was captured, it is authoritative.
-        if (!TextUtils.isEmpty(shortcut.targetPackage)) {
+        boolean iceBoxPublisher = ShortcutUtil.isIceBoxPublisher(context, shortcut.packageName);
+
+        // Verified device format for IceBox app shortcuts:
+        // shortcut://com.catchingnow.icebox/oreo-shortcut/com.openai.chatgpt
+        // In this format the Oreo shortcut id itself is the real target package. This must take
+        // absolute priority over the publisher and over heuristic launch-intent inspection.
+        if (iceBoxPublisher && shortcut.isOreoShortcut()) {
+            String idTarget = shortcut.getOreoId();
+            if (looksLikePackageName(idTarget)
+                    && !TextUtils.equals(idTarget, shortcut.packageName)) {
+                return preferIfHasHistory(context, idTarget);
+            }
+        }
+
+        // Android/Oreo wrapper shortcuts can also carry a target captured from ShortcutInfo.
+        if (!TextUtils.isEmpty(shortcut.targetPackage)
+                && !TextUtils.equals(shortcut.targetPackage, shortcut.packageName)) {
             return preferIfHasHistory(context, shortcut.targetPackage);
         }
 
@@ -69,11 +83,10 @@ public final class NotificationHistoryResolver {
         }
 
         // Hard rule: an IceBox-published shortcut represents the frozen app it launches. If that
-        // target cannot be verified, showing IceBox history would be incorrect, so show nothing.
-        if (ShortcutUtil.isIceBoxPublisher(context, shortcut.packageName)) return null;
+        // target cannot be verified or has no saved history, showing IceBox history is incorrect.
+        if (iceBoxPublisher) return null;
 
-        // Ordinary app-owned shortcuts (e.g. a Chrome shortcut owned by Chrome) legitimately map
-        // to their publisher when no distinct target exists.
+        // Ordinary app-owned shortcuts legitimately map to their publisher when no distinct target exists.
         return hasHistory(context, shortcut.packageName) ? shortcut.packageName : null;
     }
 
