@@ -24,10 +24,10 @@ public class ForwarderManager extends Forwarder {
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final SmartUExperienceForwarder smartUExperienceForwarder;
     private final SmartUActionForwarder smartUActionForwarder;
+    private final SmartUIntelligenceForwarder smartUIntelligenceForwarder;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
-
         this.widgetsForwarder = new WorkspaceWidgets(mainActivity);
         this.interfaceTweaks = new InterfaceTweaks(mainActivity);
         this.liveWallpaperForwarder = new LiveWallpaper(mainActivity);
@@ -39,86 +39,37 @@ public class ForwarderManager extends Forwarder {
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
         this.smartUExperienceForwarder = new SmartUExperienceForwarder(mainActivity);
         this.smartUActionForwarder = new SmartUActionForwarder(mainActivity);
+        this.smartUIntelligenceForwarder = new SmartUIntelligenceForwarder(mainActivity);
     }
 
     public void onCreate() {
-        favoritesForwarder.onCreate();
-        widgetsForwarder.onCreate();
-        interfaceTweaks.onCreate();
-        experienceTweaks.onCreate();
-        shortcutsForwarder.onCreate();
-        tagsMenu.onCreate();
-        historyDisplayForwarder.onCreate();
-        smartUExperienceForwarder.onCreate();
-        smartUActionForwarder.onCreate();
+        favoritesForwarder.onCreate(); widgetsForwarder.onCreate(); interfaceTweaks.onCreate();
+        experienceTweaks.onCreate(); shortcutsForwarder.onCreate(); tagsMenu.onCreate();
+        historyDisplayForwarder.onCreate(); smartUExperienceForwarder.onCreate();
+        smartUActionForwarder.onCreate(); smartUIntelligenceForwarder.onCreate();
     }
-
-    public void onStart() {
-        widgetsForwarder.onStart();
-    }
-
+    public void onStart() { widgetsForwarder.onStart(); }
     public void onResume() {
-        interfaceTweaks.onResume();
-        experienceTweaks.onResume();
-        notificationForwarder.onResume();
-        tagsMenu.onResume();
-        historyDisplayForwarder.onResume();
-        smartUExperienceForwarder.onResume();
-        smartUActionForwarder.onResume();
+        interfaceTweaks.onResume(); experienceTweaks.onResume(); notificationForwarder.onResume();
+        tagsMenu.onResume(); historyDisplayForwarder.onResume(); smartUExperienceForwarder.onResume();
+        smartUActionForwarder.onResume(); smartUIntelligenceForwarder.onResume();
     }
-
-    public void onPause() {
-        experienceTweaks.onPause();
-        notificationForwarder.onPause();
-    }
-
-    public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        widgetsForwarder.onActivityResult(requestCode, resultCode, data);
-    }
-
-    public boolean onOptionsItemSelected(MenuItem item) {
-        return widgetsForwarder.onOptionsItemSelected(item);
-    }
-
-    public void onCreateContextMenu(ContextMenu menu) {
-        widgetsForwarder.onCreateContextMenu(menu);
-    }
-
-    public boolean onTouch(View view, MotionEvent event) {
-        experienceTweaks.onTouch(event);
-        return liveWallpaperForwarder.onTouch(view, event);
-    }
-
+    public void onPause() { experienceTweaks.onPause(); notificationForwarder.onPause(); }
+    public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) { widgetsForwarder.onActivityResult(requestCode, resultCode, data); }
+    public boolean onOptionsItemSelected(MenuItem item) { return widgetsForwarder.onOptionsItemSelected(item); }
+    public void onCreateContextMenu(ContextMenu menu) { widgetsForwarder.onCreateContextMenu(menu); }
+    public boolean onTouch(View view, MotionEvent event) { experienceTweaks.onTouch(event); return liveWallpaperForwarder.onTouch(view, event); }
     public void onDataSetChanged() {
-        widgetsForwarder.onDataSetChanged();
-        historyDisplayForwarder.onDataSetChanged();
-        smartUExperienceForwarder.onDataSetChanged();
-        smartUActionForwarder.onDataSetChanged();
+        widgetsForwarder.onDataSetChanged(); historyDisplayForwarder.onDataSetChanged();
+        smartUExperienceForwarder.onDataSetChanged(); smartUActionForwarder.onDataSetChanged();
+        smartUIntelligenceForwarder.onDataSetChanged();
     }
-
-    public void updateSearchRecords(String query) {
-        experienceTweaks.updateSearchRecords(query);
-    }
-
-    public void onFavoriteChange() {
-        favoritesForwarder.onFavoriteChange();
-        experienceTweaks.onFavoriteChange();
-    }
-
-    public void onDisplayKissBar(boolean display) {
-        experienceTweaks.onDisplayKissBar(display);
-    }
-
-    public boolean onMenuButtonClicked(View menuButton) {
-        return tagsMenu.onMenuButtonClicked(menuButton);
-    }
-
-    public void onDestroy() {
-        widgetsForwarder.onDestroy();
-    }
-
+    public void updateSearchRecords(String query) { experienceTweaks.updateSearchRecords(query); }
+    public void onFavoriteChange() { favoritesForwarder.onFavoriteChange(); experienceTweaks.onFavoriteChange(); }
+    public void onDisplayKissBar(boolean display) { experienceTweaks.onDisplayKissBar(display); }
+    public boolean onMenuButtonClicked(View menuButton) { return tagsMenu.onMenuButtonClicked(menuButton); }
+    public void onDestroy() { widgetsForwarder.onDestroy(); }
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
-        interfaceTweaks.onConfigurationChanged(newConfig);
-        favoritesForwarder.onConfigurationChanged(newConfig);
+        interfaceTweaks.onConfigurationChanged(newConfig); favoritesForwarder.onConfigurationChanged(newConfig);
     }
 }
