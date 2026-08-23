@@ -1,24 +1,32 @@
 package fr.neamar.kiss.forwarder;
 
+import android.text.format.DateFormat;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.Button;
 
 import java.lang.reflect.Field;
+import java.util.Collections;
+import java.util.Date;
+import java.util.Map;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.db.LaunchHistoryStatsStore;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
 /**
- * Makes notification-history behavior explicit on the custom Vertical Cards renderer.
+ * Makes notification-history behavior explicit on the custom Vertical Cards renderer and enriches
+ * the existing between-card label with launch activity from the KISS history table.
  *
  * SmartCardListForwarder builds its own card hierarchy, so relying only on ListView/RecordAdapter
  * routing is not enough. This bridge runs after each Vertical Cards rebuild and guarantees that:
  *  - long-press on a card with saved history opens that app's saved history first;
  *  - notification-result cards open saved history when tapped;
- *  - action buttons (for example Mark read) keep their own click listeners.
+ *  - action buttons (for example Mark read) keep their own click listeners;
+ *  - the strip below each card shows app/shortcut name, last launch time and launches today.
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -26,6 +34,7 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private final SmartCardListForwarder smartCardListForwarder;
     private ViewGroup column;
     private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
+    private Map<String, LaunchHistoryStatsStore.Stats> launchStats = Collections.emptyMap();
 
     VerticalCardNotificationHistoryForwarder(MainActivity activity,
                                              SmartCardListForwarder smartCardListForwarder) {
@@ -39,7 +48,11 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     void onConfigurationChanged() { refresh(); }
 
     void onPause() { detach(); }
-    void onDestroy() { detach(); column = null; }
+    void onDestroy() {
+        detach();
+        column = null;
+        launchStats = Collections.emptyMap();
+    }
 
     private boolean isEnabled() {
         return VERTICAL_CARDS.equals(prefs.getString(
@@ -49,8 +62,10 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private void refresh() {
         if (!isEnabled()) {
             detach();
+            launchStats = Collections.emptyMap();
             return;
         }
+        launchStats = LaunchHistoryStatsStore.getAll(mainActivity);
         resolveColumn();
         attach();
         if (column != null) column.post(this::apply);
@@ -94,6 +109,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             Result<?> result = mainActivity.adapter.getItem(position);
             final int adapterPosition = position;
 
+            applyLaunchStats(wrapper, result);
+
             View.OnLongClickListener historyFirstLongPress = v -> {
                 if (mainActivity.adapter.showNotificationHistoryIfAvailable(adapterPosition, v)) {
                     return true;
@@ -111,6 +128,40 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
                 applyNotificationClickRecursively(wrapper, notificationClick);
             }
         }
+    }
+
+    private void applyLaunchStats(View wrapper, Result<?> result) {
+        if (!(wrapper instanceof ViewGroup) || result == null || result.getPojo() == null) return;
+        ViewGroup group = (ViewGroup) wrapper;
+        AutoMarqueeTextView strip = null;
+
+        // SmartCardListForwarder deliberately places the between-card name strip as a direct child
+        // of the wrapper after the card. Reuse that exact space instead of adding card height.
+        for (int i = group.getChildCount() - 1; i >= 0; i--) {
+            View child = group.getChildAt(i);
+            if (child instanceof AutoMarqueeTextView) {
+                strip = (AutoMarqueeTextView) child;
+                break;
+            }
+        }
+        if (strip == null) return;
+
+        String historyId = result.getPojo().getHistoryId();
+        LaunchHistoryStatsStore.Stats stats = launchStats.get(historyId);
+        String appName = result.getPojo().getName();
+        if (appName == null || appName.trim().isEmpty()) appName = "App";
+
+        String last;
+        int today = 0;
+        if (stats == null || stats.lastLaunchTime <= 0L) {
+            last = "Never";
+        } else {
+            last = DateFormat.getTimeFormat(mainActivity).format(new Date(stats.lastLaunchTime));
+            today = stats.launchesToday;
+        }
+        String times = today == 1 ? "1 time today" : today + " times today";
+        strip.setText(appName + "  •  Last: " + last + "  •  Launched: " + times);
+        strip.setContentDescription(appName + ", last launched " + last + ", launched " + times);
     }
 
     private void applyLongPressRecursively(View view, View.OnLongClickListener listener) {
