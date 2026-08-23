@@ -56,6 +56,13 @@ public final class CommunicationIndexer {
         SharedPreferences p = PreferenceManager.getDefaultSharedPreferences(context);
         if (!p.getBoolean(PREF_AUTO, true)) return false;
 
+        if (p.getBoolean(PREF_CALLS, true)
+                && !p.contains(PREF_CALL_HISTORY_LAST_SYNCED_TIME)) {
+            // One-time migration for builds that already had a communication index before call
+            // records became first-class Recent History entries.
+            return true;
+        }
+
         long lastRefresh = p.getLong(PREF_LAST, 0L);
         if (p.getBoolean(PREF_CALLS, true) && newestCallTime(context) > lastRefresh) return true;
         return System.currentTimeMillis() - lastRefresh > 15 * 60_000L;
@@ -86,7 +93,7 @@ public final class CommunicationIndexer {
         }
     }
 
-    public static void rebuild(Context context) {
+    public static synchronized void rebuild(Context context) {
         ensureDefaults(context);
         SharedPreferences p = PreferenceManager.getDefaultSharedPreferences(context);
         if (!p.getBoolean(PREF_ENABLED, true)) return;
@@ -163,6 +170,9 @@ public final class CommunicationIndexer {
         // intentionally froze history should not flood Recent History later.
         if (newestSeenTime > lastSyncedTime) {
             prefs.edit().putLong(PREF_CALL_HISTORY_LAST_SYNCED_TIME, newestSeenTime).apply();
+        } else if (!prefs.contains(PREF_CALL_HISTORY_LAST_SYNCED_TIME)) {
+            // Mark an empty-call-log migration complete so launcher resume does not rebuild forever.
+            prefs.edit().putLong(PREF_CALL_HISTORY_LAST_SYNCED_TIME, 0L).apply();
         }
     }
 
