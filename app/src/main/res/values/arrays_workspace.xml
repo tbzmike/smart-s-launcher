@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="smart_workspace_layout_entries">
+        <item>Two panes</item>
+        <item>Four panes / quadrants</item>
+    </string-array>
+    <string-array name="smart_workspace_layout_values">
+        <item>two-pane</item>
+        <item>quadrants</item>
+    </string-array>
+
     <string-array name="smart_workspace_orientation_entries">
         <item>Left / right</item>
         <item>Top / bottom</item>
