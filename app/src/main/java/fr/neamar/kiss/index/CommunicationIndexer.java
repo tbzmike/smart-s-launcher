@@ -147,9 +147,10 @@ public final class CommunicationIndexer {
             newHistoryIds = new ArrayList<>(newHistoryIds.subList(0, INITIAL_CALL_HISTORY_ROWS));
         }
 
-        boolean keepPhoneHistory = prefs.getBoolean("enable-phone-history", false);
-        boolean freezeHistory = prefs.getBoolean("freeze-history", false);
-        if (keepPhoneHistory && !freezeHistory) {
+        // "Index phone call history" is the authoritative switch for real CallLog records. The
+        // old enable-phone-history preference belongs to the legacy contact-based incoming-call
+        // hook and must not silently block this newer call-history feature.
+        if (!prefs.getBoolean("freeze-history", false)) {
             // Query order is newest -> oldest. KISS recency is based on history insertion order, so
             // import oldest -> newest and the final visible order matches the real phone call order.
             Collections.reverse(newHistoryIds);
@@ -158,8 +159,8 @@ public final class CommunicationIndexer {
             }
         }
 
-        // Advance the marker even while history is frozen/disabled. Calls that occurred while the
-        // user intentionally disabled/froze phone history should not flood history later.
+        // Advance the marker even while history is frozen. Calls that occurred while the user
+        // intentionally froze history should not flood Recent History later.
         if (newestSeenTime > lastSyncedTime) {
             prefs.edit().putLong(PREF_CALL_HISTORY_LAST_SYNCED_TIME, newestSeenTime).apply();
         }
@@ -183,7 +184,7 @@ public final class CommunicationIndexer {
                 Telephony.Sms.DATE, Telephony.Sms.TYPE};
         try (Cursor c = context.getContentResolver().query(Telephony.Sms.CONTENT_URI, projection,
                 Telephony.Sms.DATE + ">?", new String[]{Long.toString(cutoff)},
-                CallLog.Calls.DATE + " DESC")) {
+                Telephony.Sms.DATE + " DESC")) {
             if (c == null) return;
             while (c.moveToNext()) {
                 String address = c.getString(1);
