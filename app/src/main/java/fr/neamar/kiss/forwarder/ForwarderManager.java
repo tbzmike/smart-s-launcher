@@ -25,6 +25,7 @@ public class ForwarderManager extends Forwarder {
     private final SmartUExperienceForwarder smartUExperienceForwarder;
     private final SmartUActionForwarder smartUActionForwarder;
     private final SmartUIntelligenceForwarder smartUIntelligenceForwarder;
+    private final SmartUFinalPolishForwarder smartUFinalPolishForwarder;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -40,6 +41,7 @@ public class ForwarderManager extends Forwarder {
         this.smartUExperienceForwarder = new SmartUExperienceForwarder(mainActivity);
         this.smartUActionForwarder = new SmartUActionForwarder(mainActivity);
         this.smartUIntelligenceForwarder = new SmartUIntelligenceForwarder(mainActivity);
+        this.smartUFinalPolishForwarder = new SmartUFinalPolishForwarder(mainActivity);
     }
 
     public void onCreate() {
@@ -47,12 +49,14 @@ public class ForwarderManager extends Forwarder {
         experienceTweaks.onCreate(); shortcutsForwarder.onCreate(); tagsMenu.onCreate();
         historyDisplayForwarder.onCreate(); smartUExperienceForwarder.onCreate();
         smartUActionForwarder.onCreate(); smartUIntelligenceForwarder.onCreate();
+        smartUFinalPolishForwarder.onCreate();
     }
     public void onStart() { widgetsForwarder.onStart(); }
     public void onResume() {
         interfaceTweaks.onResume(); experienceTweaks.onResume(); notificationForwarder.onResume();
         tagsMenu.onResume(); historyDisplayForwarder.onResume(); smartUExperienceForwarder.onResume();
         smartUActionForwarder.onResume(); smartUIntelligenceForwarder.onResume();
+        smartUFinalPolishForwarder.onResume();
     }
     public void onPause() { experienceTweaks.onPause(); notificationForwarder.onPause(); }
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) { widgetsForwarder.onActivityResult(requestCode, resultCode, data); }
@@ -62,7 +66,7 @@ public class ForwarderManager extends Forwarder {
     public void onDataSetChanged() {
         widgetsForwarder.onDataSetChanged(); historyDisplayForwarder.onDataSetChanged();
         smartUExperienceForwarder.onDataSetChanged(); smartUActionForwarder.onDataSetChanged();
-        smartUIntelligenceForwarder.onDataSetChanged();
+        smartUIntelligenceForwarder.onDataSetChanged(); smartUFinalPolishForwarder.onDataSetChanged();
     }
     public void updateSearchRecords(String query) { experienceTweaks.updateSearchRecords(query); }
     public void onFavoriteChange() { favoritesForwarder.onFavoriteChange(); experienceTweaks.onFavoriteChange(); }
@@ -71,5 +75,6 @@ public class ForwarderManager extends Forwarder {
     public void onDestroy() { widgetsForwarder.onDestroy(); }
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         interfaceTweaks.onConfigurationChanged(newConfig); favoritesForwarder.onConfigurationChanged(newConfig);
+        smartUFinalPolishForwarder.onConfigurationChanged();
     }
 }
