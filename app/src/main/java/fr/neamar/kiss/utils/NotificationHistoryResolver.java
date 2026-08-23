@@ -5,9 +5,7 @@ import android.content.Intent;
 import android.os.Bundle;
 
 import java.net.URISyntaxException;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Set;
 
 import fr.neamar.kiss.db.SmartStateStore;
@@ -29,41 +27,31 @@ public final class NotificationHistoryResolver {
 
     public static String resolvePackage(Context context, Pojo pojo) {
         if (context == null || pojo == null) return null;
-
-        if (pojo instanceof DisabledAppPojo) {
-            return preferIfHasHistory(context, ((DisabledAppPojo) pojo).targetPackage);
-        }
-        if (pojo instanceof NotificationPojo) {
-            return preferIfHasHistory(context, ((NotificationPojo) pojo).packageName);
-        }
-        if (pojo instanceof AppPojo) {
-            return preferIfHasHistory(context, ((AppPojo) pojo).packageName);
-        }
-        if (pojo instanceof ShortcutPojo) {
-            return resolveShortcutPackage(context, (ShortcutPojo) pojo);
-        }
+        if (pojo instanceof DisabledAppPojo) return preferIfHasHistory(context, ((DisabledAppPojo) pojo).targetPackage);
+        if (pojo instanceof NotificationPojo) return preferIfHasHistory(context, ((NotificationPojo) pojo).packageName);
+        if (pojo instanceof AppPojo) return preferIfHasHistory(context, ((AppPojo) pojo).packageName);
+        if (pojo instanceof ShortcutPojo) return resolveShortcutPackage(context, (ShortcutPojo) pojo);
         return null;
     }
 
     private static String resolveShortcutPackage(Context context, ShortcutPojo shortcut) {
         Set<String> candidates = new LinkedHashSet<>();
-
         if (!shortcut.isOreoShortcut()) {
             try {
                 Intent intent = Intent.parseUri(shortcut.intentUri, 0);
-                if (intent.getComponent() != null) candidates.add(intent.getComponent().getPackageName());
-                if (intent.getPackage() != null) candidates.add(intent.getPackage());
                 collectStringExtras(intent.getExtras(), candidates);
+                if (intent.getPackage() != null) candidates.add(intent.getPackage());
+                if (intent.getComponent() != null) candidates.add(intent.getComponent().getPackageName());
             } catch (URISyntaxException | RuntimeException ignored) {
-                // Keep the shortcut owner package as the final fallback.
+                // Shortcut owner remains the final fallback below.
             }
         }
 
-        // Prefer any real target encoded by the shortcut if that target actually owns saved history.
+        // Wrapper-owned shortcuts (for example IceBox) may encode the real target app in extras.
+        // Always prefer a different history-owning package before the shortcut owner itself.
         for (String candidate : candidates) {
-            if (hasHistory(context, candidate)) return candidate;
+            if (!shortcut.packageName.equals(candidate) && hasHistory(context, candidate)) return candidate;
         }
-
         if (hasHistory(context, shortcut.packageName)) return shortcut.packageName;
         return null;
     }
