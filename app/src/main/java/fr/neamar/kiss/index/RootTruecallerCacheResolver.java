@@ -1,6 +1,7 @@
 package fr.neamar.kiss.index;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.telephony.PhoneNumberUtils;
@@ -29,6 +30,12 @@ final class RootTruecallerCacheResolver {
     private static final int MAX_DATABASE_FILES = 60;
     private static final int MAX_TABLES_PER_DB = 120;
     private static final int MAX_ROWS_PER_TABLE = 5000;
+    private static final String CACHE_PREFS = "truecaller-root-name-cache";
+    private static final String NAME_PREFIX = "name:";
+    private static final String NAME_TIME_PREFIX = "name-time:";
+    private static final String MISS_PREFIX = "miss:";
+    private static final long MISS_RETRY_MS = 30 * 60_000L;
+    private static final long NAME_REFRESH_MS = 7L * 24L * 60L * 60_000L;
 
     private RootTruecallerCacheResolver() { }
 
@@ -36,33 +43,71 @@ final class RootTruecallerCacheResolver {
         Map<String, String> result = new HashMap<>();
         if (context == null || numbers == null || numbers.isEmpty()) return result;
 
-        TargetIndex targets = new TargetIndex(numbers);
-        if (targets.normalized.isEmpty()) return result;
+        TargetIndex allTargets = new TargetIndex(numbers);
+        if (allTargets.normalized.isEmpty()) return result;
 
+        SharedPreferences cache = context.getSharedPreferences(CACHE_PREFS, Context.MODE_PRIVATE);
+        long now = System.currentTimeMillis();
+        List<String> scanNumbers = new ArrayList<>();
+        for (String normalized : allTargets.normalized) {
+            String cachedName = cache.getString(NAME_PREFIX + normalized, "");
+            long cachedAt = cache.getLong(NAME_TIME_PREFIX + normalized, 0L);
+            if (CallerIdentityResolver.isUsableName(cachedName)) {
+                result.put(normalized, cachedName.trim());
+                if (now - cachedAt < NAME_REFRESH_MS) continue;
+            }
+            long lastMiss = cache.getLong(MISS_PREFIX + normalized, 0L);
+            if (now - lastMiss < MISS_RETRY_MS) continue;
+            String original = allTargets.originalByNormalized.get(normalized);
+            if (!TextUtils.isEmpty(original)) scanNumbers.add(original);
+        }
+        if (scanNumbers.isEmpty()) return result;
+
+        TargetIndex scanTargets = new TargetIndex(scanNumbers);
         List<String> databases = discoverDatabases();
+        // Do not record a miss when root is unavailable or Truecaller storage cannot even be
+        // discovered. This lets a later Magisk/su grant take effect immediately.
         if (databases.isEmpty()) return result;
 
         File probeDir = new File(context.getCacheDir(), "truecaller_root_probe");
         if (!probeDir.exists() && !probeDir.mkdirs()) return result;
 
+        Map<String, String> scanned = new HashMap<>();
         Set<String> conflicts = new HashSet<>();
         int index = 0;
-        for (String source : databases) {
-            if (result.size() + conflicts.size() >= targets.normalized.size()) break;
-            if (index >= MAX_DATABASE_FILES) break;
+        try {
+            for (String source : databases) {
+                if (scanned.size() + conflicts.size() >= scanTargets.normalized.size()) break;
+                if (index >= MAX_DATABASE_FILES) break;
 
-            File localDb = new File(probeDir, "tc_" + index++ + ".db");
-            if (!copyDatabaseWithRoot(source, localDb)) {
+                File localDb = new File(probeDir, "tc_" + index++ + ".db");
+                if (!copyDatabaseWithRoot(source, localDb)) {
+                    cleanupLocal(localDb);
+                    continue;
+                }
+
+                inspectDatabase(localDb, scanTargets, scanned, conflicts);
                 cleanupLocal(localDb);
-                continue;
             }
-
-            inspectDatabase(localDb, targets, result, conflicts);
-            cleanupLocal(localDb);
+        } finally {
+            deleteRecursively(probeDir);
         }
 
-        for (String conflict : conflicts) result.remove(conflict);
-        deleteRecursively(probeDir);
+        for (String conflict : conflicts) scanned.remove(conflict);
+
+        SharedPreferences.Editor editor = cache.edit();
+        for (String normalized : scanTargets.normalized) {
+            String name = scanned.get(normalized);
+            if (CallerIdentityResolver.isUsableName(name)) {
+                result.put(normalized, name.trim());
+                editor.putString(NAME_PREFIX + normalized, name.trim());
+                editor.putLong(NAME_TIME_PREFIX + normalized, now);
+                editor.remove(MISS_PREFIX + normalized);
+            } else {
+                editor.putLong(MISS_PREFIX + normalized, now);
+            }
+        }
+        editor.apply();
         return result;
     }
 
@@ -362,6 +407,7 @@ final class RootTruecallerCacheResolver {
     private static final class TargetIndex {
         final Set<String> normalized = new HashSet<>();
         final Map<String, String> uniqueSuffix = new HashMap<>();
+        final Map<String, String> originalByNormalized = new HashMap<>();
 
         TargetIndex(List<String> numbers) {
             Set<String> duplicateSuffixes = new HashSet<>();
@@ -369,6 +415,7 @@ final class RootTruecallerCacheResolver {
                 String normalizedNumber = normalize(number);
                 if (normalizedNumber.isEmpty()) continue;
                 normalized.add(normalizedNumber);
+                originalByNormalized.put(normalizedNumber, number);
                 String suffix = suffix(normalizedNumber);
                 if (suffix.isEmpty()) continue;
                 String previous = uniqueSuffix.get(suffix);
