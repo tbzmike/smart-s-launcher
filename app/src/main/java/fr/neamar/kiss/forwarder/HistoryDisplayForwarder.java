@@ -7,6 +7,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
@@ -615,15 +616,21 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private final class SquareTrackLayout extends ViewGroup {
         private final int touchSlop;
+        private final int minFlingVelocity;
+        private final int maxFlingVelocity;
         private float downX;
         private float lastX;
         private float rotationOffset;
         private boolean dragging;
         private ValueAnimator settleAnimator;
+        private VelocityTracker velocityTracker;
 
         SquareTrackLayout() {
             super(mainActivity);
-            touchSlop = ViewConfiguration.get(mainActivity).getScaledTouchSlop();
+            ViewConfiguration config = ViewConfiguration.get(mainActivity);
+            touchSlop = config.getScaledTouchSlop();
+            minFlingVelocity = config.getScaledMinimumFlingVelocity();
+            maxFlingVelocity = config.getScaledMaximumFlingVelocity();
             setClipChildren(false);
             setClipToPadding(false);
             setWillNotDraw(false);
@@ -632,6 +639,7 @@ final class HistoryDisplayForwarder extends Forwarder {
 
         void resetForFirstEntry() {
             if (settleAnimator != null) settleAnimator.cancel();
+            recycleVelocityTracker();
             rotationOffset = 0f;
             requestLayout();
         }
@@ -639,6 +647,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         void onDataRebuilt(boolean refocusBottom) {
             if (refocusBottom) {
                 if (settleAnimator != null) settleAnimator.cancel();
+                recycleVelocityTracker();
                 rotationOffset = 0f;
             }
             requestLayout();
@@ -737,45 +746,113 @@ final class HistoryDisplayForwarder extends Forwarder {
 
         @Override
         public boolean onInterceptTouchEvent(MotionEvent event) {
+            trackVelocity(event);
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    downX = event.getX(); lastX = downX; dragging = false;
+                    downX = event.getX();
+                    lastX = downX;
+                    dragging = false;
                     if (settleAnimator != null) settleAnimator.cancel();
                     return false;
                 case MotionEvent.ACTION_MOVE:
                     if (Math.abs(event.getX() - downX) > touchSlop) {
-                        dragging = true; lastX = event.getX(); return true;
+                        dragging = true;
+                        lastX = event.getX();
+                        return true;
                     }
                     return false;
-                default: return false;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    recycleVelocityTracker();
+                    return false;
+                default:
+                    return false;
             }
         }
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
+            trackVelocity(event);
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    downX = event.getX(); lastX = downX;
+                    downX = event.getX();
+                    lastX = downX;
+                    dragging = false;
                     if (settleAnimator != null) settleAnimator.cancel();
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     float x = event.getX();
                     float delta = x - lastX;
                     lastX = x;
-                    rotationOffset += delta / Math.max(dp(78), getWidth() / 5.5f);
+                    if (Math.abs(x - downX) > touchSlop) dragging = true;
+                    rotationOffset += delta / pixelsPerSlot();
                     requestLayout();
                     return true;
                 case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    if (dragging) settleToNearestSlot();
+                    float velocityX = computeVelocityX();
+                    if (dragging) settleWithVelocity(velocityX);
+                    else settleToNearestSlot();
                     dragging = false;
+                    recycleVelocityTracker();
                     return true;
-                default: return true;
+                case MotionEvent.ACTION_CANCEL:
+                    settleToNearestSlot();
+                    dragging = false;
+                    recycleVelocityTracker();
+                    return true;
+                default:
+                    return true;
             }
         }
 
+        private float pixelsPerSlot() {
+            return Math.max(dp(78), getWidth() / 5.5f);
+        }
+
+        private void trackVelocity(MotionEvent event) {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN || velocityTracker == null) {
+                recycleVelocityTracker();
+                velocityTracker = VelocityTracker.obtain();
+            }
+            velocityTracker.addMovement(event);
+        }
+
+        private float computeVelocityX() {
+            if (velocityTracker == null) return 0f;
+            velocityTracker.computeCurrentVelocity(1000, maxFlingVelocity);
+            return velocityTracker.getXVelocity();
+        }
+
+        private void recycleVelocityTracker() {
+            if (velocityTracker != null) {
+                velocityTracker.recycle();
+                velocityTracker = null;
+            }
+        }
+
+        private void settleWithVelocity(float velocityX) {
+            if (Math.abs(velocityX) < minFlingVelocity) {
+                settleToNearestSlot();
+                return;
+            }
+
+            float slotsPerSecond = velocityX / pixelsPerSlot();
+            float projectedSlots = slotsPerSecond * 0.22f;
+            int count = Math.max(1, getChildCount());
+            float maxAdvance = Math.min(4f, Math.max(1f, count - 1f));
+            projectedSlots = Math.max(-maxAdvance, Math.min(maxAdvance, projectedSlots));
+
+            float target = Math.round(rotationOffset + projectedSlots);
+            float nearest = Math.round(rotationOffset);
+            if (target == nearest) target = nearest + Math.signum(velocityX);
+            animateSettle(target, true);
+        }
+
         private void settleToNearestSlot() {
-            float target = Math.round(rotationOffset);
+            animateSettle(Math.round(rotationOffset), false);
+        }
+
+        private void animateSettle(float target, boolean fromFling) {
             if (!SmartAnimationEngine.isEnabled(mainActivity)
                     || "none".equals(SmartAnimationEngine.getStyle(
                             mainActivity, "smart-animation-scroll", "depth"))) {
@@ -788,8 +865,14 @@ final class HistoryDisplayForwarder extends Forwarder {
                 requestLayout();
                 return;
             }
+            if (settleAnimator != null) settleAnimator.cancel();
+            float travel = Math.abs(target - rotationOffset);
+            long baseDuration = SmartAnimationEngine.duration(mainActivity);
+            long duration = fromFling
+                    ? Math.max(170L, Math.min(520L, 150L + Math.round(travel * 70L)))
+                    : Math.max(120L, Math.min(360L, baseDuration));
             settleAnimator = ValueAnimator.ofFloat(rotationOffset, target);
-            settleAnimator.setDuration(SmartAnimationEngine.duration(mainActivity));
+            settleAnimator.setDuration(duration);
             settleAnimator.setInterpolator(new DecelerateInterpolator());
             settleAnimator.addUpdateListener(animation -> {
                 rotationOffset = (float) animation.getAnimatedValue();
