@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -14,6 +15,7 @@ import java.util.Set;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.UserHandle;
 
@@ -21,6 +23,13 @@ public class PackageAddedRemovedHandler extends BroadcastReceiver {
 
     public static void handleEvent(@NonNull Context ctx, @Nullable String action, @NonNull String[] packageNames, @NonNull UserHandle user, boolean replacing) {
         if (packageNames.length == 1 && packageNames[0].equalsIgnoreCase(ctx.getPackageName())) return;
+
+        // Freeze/unfreeze changes must be reflected immediately. AppLaunchUtils normally caches
+        // package enabled state for a short period, which is useful during ordinary rendering but
+        // must never survive an explicit package state callback.
+        for (String packageName : packageNames) {
+            AppLaunchUtils.invalidatePackageState(packageName);
+        }
 
         if (Intent.ACTION_PACKAGE_ADDED.equals(action) && !replacing) {
             for (String packageName : packageNames) {
@@ -32,16 +41,31 @@ public class PackageAddedRemovedHandler extends BroadcastReceiver {
 
         KissApplication.getMimeTypeCache(ctx).clearCache();
 
-        if (Intent.ACTION_PACKAGE_REMOVED.equals(action)) {
-            if (!replacing) {
-                KissApplication.getApplication(ctx).resetIconsHandler();
-                KissApplication.getApplication(ctx).getDataHandler().reloadApps();
-                for (String packageName : packageNames) {
-                    KissApplication.getApplication(ctx).getDataHandler().removeShortcuts(packageName);
-                    KissApplication.getApplication(ctx).getDataHandler().removeFromExcluded(packageName);
-                    // A genuine uninstall is the only time a remembered frozen app should vanish.
-                    SmartStateStore.forgetPackage(ctx, packageName);
+        if (Intent.ACTION_PACKAGE_REMOVED.equals(action) && !replacing) {
+            boolean anyTrueUninstall = false;
+            boolean anyStillInstalled = false;
+            for (String packageName : packageNames) {
+                if (isInstalledIncludingDisabled(ctx, packageName)) {
+                    // Some package managers/freezers can produce removal-like visibility events for
+                    // an app that remains installed. This is a frozen state, not an uninstall.
+                    anyStillInstalled = true;
+                    continue;
                 }
+                anyTrueUninstall = true;
+                KissApplication.getApplication(ctx).getDataHandler().removeShortcuts(packageName);
+                KissApplication.getApplication(ctx).getDataHandler().removeFromExcluded(packageName);
+                SmartStateStore.forgetPackage(ctx, packageName);
+            }
+
+            KissApplication.getApplication(ctx).resetIconsHandler();
+            KissApplication.getApplication(ctx).getDataHandler().reloadApps();
+            if (anyStillInstalled) {
+                KissApplication.getApplication(ctx).getDataHandler().reloadShortcuts();
+            }
+            if (!anyTrueUninstall && anyStillInstalled) {
+                // The package remains installed; preserve history/catalog identity and simply let
+                // the reloaded AppPojo expose its disabled icon state.
+                return;
             }
         } else {
             KissApplication.getApplication(ctx).resetIconsHandler();
@@ -49,6 +73,16 @@ public class PackageAddedRemovedHandler extends BroadcastReceiver {
             // relying on getLaunchingComponent() would hide exactly the packages IceBox disabled.
             KissApplication.getApplication(ctx).getDataHandler().reloadApps();
             KissApplication.getApplication(ctx).getDataHandler().reloadShortcuts();
+        }
+    }
+
+    private static boolean isInstalledIncludingDisabled(Context ctx, String packageName) {
+        try {
+            ctx.getPackageManager().getApplicationInfo(
+                    packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+            return true;
+        } catch (PackageManager.NameNotFoundException | IllegalArgumentException e) {
+            return false;
         }
     }
 
