@@ -28,6 +28,7 @@ public class ForwarderManager extends Forwarder {
     private final SquareUInteractionController squareUInteractionController;
     private final HistoryVisualEnhancer historyVisualEnhancer;
     private final SmartUFoundationForwarder smartUFoundationForwarder;
+    private final SmartUIntelligenceForwarder smartUIntelligenceForwarder;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -48,6 +49,8 @@ public class ForwarderManager extends Forwarder {
                 mainActivity, historyDisplayForwarder);
         this.smartUFoundationForwarder = new SmartUFoundationForwarder(
                 mainActivity, historyDisplayForwarder);
+        this.smartUIntelligenceForwarder = new SmartUIntelligenceForwarder(
+                mainActivity, historyDisplayForwarder);
     }
 
     public void onCreate() {
@@ -63,6 +66,7 @@ public class ForwarderManager extends Forwarder {
         squareUInteractionController.onCreate();
         historyVisualEnhancer.onCreate();
         smartUFoundationForwarder.onCreate();
+        smartUIntelligenceForwarder.onCreate();
     }
 
     public void onStart() {
@@ -80,6 +84,7 @@ public class ForwarderManager extends Forwarder {
         squareUInteractionController.onResume();
         historyVisualEnhancer.onResume();
         smartUFoundationForwarder.onResume();
+        smartUIntelligenceForwarder.onResume();
     }
 
     public void onPause() {
@@ -96,21 +101,13 @@ public class ForwarderManager extends Forwarder {
     public boolean onOptionsItemSelected(MenuItem item) {
         if (UiEditLock.isLocked(mainActivity)) {
             int itemId = item.getItemId();
-
-            // Settings access is never an edit operation. Let MainActivity handle these entries
-            // so the user can always reach KISS Settings and disable the UI lock.
             if (itemId == R.id.preferences || itemId == R.id.settings) {
                 return false;
             }
-
-            // While locked, block launcher-surface mutations such as adding widgets or changing
-            // wallpaper before they can reach the widget/edit forwarders.
             if (itemId == R.id.add_widget || itemId == R.id.wallpaper) {
                 UiEditLock.allowEdit(mainActivity);
                 return true;
             }
-
-            // Other non-edit actions are allowed to continue through their normal handlers.
             return widgetsForwarder.onOptionsItemSelected(item);
         }
         return widgetsForwarder.onOptionsItemSelected(item);
@@ -133,6 +130,7 @@ public class ForwarderManager extends Forwarder {
         squareUInteractionController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
         smartUFoundationForwarder.onDataSetChanged();
+        smartUIntelligenceForwarder.onDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
@@ -142,6 +140,7 @@ public class ForwarderManager extends Forwarder {
     public void onFavoriteChange() {
         favoritesForwarder.onFavoriteChange();
         experienceTweaks.onFavoriteChange();
+        smartUIntelligenceForwarder.onFavoriteChange();
     }
 
     public void onDisplayKissBar(boolean display) {
@@ -153,6 +152,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
+        smartUIntelligenceForwarder.onDestroy();
         smartUFoundationForwarder.onDestroy();
         squareUInteractionController.onDestroy();
         widgetsForwarder.onDestroy();
@@ -161,5 +161,6 @@ public class ForwarderManager extends Forwarder {
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
+        smartUIntelligenceForwarder.onConfigurationChanged();
     }
 }
