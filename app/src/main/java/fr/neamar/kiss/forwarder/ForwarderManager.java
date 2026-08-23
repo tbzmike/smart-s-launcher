@@ -19,6 +19,7 @@ public class ForwarderManager extends Forwarder {
     private final LiveWallpaper liveWallpaperForwarder;
     private final InterfaceTweaks interfaceTweaks;
     private final ExperienceTweaks experienceTweaks;
+    private final LockedHistoryGestureBridge lockedHistoryGestureBridge;
     private final Favorites favoritesForwarder;
     private final OreoShortcuts shortcutsForwarder;
     private final TagsMenu tagsMenu;
@@ -38,6 +39,7 @@ public class ForwarderManager extends Forwarder {
         this.interfaceTweaks = new InterfaceTweaks(mainActivity);
         this.liveWallpaperForwarder = new LiveWallpaper(mainActivity);
         this.experienceTweaks = new ExperienceTweaks(mainActivity);
+        this.lockedHistoryGestureBridge = new LockedHistoryGestureBridge(mainActivity, experienceTweaks);
         this.favoritesForwarder = new Favorites(mainActivity);
         this.shortcutsForwarder = new OreoShortcuts(mainActivity);
         this.notificationForwarder = new Notification(mainActivity);
@@ -71,6 +73,7 @@ public class ForwarderManager extends Forwarder {
         squareUStabilityController.onCreate();
         squareUEdgeBoundsController.onCreate();
         historyVisualEnhancer.onCreate();
+        lockedHistoryGestureBridge.onCreate();
     }
 
     public void onStart() {
@@ -81,6 +84,7 @@ public class ForwarderManager extends Forwarder {
         UiEditLock.syncRuntimeState(mainActivity);
         interfaceTweaks.onResume();
         experienceTweaks.onResume();
+        lockedHistoryGestureBridge.onResume();
         notificationForwarder.onResume();
         tagsMenu.onResume();
         historyDisplayForwarder.onResume();
@@ -93,6 +97,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onPause() {
+        lockedHistoryGestureBridge.onPause();
         verticalCardGroupResizeController.onPause();
         squareUEdgeBoundsController.onPause();
         squareUStabilityController.onPause();
@@ -139,6 +144,7 @@ public class ForwarderManager extends Forwarder {
         squareUStabilityController.onDataSetChanged();
         squareUEdgeBoundsController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
+        lockedHistoryGestureBridge.onDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
@@ -159,6 +165,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onDestroy() {
+        lockedHistoryGestureBridge.onDestroy();
         verticalCardGroupResizeController.onDestroy();
         squareUEdgeBoundsController.onDestroy();
         squareUStabilityController.onDestroy();
@@ -173,5 +180,6 @@ public class ForwarderManager extends Forwarder {
         verticalCardGroupResizeController.onConfigurationChanged();
         squareUStabilityController.onConfigurationChanged();
         squareUEdgeBoundsController.onConfigurationChanged();
+        lockedHistoryGestureBridge.onResume();
     }
 }
