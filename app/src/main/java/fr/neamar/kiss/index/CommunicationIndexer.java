@@ -35,9 +35,11 @@ public final class CommunicationIndexer {
     public static final String PREF_AUTO = "smart-index-auto-refresh";
     public static final String PREF_LAST = "smart-index-last-refresh";
     public static final String PREF_CALL_HISTORY_LAST_SYNCED_TIME = "smart-index-call-history-last-synced-time";
+    public static final String PREF_TRUECALLER_NAME_ENRICHMENT_VERSION = "smart-index-truecaller-name-enrichment-version";
 
     private static final String TRUECALLER_PACKAGE = "com.truecaller";
     private static final int INITIAL_CALL_HISTORY_ROWS = 20;
+    private static final int TRUECALLER_NAME_ENRICHMENT_VERSION = 1;
     private static final long NEWEST_CALL_CHECK_THROTTLE_MS = 5_000L;
     private static final long TRUECALLER_TIME_MATCH_WINDOW_MS = 90_000L;
     private static final Pattern PHONE_PATTERN = Pattern.compile("\\+?[0-9][0-9\\s().-]{5,}[0-9]");
@@ -92,6 +94,13 @@ public final class CommunicationIndexer {
     public static boolean needsRefresh(Context context) {
         SharedPreferences p = PreferenceManager.getDefaultSharedPreferences(context);
         if (!p.getBoolean(PREF_AUTO, true)) return false;
+
+        if (p.getBoolean(PREF_CALLS, true)
+                && p.getBoolean(PREF_TRUECALLER, true)
+                && p.getInt(PREF_TRUECALLER_NAME_ENRICHMENT_VERSION, 0)
+                < TRUECALLER_NAME_ENRICHMENT_VERSION) {
+            return true;
+        }
 
         if (p.getBoolean(PREF_CALLS, true)
                 && !p.contains(PREF_CALL_HISTORY_LAST_SYNCED_TIME)) {
@@ -149,7 +158,11 @@ public final class CommunicationIndexer {
                 indexTruecallerNotifications(store, truecallerRecords);
             }
             store.trimOlderThan(cutoff);
-            p.edit().putLong(PREF_LAST, System.currentTimeMillis()).apply();
+            p.edit()
+                    .putLong(PREF_LAST, System.currentTimeMillis())
+                    .putInt(PREF_TRUECALLER_NAME_ENRICHMENT_VERSION,
+                            TRUECALLER_NAME_ENRICHMENT_VERSION)
+                    .apply();
         } finally {
             store.close();
         }
@@ -207,7 +220,7 @@ public final class CommunicationIndexer {
         for (CallRow row : calls) {
             String displayName = hasUsefulCachedName(row.cachedName, row.number)
                     ? row.cachedName.trim()
-                    : resolveTruecallerName(context, row, calls, hints);
+                    : resolveTruecallerName(row, calls, hints);
             if (TextUtils.isEmpty(displayName)) displayName = row.number;
 
             String body = callType(row.type) + " call · " + row.duration + " sec";
@@ -258,7 +271,7 @@ public final class CommunicationIndexer {
         return hints;
     }
 
-    private static String resolveTruecallerName(Context context, CallRow row,
+    private static String resolveTruecallerName(CallRow row,
                                                 List<CallRow> allCalls,
                                                 List<TruecallerNameHint> hints) {
         if (TextUtils.isEmpty(row.number) || hints.isEmpty()) return "";
@@ -277,7 +290,6 @@ public final class CommunicationIndexer {
         if (bestExact != null) return bestExact.name;
 
         String uniqueName = "";
-        long bestDistance = Long.MAX_VALUE;
         for (TruecallerNameHint hint : hints) {
             if (!TextUtils.isEmpty(hint.number)) continue;
             long distance = Math.abs(row.when - hint.when);
@@ -286,14 +298,9 @@ public final class CommunicationIndexer {
 
             if (TextUtils.isEmpty(uniqueName)) {
                 uniqueName = hint.name;
-                bestDistance = distance;
             } else if (!uniqueName.equalsIgnoreCase(hint.name)) {
-                if (distance < bestDistance) {
-                    // Conflicting names around the same call are not safe to infer.
-                    return "";
-                }
-            } else if (distance < bestDistance) {
-                bestDistance = distance;
+                // More than one different Truecaller identity could describe this call.
+                return "";
             }
         }
         return uniqueName;
@@ -301,15 +308,15 @@ public final class CommunicationIndexer {
 
     private static boolean isUniqueCallNearHint(CallRow target, List<CallRow> allCalls, long hintTime) {
         int matches = 0;
+        boolean targetMatched = false;
         for (CallRow candidate : allCalls) {
             if (Math.abs(candidate.when - hintTime) <= TRUECALLER_TIME_MATCH_WINDOW_MS) {
                 matches++;
-                if (candidate != target || matches > 1) {
-                    if (matches > 1) return false;
-                }
+                if (candidate == target) targetMatched = true;
+                if (matches > 1) return false;
             }
         }
-        return matches == 1;
+        return targetMatched && matches == 1;
     }
 
     private static boolean phoneNumbersMatch(String first, String second) {
