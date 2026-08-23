@@ -23,6 +23,7 @@ public class ForwarderManager extends Forwarder {
     private final Notification notificationForwarder;
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final SmartUExperienceForwarder smartUExperienceForwarder;
+    private final SmartUActionForwarder smartUActionForwarder;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -37,6 +38,7 @@ public class ForwarderManager extends Forwarder {
         this.tagsMenu = new TagsMenu(mainActivity);
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
         this.smartUExperienceForwarder = new SmartUExperienceForwarder(mainActivity);
+        this.smartUActionForwarder = new SmartUActionForwarder(mainActivity);
     }
 
     public void onCreate() {
@@ -48,6 +50,7 @@ public class ForwarderManager extends Forwarder {
         tagsMenu.onCreate();
         historyDisplayForwarder.onCreate();
         smartUExperienceForwarder.onCreate();
+        smartUActionForwarder.onCreate();
     }
 
     public void onStart() {
@@ -61,6 +64,7 @@ public class ForwarderManager extends Forwarder {
         tagsMenu.onResume();
         historyDisplayForwarder.onResume();
         smartUExperienceForwarder.onResume();
+        smartUActionForwarder.onResume();
     }
 
     public void onPause() {
@@ -89,6 +93,7 @@ public class ForwarderManager extends Forwarder {
         widgetsForwarder.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
         smartUExperienceForwarder.onDataSetChanged();
+        smartUActionForwarder.onDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
