@@ -25,13 +25,17 @@ import java.util.Map;
 
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.normalizer.StringNormalizer;
+import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.CommunicationPojo;
+import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.result.CommunicationResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.QueryInterface;
+import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.TileVisualStyle;
 import fr.neamar.kiss.utils.Log;
@@ -163,6 +167,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         try {
             final Result<?> result = getItem(position);
             if (result.getPojo() instanceof NotificationPojo && NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo())) return;
+
+            Pojo pojo = result.getPojo();
+            boolean morphLaunch = pojo instanceof AppPojo
+                    || pojo instanceof ShortcutPojo
+                    || pojo instanceof DisabledAppPojo;
+            if (morphLaunch) {
+                boolean started = LaunchMorphTransition.start(
+                        v.getContext(), v, () -> result.launch(v.getContext(), v, parent));
+                if (started) return;
+            }
             result.launch(v.getContext(), v, parent);
         } catch (IndexOutOfBoundsException e) { Log.w(TAG, "Unable to click", e); }
     }
