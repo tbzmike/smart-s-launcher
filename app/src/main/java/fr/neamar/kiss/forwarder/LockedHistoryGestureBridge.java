@@ -21,6 +21,8 @@ final class LockedHistoryGestureBridge extends Forwarder {
     private final int touchSlop;
 
     private MotionEvent pendingDown;
+    private float downRawX;
+    private float downRawY;
     private boolean horizontalConfirmed;
     private boolean verticalRejected;
 
@@ -96,14 +98,16 @@ final class LockedHistoryGestureBridge extends Forwarder {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 resetGesture();
-                pendingDown = MotionEvent.obtain(event);
+                downRawX = event.getRawX();
+                downRawY = event.getRawY();
+                pendingDown = normalizedCopy(event);
                 break;
 
             case MotionEvent.ACTION_MOVE:
                 if (pendingDown == null || verticalRejected) break;
                 if (!horizontalConfirmed) {
-                    float dx = event.getX() - pendingDown.getX();
-                    float dy = event.getY() - pendingDown.getY();
+                    float dx = event.getRawX() - downRawX;
+                    float dy = event.getRawY() - downRawY;
                     float absX = Math.abs(dx);
                     float absY = Math.abs(dy);
                     if (absX > touchSlop && absX > absY * 1.15f) {
@@ -115,23 +119,35 @@ final class LockedHistoryGestureBridge extends Forwarder {
                         verticalRejected = true;
                     }
                 }
-                if (horizontalConfirmed) experienceTweaks.onTouch(event);
+                if (horizontalConfirmed) forwardNormalized(event);
                 break;
 
             case MotionEvent.ACTION_UP:
-                if (horizontalConfirmed) experienceTweaks.onTouch(event);
+                if (horizontalConfirmed) forwardNormalized(event);
                 resetGesture();
                 break;
 
             case MotionEvent.ACTION_CANCEL:
-                if (horizontalConfirmed) experienceTweaks.onTouch(event);
+                if (horizontalConfirmed) forwardNormalized(event);
                 resetGesture();
                 break;
 
             default:
-                if (horizontalConfirmed) experienceTweaks.onTouch(event);
+                if (horizontalConfirmed) forwardNormalized(event);
                 break;
         }
+    }
+
+    private MotionEvent normalizedCopy(MotionEvent event) {
+        MotionEvent copy = MotionEvent.obtain(event);
+        copy.setLocation(event.getRawX(), event.getRawY());
+        return copy;
+    }
+
+    private void forwardNormalized(MotionEvent event) {
+        MotionEvent copy = normalizedCopy(event);
+        experienceTweaks.onTouch(copy);
+        copy.recycle();
     }
 
     private void resetGesture() {
@@ -139,6 +155,8 @@ final class LockedHistoryGestureBridge extends Forwarder {
             pendingDown.recycle();
             pendingDown = null;
         }
+        downRawX = 0f;
+        downRawY = 0f;
         horizontalConfirmed = false;
         verticalRejected = false;
     }
