@@ -18,8 +18,8 @@ android {
         targetSdk {
             version = release(36)
         }
-        versionCode 344
-        versionName "3.29.16"
+        versionCode 345
+        versionName "3.29.17"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
