@@ -20,20 +20,24 @@ public final class PowerAwareNotificationListener extends NotificationListener {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastRankingRefreshElapsed;
     private boolean rankingRefreshPending;
+    private RankingMap latestRankingMap;
 
     private final Runnable rankingRefresh = new Runnable() {
         @Override public void run() {
             rankingRefreshPending = false;
             long now = SystemClock.elapsedRealtime();
             if (now - lastRankingRefreshElapsed < MIN_RANKING_REFRESH_MS) return;
+            RankingMap map = latestRankingMap;
+            if (map == null) return;
             lastRankingRefreshElapsed = now;
             // Invoke the existing full reconciliation only occasionally. Normal posted/removed
             // events continue to update state immediately through the inherited implementation.
-            PowerAwareNotificationListener.super.onNotificationRankingUpdate(null);
+            PowerAwareNotificationListener.super.onNotificationRankingUpdate(map);
         }
     };
 
     @Override public void onNotificationRankingUpdate(RankingMap rankingMap) {
+        latestRankingMap = rankingMap;
         long now = SystemClock.elapsedRealtime();
         if (now - lastRankingRefreshElapsed < MIN_RANKING_REFRESH_MS || rankingRefreshPending) return;
         rankingRefreshPending = true;
@@ -42,6 +46,7 @@ public final class PowerAwareNotificationListener extends NotificationListener {
 
     @Override public void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        latestRankingMap = null;
         super.onDestroy();
     }
 }
