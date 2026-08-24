@@ -7,13 +7,15 @@ public final class AppUsageJobService extends JobService {
     @Override
     public boolean onStartJob(JobParameters params) {
         if (!AppUsageTracker.isEnabled(this)) return false;
-        new Thread(() -> {
+        Thread worker = new Thread(() -> {
             try {
                 AppUsageSync.sync(getApplicationContext());
             } finally {
                 jobFinished(params, false);
             }
-        }, "smart-s-app-usage-job").start();
+        }, "smart-s-app-usage-job");
+        worker.setPriority(Thread.MIN_PRIORITY);
+        worker.start();
         return true;
     }
 
