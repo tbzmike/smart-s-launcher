@@ -47,8 +47,9 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         return allPojos;
     }
 
-    // Get Oreo+ shortcuts from Android and, when requested, merge remembered shortcuts whose
-    // publisher is currently disabled/frozen and therefore no longer exposed by LauncherApps.
+    // Get Oreo+ shortcuts from Android and, when requested, merge the permanent remembered
+    // shortcut catalog. Once a shortcut has been discovered it remains searchable while its app is
+    // still installed, even if freezing/disabling the app makes LauncherApps stop exposing it.
     private List<ShortcutPojo> fetchOreoPojos(Context context) {
         List<ShortcutPojo> oreoPojos = new ArrayList<>();
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return oreoPojos;
@@ -80,6 +81,8 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
             String key = shortcutKey(shortcutRecord.packageName, shortcutRecord.intentUri);
             liveKeys.add(key);
 
+            // Permanent catalog: save every exposed shortcut, not only pinned shortcuts. This is
+            // what lets the exact shortcut survive a later IceBox/pm disable operation.
             if (retainDisabled) DBHelper.insertShortcut(context, shortcutRecord);
 
             boolean isSuspended = PackageManagerUtils.isAppSuspended(context, shortcutInfo.getPackage(),
@@ -111,7 +114,12 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
 
                 String key = shortcutKey(remembered.packageName, remembered.intentUri);
                 if (liveKeys.contains(key)) continue;
-                if (!isInstalledButDisabled(context, remembered.packageName)) continue;
+
+                // Keep remembered shortcuts for as long as the owning package remains installed.
+                // If Android is no longer exposing the shortcut, present it as disabled/grey. When
+                // the app is defrosted and Android exposes the shortcut again, the live entry above
+                // replaces this remembered disabled representation automatically.
+                if (!isPackageInstalled(context, remembered.packageName)) continue;
 
                 ShortcutPojo pojo = createPojo(currentUser, remembered, tagsHandler,
                         null, true, false, true);
@@ -137,11 +145,11 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         return pojos;
     }
 
-    private boolean isInstalledButDisabled(Context context, String packageName) {
+    private boolean isPackageInstalled(Context context, String packageName) {
         try {
-            ApplicationInfo info = context.getPackageManager().getApplicationInfo(
+            context.getPackageManager().getApplicationInfo(
                     packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
-            return !isPackageEnabled(context, packageName) || PackageManagerUtils.isAppSuspended(info);
+            return true;
         } catch (PackageManager.NameNotFoundException | RuntimeException e) {
             return false;
         }
