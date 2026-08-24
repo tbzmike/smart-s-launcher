@@ -25,7 +25,10 @@ import java.util.Map;
 /** Copies the usage history Android still exposes into Smart S's 365-day local timeline. */
 public final class AppUsageSync {
     private static final String META_LAST_EVENT_SYNC = "last_event_sync";
-    private static final long OVERLAP_MS = 24L * 60L * 60L * 1000L;
+    private static final String META_LAST_DAILY_USAGE_SYNC = "last_daily_usage_sync";
+    private static final String META_LAST_PHONE_STATE_SYNC = "last_phone_state_sync";
+    private static final long EVENT_OVERLAP_MS = 24L * 60L * 60L * 1000L;
+    private static final long AGGREGATE_OVERLAP_MS = 3L * 24L * 60L * 60L * 1000L;
 
     private AppUsageSync() {}
 
@@ -144,7 +147,8 @@ public final class AppUsageSync {
 
         long firstAllowed = now - AppUsageStore.RETENTION_MS;
         long lastSync = store.getMeta(META_LAST_EVENT_SYNC, 0L);
-        long begin = lastSync <= 0L ? firstAllowed : Math.max(firstAllowed, lastSync - OVERLAP_MS);
+        long begin = lastSync <= 0L ? firstAllowed
+                : Math.max(firstAllowed, lastSync - EVENT_OVERLAP_MS);
 
         UsageEvents events;
         try {
@@ -270,7 +274,7 @@ public final class AppUsageSync {
         UsageStatsManager manager = (UsageStatsManager)
                 context.getSystemService(Context.USAGE_STATS_SERVICE);
         if (manager == null) return;
-        long begin = now - AppUsageStore.RETENTION_MS;
+        long begin = aggregateBegin(store, META_LAST_DAILY_USAGE_SYNC, now);
         List<UsageStats> stats;
         try {
             stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, now);
@@ -286,7 +290,8 @@ public final class AppUsageSync {
             if (usage == null || TextUtils.isEmpty(usage.getPackageName())) continue;
             long duration = Math.max(0L, usage.getTotalTimeInForeground());
             if (duration <= 0L) continue;
-            long stamp = usage.getFirstTimeStamp() > 0L ? usage.getFirstTimeStamp() : usage.getLastTimeUsed();
+            long stamp = usage.getFirstTimeStamp() > 0L
+                    ? usage.getFirstTimeStamp() : usage.getLastTimeUsed();
             long day = AppUsageStore.startOfDay(stamp > 0L ? stamp : now);
             if (day < AppUsageStore.startOfDay(begin)) continue;
             String key = day + "\n" + usage.getPackageName();
@@ -301,6 +306,7 @@ public final class AppUsageSync {
             store.putDailyUsage(day, pkg, meta == null ? pkg : meta.label,
                     entry.getValue(), meta != null && meta.system);
         }
+        store.setMeta(META_LAST_DAILY_USAGE_SYNC, now);
     }
 
     /**
@@ -313,7 +319,7 @@ public final class AppUsageSync {
         UsageStatsManager manager = (UsageStatsManager)
                 context.getSystemService(Context.USAGE_STATS_SERVICE);
         if (manager == null) return;
-        long begin = now - AppUsageStore.RETENTION_MS;
+        long begin = aggregateBegin(store, META_LAST_PHONE_STATE_SYNC, now);
         List<EventStats> stats;
         try {
             stats = manager.queryEventStats(UsageStatsManager.INTERVAL_DAILY, begin, now);
@@ -349,6 +355,15 @@ public final class AppUsageSync {
             store.putDailyPhoneState(entry.getKey(), aggregate.screenOnMs,
                     aggregate.screenOffMs, aggregate.unlockCount);
         }
+        store.setMeta(META_LAST_PHONE_STATE_SYNC, now);
+    }
+
+    private static long aggregateBegin(AppUsageStore store, String metaKey, long now) {
+        long firstAllowed = now - AppUsageStore.RETENTION_MS;
+        long lastSync = store.getMeta(metaKey, 0L);
+        if (lastSync <= 0L) return firstAllowed;
+        long refreshFrom = AppUsageStore.startOfDay(lastSync) - AGGREGATE_OVERLAP_MS;
+        return Math.max(firstAllowed, refreshFrom);
     }
 
     private static AppUsageStore.TimelineEntry screenEntry(String kind, long start, long end) {
@@ -376,7 +391,8 @@ public final class AppUsageSync {
                     ? knownInfo.applicationInfo : pm.getApplicationInfo(packageName, 0);
             CharSequence cs = pm.getApplicationLabel(app);
             if (cs != null && cs.length() > 0) label = cs.toString();
-            system = (app.flags & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0;
+            system = (app.flags & (ApplicationInfo.FLAG_SYSTEM
+                    | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0;
         } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
         }
 
@@ -409,14 +425,16 @@ public final class AppUsageSync {
         if (!TextUtils.isEmpty(installerLabel) && !TextUtils.isEmpty(sourceType)) {
             source = installerLabel + " · " + sourceType + " · " + installer;
         } else if (!TextUtils.isEmpty(installerLabel)) {
-            source = installerLabel + (TextUtils.equals(installerLabel, installer) ? "" : " · " + installer);
+            source = installerLabel
+                    + (TextUtils.equals(installerLabel, installer) ? "" : " · " + installer);
         } else if (!TextUtils.isEmpty(sourceType)) {
             source = sourceType;
         }
 
         String sourceUri = "com.android.vending".equals(installer)
                 ? "https://play.google.com/store/apps/details?id=" + packageName : null;
-        return new PackageMeta(packageName, label, system, firstInstall, lastUpdate, source, sourceUri);
+        return new PackageMeta(packageName, label, system, firstInstall, lastUpdate,
+                source, sourceUri);
     }
 
     private static String packageSourceLabel(int source) {
