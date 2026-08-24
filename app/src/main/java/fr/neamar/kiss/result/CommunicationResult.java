@@ -218,11 +218,6 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                 Toast.LENGTH_SHORT).show();
     }
 
-    /**
-     * Searchable SMS rows are built from Telephony.Sms and therefore historically had no
-     * notification id. Resolve an exact active notification conservatively using package, body
-     * and event time so Open/Mark read can use the original PendingIntent/action when available.
-     */
     private String effectiveNotificationId(Context context) {
         if (!TextUtils.isEmpty(pojo.notificationId)) return pojo.notificationId;
         if (pojo.kind != CommunicationPojo.Kind.SMS) return "";
@@ -252,7 +247,8 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
             String combined = (title + " " + text).trim();
 
             boolean bodyMatches = !TextUtils.isEmpty(expectedBody)
-                    && (combined.contains(expectedBody) || expectedBody.contains(text));
+                    && (combined.contains(expectedBody)
+                    || (!TextUtils.isEmpty(text) && expectedBody.contains(text)));
             boolean addressMatches = !TextUtils.isEmpty(expectedAddress) && combined.contains(expectedAddress);
             if (!bodyMatches && !addressMatches) continue;
 
@@ -277,9 +273,7 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
         values.put(Telephony.Sms.READ, 1);
         try {
             if (context.getContentResolver().update(uri, values, null, null) > 0) return true;
-        } catch (RuntimeException ignored) {
-            // Android normally reserves SMS-provider writes for the active SMS role holder.
-        }
+        } catch (RuntimeException ignored) { }
 
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         if (!prefs.getBoolean("root-mode", false)) return false;
