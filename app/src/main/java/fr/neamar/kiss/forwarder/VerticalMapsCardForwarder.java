@@ -47,7 +47,9 @@ final class VerticalMapsCardForwarder extends Forwarder {
     void onResume() { }
 
     void onDataSetChanged() {
-        refreshMapsCard(false);
+        // Providers normally populate history after onCreate. Start the Maps request when the
+        // actual Maps card first becomes available rather than depending on a later Home resume.
+        refreshMapsCard(true);
     }
 
     private void refreshMapsCard(boolean requestFreshLocation) {
