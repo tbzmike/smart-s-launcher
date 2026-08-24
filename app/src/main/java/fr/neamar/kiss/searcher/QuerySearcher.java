@@ -52,7 +52,7 @@ public class QuerySearcher extends Searcher {
             try {
                 MAX_RESULT_COUNT = Double.valueOf(prefs.getString("number-of-display-elements",
                         String.valueOf(DEFAULT_MAX_RESULTS))).intValue();
-            } catch (NumberFormatException e) {
+            } catch (NumberFormatException | ClassCastException e) {
                 MAX_RESULT_COUNT = DEFAULT_MAX_RESULTS;
             }
         }
@@ -125,25 +125,15 @@ public class QuerySearcher extends Searcher {
                 && query.trim().length() >= 2
                 && prefs.getBoolean("semantic-search-enabled", false)
                 && SemanticEmbeddingScorer.MODEL_ID.equals(
-                        prefs.getString("semantic-model", SemanticEmbeddingScorer.MODEL_ID));
+                        getStringPreference("semantic-model", SemanticEmbeddingScorer.MODEL_ID));
         if (!semanticEnabled) return;
 
         semanticDimensions = parseIntPreference("semantic-embedding-dimensions", 128, 32, 512);
-        // Previous default was 0.34. 0.26 admits more plausible candidates into the reranker while
-        // final hybrid scoring prevents weak semantic noise from crowding the top of the list.
         semanticThreshold = parseFloatPreference("semantic-threshold", 0.26f, 0.05f, 0.95f);
         semanticRerank = prefs.getBoolean(PREF_SEMANTIC_RERANK, true);
         semanticWeight = parseFloatPreference(PREF_SEMANTIC_WEIGHT, 0.58f, 0.20f, 0.85f);
     }
 
-    /**
-     * Produce one comparable relevance scale for lexical and semantic candidates.
-     *
-     * Exact/prefix name matches get explicit protection. Semantic similarity can then promote a
-     * conceptually strong result above weak fuzzy matches. Provider relevance and prior selections
-     * are retained as bounded tie-breakers rather than being allowed to dominate an unrelated
-     * semantic score simply because they happen to use a larger raw numeric scale.
-     */
     private int hybridRelevance(Pojo pojo, int providerRelevance, float semanticScore,
                                 boolean providerMatched) {
         float lexical = lexicalQuality(query, pojo, providerMatched);
@@ -191,9 +181,6 @@ public class QuerySearcher extends Searcher {
         }
         if (allTokens && found > 0) return 0.78f;
         if (found > 0) return Math.min(0.68f, 0.36f + 0.10f * found);
-
-        // A provider-returned fuzzy result gets some lexical credit, but deliberately less than a
-        // strong semantic result. This is the key difference from the old raw-relevance ordering.
         return providerMatched ? 0.42f : 0f;
     }
 
@@ -235,11 +222,19 @@ public class QuerySearcher extends Searcher {
         return Math.max(0f, Math.min(1f, value));
     }
 
+    private String getStringPreference(String key, String fallback) {
+        try {
+            return prefs.getString(key, fallback);
+        } catch (ClassCastException e) {
+            return fallback;
+        }
+    }
+
     private int parseIntPreference(String key, int fallback, int min, int max) {
         try {
             int value = Integer.parseInt(prefs.getString(key, Integer.toString(fallback)));
             return Math.max(min, Math.min(max, value));
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException | ClassCastException e) {
             return fallback;
         }
     }
@@ -248,7 +243,7 @@ public class QuerySearcher extends Searcher {
         try {
             float value = Float.parseFloat(prefs.getString(key, Float.toString(fallback)));
             return Math.max(min, Math.min(max, value));
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException | ClassCastException e) {
             return fallback;
         }
     }
