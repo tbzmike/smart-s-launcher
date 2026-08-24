@@ -31,6 +31,11 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.result.ShortcutsResult;
 import fr.neamar.kiss.utils.Log;
 
+/**
+ * Adds physical depth and live, app-provided information to history tiles.
+ * The normal app/shortcut icon remains in the foreground. Artwork, sender/profile
+ * pictures and notification information are presented as supporting card content.
+ */
 final class HistoryVisualEnhancer {
     private static final String TAG = HistoryVisualEnhancer.class.getSimpleName();
     private static final int TAG_LIVE_BACKGROUND = 0x534D4201;
@@ -43,14 +48,23 @@ final class HistoryVisualEnhancer {
     private final Set<String> liveLoadInFlight = new HashSet<>();
     private boolean statsLoadInFlight;
 
-    HistoryVisualEnhancer(MainActivity activity, HistoryDisplayForwarder historyDisplayForwarder) {
+    HistoryVisualEnhancer(MainActivity activity,
+                          HistoryDisplayForwarder historyDisplayForwarder) {
         this.activity = activity;
         this.historyDisplayForwarder = historyDisplayForwarder;
     }
 
-    void onCreate() { refreshSoon(); }
-    void onResume() { refreshSoon(); }
-    void onDataSetChanged() { refreshSoon(); }
+    void onCreate() {
+        refreshSoon();
+    }
+
+    void onResume() {
+        refreshSoon();
+    }
+
+    void onDataSetChanged() {
+        refreshSoon();
+    }
 
     private void refreshSoon() {
         View anchor = activity.listContainer;
@@ -73,22 +87,31 @@ final class HistoryVisualEnhancer {
         }
     }
 
+    /**
+     * Native list mode deliberately stays transparent. Launch statistics are loaded in one
+     * grouped background query and then applied only to currently visible rows.
+     */
     private void refreshListPresentation() {
         if (activity.list == null || activity.adapter == null) return;
+
         for (int i = 0; i < activity.list.getChildCount(); i++) {
             View row = activity.list.getChildAt(i);
             row.setBackgroundColor(Color.TRANSPARENT);
             row.setElevation(0f);
             row.setTranslationZ(0f);
         }
+
         synchronized (this) {
             if (statsLoadInFlight) return;
             statsLoadInFlight = true;
         }
         AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
-            Map<String, LaunchStatsProvider.LaunchStats> stats = LaunchStatsProvider.loadAll(activity.getApplicationContext());
+            Map<String, LaunchStatsProvider.LaunchStats> stats =
+                    LaunchStatsProvider.loadAll(activity.getApplicationContext());
             activity.runOnUiThread(() -> {
-                synchronized (HistoryVisualEnhancer.this) { statsLoadInFlight = false; }
+                synchronized (HistoryVisualEnhancer.this) {
+                    statsLoadInFlight = false;
+                }
                 applyStatsToVisibleRows(stats);
             });
         });
@@ -98,29 +121,37 @@ final class HistoryVisualEnhancer {
         if (activity.list == null || activity.adapter == null) return;
         int first = activity.list.getFirstVisiblePosition();
         java.text.DateFormat timeFormat = DateFormat.getTimeFormat(activity);
+
         for (int childIndex = 0; childIndex < activity.list.getChildCount(); childIndex++) {
             int position = first + childIndex;
             if (position < 0 || position >= activity.adapter.getCount()) continue;
+
             View row = activity.list.getChildAt(childIndex);
             row.setBackgroundColor(Color.TRANSPARENT);
             row.setElevation(0f);
             row.setTranslationZ(0f);
+
             Result<?> result = activity.adapter.getItem(position);
             if (!(result.getPojo() instanceof AppPojo)) continue;
+
             TextView subtitle = row.findViewById(R.id.item_app_tag);
             if (subtitle == null) continue;
+
             String historyId = result.getPojo().getHistoryId();
             LaunchStatsProvider.LaunchStats launchStats = stats.get(historyId);
             String current = subtitle.getText() == null ? "" : subtitle.getText().toString();
             int separator = current.indexOf(LIST_STATS_SEPARATOR);
             String base = separator >= 0 ? current.substring(0, separator) : current;
+
             if (launchStats == null || launchStats.lastLaunchTime <= 0) {
                 subtitle.setText(base);
                 configureLaunchInfoMarquee(subtitle);
                 continue;
             }
+
             StringBuilder text = new StringBuilder(base);
-            if (text.length() > 0) text.append(LIST_STATS_SEPARATOR); else text.append("Last ");
+            if (text.length() > 0) text.append(LIST_STATS_SEPARATOR);
+            else text.append("Last ");
             text.append(timeFormat.format(new java.util.Date(launchStats.lastLaunchTime)));
             text.append(" • ").append(launchStats.launchesToday);
             text.append(launchStats.launchesToday == 1 ? " launch today" : " launches today");
@@ -130,6 +161,11 @@ final class HistoryVisualEnhancer {
         }
     }
 
+    /**
+     * Keep the full launch metadata available instead of truncating it. Android's marquee only
+     * moves when the text is wider than its row, and it automatically stops drawing when the
+     * launcher window is no longer visible/focused.
+     */
     private void configureLaunchInfoMarquee(TextView subtitle) {
         subtitle.setSingleLine(true);
         subtitle.setMaxLines(1);
@@ -148,6 +184,7 @@ final class HistoryVisualEnhancer {
         for (int position = 0; position < count; position++) {
             View child = group.getChildAt(position);
             if (!(child instanceof FrameLayout)) continue;
+
             FrameLayout tile = (FrameLayout) child;
             applyDepth(tile, square);
             clearLiveLayers(tile);
@@ -156,13 +193,15 @@ final class HistoryVisualEnhancer {
             if (result.getPojo() instanceof AppPojo) {
                 AppPojo app = (AppPojo) result.getPojo();
                 if (MapLiveTileProvider.MAPS_PACKAGE.equals(app.packageName)) {
-                    // Maps is location-driven, not notification-driven. Ask Android for a fresh
-                    // coarse fix while Home is visible; only a meaningful movement causes redraw.
                     MapLiveTileProvider.requestFreshLocation(activity, this::refreshSoon);
                     loadLiveAppData(tile, app.packageName, square);
                 } else {
+                    // Do not scan Android's entire active-notification array for every tile. Only
+                    // apps already known to have notification content can provide live card data.
                     String latest = NotificationListener.getLatestMessage(activity, app.getPackageKey());
-                    if (!TextUtils.isEmpty(latest)) loadLiveAppData(tile, app.packageName, square);
+                    if (!TextUtils.isEmpty(latest)) {
+                        loadLiveAppData(tile, app.packageName, square);
+                    }
                 }
             } else if (result instanceof ShortcutsResult) {
                 loadShortcutArtwork(tile, result);
@@ -171,6 +210,8 @@ final class HistoryVisualEnhancer {
     }
 
     private void applyDepth(FrameLayout tile, boolean square) {
+        // HistoryDisplayForwarder already builds an app-icon-derived gradient for the card.
+        // Preserve that identity instead of overwriting every tile with a generic grey surface.
         tile.setElevation(dp(square ? 10 : 7));
         tile.setTranslationZ(dp(square ? 2 : 1));
         tile.setClipToOutline(true);
@@ -180,14 +221,22 @@ final class HistoryVisualEnhancer {
         int top = square ? Color.rgb(48, 53, 65) : Color.rgb(45, 48, 57);
         int middle = square ? Color.rgb(27, 30, 38) : Color.rgb(28, 30, 36);
         int bottom = square ? Color.rgb(13, 15, 20) : Color.rgb(16, 17, 21);
+
         GradientDrawable shadow = new GradientDrawable();
         shadow.setColor(Color.argb(235, 4, 5, 8));
         shadow.setCornerRadius(radius);
-        GradientDrawable face = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{top, middle, bottom});
+
+        GradientDrawable face = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{top, middle, bottom});
         face.setCornerRadius(radius);
         face.setStroke(dp(1), Color.argb(210, 205, 217, 238));
-        GradientDrawable gloss = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{Color.argb(58, 255, 255, 255), Color.TRANSPARENT});
+
+        GradientDrawable gloss = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{Color.argb(58, 255, 255, 255), Color.TRANSPARENT});
         gloss.setCornerRadius(radius);
+
         LayerDrawable layers = new LayerDrawable(new Drawable[]{shadow, face, gloss});
         layers.setLayerInset(1, 0, 0, dp(4), dp(5));
         layers.setLayerInset(2, dp(1), dp(1), dp(5), dp(7));
@@ -199,14 +248,13 @@ final class HistoryVisualEnhancer {
             if (!liveLoadInFlight.add(packageName)) return;
         }
         AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
-            LiveTileDataProvider.LiveTileData data;
-            if (MapLiveTileProvider.MAPS_PACKAGE.equals(packageName)) {
-                data = MapLiveTileProvider.latest(activity.getApplicationContext());
-            } else {
-                data = LiveTileDataProvider.latestForPackage(activity, packageName);
-            }
+            LiveTileDataProvider.LiveTileData data = MapLiveTileProvider.MAPS_PACKAGE.equals(packageName)
+                    ? MapLiveTileProvider.latest(activity.getApplicationContext())
+                    : LiveTileDataProvider.latestForPackage(activity, packageName);
             activity.runOnUiThread(() -> {
-                synchronized (liveLoadInFlight) { liveLoadInFlight.remove(packageName); }
+                synchronized (liveLoadInFlight) {
+                    liveLoadInFlight.remove(packageName);
+                }
                 if (!tile.isAttachedToWindow() || data == null) return;
                 if (data.artwork != null) addArtworkBackground(tile, data.artwork);
                 addLiveText(tile, data, square);
@@ -233,24 +281,29 @@ final class HistoryVisualEnhancer {
         background.setTag(TAG_LIVE_BACKGROUND);
         background.setImageDrawable(artwork);
         background.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        background.setAlpha(0.52f);
+        background.setAlpha(0.38f);
         background.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+
         GradientDrawable frame = new GradientDrawable();
         frame.setColor(Color.TRANSPARENT);
         frame.setCornerRadius(dp(16));
         background.setBackground(frame);
         background.setClipToOutline(true);
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         params.setMargins(dp(5), dp(5), dp(8), dp(10));
         tile.addView(background, 0, params);
     }
 
-    private void addLiveText(FrameLayout tile, LiveTileDataProvider.LiveTileData data, boolean square) {
+    private void addLiveText(FrameLayout tile, LiveTileDataProvider.LiveTileData data,
+                             boolean square) {
         StringBuilder content = new StringBuilder();
         appendDistinct(content, data.title);
         appendDistinct(content, data.text);
         appendDistinct(content, data.subText);
         if (content.length() == 0) return;
+
         TextView information = new TextView(activity);
         information.setTag(TAG_LIVE_TEXT);
         information.setText(content.toString());
@@ -261,11 +314,15 @@ final class HistoryVisualEnhancer {
         information.setGravity(Gravity.START | Gravity.BOTTOM);
         information.setPadding(dp(7), dp(4), dp(7), dp(4));
         information.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
+
         GradientDrawable background = new GradientDrawable();
         background.setColor(Color.argb(120, 0, 0, 0));
         background.setCornerRadius(dp(9));
         information.setBackground(background);
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM);
         params.leftMargin = dp(7);
         params.rightMargin = dp(7);
         params.bottomMargin = dp(square ? 48 : 46);
@@ -274,14 +331,16 @@ final class HistoryVisualEnhancer {
 
     private void addProgress(FrameLayout tile, LiveTileDataProvider.LiveTileData data) {
         if (data.progressMax <= 0 && !data.progressIndeterminate) return;
-        ProgressBar progress = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        ProgressBar progress = new ProgressBar(activity, null,
+                android.R.attr.progressBarStyleHorizontal);
         progress.setTag(TAG_LIVE_PROGRESS);
         progress.setIndeterminate(data.progressIndeterminate);
         if (!data.progressIndeterminate) {
             progress.setMax(Math.max(1, data.progressMax));
             progress.setProgress(Math.max(0, Math.min(data.progress, data.progressMax)));
         }
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4), Gravity.TOP);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(4), Gravity.TOP);
         params.leftMargin = dp(8);
         params.rightMargin = dp(8);
         params.topMargin = dp(7);
@@ -295,6 +354,7 @@ final class HistoryVisualEnhancer {
             icon.setElevation(dp(8));
             icon.setTranslationZ(dp(2));
         }
+        // Labels are deliberately kept above live artwork as well.
         for (int i = 0; i < tile.getChildCount(); i++) {
             View child = tile.getChildAt(i);
             if (child instanceof TextView && child.getTag() == null) child.bringToFront();
@@ -304,7 +364,10 @@ final class HistoryVisualEnhancer {
     private ImageView findForegroundImage(FrameLayout tile) {
         for (int i = tile.getChildCount() - 1; i >= 0; i--) {
             View child = tile.getChildAt(i);
-            if (child instanceof ImageView && !Integer.valueOf(TAG_LIVE_BACKGROUND).equals(child.getTag()) && child.getVisibility() == View.VISIBLE) return (ImageView) child;
+            if (child instanceof ImageView && !Integer.valueOf(TAG_LIVE_BACKGROUND).equals(child.getTag())
+                    && child.getVisibility() == View.VISIBLE) {
+                return (ImageView) child;
+            }
         }
         return null;
     }
@@ -312,7 +375,11 @@ final class HistoryVisualEnhancer {
     private void clearLiveLayers(FrameLayout tile) {
         for (int i = tile.getChildCount() - 1; i >= 0; i--) {
             Object tag = tile.getChildAt(i).getTag();
-            if (Integer.valueOf(TAG_LIVE_BACKGROUND).equals(tag) || Integer.valueOf(TAG_LIVE_TEXT).equals(tag) || Integer.valueOf(TAG_LIVE_PROGRESS).equals(tag)) tile.removeViewAt(i);
+            if (Integer.valueOf(TAG_LIVE_BACKGROUND).equals(tag)
+                    || Integer.valueOf(TAG_LIVE_TEXT).equals(tag)
+                    || Integer.valueOf(TAG_LIVE_PROGRESS).equals(tag)) {
+                tile.removeViewAt(i);
+            }
         }
     }
 
@@ -338,5 +405,7 @@ final class HistoryVisualEnhancer {
         }
     }
 
-    private int dp(int value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
+    private int dp(int value) {
+        return Math.round(value * activity.getResources().getDisplayMetrics().density);
+    }
 }
