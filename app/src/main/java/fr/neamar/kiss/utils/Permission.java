@@ -18,12 +18,14 @@ public class Permission {
     public static final int PERMISSION_CALL_PHONE = 1;
     public static final int PERMISSION_READ_PHONE_STATE = 2;
     public static final int PERMISSION_ACCESS_COARSE_LOCATION = 3;
+    public static final int PERMISSION_ACCESS_FINE_LOCATION = 4;
 
     private static final String[] permissions = {
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.CALL_PHONE,
             Manifest.permission.READ_PHONE_STATE,
-            Manifest.permission.ACCESS_COARSE_LOCATION
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION
     };
 
     private static WeakReference<Activity> currentActivity = new WeakReference<>(null);
@@ -40,20 +42,35 @@ public class Permission {
             permissionListeners.add(listener);
         }
         Activity activity = Permission.currentActivity.get();
-        if (activity != null) activity.requestPermissions(new String[]{permissions[permission]}, permission);
+        if (activity != null) {
+            if (permission == PERMISSION_ACCESS_FINE_LOCATION) {
+                activity.requestPermissions(new String[]{
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                }, permission);
+            } else {
+                activity.requestPermissions(new String[]{permissions[permission]}, permission);
+            }
+        }
     }
 
     public Permission(Activity activity) { currentActivity = new WeakReference<>(activity); }
 
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         if (grantResults.length == 0) return;
+        boolean granted;
+        if (requestCode == PERMISSION_ACCESS_FINE_LOCATION) {
+            granted = false;
+            for (int result : grantResults) granted |= result == PackageManager.PERMISSION_GRANTED;
+        } else {
+            granted = grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        }
+
         ListIterator<PermissionResultListener> it = permissionListeners.listIterator();
-        PermissionResultListener permissionListener;
         while (it.hasNext()) {
-            permissionListener = it.next();
-            if (permissionListener.permission == requestCode) {
-                if (grantResults[0] == PackageManager.PERMISSION_GRANTED) permissionListener.onGranted();
-                else permissionListener.onDenied();
+            PermissionResultListener listener = it.next();
+            if (listener.permission == requestCode) {
+                if (granted) listener.onGranted(); else listener.onDenied();
                 it.remove();
             }
         }
