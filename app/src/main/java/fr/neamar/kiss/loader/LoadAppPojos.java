@@ -2,6 +2,7 @@ package fr.neamar.kiss.loader;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherActivityInfo;
@@ -13,6 +14,7 @@ import android.os.Process;
 import android.os.UserManager;
 
 import androidx.core.content.ContextCompat;
+import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -33,6 +35,7 @@ import fr.neamar.kiss.utils.UserHandle;
 
 public class LoadAppPojos extends LoadPojos<AppPojo> {
 
+    public static final String PREF_INDEX_DISABLED_APPS = "index-disabled-apps";
     private static final String TAG = LoadAppPojos.class.getSimpleName();
     private final TagsHandler tagsHandler;
 
@@ -50,6 +53,8 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         Context ctx = context.get();
         if (ctx == null) return apps;
 
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
+        boolean indexDisabledApps = prefs.getBoolean(PREF_INDEX_DISABLED_APPS, true);
         Set<String> excludedAppList = KissApplication.getApplication(ctx).getDataHandler().getExcluded();
         Set<String> excludedFromHistoryAppList = KissApplication.getApplication(ctx).getDataHandler().getExcludedFromHistory();
         Set<String> excludedShortcutsAppList = KissApplication.getApplication(ctx).getDataHandler().getExcludedShortcutApps();
@@ -79,42 +84,59 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
             }
         }
 
-        // LauncherApps intentionally hides packages disabled by IceBox. Query PackageManager with
-        // disabled components included so current-user frozen apps remain discoverable. Keep one
-        // canonical launcher component per package: aliases/internal launcher activities must not
-        // become duplicate app results.
         android.os.UserHandle currentProfile = Process.myUserHandle();
         long currentSerial = manager.getSerialNumberForUser(currentProfile);
         UserHandle currentUser = new UserHandle(currentSerial, currentProfile);
         PackageManager pm = ctx.getPackageManager();
         Intent launcherIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         int flags = PackageManager.MATCH_DISABLED_COMPONENTS;
+
+        // Existing global disabled-component query. Keep it because it is cheap and works on many ROMs.
         List<ResolveInfo> disabledCandidates = pm.queryIntentActivities(launcherIntent, flags);
         for (ResolveInfo resolveInfo : disabledCandidates) {
             if (isCancelled()) break;
-            ActivityInfo activity = resolveInfo.activityInfo;
-            if (activity == null || activity.applicationInfo == null) continue;
-            String packageKey = packageKey(currentSerial, activity.packageName);
-            if (seenPackages.contains(packageKey)) continue;
-            if (!activity.exported) continue;
+            addResolvedLauncherCandidate(ctx, apps, seenPackages, resolveInfo, currentSerial, currentUser,
+                    excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList, pm);
+        }
 
-            CharSequence label = resolveInfo.loadLabel(pm);
-            if (label == null || label.length() == 0) label = activity.applicationInfo.loadLabel(pm);
-            boolean disabled = !activity.enabled || !activity.applicationInfo.enabled
-                    || PackageManagerUtils.isAppSuspended(activity.applicationInfo);
-            AppPojo app = createPojo(currentUser, activity.packageName, activity.name,
-                    label == null ? activity.packageName : label, disabled,
-                    excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
-            apps.add(app);
-            seenPackages.add(packageKey);
-            SmartStateStore.rememberApp(ctx, activity.packageName, activity.name, app.getName(), currentSerial);
+        if (indexDisabledApps) {
+            // LauncherApps can hide packages disabled by IceBox/package-manager state. Enumerate every
+            // installed package (including disabled ones), then ask PackageManager for that package's
+            // launcher activity explicitly. Per-package queries recover apps that some ROMs omit from
+            // the global launcher query while still respecting the real CATEGORY_LAUNCHER contract.
+            List<ApplicationInfo> installed = pm.getInstalledApplications(PackageManager.MATCH_DISABLED_COMPONENTS);
+            for (ApplicationInfo info : installed) {
+                if (isCancelled()) break;
+                if (info == null || info.packageName == null) continue;
+                String packageKey = packageKey(currentSerial, info.packageName);
+                if (seenPackages.contains(packageKey)) continue;
+                if (!isPackageDisabled(pm, info)) continue;
+
+                Intent perPackage = new Intent(Intent.ACTION_MAIN)
+                        .addCategory(Intent.CATEGORY_LAUNCHER)
+                        .setPackage(info.packageName);
+                List<ResolveInfo> packageLaunchers = pm.queryIntentActivities(perPackage, flags);
+                if (packageLaunchers == null || packageLaunchers.isEmpty()) continue;
+
+                // Preserve the existing one-canonical-app-per-package model. Prefer an exported
+                // launcher activity and ignore aliases/internal non-exported components.
+                ResolveInfo chosen = null;
+                for (ResolveInfo candidate : packageLaunchers) {
+                    if (candidate != null && candidate.activityInfo != null && candidate.activityInfo.exported) {
+                        chosen = candidate;
+                        break;
+                    }
+                }
+                if (chosen != null) {
+                    addResolvedLauncherCandidate(ctx, apps, seenPackages, chosen, currentSerial, currentUser,
+                            excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList, pm);
+                }
+            }
         }
 
         // Persistent catalog is the final safety net. IceBox can hide a disabled package from both
-        // LauncherApps and launcher-intent queries, and on some ROMs even getActivityInfo() for the
-        // remembered launcher component can temporarily fail while the package itself is still
-        // installed. Installed-but-hidden is a frozen state, never an uninstall: retain the exact
-        // remembered app://package/activity identity so its history tile cannot disappear.
+        // LauncherApps and launcher-intent queries. Installed-but-hidden is a frozen state, never an
+        // uninstall: retain the exact remembered app://package/activity identity.
         for (AppCatalogRecord remembered : SmartStateStore.getRememberedApps(ctx, currentSerial)) {
             String packageKey = packageKey(currentSerial, remembered.packageName);
             if (seenPackages.contains(packageKey)) continue;
@@ -123,22 +145,11 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
             try {
                 info = pm.getApplicationInfo(remembered.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
             } catch (PackageManager.NameNotFoundException e) {
-                // Only package absence proves uninstall. This is the only catalog-forget path.
                 SmartStateStore.forgetPackage(ctx, remembered.packageName);
                 continue;
             }
 
-            boolean packageEnabled = info.enabled && !PackageManagerUtils.isAppSuspended(info);
-            try {
-                int state = pm.getApplicationEnabledSetting(remembered.packageName);
-                packageEnabled = packageEnabled
-                        && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-                        && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
-                        && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
-            } catch (IllegalArgumentException ignored) {
-                packageEnabled = false;
-            }
-
+            boolean packageEnabled = !isPackageDisabled(pm, info);
             boolean activityVisible = false;
             try {
                 ActivityInfo activityInfo = pm.getActivityInfo(
@@ -146,15 +157,12 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                         PackageManager.MATCH_DISABLED_COMPONENTS);
                 activityVisible = activityInfo.exported && activityInfo.enabled;
             } catch (PackageManager.NameNotFoundException ignored) {
-                // IceBox/ROM package visibility can hide the launcher activity while preserving the
-                // installed package. Keep the remembered component instead of deleting the app.
+                // Keep the remembered component when package visibility hides the activity.
             }
 
             AppPojo app = createPojo(currentUser, remembered.packageName, remembered.activityName,
                     remembered.label, !(packageEnabled && activityVisible),
                     excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
-            // Reaching the catalog means all normal launcher discovery paths missed this package.
-            // Treat it as frozen until live reconciliation proves it enabled again.
             app.setDisabled(true);
             apps.add(app);
             seenPackages.add(packageKey);
@@ -168,6 +176,42 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
 
         Log.i(TAG, (System.currentTimeMillis() - start) + " milliseconds to list canonical apps including frozen catalog");
         return apps;
+    }
+
+    private void addResolvedLauncherCandidate(Context ctx, List<AppPojo> apps, Set<String> seenPackages,
+                                              ResolveInfo resolveInfo, long serial, UserHandle user,
+                                              Set<String> excludedAppList,
+                                              Set<String> excludedFromHistoryAppList,
+                                              Set<String> excludedShortcutsAppList,
+                                              PackageManager pm) {
+        ActivityInfo activity = resolveInfo == null ? null : resolveInfo.activityInfo;
+        if (activity == null || activity.applicationInfo == null || !activity.exported) return;
+        String packageKey = packageKey(serial, activity.packageName);
+        if (seenPackages.contains(packageKey)) return;
+
+        CharSequence label = resolveInfo.loadLabel(pm);
+        if (label == null || label.length() == 0) label = activity.applicationInfo.loadLabel(pm);
+        boolean disabled = isPackageDisabled(pm, activity.applicationInfo) || !activity.enabled;
+        AppPojo app = createPojo(user, activity.packageName, activity.name,
+                label == null ? activity.packageName : label, disabled,
+                excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
+        apps.add(app);
+        seenPackages.add(packageKey);
+        SmartStateStore.rememberApp(ctx, activity.packageName, activity.name, app.getName(), serial);
+    }
+
+    private boolean isPackageDisabled(PackageManager pm, ApplicationInfo info) {
+        boolean enabled = info.enabled && !PackageManagerUtils.isAppSuspended(info);
+        try {
+            int state = pm.getApplicationEnabledSetting(info.packageName);
+            enabled = enabled
+                    && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                    && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
+        } catch (IllegalArgumentException ignored) {
+            enabled = false;
+        }
+        return !enabled;
     }
 
     private String packageKey(long serial, String packageName) {
