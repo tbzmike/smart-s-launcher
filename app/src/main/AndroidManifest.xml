@@ -97,6 +97,12 @@
             android:excludeFromRecents="true"
             android:parentActivityName=".SettingsActivity"
             android:theme="@style/SettingTheme" />
+        <activity
+            android:name=".AppUsageActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".SettingsActivity"
+            android:theme="@style/SettingTheme" />
 
         <activity
             android:name=".NotificationHistoryActivity"
@@ -165,6 +171,26 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".appusage.AppUsageBootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".appusage.AppUsagePackageReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
 
         <receiver android:name=".broadcast.LocaleChangedReceiver" android:enabled="true" android:exported="true">
             <intent-filter><action android:name="android.intent.action.LOCALE_CHANGED" /></intent-filter>
@@ -192,6 +218,10 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Continuous local battery telemetry for Smart S battery monitor" />
         </service>
+        <service
+            android:name=".appusage.AppUsageJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
 
         <service
             android:name=".notification.NotificationListener"
