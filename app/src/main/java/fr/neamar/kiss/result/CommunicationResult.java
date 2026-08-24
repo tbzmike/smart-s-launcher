@@ -24,7 +24,10 @@ import androidx.preference.PreferenceManager;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
+import java.util.Collections;
 import java.util.Date;
+import java.util.Locale;
+import java.util.Set;
 
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
@@ -34,7 +37,7 @@ import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public final class CommunicationResult extends Result<CommunicationPojo> {
-    private static final String TRUECALLER_PACKAGE = "com.truecaller";
+    private static final long ACTIVE_MESSAGE_MATCH_WINDOW_MS = 10 * 60_000L;
     private volatile Drawable icon;
 
     public CommunicationResult(@NonNull CommunicationPojo pojo) { super(pojo); }
@@ -70,7 +73,11 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
             case SMS:
                 title.setText(TextUtils.isEmpty(label) ? "Message" : label);
                 meta.setText("Message · " + when + (TextUtils.isEmpty(pojo.address) ? "" : " · " + pojo.address));
-                body.setText(cleanMessageBody(pojo.body));
+                String smsNotificationId = effectiveNotificationId(context);
+                String smsExpanded = !TextUtils.isEmpty(smsNotificationId)
+                        ? NotificationListener.getExpandedNotificationText(context, smsNotificationId)
+                        : "";
+                body.setText(!TextUtils.isEmpty(smsExpanded) ? smsExpanded : cleanMessageBody(pojo.body));
                 body.setVisibility(View.VISIBLE);
                 actions.setVisibility(View.VISIBLE);
                 markRead.setVisibility(View.VISIBLE);
@@ -83,8 +90,9 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
             default:
                 title.setText(TextUtils.isEmpty(label) ? "Truecaller" : label);
                 meta.setText("Message · " + when);
-                String expanded = !TextUtils.isEmpty(pojo.notificationId)
-                        ? NotificationListener.getExpandedNotificationText(context, pojo.notificationId)
+                String notificationId = effectiveNotificationId(context);
+                String expanded = !TextUtils.isEmpty(notificationId)
+                        ? NotificationListener.getExpandedNotificationText(context, notificationId)
                         : "";
                 body.setText(!TextUtils.isEmpty(expanded) ? expanded : pojo.body);
                 body.setVisibility(View.VISIBLE);
@@ -141,24 +149,23 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
     }
 
     private boolean openMessage(Context context, View v, boolean showFailure) {
-        // Highest-fidelity route: the exact PendingIntent captured from the active notification.
-        if (!TextUtils.isEmpty(pojo.notificationId)
-                && NotificationListener.openNotification(context, pojo.notificationId)) {
+        String notificationId = effectiveNotificationId(context);
+        if (!TextUtils.isEmpty(notificationId)
+                && NotificationListener.openNotification(context, notificationId)) {
             return true;
         }
 
         PackageManager pm = context.getPackageManager();
         String sourceId = sourceId("sms");
 
-        // Some message apps, including some Truecaller versions, accept a direct SMS provider row.
         if (!TextUtils.isEmpty(sourceId) && sourceId.matches("[0-9]+")) {
             Uri messageUri = Uri.withAppendedPath(Telephony.Sms.CONTENT_URI, sourceId);
-            if (tryStart(context, v, new Intent(Intent.ACTION_VIEW, messageUri)
+            if (!TextUtils.isEmpty(pojo.packageName)
+                    && tryStart(context, v, new Intent(Intent.ACTION_VIEW, messageUri)
                     .setPackage(pojo.packageName)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), pm)) return true;
         }
 
-        // Prefer the owning app and an address-specific VIEW conversation over generic app launch.
         if (!TextUtils.isEmpty(pojo.address)) {
             Uri conversation = Uri.parse("smsto:" + Uri.encode(pojo.address));
             if (!TextUtils.isEmpty(pojo.packageName)
@@ -173,7 +180,6 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), pm)) return true;
         }
 
-        // A bare package launch is deliberately last because it does not identify the message.
         if (!TextUtils.isEmpty(pojo.packageName)
                 && AppLaunchUtils.launchPackage(context, pojo.packageName)) return true;
 
@@ -196,8 +202,9 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
     }
 
     private void markMessageRead(Context context) {
-        if (!TextUtils.isEmpty(pojo.notificationId)
-                && NotificationListener.markNotificationRead(context, pojo.notificationId)) {
+        String notificationId = effectiveNotificationId(context);
+        if (!TextUtils.isEmpty(notificationId)
+                && NotificationListener.markNotificationRead(context, notificationId)) {
             Toast.makeText(context, "Marked as read", Toast.LENGTH_SHORT).show();
             return;
         }
@@ -209,6 +216,57 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
 
         Toast.makeText(context, "This message cannot be marked read directly; open the message instead",
                 Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Searchable SMS rows are built from Telephony.Sms and therefore historically had no
+     * notification id. Resolve an exact active notification conservatively using package, body
+     * and event time so Open/Mark read can use the original PendingIntent/action when available.
+     */
+    private String effectiveNotificationId(Context context) {
+        if (!TextUtils.isEmpty(pojo.notificationId)) return pojo.notificationId;
+        if (pojo.kind != CommunicationPojo.Kind.SMS) return "";
+
+        SharedPreferences details = context.getSharedPreferences(
+                NotificationListener.DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
+        Set<String> activeIds = details.getStringSet(
+                NotificationListener.ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
+        if (activeIds == null || activeIds.isEmpty()) return "";
+
+        String expectedBody = normalizeForMatch(cleanMessageBody(pojo.body));
+        String expectedAddress = normalizeForMatch(pojo.address);
+        String bestId = "";
+        long bestDistance = Long.MAX_VALUE;
+
+        for (String id : activeIds) {
+            if (TextUtils.isEmpty(id)) continue;
+            String pkg = details.getString(id + "|package", "");
+            if (!TextUtils.isEmpty(pojo.packageName) && !pojo.packageName.equals(pkg)) continue;
+
+            long post = details.getLong(id + "|post", 0L);
+            long distance = Math.abs(post - pojo.timestamp);
+            if (post <= 0L || distance > ACTIVE_MESSAGE_MATCH_WINDOW_MS) continue;
+
+            String title = normalizeForMatch(details.getString(id + "|title", ""));
+            String text = normalizeForMatch(details.getString(id + "|text", ""));
+            String combined = (title + " " + text).trim();
+
+            boolean bodyMatches = !TextUtils.isEmpty(expectedBody)
+                    && (combined.contains(expectedBody) || expectedBody.contains(text));
+            boolean addressMatches = !TextUtils.isEmpty(expectedAddress) && combined.contains(expectedAddress);
+            if (!bodyMatches && !addressMatches) continue;
+
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestId = id;
+            }
+        }
+        return bestId;
+    }
+
+    private String normalizeForMatch(String value) {
+        if (value == null) return "";
+        return value.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
     }
 
     private boolean markSmsProviderRead(Context context) {
