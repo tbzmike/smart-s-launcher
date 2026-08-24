@@ -196,7 +196,7 @@ public class ExperienceTweaks extends Forwarder {
         keyboardManager.registerKeyboardListener(
                 mainActivity.findViewById(android.R.id.content),
                 shouldShowKeyboard(),
-                mainActivity::onKeyboardVisibilityChanged);
+                this::onKeyboardVisibilityChanged);
         adjustInputType();
         if (shouldShowKeyboard()) {
             mainActivity.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -215,6 +215,29 @@ public class ExperienceTweaks extends Forwarder {
             ((ImageView) mainActivity.launcherButton).setImageBitmap(null);
             mainActivity.menuButton.setImageBitmap(null);
         }
+    }
+
+    /**
+     * Keep the newest/highest-priority history result anchored above the IME. Android resizes the
+     * launcher over multiple frames while the keyboard animates, so scroll once on the next layout
+     * pass and once more after the IME has settled. This never rebuilds the adapter or re-runs a
+     * search; it only changes the current ListView position.
+     */
+    private void onKeyboardVisibilityChanged(boolean keyboardIsVisible) {
+        mainActivity.onKeyboardVisibilityChanged(keyboardIsVisible);
+        if (!keyboardIsVisible) return;
+
+        // Undo any temporary list-height manipulation left by KeyboardScrollHider before anchoring
+        // the viewport to the newest item in the newly resized window.
+        if (mainActivity.hider != null) mainActivity.hider.fixScroll();
+        mainActivity.list.post(this::scrollToLatestResult);
+        mainActivity.list.postDelayed(this::scrollToLatestResult, 180L);
+    }
+
+    private void scrollToLatestResult() {
+        if (mainActivity.isFinishing() || mainActivity.adapter == null || mainActivity.adapter.isEmpty()) return;
+        mainActivity.list.setTranscriptMode(android.widget.AbsListView.TRANSCRIPT_MODE_ALWAYS_SCROLL);
+        mainActivity.list.setSelection(mainActivity.adapter.getCount() - 1);
     }
 
     void onTouch(MotionEvent event) {
