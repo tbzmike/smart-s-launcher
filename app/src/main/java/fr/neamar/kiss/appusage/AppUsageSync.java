@@ -16,6 +16,7 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 
 import java.util.HashMap;
 import java.util.List;
@@ -187,7 +188,8 @@ public final class AppUsageSync {
                 continue;
             }
 
-            if (type == UsageEvents.Event.SCREEN_INTERACTIVE) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    && type == UsageEvents.Event.SCREEN_INTERACTIVE) {
                 if (screenState == -1 && screenStateStart > 0L && time >= screenStateStart) {
                     store.putTimeline(screenEntry(AppUsageStore.KIND_SCREEN_OFF,
                             screenStateStart, time));
@@ -196,7 +198,8 @@ public final class AppUsageSync {
                 screenStateStart = time;
                 continue;
             }
-            if (type == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    && type == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
                 if (screenState == 1 && screenStateStart > 0L && time >= screenStateStart) {
                     store.putTimeline(screenEntry(AppUsageStore.KIND_SCREEN_ON,
                             screenStateStart, time));
@@ -205,17 +208,20 @@ public final class AppUsageSync {
                 screenStateStart = time;
                 continue;
             }
-            if (type == UsageEvents.Event.KEYGUARD_SHOWN) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    && type == UsageEvents.Event.KEYGUARD_SHOWN) {
                 store.putTimeline(pointEntry("locked:" + time, time,
                         AppUsageStore.KIND_LOCKED, "Phone locked"));
                 continue;
             }
-            if (type == UsageEvents.Event.KEYGUARD_HIDDEN) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    && type == UsageEvents.Event.KEYGUARD_HIDDEN) {
                 store.putTimeline(pointEntry("unlocked:" + time, time,
                         AppUsageStore.KIND_UNLOCKED, "Phone unlocked"));
                 continue;
             }
-            if (type == UsageEvents.Event.USER_INTERACTION && !TextUtils.isEmpty(pkg)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                    && type == UsageEvents.Event.USER_INTERACTION && !TextUtils.isEmpty(pkg)) {
                 // Cap noisy interaction events to one row per app/minute. Android 15+ can also
                 // expose a category/action for the interaction; keep it when present.
                 long minute = time / 60_000L;
@@ -227,11 +233,11 @@ public final class AppUsageSync {
                         0L, meta.system, detail, null, null));
                 continue;
             }
-            if (type == UsageEvents.Event.SHORTCUT_INVOCATION && !TextUtils.isEmpty(pkg)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1
+                    && type == UsageEvents.Event.SHORTCUT_INVOCATION && !TextUtils.isEmpty(pkg)) {
                 PackageMeta meta = packageMeta(pm, pkg, null);
                 String detail = "App shortcut invoked";
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1
-                        && !TextUtils.isEmpty(event.getShortcutId())) {
+                if (!TextUtils.isEmpty(event.getShortcutId())) {
                     detail += " · " + event.getShortcutId();
                 }
                 store.putTimeline(new AppUsageStore.TimelineEntry(
@@ -302,6 +308,7 @@ public final class AppUsageSync {
      * devices. Preserve those daily totals so 30/365-day views do not depend only on the few days
      * of exact screen-transition events Android still has.
      */
+    @RequiresApi(Build.VERSION_CODES.P)
     private static void importDailyPhoneState(Context context, AppUsageStore store, long now) {
         UsageStatsManager manager = (UsageStatsManager)
                 context.getSystemService(Context.USAGE_STATS_SERVICE);
