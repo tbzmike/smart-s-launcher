@@ -12,11 +12,10 @@ import android.graphics.drawable.BitmapDrawable;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
-import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
-import android.os.Bundle;
 import android.os.CancellationSignal;
+import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
 
@@ -28,6 +27,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Executor;
@@ -42,8 +42,10 @@ final class MapLiveTileProvider {
     private static final String TAG = "MapLiveTileProvider";
     private static final int LOCATION_REQUEST_CODE = 4704;
     private static final int ZOOM = 16;
-    private static final long REFRESH_MIN_MS = 30_000L;
-    private static final float MIN_MOVEMENT_METERS = 20f;
+    private static final long REFRESH_MIN_MS = 60_000L;
+    private static final long MAX_CURRENT_LOCATION_AGE_MS = 2L * 60_000L;
+    private static final long MAX_LAST_KNOWN_AGE_MS = 10L * 60_000L;
+    private static final float MIN_MOVEMENT_METERS = 8f;
     private static final AtomicBoolean REQUEST_IN_FLIGHT = new AtomicBoolean(false);
     private static final AtomicBoolean PERMISSION_PROMPTED = new AtomicBoolean(false);
     private static volatile long lastRequestTime;
@@ -52,63 +54,126 @@ final class MapLiveTileProvider {
 
     private MapLiveTileProvider() { }
 
+    static boolean hasLocationPermission(Context context) {
+        return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
     static void requestFreshLocation(MainActivity activity, Runnable onChanged) {
         if (activity == null) return;
         if (!hasLocationPermission(activity)) {
-            if (!PERMISSION_PROMPTED.compareAndSet(false, true)) return;
-            try {
-                activity.requestPermissions(new String[]{
-                        Manifest.permission.ACCESS_COARSE_LOCATION,
-                        Manifest.permission.ACCESS_FINE_LOCATION
-                }, LOCATION_REQUEST_CODE);
-            } catch (RuntimeException e) {
-                Log.w(TAG, "Unable to request location permission", e);
+            if (PERMISSION_PROMPTED.compareAndSet(false, true)) {
+                try {
+                    activity.requestPermissions(new String[]{
+                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                            Manifest.permission.ACCESS_FINE_LOCATION
+                    }, LOCATION_REQUEST_CODE);
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "Unable to request location permission", e);
+                }
             }
+            waitForPermission(activity, onChanged, 40);
             return;
         }
 
         long now = System.currentTimeMillis();
-        if (now - lastRequestTime < REFRESH_MIN_MS || !REQUEST_IN_FLIGHT.compareAndSet(false, true)) return;
+        if (now - lastRequestTime < REFRESH_MIN_MS) {
+            if (onChanged != null && lastLocation != null) onChanged.run();
+            return;
+        }
+        if (!REQUEST_IN_FLIGHT.compareAndSet(false, true)) return;
         lastRequestTime = now;
 
         LocationManager manager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
-        if (manager == null) { REQUEST_IN_FLIGHT.set(false); return; }
-        String provider = manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-                ? LocationManager.NETWORK_PROVIDER : LocationManager.GPS_PROVIDER;
+        if (manager == null) {
+            REQUEST_IN_FLIGHT.set(false);
+            return;
+        }
+
+        List<String> providers = new ArrayList<>(2);
+        boolean precise = ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+        try {
+            if (precise && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                providers.add(LocationManager.GPS_PROVIDER);
+            }
+            if (manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                providers.add(LocationManager.NETWORK_PROVIDER);
+            }
+            if (!providers.contains(LocationManager.GPS_PROVIDER)
+                    && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                providers.add(LocationManager.GPS_PROVIDER);
+            }
+        } catch (RuntimeException ignored) { }
+
+        if (providers.isEmpty()) {
+            REQUEST_IN_FLIGHT.set(false);
+            return;
+        }
+        requestFromProvider(activity, manager, providers, 0, onChanged);
+    }
+
+    private static void waitForPermission(MainActivity activity, Runnable onChanged, int attemptsLeft) {
+        if (attemptsLeft <= 0 || activity.isFinishing()) return;
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (hasLocationPermission(activity)) {
+                PERMISSION_PROMPTED.set(false);
+                lastRequestTime = 0L;
+                requestFreshLocation(activity, onChanged);
+            } else {
+                waitForPermission(activity, onChanged, attemptsLeft - 1);
+            }
+        }, 500L);
+    }
+
+    private static void requestFromProvider(MainActivity activity, LocationManager manager,
+                                            List<String> providers, int index, Runnable onChanged) {
+        if (index >= providers.size()) {
+            REQUEST_IN_FLIGHT.set(false);
+            return;
+        }
+        String provider = providers.get(index);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 Executor executor = activity.getMainExecutor();
                 manager.getCurrentLocation(provider, new CancellationSignal(), executor, location -> {
-                    REQUEST_IN_FLIGHT.set(false);
-                    if (acceptLocation(location) && onChanged != null) onChanged.run();
+                    if (isFresh(location, MAX_CURRENT_LOCATION_AGE_MS)) {
+                        REQUEST_IN_FLIGHT.set(false);
+                        boolean changed = acceptLocation(location);
+                        if (onChanged != null && (changed || lastLocation != null)) onChanged.run();
+                    } else {
+                        requestFromProvider(activity, manager, providers, index + 1, onChanged);
+                    }
                 });
             } else {
-                LocationListener listener = new LocationListener() {
-                    @Override public void onLocationChanged(Location location) {
-                        try { manager.removeUpdates(this); } catch (RuntimeException ignored) { }
-                        REQUEST_IN_FLIGHT.set(false);
-                        if (acceptLocation(location) && onChanged != null) onChanged.run();
-                    }
-                    @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
-                    @Override public void onProviderEnabled(String provider) { }
-                    @Override public void onProviderDisabled(String provider) { }
-                };
-                manager.requestSingleUpdate(provider, listener, Looper.getMainLooper());
+                @SuppressWarnings("deprecation")
+                Location candidate = manager.getLastKnownLocation(provider);
+                if (isFresh(candidate, MAX_LAST_KNOWN_AGE_MS)) {
+                    REQUEST_IN_FLIGHT.set(false);
+                    boolean changed = acceptLocation(candidate);
+                    if (onChanged != null && (changed || lastLocation != null)) onChanged.run();
+                } else {
+                    requestFromProvider(activity, manager, providers, index + 1, onChanged);
+                }
             }
         } catch (SecurityException | IllegalArgumentException e) {
-            REQUEST_IN_FLIGHT.set(false);
-            Log.w(TAG, "Unable to request current location", e);
+            Log.w(TAG, "Unable to request current location from " + provider, e);
+            requestFromProvider(activity, manager, providers, index + 1, onChanged);
         }
     }
 
     static LiveTileDataProvider.LiveTileData latest(Context context) {
         if (!hasLocationPermission(context)) return null;
         Location location = lastLocation != null ? new Location(lastLocation) : bestLastKnown(context);
-        if (location == null) return null;
+        if (!isFresh(location, MAX_LAST_KNOWN_AGE_MS)) return null;
         if (lastLocation == null) acceptLocation(location);
 
-        String street = reverseGeocode(context, location);
-        if (!TextUtils.isEmpty(street)) lastStreet = street;
+        if (TextUtils.isEmpty(lastStreet)) {
+            String street = reverseGeocode(context, location);
+            if (!TextUtils.isEmpty(street)) lastStreet = street;
+        }
         String title = TextUtils.isEmpty(lastStreet) ? "Current location" : lastStreet;
         String accuracy = location.hasAccuracy() ? " ±" + Math.round(location.getAccuracy()) + " m" : "";
         String text = String.format(Locale.US, "%.5f, %.5f%s", location.getLatitude(), location.getLongitude(), accuracy);
@@ -118,20 +183,22 @@ final class MapLiveTileProvider {
                 title, text, "Live · © OpenStreetMap contributors", 0, 0, false);
     }
 
-    private static boolean hasLocationPermission(Context context) {
-        return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED
-                || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED;
-    }
-
     private static boolean acceptLocation(Location location) {
         if (location == null) return false;
         Location previous = lastLocation;
         boolean moved = previous == null || previous.distanceTo(location) >= MIN_MOVEMENT_METERS;
+        boolean newer = previous == null || location.getTime() > previous.getTime();
+        if (!newer && !moved) return false;
         lastLocation = new Location(location);
         if (moved) lastStreet = "";
-        return moved;
+        return true;
+    }
+
+    private static boolean isFresh(Location location, long maxAgeMs) {
+        if (location == null) return false;
+        long time = location.getTime();
+        if (time <= 0) return true;
+        return Math.abs(System.currentTimeMillis() - time) <= maxAgeMs;
     }
 
     private static Location bestLastKnown(Context context) {
@@ -141,8 +208,12 @@ final class MapLiveTileProvider {
         try {
             for (String provider : manager.getProviders(true)) {
                 Location candidate = manager.getLastKnownLocation(provider);
-                if (candidate == null) continue;
-                if (best == null || candidate.getTime() > best.getTime()) best = candidate;
+                if (!isFresh(candidate, MAX_LAST_KNOWN_AGE_MS)) continue;
+                if (best == null || candidate.getTime() > best.getTime()
+                        || (candidate.hasAccuracy() && (!best.hasAccuracy()
+                        || candidate.getAccuracy() < best.getAccuracy()))) {
+                    best = candidate;
+                }
             }
         } catch (SecurityException ignored) { }
         return best;
@@ -161,7 +232,7 @@ final class MapLiveTileProvider {
                         lock.notifyAll();
                     }
                 });
-                synchronized (lock) { if (TextUtils.isEmpty(result[0])) lock.wait(1200L); }
+                synchronized (lock) { if (TextUtils.isEmpty(result[0])) lock.wait(1500L); }
                 return result[0];
             }
             @SuppressWarnings("deprecation")
@@ -201,9 +272,10 @@ final class MapLiveTileProvider {
         try {
             URL url = new URL("https://tile.openstreetmap.org/" + ZOOM + "/" + x + "/" + y + ".png");
             connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(2500);
-            connection.setReadTimeout(2500);
+            connection.setConnectTimeout(4000);
+            connection.setReadTimeout(4000);
             connection.setRequestProperty("User-Agent", "SmartSLauncher/3.29 (+https://github.com/tbzmike/smart-s-launcher)");
+            connection.setRequestProperty("Accept", "image/png,image/*;q=0.8");
             connection.setUseCaches(true);
             if (connection.getResponseCode() != 200) return null;
             try (InputStream in = connection.getInputStream()) {
