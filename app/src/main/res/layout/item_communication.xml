@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="?attr/resultHeight"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/result_margin_left"
+    android:paddingTop="@dimen/result_margin_top"
+    android:paddingEnd="@dimen/result_margin_right"
+    android:paddingBottom="@dimen/result_margin_bottom"
+    android:descendantFocusability="afterDescendants">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/item_search_icon"
+            style="@style/ResultItemIcon"
+            android:contentDescription="@null"
+            android:scaleType="fitCenter" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/item_communication_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="?attr/resultColor"
+                android:textSize="?attr/resultTitleSize"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:focusable="false" />
+
+            <TextView
+                android:id="@+id/item_communication_meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:alpha="0.78"
+                android:textColor="?attr/resultColor"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/item_communication_body"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:breakStrategy="high_quality"
+        android:hyphenationFrequency="normal"
+        android:lineSpacingExtra="2dp"
+        android:textColor="?attr/resultColor"
+        android:textIsSelectable="true"
+        android:textSize="16sp" />
+
+    <LinearLayout
+        android:id="@+id/item_communication_actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="end|center_vertical"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/item_communication_mark_read"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="40dp"
+            android:text="Mark as read"
+            android:textAllCaps="false" />
+
+        <Button
+            android:id="@+id/item_communication_open"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:minHeight="40dp"
+            android:text="Open message"
+            android:textAllCaps="false" />
+    </LinearLayout>
+</LinearLayout>
