@@ -30,6 +30,7 @@ public class ForwarderManager extends Forwarder {
     private final VerticalMapsCardForwarder verticalMapsCardForwarder;
     private final VerticalCardGroupResizeController verticalCardGroupResizeController;
     private final VerticalCardNotificationHistoryForwarder verticalCardNotificationHistoryForwarder;
+    private final VerticalCardUsageForwarder verticalCardUsageForwarder;
     private final SquareUHostFullscreenController squareUHostFullscreenController;
     private final SquareUStabilityController squareUStabilityController;
     private final SquareUEdgeBoundsController squareUEdgeBoundsController;
@@ -56,6 +57,7 @@ public class ForwarderManager extends Forwarder {
         this.verticalMapsCardForwarder = new VerticalMapsCardForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(mainActivity, smartCardListForwarder);
         this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
+        this.verticalCardUsageForwarder = new VerticalCardUsageForwarder(mainActivity, smartCardListForwarder);
         this.squareUHostFullscreenController = new SquareUHostFullscreenController(mainActivity, historyDisplayForwarder);
         this.squareUStabilityController = new SquareUStabilityController(mainActivity, historyDisplayForwarder);
         this.squareUEdgeBoundsController = new SquareUEdgeBoundsController(mainActivity, historyDisplayForwarder);
@@ -78,6 +80,7 @@ public class ForwarderManager extends Forwarder {
         verticalMapsCardForwarder.onCreate();
         verticalCardGroupResizeController.onCreate();
         verticalCardNotificationHistoryForwarder.onCreate();
+        verticalCardUsageForwarder.onCreate();
         squareUStabilityController.onCreate();
         squareUEdgeBoundsController.onCreate();
         historyVisualEnhancer.onCreate();
@@ -92,6 +95,9 @@ public class ForwarderManager extends Forwarder {
         // These two listeners are explicitly unregistered in onPause and therefore must be restored.
         experienceTweaks.onResume();
         notificationForwarder.onResume();
+        // Usage time is real external state that changes while another app is in front. Updating the
+        // label is intentionally allowed on every resume and does not rebuild or refresh Home.
+        verticalCardUsageForwarder.onResume();
 
         if (initialResumeComplete) {
             // Returning Home must preserve the already-rendered launcher surface. Do not re-run
@@ -147,6 +153,7 @@ public class ForwarderManager extends Forwarder {
         verticalMapsCardForwarder.onDataSetChanged();
         verticalCardGroupResizeController.onDataSetChanged();
         verticalCardNotificationHistoryForwarder.onDataSetChanged();
+        verticalCardUsageForwarder.onDataSetChanged();
         squareUStabilityController.onDataSetChanged();
         squareUEdgeBoundsController.onDataSetChanged();
         historyVisualEnhancer.onDataSetChanged();
@@ -171,6 +178,7 @@ public class ForwarderManager extends Forwarder {
     public boolean onMenuButtonClicked(View menuButton) { return tagsMenu.onMenuButtonClicked(menuButton); }
 
     public void onDestroy() {
+        verticalCardUsageForwarder.onDestroy();
         uNotificationHistoryLongPressForwarder.onDestroy();
         lockedHistoryGestureBridge.onDestroy();
         verticalCardNotificationHistoryForwarder.onDestroy();
@@ -187,6 +195,7 @@ public class ForwarderManager extends Forwarder {
         squareUHostFullscreenController.onConfigurationChanged();
         verticalCardGroupResizeController.onConfigurationChanged();
         verticalCardNotificationHistoryForwarder.onConfigurationChanged();
+        verticalCardUsageForwarder.onConfigurationChanged();
         squareUStabilityController.onConfigurationChanged();
         squareUEdgeBoundsController.onConfigurationChanged();
         uNotificationHistoryLongPressForwarder.onConfigurationChanged();
