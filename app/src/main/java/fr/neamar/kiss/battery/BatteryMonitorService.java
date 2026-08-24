@@ -99,24 +99,27 @@ public final class BatteryMonitorService extends Service {
         Intent stop = new Intent(this, BatteryMonitorService.class).setAction(ACTION_STOP);
         PendingIntent stopPi = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        String current = Double.isNaN(s.currentMa())
+        double rawCurrent = s.currentMa();
+        double signedCurrent = Double.isNaN(rawCurrent) ? Double.NaN
+                : (s.isCharging() ? Math.abs(rawCurrent) : -Math.abs(rawCurrent));
+        String current = Double.isNaN(signedCurrent)
                 ? "unavailable"
-                : String.format(Locale.US, "%.0f mA", s.currentMa());
-        String charge = s.chargeCounterUah == Long.MIN_VALUE
+                : String.format(Locale.US, "%+.0f mA", signedCurrent);
+        String remaining = s.chargeCounterUah == Long.MIN_VALUE
                 ? "unavailable"
                 : String.format(Locale.US, "%.0f mAh", s.chargeCounterUah / 1000.0);
         String temp = Float.isNaN(s.temperatureC)
                 ? "unavailable"
                 : String.format(Locale.US, "%.1f°C", s.temperatureC);
 
-        BatteryHistoryStore.CurrentSessionStats session = store.currentSessionStats(s);
-        String screenOn = formatPercentRate(session.screenOnPercentPerHour, s.isCharging());
-        String screenOff = formatPercentRate(session.screenOffPercentPerHour, s.isCharging());
+        BatteryRateCalculator.ScreenRates rates = BatteryRateCalculator.calculate(store, s);
+        String screenOn = formatPercentRate(rates.screenOnPercentPerHour);
+        String screenOff = formatPercentRate(rates.screenOffPercentPerHour);
 
         String title = "Battery " + s.percent() + "% · " + temp;
         String collapsed = "Current " + current + " · Screen on " + screenOn + " · Screen off " + screenOff;
         String expanded = "Battery: " + s.percent() + "% · " + temp
-                + "\nCurrent: " + current + " · Charge: " + charge
+                + "\nCurrent: " + current + " · Remaining: " + remaining
                 + "\nScreen on: " + screenOn
                 + "\nScreen off: " + screenOff;
 
@@ -155,10 +158,9 @@ public final class BatteryMonitorService extends Service {
         }
     }
 
-    private String formatPercentRate(double value, boolean charging) {
+    private String formatPercentRate(double value) {
         if (Double.isNaN(value)) return "learning";
-        double normalized = charging ? Math.abs(value) : -Math.abs(value);
-        return String.format(Locale.US, "%+.1f%%/h", normalized);
+        return String.format(Locale.US, "%+.1f%%/h", value);
     }
 
     private void maybePostRateLimited(String key, String title, String text) {
@@ -178,7 +180,7 @@ public final class BatteryMonitorService extends Service {
     private void createChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return; NotificationManager nm = notificationManager(); if (nm == null) return;
         NotificationChannel live = new NotificationChannel(CHANNEL_LIVE, "Battery monitor", NotificationManager.IMPORTANCE_LOW);
-        live.setDescription("Battery level, temperature, current and screen-on/off rate"); nm.createNotificationChannel(live);
+        live.setDescription("Battery level, temperature, current and observed screen-on/off rate"); nm.createNotificationChannel(live);
         NotificationChannel alerts = new NotificationChannel(CHANNEL_ALERTS, "Battery alerts", NotificationManager.IMPORTANCE_HIGH);
         alerts.setDescription("Charge target, heat, abnormal drain and charging warnings"); nm.createNotificationChannel(alerts);
     }
