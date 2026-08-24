@@ -7,7 +7,6 @@ import android.view.MotionEvent;
 import android.view.TouchDelegate;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ScrollView;
@@ -30,6 +29,10 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
 /**
  * Makes notification-history behavior explicit on the custom Vertical Cards renderer and enriches
  * the existing between-card label with launch activity from the KISS history table.
+ *
+ * Decoration is applied only when cards are created/rebuilt. It must never run from a permanent
+ * global-layout listener because that would recursively walk every card during ordinary layouts
+ * and scrolling, and it could overwrite independent metadata such as today's usage time.
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -40,7 +43,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private final SmartCardListForwarder smartCardListForwarder;
     private ViewGroup column;
     private ScrollView scroller;
-    private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
     private Map<String, LaunchHistoryStatsStore.Stats> launchStats = Collections.emptyMap();
 
     private float bottomSwipeDownRawX;
@@ -59,13 +61,12 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     void onDataSetChanged() { refresh(); }
     void onConfigurationChanged() { refresh(); }
 
-    void onPause() { detach(); }
+    void onPause() { resetBottomSwipe(); }
     void onDestroy() {
-        detach();
+        resetBottomSwipe();
         column = null;
         scroller = null;
         launchStats = Collections.emptyMap();
-        resetBottomSwipe();
     }
 
     private boolean isEnabled() {
@@ -75,13 +76,14 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
     private void refresh() {
         if (!isEnabled()) {
-            detach();
             launchStats = Collections.emptyMap();
+            column = null;
+            scroller = null;
+            resetBottomSwipe();
             return;
         }
         launchStats = LaunchHistoryStatsStore.getAll(mainActivity);
         resolveViews();
-        attach();
         if (column != null) column.post(this::apply);
     }
 
@@ -90,40 +92,17 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             Field columnField = SmartCardListForwarder.class.getDeclaredField("column");
             columnField.setAccessible(true);
             Object columnValue = columnField.get(smartCardListForwarder);
-            ViewGroup newColumn = columnValue instanceof ViewGroup ? (ViewGroup) columnValue : null;
+            column = columnValue instanceof ViewGroup ? (ViewGroup) columnValue : null;
 
             Field scrollerField = SmartCardListForwarder.class.getDeclaredField("scroller");
             scrollerField.setAccessible(true);
             Object scrollerValue = scrollerField.get(smartCardListForwarder);
-            ScrollView newScroller = scrollerValue instanceof ScrollView ? (ScrollView) scrollerValue : null;
-
-            if (newColumn != column || newScroller != scroller) {
-                detach();
-                column = newColumn;
-                scroller = newScroller;
-            }
+            scroller = scrollerValue instanceof ScrollView ? (ScrollView) scrollerValue : null;
         } catch (ReflectiveOperationException ignored) {
-            detach();
             column = null;
             scroller = null;
+            resetBottomSwipe();
         }
-    }
-
-    private void attach() {
-        if (column == null) return;
-        if (layoutListener == null) {
-            layoutListener = this::apply;
-            column.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
-        }
-    }
-
-    private void detach() {
-        if (column != null && layoutListener != null) {
-            ViewTreeObserver observer = column.getViewTreeObserver();
-            if (observer.isAlive()) observer.removeOnGlobalLayoutListener(layoutListener);
-        }
-        layoutListener = null;
-        resetBottomSwipe();
     }
 
     private void apply() {
@@ -155,13 +134,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         }
     }
 
-    /**
-     * Observe the complete touch stream at the card views themselves. The gesture is armed only if
-     * ACTION_DOWN occurs while the Vertical Cards scroller is already at its bottom/newest edge.
-     * Once a clear upward drag is verified, dispatch one clean synthetic upward fling through the
-     * launcher's existing gesture detector. This deliberately avoids depending on the remainder of
-     * the original touch stream, because ScrollView may cancel/re-parent that stream at its edge.
-     */
     private void applyBottomSwipeTouchRecursively(View view) {
         if (view == null || view instanceof Button) return;
         view.setOnTouchListener(this::handleBottomCardSwipeTouch);
@@ -212,11 +184,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         }
     }
 
-    /**
-     * Feed a deterministic upward fling into the same MainActivity/ForwarderManager gesture path
-     * used by empty-space swipes. Both events use one coordinate space and an explicit velocity, so
-     * GestureDetector.onFling() reliably resolves the configured "gesture-up" preference.
-     */
     private void dispatchCleanConfiguredSwipeUp(View source, float rawX, float rawY) {
         long downTime = android.os.SystemClock.uptimeMillis();
         float distance = Math.max(
