@@ -3,12 +3,14 @@ package fr.neamar.kiss.forwarder;
 import android.graphics.Rect;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
+import android.view.MotionEvent;
 import android.view.TouchDelegate;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.ScrollView;
 
 import java.lang.reflect.Field;
 import java.util.Collections;
@@ -32,11 +34,18 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
     private static final String STATS_MARKER = "  •  Last: ";
+    private static final float BOTTOM_SWIPE_THRESHOLD_DP = 28f;
+    private static final float BOTTOM_SWIPE_AXIS_BIAS = 1.15f;
 
     private final SmartCardListForwarder smartCardListForwarder;
     private ViewGroup column;
+    private ScrollView scroller;
     private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
     private Map<String, LaunchHistoryStatsStore.Stats> launchStats = Collections.emptyMap();
+
+    private MotionEvent pendingBottomSwipeDown;
+    private boolean bottomSwipeStartedOnCard;
+    private boolean forwardingBottomSwipe;
 
     VerticalCardNotificationHistoryForwarder(MainActivity activity,
                                              SmartCardListForwarder smartCardListForwarder) {
@@ -53,7 +62,9 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     void onDestroy() {
         detach();
         column = null;
+        scroller = null;
         launchStats = Collections.emptyMap();
+        resetBottomSwipe();
     }
 
     private boolean isEnabled() {
@@ -68,31 +79,47 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             return;
         }
         launchStats = LaunchHistoryStatsStore.getAll(mainActivity);
-        resolveColumn();
+        resolveViews();
         attach();
         if (column != null) column.post(this::apply);
     }
 
-    private void resolveColumn() {
+    private void resolveViews() {
         try {
-            Field field = SmartCardListForwarder.class.getDeclaredField("column");
-            field.setAccessible(true);
-            Object value = field.get(smartCardListForwarder);
-            ViewGroup newColumn = value instanceof ViewGroup ? (ViewGroup) value : null;
-            if (newColumn != column) {
+            Field columnField = SmartCardListForwarder.class.getDeclaredField("column");
+            columnField.setAccessible(true);
+            Object columnValue = columnField.get(smartCardListForwarder);
+            ViewGroup newColumn = columnValue instanceof ViewGroup ? (ViewGroup) columnValue : null;
+
+            Field scrollerField = SmartCardListForwarder.class.getDeclaredField("scroller");
+            scrollerField.setAccessible(true);
+            Object scrollerValue = scrollerField.get(smartCardListForwarder);
+            ScrollView newScroller = scrollerValue instanceof ScrollView ? (ScrollView) scrollerValue : null;
+
+            if (newColumn != column || newScroller != scroller) {
                 detach();
                 column = newColumn;
+                scroller = newScroller;
             }
         } catch (ReflectiveOperationException ignored) {
             detach();
             column = null;
+            scroller = null;
         }
     }
 
     private void attach() {
-        if (column == null || layoutListener != null) return;
-        layoutListener = this::apply;
-        column.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
+        if (column == null) return;
+        if (layoutListener == null) {
+            layoutListener = this::apply;
+            column.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
+        }
+        if (scroller != null) {
+            // Once the ScrollView intercepts an upward drag from a child card, continue observing
+            // that same gesture here. This listener does not arm gestures that begin on empty space;
+            // those already belong to the launcher's normal root gesture path.
+            scroller.setOnTouchListener(this::handleBottomCardSwipeTouch);
+        }
     }
 
     private void detach() {
@@ -101,6 +128,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             if (observer.isAlive()) observer.removeOnGlobalLayoutListener(layoutListener);
         }
         layoutListener = null;
+        if (scroller != null) scroller.setOnTouchListener(null);
+        resetBottomSwipe();
     }
 
     private void apply() {
@@ -113,6 +142,7 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
             applyLaunchStats(wrapper, result);
             applyEasyIconTap(wrapper, result, adapterPosition);
+            applyBottomSwipeTouchRecursively(wrapper);
 
             View.OnLongClickListener historyFirstLongPress = v -> {
                 if (mainActivity.adapter.showNotificationHistoryIfAvailable(adapterPosition, v)) {
@@ -129,6 +159,91 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
                 applyNotificationClickRecursively(wrapper, notificationClick);
             }
         }
+    }
+
+    /**
+     * Observe card touches without replacing their click/long-click behavior. A gesture is eligible
+     * only when ACTION_DOWN happened on a card while the Vertical Cards scroller was already at its
+     * bottom/newest position. Until a deliberate upward drag is verified this listener returns false.
+     */
+    private void applyBottomSwipeTouchRecursively(View view) {
+        if (view == null || view instanceof Button) return;
+        view.setOnTouchListener(this::handleBottomCardSwipeTouch);
+        if (!(view instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            applyBottomSwipeTouchRecursively(group.getChildAt(i));
+        }
+    }
+
+    private boolean handleBottomCardSwipeTouch(View source, MotionEvent event) {
+        if (!isEnabled() || scroller == null || event == null) return false;
+
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                // A DOWN delivered directly to the ScrollView means empty/padding space. The root
+                // launcher gesture system already handles that case, so do not arm a second path.
+                if (source == scroller) return false;
+                resetBottomSwipe();
+                if (scroller.canScrollVertically(1)) return false;
+                bottomSwipeStartedOnCard = true;
+                pendingBottomSwipeDown = MotionEvent.obtain(event);
+                return false;
+
+            case MotionEvent.ACTION_MOVE:
+                if (!bottomSwipeStartedOnCard || pendingBottomSwipeDown == null) return false;
+                float deltaX = event.getRawX() - pendingBottomSwipeDown.getRawX();
+                float deltaY = event.getRawY() - pendingBottomSwipeDown.getRawY();
+                float absX = Math.abs(deltaX);
+                float absY = Math.abs(deltaY);
+                float threshold = BOTTOM_SWIPE_THRESHOLD_DP
+                        * mainActivity.getResources().getDisplayMetrics().density;
+
+                if (!forwardingBottomSwipe) {
+                    if (deltaY >= 0f || absY < threshold || absY <= absX * BOTTOM_SWIPE_AXIS_BIAS) {
+                        return false;
+                    }
+
+                    // Reuse the exact launcher gesture detector that handles empty-space swipes.
+                    // Feed it the stored original DOWN first, then the current verified MOVE.
+                    forwardingBottomSwipe = true;
+                    mainActivity.onTouch(source, pendingBottomSwipeDown);
+                    mainActivity.onTouch(source, event);
+                } else {
+                    mainActivity.onTouch(source, event);
+                }
+
+                // Once the ScrollView owns the drag, consume it so overscroll/card clicks cannot
+                // compete with the configured launcher gesture.
+                return source == scroller;
+
+            case MotionEvent.ACTION_UP:
+                if (forwardingBottomSwipe) {
+                    mainActivity.onTouch(source, event);
+                    resetBottomSwipe();
+                    return true;
+                }
+                resetBottomSwipe();
+                return false;
+
+            case MotionEvent.ACTION_CANCEL:
+                // A child card receives CANCEL when ScrollView starts intercepting its drag. Keep
+                // the stored DOWN alive so the ScrollView listener can finish the same gesture.
+                if (source == scroller) resetBottomSwipe();
+                return false;
+
+            default:
+                return forwardingBottomSwipe && source == scroller;
+        }
+    }
+
+    private void resetBottomSwipe() {
+        if (pendingBottomSwipeDown != null) {
+            pendingBottomSwipeDown.recycle();
+            pendingBottomSwipeDown = null;
+        }
+        bottomSwipeStartedOnCard = false;
+        forwardingBottomSwipe = false;
     }
 
     private void applyEasyIconTap(View wrapper, Result<?> result, int adapterPosition) {
