@@ -28,6 +28,8 @@ import fr.neamar.kiss.forwarder.InterfaceTweaks;
 import fr.neamar.kiss.index.CommunicationIndexStore;
 import fr.neamar.kiss.index.CommunicationIndexer;
 import fr.neamar.kiss.loader.LoadAppPojos;
+import fr.neamar.kiss.searcher.QuerySearcher;
+import fr.neamar.kiss.searcher.SemanticEmbeddingScorer;
 
 public final class IndexingSettingsActivity extends AppCompatActivity {
     private static final int REQUEST_COMM_PERMISSIONS = 9204;
@@ -83,6 +85,45 @@ public final class IndexingSettingsActivity extends AppCompatActivity {
             refreshStatus();
         });
         root.addView(rebuildCore);
+
+        root.addView(title("SEMANTIC SEARCH & RERANKING"));
+        root.addView(toggle("Enable semantic search", "semantic-search-enabled", false));
+        root.addView(toggle("Semantic reranking", QuerySearcher.PREF_SEMANTIC_RERANK, true));
+        TextView semanticNote = body();
+        semanticNote.setText("Hybrid reranking combines exact/name matching, semantic similarity, fuzzy/provider relevance and previous-query history. Exact app-name matches stay protected while strong concept matches can move above weak fuzzy matches. Model: " + SemanticEmbeddingScorer.MODEL_NAME + ".");
+        root.addView(semanticNote);
+
+        TextView weightLabel = body();
+        float semanticWeight = getFloatPreference(QuerySearcher.PREF_SEMANTIC_WEIGHT, 0.58f, 0.20f, 0.85f);
+        weightLabel.setText("Semantic weight: " + Math.round(semanticWeight * 100f) + "%");
+        root.addView(weightLabel);
+        SeekBar weight = new SeekBar(this);
+        weight.setMax(65);
+        weight.setProgress(Math.max(0, Math.min(65, Math.round(semanticWeight * 100f) - 20)));
+        weight.setOnSeekBarChangeListener(new SimpleSeekListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                float value = (20 + progress) / 100f;
+                prefs.edit().putString(QuerySearcher.PREF_SEMANTIC_WEIGHT, Float.toString(value)).apply();
+                weightLabel.setText("Semantic weight: " + Math.round(value * 100f) + "%");
+            }
+        });
+        root.addView(weight);
+
+        TextView thresholdLabel = body();
+        float thresholdValue = getFloatPreference("semantic-threshold", 0.26f, 0.05f, 0.95f);
+        thresholdLabel.setText("Semantic candidate threshold: " + Math.round(thresholdValue * 100f) + "%");
+        root.addView(thresholdLabel);
+        SeekBar threshold = new SeekBar(this);
+        threshold.setMax(90);
+        threshold.setProgress(Math.max(0, Math.min(90, Math.round(thresholdValue * 100f) - 5)));
+        threshold.setOnSeekBarChangeListener(new SimpleSeekListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                float value = (5 + progress) / 100f;
+                prefs.edit().putString("semantic-threshold", Float.toString(value)).apply();
+                thresholdLabel.setText("Semantic candidate threshold: " + Math.round(value * 100f) + "%");
+            }
+        });
+        root.addView(threshold);
 
         root.addView(title("DEEP COMMUNICATION INDEX"));
         TextView explanation = body();
@@ -168,6 +209,15 @@ public final class IndexingSettingsActivity extends AppCompatActivity {
         return sw;
     }
 
+    private float getFloatPreference(String key, float fallback, float min, float max) {
+        try {
+            float value = Float.parseFloat(prefs.getString(key, Float.toString(fallback)));
+            return Math.max(min, Math.min(max, value));
+        } catch (NumberFormatException | ClassCastException e) {
+            return fallback;
+        }
+    }
+
     private void requestCommunicationPermissions() {
         ActivityCompat.requestPermissions(this,
                 new String[]{Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_SMS},
@@ -196,6 +246,8 @@ public final class IndexingSettingsActivity extends AppCompatActivity {
         status.setText("Indexed records: " + s.total
                 + "\nCalls: " + s.calls + " · SMS: " + s.sms + " · Truecaller notifications: " + s.truecaller
                 + "\nDisabled/frozen app indexing: " + (prefs.getBoolean(LoadAppPojos.PREF_INDEX_DISABLED_APPS, true) ? "Enabled" : "Disabled")
+                + "\nSemantic search: " + (prefs.getBoolean("semantic-search-enabled", false) ? "Enabled" : "Disabled")
+                + " · reranking: " + (prefs.getBoolean(QuerySearcher.PREF_SEMANTIC_RERANK, true) ? "On" : "Off")
                 + "\nCall-log permission: " + (calls ? "Granted" : "Not granted")
                 + " · SMS permission: " + (sms ? "Granted" : "Not granted")
                 + "\nLast deep index: " + lastText);
