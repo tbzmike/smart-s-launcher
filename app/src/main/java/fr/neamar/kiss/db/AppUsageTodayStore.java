@@ -13,16 +13,21 @@ import androidx.annotation.NonNull;
 import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * One-shot snapshot of foreground app usage since local midnight.
+ * Cached snapshot of foreground app usage since local midnight.
  *
  * PACKAGE_USAGE_STATS is an AppOps-gated special permission. The manifest declaration alone does
  * not grant access, so callers can distinguish "no usage" from "usage access unavailable".
  */
 public final class AppUsageTodayStore {
+    private static final long CACHE_MAX_AGE_MS = 30_000L;
+
+    private static Snapshot cachedSnapshot;
+    private static long cachedAtElapsed;
+    private static long cachedDayStart;
+
     private AppUsageTodayStore() {}
 
     public static final class Snapshot {
@@ -36,29 +41,38 @@ public final class AppUsageTodayStore {
     }
 
     @NonNull
-    public static Snapshot getToday(@NonNull Context context) {
+    public static synchronized Snapshot getToday(@NonNull Context context) {
         Context appContext = context.getApplicationContext();
-        if (!hasUsageAccess(appContext)) {
+        long start = startOfToday();
+        long nowElapsed = android.os.SystemClock.elapsedRealtime();
+        if (cachedSnapshot != null
+                && cachedDayStart == start
+                && nowElapsed - cachedAtElapsed < CACHE_MAX_AGE_MS) {
+            return cachedSnapshot;
+        }
+
+        Snapshot fresh = queryToday(appContext, start);
+        cachedSnapshot = fresh;
+        cachedDayStart = start;
+        cachedAtElapsed = nowElapsed;
+        return fresh;
+    }
+
+    @NonNull
+    private static Snapshot queryToday(@NonNull Context context, long start) {
+        if (!hasUsageAccess(context)) {
             return new Snapshot(false, Collections.emptyMap());
         }
 
         UsageStatsManager manager = (UsageStatsManager)
-                appContext.getSystemService(Context.USAGE_STATS_SERVICE);
+                context.getSystemService(Context.USAGE_STATS_SERVICE);
         if (manager == null) {
             return new Snapshot(false, Collections.emptyMap());
         }
 
-        Calendar midnight = Calendar.getInstance();
-        midnight.set(Calendar.HOUR_OF_DAY, 0);
-        midnight.set(Calendar.MINUTE, 0);
-        midnight.set(Calendar.SECOND, 0);
-        midnight.set(Calendar.MILLISECOND, 0);
-        long start = midnight.getTimeInMillis();
-        long end = System.currentTimeMillis();
-
-        List<UsageStats> stats;
+        Map<String, UsageStats> stats;
         try {
-            stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end);
+            stats = manager.queryAndAggregateUsageStats(start, System.currentTimeMillis());
         } catch (RuntimeException ignored) {
             return new Snapshot(false, Collections.emptyMap());
         }
@@ -66,15 +80,24 @@ public final class AppUsageTodayStore {
             return new Snapshot(false, Collections.emptyMap());
         }
 
-        Map<String, Long> result = new HashMap<>();
-        for (UsageStats usage : stats) {
-            if (usage == null || usage.getPackageName() == null) continue;
+        Map<String, Long> result = new HashMap<>(Math.max(16, stats.size() * 2));
+        for (Map.Entry<String, UsageStats> entry : stats.entrySet()) {
+            UsageStats usage = entry.getValue();
+            String packageName = entry.getKey();
+            if (usage == null || packageName == null) continue;
             long duration = Math.max(0L, usage.getTotalTimeInForeground());
-            if (duration <= 0L) continue;
-            Long previous = result.get(usage.getPackageName());
-            result.put(usage.getPackageName(), (previous == null ? 0L : previous) + duration);
+            if (duration > 0L) result.put(packageName, duration);
         }
-        return new Snapshot(true, result);
+        return new Snapshot(true, Collections.unmodifiableMap(result));
+    }
+
+    private static long startOfToday() {
+        Calendar midnight = Calendar.getInstance();
+        midnight.set(Calendar.HOUR_OF_DAY, 0);
+        midnight.set(Calendar.MINUTE, 0);
+        midnight.set(Calendar.SECOND, 0);
+        midnight.set(Calendar.MILLISECOND, 0);
+        return midnight.getTimeInMillis();
     }
 
     private static boolean hasUsageAccess(@NonNull Context context) {
