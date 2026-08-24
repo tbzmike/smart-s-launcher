@@ -24,7 +24,10 @@ public class Permission {
             Manifest.permission.READ_PHONE_STATE
     };
 
+    // Static weak reference to the linked activity, this is sadly required
+    // to ensure classes requesting permission can access activity.requestPermission()
     private static WeakReference<Activity> currentActivity = new WeakReference<>(null);
+
     private static final ArrayList<PermissionResultListener> permissionListeners = new ArrayList<>();
 
     public static boolean checkPermission(Context context, int permission) {
@@ -47,6 +50,7 @@ public class Permission {
     }
 
     public Permission(Activity activity) {
+        // Store the latest reference to a MainActivity
         currentActivity = new WeakReference<>(activity);
     }
 
@@ -55,6 +59,7 @@ public class Permission {
             return;
         }
 
+        // Iterator allows to remove while iterating
         ListIterator<PermissionResultListener> it = permissionListeners.listIterator();
         PermissionResultListener permissionListener;
         while (it.hasNext()) {
@@ -72,6 +77,7 @@ public class Permission {
 
     public static class PermissionResultListener {
         public int permission = 0;
+
         public void onGranted() {}
         public void onDenied() {}
     }
