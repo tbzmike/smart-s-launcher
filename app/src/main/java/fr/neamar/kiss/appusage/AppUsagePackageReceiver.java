@@ -16,6 +16,11 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
         boolean replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false);
         String action = intent.getAction();
         if (action == null) return;
+
+        // An update normally emits REMOVED(replacing), ADDED(replacing), then REPLACED. Ignore
+        // the intermediate ADDED broadcast so one update produces one timeline event.
+        if (Intent.ACTION_PACKAGE_ADDED.equals(action) && replacing) return;
+
         AppUsageSync.recordPackageChange(
                 context.getApplicationContext(), action, packageName, replacing);
     }
