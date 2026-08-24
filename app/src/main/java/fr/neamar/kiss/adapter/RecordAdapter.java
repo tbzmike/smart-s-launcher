@@ -50,6 +50,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private final List<Result<?>> results;
     private final HashMap<String, Integer> alphaIndexer = new HashMap<>();
     private String[] sections = new String[0];
+    private String lastRenderedQuery = null;
     private static final String TAG = RecordAdapter.class.getSimpleName();
 
     public RecordAdapter(QueryInterface parent, List<Result<?>> results) { this.parent = parent; this.results = results; this.fuzzyScore = null; }
@@ -113,8 +114,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private void configureOverflowText(View view) {
         if (view instanceof TextView && !(view instanceof Button)) {
             TextView text = (TextView) view;
-            // Communication bodies intentionally render the entire indexed message. Do not pass
-            // this field through the launcher's global single-line marquee treatment.
             if (text.getId() == R.id.item_communication_body) {
                 text.setSingleLine(false);
                 text.setMaxLines(Integer.MAX_VALUE);
@@ -236,14 +235,73 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     public void updateResults(@NonNull Context context, List<Result<?>> updatedResults, boolean isRefresh, String query) {
-        parent.beforeListChange(); this.results.clear(); this.results.addAll(updatedResults);
-        StringNormalizer.Result queryNormalized = StringNormalizer.normalizeWithResult(query, false);
-        fuzzyScore = FuzzyFactory.createFuzzyScore(context, queryNormalized.codePoints, true); notifyDataSetChanged();
-        if (isRefresh) parent.temporarilyDisableTranscriptMode(); parent.afterListChange();
+        String normalizedQuery = query == null ? "" : query;
+        if (sameVisibleState(updatedResults, normalizedQuery)) {
+            return;
+        }
+
+        parent.beforeListChange();
+        this.results.clear();
+        this.results.addAll(updatedResults);
+        lastRenderedQuery = normalizedQuery;
+        StringNormalizer.Result queryNormalized = StringNormalizer.normalizeWithResult(normalizedQuery, false);
+        fuzzyScore = FuzzyFactory.createFuzzyScore(context, queryNormalized.codePoints, true);
+        notifyDataSetChanged();
+        if (isRefresh) parent.temporarilyDisableTranscriptMode();
+        parent.afterListChange();
+    }
+
+    private boolean sameVisibleState(List<Result<?>> updatedResults, String query) {
+        if (!TextUtils.equals(lastRenderedQuery, query)) return false;
+        if (updatedResults == null || updatedResults.size() != results.size()) return false;
+
+        for (int i = 0; i < results.size(); i++) {
+            Result<?> oldResult = results.get(i);
+            Result<?> newResult = updatedResults.get(i);
+            if (oldResult == null || newResult == null) {
+                if (oldResult != newResult) return false;
+                continue;
+            }
+            if (!samePojoState(oldResult.getPojo(), newResult.getPojo())) return false;
+        }
+        return true;
+    }
+
+    private boolean samePojoState(Pojo oldPojo, Pojo newPojo) {
+        if (oldPojo == null || newPojo == null) return oldPojo == newPojo;
+        if (oldPojo.getClass() != newPojo.getClass()) return false;
+        if (!TextUtils.equals(oldPojo.id, newPojo.id)) return false;
+        if (!TextUtils.equals(oldPojo.getName(), newPojo.getName())) return false;
+
+        if (oldPojo instanceof AppPojo && newPojo instanceof AppPojo) {
+            if (((AppPojo) oldPojo).isDisabled() != ((AppPojo) newPojo).isDisabled()) return false;
+        }
+
+        if (oldPojo instanceof NotificationPojo && newPojo instanceof NotificationPojo) {
+            NotificationPojo oldNotification = (NotificationPojo) oldPojo;
+            NotificationPojo newNotification = (NotificationPojo) newPojo;
+            if (oldNotification.notificationCount != newNotification.notificationCount) return false;
+            if (oldNotification.postTime != newNotification.postTime) return false;
+            if (!TextUtils.equals(oldNotification.latestTitle, newNotification.latestTitle)) return false;
+            if (!TextUtils.equals(oldNotification.latestText, newNotification.latestText)) return false;
+        }
+
+        if (oldPojo instanceof CommunicationPojo && newPojo instanceof CommunicationPojo) {
+            CommunicationPojo oldCommunication = (CommunicationPojo) oldPojo;
+            CommunicationPojo newCommunication = (CommunicationPojo) newPojo;
+            if (oldCommunication.kind != newCommunication.kind) return false;
+            if (oldCommunication.timestamp != newCommunication.timestamp) return false;
+            if (!TextUtils.equals(oldCommunication.displayName, newCommunication.displayName)) return false;
+            if (!TextUtils.equals(oldCommunication.address, newCommunication.address)) return false;
+            if (!TextUtils.equals(oldCommunication.body, newCommunication.body)) return false;
+            if (!TextUtils.equals(oldCommunication.notificationId, newCommunication.notificationId)) return false;
+        }
+
+        return true;
     }
 
     public void updateTranscriptMode(int transcriptMode) { parent.updateTranscriptMode(transcriptMode); }
-    public void clear() { parent.beforeListChange(); this.results.clear(); notifyDataSetChanged(); parent.afterListChange(); }
+    public void clear() { parent.beforeListChange(); this.results.clear(); lastRenderedQuery = null; notifyDataSetChanged(); parent.afterListChange(); }
 
     public void buildSections() {
         alphaIndexer.clear(); int size = results.size();
