@@ -49,8 +49,9 @@ public class AutoMarqueeTextView extends AppCompatTextView {
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
         if (hasWindowFocus) {
-            // Re-evaluate marquee after returning to the launcher.
-            requestLayout();
+            // Invalidating is enough to resume marquee drawing. Calling requestLayout() here used
+            // to make every marquee in the non-virtualized Vertical Cards column request a fresh
+            // layout together whenever Home regained focus.
             invalidate();
         }
     }
