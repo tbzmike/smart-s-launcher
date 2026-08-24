@@ -35,17 +35,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.utils.Log;
-import fr.neamar.kiss.utils.Permission;
 
 /** Lightweight, cached live-location source used only by the Google Maps history tile. */
 final class MapLiveTileProvider {
     static final String MAPS_PACKAGE = "com.google.android.apps.maps";
     private static final String TAG = "MapLiveTileProvider";
+    private static final int LOCATION_REQUEST_CODE = 4704;
     private static final int ZOOM = 16;
     private static final long REFRESH_MIN_MS = 30_000L;
     private static final float MIN_MOVEMENT_METERS = 20f;
     private static final AtomicBoolean REQUEST_IN_FLIGHT = new AtomicBoolean(false);
-    private static final AtomicBoolean PERMISSION_PROMPT_IN_FLIGHT = new AtomicBoolean(false);
+    private static final AtomicBoolean PERMISSION_PROMPTED = new AtomicBoolean(false);
     private static volatile long lastRequestTime;
     private static volatile Location lastLocation;
     private static volatile String lastStreet = "";
@@ -55,17 +55,15 @@ final class MapLiveTileProvider {
     static void requestFreshLocation(MainActivity activity, Runnable onChanged) {
         if (activity == null) return;
         if (!hasLocationPermission(activity)) {
-            if (!PERMISSION_PROMPT_IN_FLIGHT.compareAndSet(false, true)) return;
-            Permission.askPermission(Permission.PERMISSION_ACCESS_FINE_LOCATION,
-                    new Permission.PermissionResultListener() {
-                        @Override public void onGranted() {
-                            PERMISSION_PROMPT_IN_FLIGHT.set(false);
-                            requestFreshLocation(activity, onChanged);
-                        }
-                        @Override public void onDenied() {
-                            PERMISSION_PROMPT_IN_FLIGHT.set(false);
-                        }
-                    });
+            if (!PERMISSION_PROMPTED.compareAndSet(false, true)) return;
+            try {
+                activity.requestPermissions(new String[]{
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                }, LOCATION_REQUEST_CODE);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Unable to request location permission", e);
+            }
             return;
         }
 
@@ -131,8 +129,6 @@ final class MapLiveTileProvider {
         if (location == null) return false;
         Location previous = lastLocation;
         boolean moved = previous == null || previous.distanceTo(location) >= MIN_MOVEMENT_METERS;
-        // Keep the freshest fix even if movement is small, but reverse-geocode/redraw only after
-        // meaningful movement so Home is not continuously disturbed.
         lastLocation = new Location(location);
         if (moved) lastStreet = "";
         return moved;
