@@ -26,7 +26,7 @@ public final class AppUsageStore extends SQLiteOpenHelper {
     public static final String KIND_UNINSTALLED = "APP_UNINSTALLED";
 
     private static final String DB_NAME = "smart_s_app_usage.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
     public static final long RETENTION_MS = 365L * 24L * 60L * 60L * 1000L;
 
     private static volatile AppUsageStore instance;
@@ -71,6 +71,7 @@ public final class AppUsageStore extends SQLiteOpenHelper {
                 "is_system INTEGER NOT NULL DEFAULT 0," +
                 "PRIMARY KEY(day_ms, package_name))");
         db.execSQL("CREATE INDEX idx_daily_usage_day ON daily_usage(day_ms DESC)");
+        createDailyPhoneStateTable(db);
 
         db.execSQL("CREATE TABLE package_state (" +
                 "package_name TEXT PRIMARY KEY," +
@@ -84,9 +85,19 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE meta (meta_key TEXT PRIMARY KEY, meta_value TEXT)");
     }
 
+    private static void createDailyPhoneStateTable(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS daily_phone_state (" +
+                "day_ms INTEGER PRIMARY KEY," +
+                "screen_on_ms INTEGER NOT NULL DEFAULT 0," +
+                "screen_off_ms INTEGER NOT NULL DEFAULT 0," +
+                "unlock_count INTEGER NOT NULL DEFAULT 0)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_daily_phone_state_day " +
+                "ON daily_phone_state(day_ms DESC)");
+    }
+
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // Version 1 is the initial schema.
+        if (oldVersion < 2) createDailyPhoneStateTable(db);
     }
 
     public synchronized void putTimeline(@NonNull TimelineEntry entry) {
@@ -117,6 +128,17 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         values.put("is_system", systemApp ? 1 : 0);
         getWritableDatabase().insertWithOnConflict(
                 "daily_usage", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    public synchronized void putDailyPhoneState(long dayMs, long screenOnMs,
+                                                 long screenOffMs, int unlockCount) {
+        ContentValues values = new ContentValues();
+        values.put("day_ms", dayMs);
+        values.put("screen_on_ms", Math.max(0L, screenOnMs));
+        values.put("screen_off_ms", Math.max(0L, screenOffMs));
+        values.put("unlock_count", Math.max(0, unlockCount));
+        getWritableDatabase().insertWithOnConflict(
+                "daily_phone_state", null, values, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
     public synchronized void putPackageState(@NonNull PackageState state) {
@@ -186,8 +208,8 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().query(
                 "daily_usage",
                 new String[]{"day_ms", "package_name", "app_label", "duration_ms", "is_system"},
-                "day_ms>=? AND duration_ms>0", new String[]{Long.toString(sinceMs)}, null, null,
-                "day_ms DESC,duration_ms DESC", Integer.toString(limit))) {
+                "day_ms>=? AND duration_ms>0", new String[]{Long.toString(startOfDay(sinceMs))},
+                null, null, "day_ms DESC,duration_ms DESC", Integer.toString(limit))) {
             while (c.moveToNext()) {
                 long day = c.getLong(0);
                 String pkg = c.getString(1);
@@ -208,28 +230,61 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         return out;
     }
 
+    @NonNull
+    public synchronized List<DailyPhoneState> getDailyPhoneStates(long sinceMs, int limit) {
+        List<DailyPhoneState> out = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().query(
+                "daily_phone_state",
+                new String[]{"day_ms", "screen_on_ms", "screen_off_ms", "unlock_count"},
+                "day_ms>=?", new String[]{Long.toString(startOfDay(sinceMs))},
+                null, null, "day_ms DESC", Integer.toString(limit))) {
+            while (c.moveToNext()) {
+                out.add(new DailyPhoneState(c.getLong(0), c.getLong(1), c.getLong(2),
+                        c.getInt(3)));
+            }
+        }
+        return out;
+    }
+
     public synchronized Summary getSummary(long sinceMs, long untilMs) {
         SQLiteDatabase db = getReadableDatabase();
+        long dayStart = startOfDay(sinceMs);
         long appMs = scalarLong(db,
                 "SELECT COALESCE(SUM(duration_ms),0) FROM daily_usage WHERE day_ms>=? AND day_ms<?",
-                new String[]{Long.toString(startOfDay(sinceMs)), Long.toString(untilMs)});
+                new String[]{Long.toString(dayStart), Long.toString(untilMs)});
         long screenOn = scalarLong(db,
-                "SELECT COALESCE(SUM(duration_ms),0) FROM timeline WHERE kind=? AND start_ms>=? AND start_ms<?",
-                new String[]{KIND_SCREEN_ON, Long.toString(sinceMs), Long.toString(untilMs)});
+                "SELECT COALESCE(SUM(screen_on_ms),0) FROM daily_phone_state WHERE day_ms>=? AND day_ms<?",
+                new String[]{Long.toString(dayStart), Long.toString(untilMs)});
         long screenOff = scalarLong(db,
-                "SELECT COALESCE(SUM(duration_ms),0) FROM timeline WHERE kind=? AND start_ms>=? AND start_ms<?",
-                new String[]{KIND_SCREEN_OFF, Long.toString(sinceMs), Long.toString(untilMs)});
+                "SELECT COALESCE(SUM(screen_off_ms),0) FROM daily_phone_state WHERE day_ms>=? AND day_ms<?",
+                new String[]{Long.toString(dayStart), Long.toString(untilMs)});
+        int unlocks = (int) scalarLong(db,
+                "SELECT COALESCE(SUM(unlock_count),0) FROM daily_phone_state WHERE day_ms>=? AND day_ms<?",
+                new String[]{Long.toString(dayStart), Long.toString(untilMs)});
+
+        // API 28+ normally supplies daily EventStats. Fall back to exact imported transitions if
+        // the device/API has no aggregate screen-state data.
+        if (screenOn == 0L && screenOff == 0L) {
+            screenOn = scalarLong(db,
+                    "SELECT COALESCE(SUM(duration_ms),0) FROM timeline WHERE kind=? AND start_ms>=? AND start_ms<?",
+                    new String[]{KIND_SCREEN_ON, Long.toString(sinceMs), Long.toString(untilMs)});
+            screenOff = scalarLong(db,
+                    "SELECT COALESCE(SUM(duration_ms),0) FROM timeline WHERE kind=? AND start_ms>=? AND start_ms<?",
+                    new String[]{KIND_SCREEN_OFF, Long.toString(sinceMs), Long.toString(untilMs)});
+        }
         int apps = (int) scalarLong(db,
                 "SELECT COUNT(DISTINCT package_name) FROM daily_usage WHERE day_ms>=? AND day_ms<? AND duration_ms>0",
-                new String[]{Long.toString(startOfDay(sinceMs)), Long.toString(untilMs)});
-        return new Summary(appMs, screenOn, screenOff, apps);
+                new String[]{Long.toString(dayStart), Long.toString(untilMs)});
+        return new Summary(appMs, screenOn, screenOff, apps, unlocks);
     }
 
     public synchronized void prune(long nowMs) {
         long cutoff = nowMs - RETENTION_MS;
+        long cutoffDay = startOfDay(cutoff);
         SQLiteDatabase db = getWritableDatabase();
         db.delete("timeline", "start_ms<?", new String[]{Long.toString(cutoff)});
-        db.delete("daily_usage", "day_ms<?", new String[]{Long.toString(startOfDay(cutoff))});
+        db.delete("daily_usage", "day_ms<?", new String[]{Long.toString(cutoffDay)});
+        db.delete("daily_phone_state", "day_ms<?", new String[]{Long.toString(cutoffDay)});
     }
 
     private static TimelineEntry readTimeline(Cursor c) {
@@ -286,6 +341,20 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         }
     }
 
+    public static final class DailyPhoneState {
+        public final long dayMs;
+        public final long screenOnMs;
+        public final long screenOffMs;
+        public final int unlockCount;
+
+        DailyPhoneState(long dayMs, long screenOnMs, long screenOffMs, int unlockCount) {
+            this.dayMs = dayMs;
+            this.screenOnMs = screenOnMs;
+            this.screenOffMs = screenOffMs;
+            this.unlockCount = unlockCount;
+        }
+    }
+
     public static final class PackageState {
         @NonNull public final String packageName;
         @Nullable public final String appLabel;
@@ -313,12 +382,15 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         public final long screenOnMs;
         public final long screenOffMs;
         public final int appsUsed;
+        public final int unlockCount;
 
-        Summary(long appUsageMs, long screenOnMs, long screenOffMs, int appsUsed) {
+        Summary(long appUsageMs, long screenOnMs, long screenOffMs, int appsUsed,
+                int unlockCount) {
             this.appUsageMs = appUsageMs;
             this.screenOnMs = screenOnMs;
             this.screenOffMs = screenOffMs;
             this.appsUsed = appsUsed;
+            this.unlockCount = unlockCount;
         }
     }
 }
