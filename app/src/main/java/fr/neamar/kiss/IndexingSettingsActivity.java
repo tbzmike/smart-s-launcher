@@ -27,6 +27,7 @@ import java.util.Locale;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
 import fr.neamar.kiss.index.CommunicationIndexStore;
 import fr.neamar.kiss.index.CommunicationIndexer;
+import fr.neamar.kiss.loader.LoadAppPojos;
 
 public final class IndexingSettingsActivity extends AppCompatActivity {
     private static final int REQUEST_COMM_PERMISSIONS = 9204;
@@ -66,7 +67,22 @@ public final class IndexingSettingsActivity extends AppCompatActivity {
         root.addView(toggle("Apps index", "enable-app", true));
         root.addView(toggle("Contacts index", "enable-contacts", true));
         root.addView(toggle("App shortcuts index", "enable-shortcuts", true));
+        root.addView(toggle("Index disabled/frozen apps and remembered shortcuts",
+                LoadAppPojos.PREF_INDEX_DISABLED_APPS, true));
+        TextView disabledNote = body();
+        disabledNote.setText("When enabled, Smart S performs an additional installed-package scan including disabled components. Every shortcut Android exposes while an app is available is remembered locally, so known shortcuts remain searchable after that app is frozen or disabled. Apps and shortcuts remain marked disabled until Android reports them enabled again.");
+        root.addView(disabledNote);
         root.addView(toggle("Notification history index", "enable-notification-history", true));
+
+        Button rebuildCore = new Button(this);
+        rebuildCore.setText("Rebuild apps & shortcuts index now");
+        rebuildCore.setOnClickListener(v -> {
+            DataHandler dataHandler = KissApplication.getApplication(this).getDataHandler();
+            dataHandler.reloadApps();
+            dataHandler.reloadShortcuts();
+            refreshStatus();
+        });
+        root.addView(rebuildCore);
 
         root.addView(title("DEEP COMMUNICATION INDEX"));
         TextView explanation = body();
@@ -140,7 +156,14 @@ public final class IndexingSettingsActivity extends AppCompatActivity {
         sw.setChecked(prefs.getBoolean(key, defaultValue));
         sw.setOnCheckedChangeListener((buttonView, isChecked) -> {
             prefs.edit().putBoolean(key, isChecked).apply();
-            if (key.startsWith("smart-index-")) prefs.edit().putLong(CommunicationIndexer.PREF_LAST, 0L).apply();
+            if (key.startsWith("smart-index-")) {
+                prefs.edit().putLong(CommunicationIndexer.PREF_LAST, 0L).apply();
+            }
+            if (LoadAppPojos.PREF_INDEX_DISABLED_APPS.equals(key)) {
+                DataHandler dataHandler = KissApplication.getApplication(this).getDataHandler();
+                dataHandler.reloadApps();
+                dataHandler.reloadShortcuts();
+            }
         });
         return sw;
     }
@@ -172,6 +195,7 @@ public final class IndexingSettingsActivity extends AppCompatActivity {
         String lastText = last <= 0 ? "Never" : DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(new Date(last));
         status.setText("Indexed records: " + s.total
                 + "\nCalls: " + s.calls + " · SMS: " + s.sms + " · Truecaller notifications: " + s.truecaller
+                + "\nDisabled/frozen app indexing: " + (prefs.getBoolean(LoadAppPojos.PREF_INDEX_DISABLED_APPS, true) ? "Enabled" : "Disabled")
                 + "\nCall-log permission: " + (calls ? "Granted" : "Not granted")
                 + " · SMS permission: " + (sms ? "Granted" : "Not granted")
                 + "\nLast deep index: " + lastText);
