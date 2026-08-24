@@ -17,6 +17,9 @@ import java.util.List;
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.db.ShortcutRecord;
+import fr.neamar.kiss.loader.LoadAppPojos;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.ShortcutUtil;
 
@@ -41,28 +44,37 @@ public class SaveAllOreoShortcutsAsync extends AsyncTask<Void, Integer, Boolean>
 
         List<ShortcutInfo> shortcuts;
         try {
-            // Fetch list of all shortcuts
             shortcuts = ShortcutUtil.getAllShortcuts(context);
         } catch (SecurityException e) {
             Log.e(TAG, "Unable to get all shortcuts", e);
-
-            // Publish progress (display toast)
             publishProgress(-1);
-
-            // Set flag to true, so we can rerun this class
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
             prefs.edit().putBoolean("first-run-shortcuts", true).apply();
-
             cancel(true);
             return null;
         }
 
         final DataHandler dataHandler = KissApplication.getApplication(context).getDataHandler();
+        final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        final boolean retainAll = prefs.getBoolean(LoadAppPojos.PREF_INDEX_DISABLED_APPS, true);
 
         boolean shortcutsUpdated = false;
         for (ShortcutInfo shortcutInfo : shortcuts) {
-            // add pinned shortcuts, remove disabled shortcuts
-            if (shortcutInfo.isPinned() || !shortcutInfo.isEnabled()) {
+            if (isCancelled()) break;
+
+            if (retainAll) {
+                // Permanent shortcut catalog: remember every shortcut Android exposes while the
+                // publisher is available. Do not route disabled shortcuts through
+                // DataHandler.updateShortcut(), because its legacy behaviour removes disabled
+                // shortcuts from the database. Frozen apps must retain their known shortcuts.
+                ShortcutRecord record = ShortcutUtil.createShortcutRecord(
+                        context, shortcutInfo, !shortcutInfo.isPinned());
+                if (record != null) {
+                    shortcutsUpdated |= DBHelper.insertShortcut(context, record);
+                }
+            } else if (shortcutInfo.isPinned() || !shortcutInfo.isEnabled()) {
+                // Preserve the original KISS behaviour when permanent disabled/frozen indexing is
+                // explicitly turned off in Settings.
                 shortcutsUpdated |= dataHandler.updateShortcut(shortcutInfo, !shortcutInfo.isPinned());
             }
         }
@@ -91,5 +103,4 @@ public class SaveAllOreoShortcutsAsync extends AsyncTask<Void, Integer, Boolean>
             }
         }
     }
-
 }
