@@ -82,8 +82,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         TextView text = view.findViewById(R.id.item_notification_text);
         View nativeContainer = view.findViewById(R.id.item_notification_native_container);
 
-        // Keep the existing notification tile, icon, colors, mark-read action and popup wiring.
-        // Only replace the compact presentation for a verified conversation/social message.
         if (app != null) app.setText(presentation.headline);
         if (title != null) {
             title.setText(presentation.preview);
@@ -115,6 +113,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private void configureOverflowText(View view) {
         if (view instanceof TextView && !(view instanceof Button)) {
             TextView text = (TextView) view;
+            // Communication bodies intentionally render the entire indexed message. Do not pass
+            // this field through the launcher's global single-line marquee treatment.
+            if (text.getId() == R.id.item_communication_body) {
+                text.setSingleLine(false);
+                text.setMaxLines(Integer.MAX_VALUE);
+                text.setHorizontallyScrolling(false);
+                text.setEllipsize(null);
+                text.setHorizontalFadingEdgeEnabled(false);
+                return;
+            }
             if (!TextUtils.isEmpty(text.getText())) {
                 text.setSingleLine(true); text.setMaxLines(1); text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
                 text.setMarqueeRepeatLimit(-1); text.setHorizontallyScrolling(true); text.setHorizontalFadingEdgeEnabled(true);
