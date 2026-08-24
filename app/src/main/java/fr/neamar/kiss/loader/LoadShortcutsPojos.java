@@ -64,7 +64,14 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
 
         for (ShortcutInfo shortcutInfo : shortcutInfos) {
             if (isCancelled()) break;
-            if (!ShortcutUtil.isShortcutVisible(context, shortcutInfo, excludedApps, excludedShortcutApps)) continue;
+
+            boolean packageDisabled = !isPackageEnabled(context, shortcutInfo.getPackage());
+            boolean normalVisible = ShortcutUtil.isShortcutVisible(context, shortcutInfo,
+                    excludedApps, excludedShortcutApps);
+            boolean disabledVisible = retainDisabled
+                    && packageDisabled
+                    && !excludedShortcutApps.contains(shortcutInfo.getPackage());
+            if (!normalVisible && !disabledVisible) continue;
 
             ShortcutRecord shortcutRecord = ShortcutUtil.createShortcutRecord(context, shortcutInfo,
                     !shortcutInfo.isPinned());
@@ -73,15 +80,13 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
             String key = shortcutKey(shortcutRecord.packageName, shortcutRecord.intentUri);
             liveKeys.add(key);
 
-            // Persist every currently visible shortcut while exhaustive disabled indexing is on.
-            // Android may stop exposing it the moment its app is frozen; the DB copy is then the
-            // authoritative local memory needed to keep the shortcut searchable.
             if (retainDisabled) DBHelper.insertShortcut(context, shortcutRecord);
 
             boolean isSuspended = PackageManagerUtils.isAppSuspended(context, shortcutInfo.getPackage(),
                     new UserHandle(context, shortcutInfo.getUserHandle()));
-            boolean isQuietModeEnabled = userManager != null && userManager.isQuietModeEnabled(shortcutInfo.getUserHandle());
-            boolean disabled = isSuspended || isQuietModeEnabled || !isPackageEnabled(context, shortcutInfo.getPackage());
+            boolean isQuietModeEnabled = userManager != null
+                    && userManager.isQuietModeEnabled(shortcutInfo.getUserHandle());
+            boolean disabled = isSuspended || isQuietModeEnabled || packageDisabled || !shortcutInfo.isEnabled();
 
             ShortcutPojo pojo = createPojo(
                     new UserHandle(context, shortcutInfo.getUserHandle()),
@@ -96,9 +101,6 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         }
 
         if (retainDisabled) {
-            // DB records for Oreo shortcuts are normally ignored because live ShortcutInfo contains
-            // richer metadata. Bring a DB record back only when Android no longer exposes it AND its
-            // owning package is still installed but disabled/frozen. This avoids live duplicates.
             UserHandle currentUser = new UserHandle(context, Process.myUserHandle());
             TagsHandler tagsHandler = dataHandler.getTagsHandler();
             for (ShortcutRecord remembered : DBHelper.getShortcuts(context)) {
