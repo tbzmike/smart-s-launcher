@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -24,6 +25,7 @@ import androidx.preference.PreferenceScreen;
 import java.util.Arrays;
 import java.util.List;
 
+import fr.neamar.kiss.appusage.AppUsageTracker;
 import fr.neamar.kiss.forwarder.ExperienceTweaks;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
 import fr.neamar.kiss.preference.UiEditLock;
@@ -33,6 +35,8 @@ import fr.neamar.kiss.utils.SystemUiVisibilityHelper;
 public class SettingsActivity extends AppCompatActivity implements SharedPreferences.OnSharedPreferenceChangeListener, PreferenceFragmentCompat.OnPreferenceStartScreenCallback, FragmentManager.OnBackStackChangedListener, PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
     private static final String TAG = SettingsActivity.class.getSimpleName();
     public static final String ARG_SHOW_FRAGMENT = "show_fragment";
+    private static final int MENU_APP_USAGE_TIMELINE = 0x535501;
+    private static final int MENU_APP_USAGE_TOGGLE = 0x535502;
 
     private static final List<String> SETTINGS_REQUIRING_RESTART = Arrays.asList("primary-color", "transparent-search", "transparent-favorites",
             "pref-rounded-list", "pref-rounded-bars", "pref-swap-kiss-button-with-menu", "pref-hide-circle", "history-hide",
@@ -90,6 +94,16 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         inflater.inflate(R.menu.menu_settings, menu);
         MenuItem unlock = menu.findItem(R.id.unlock_ui);
         if (unlock != null) unlock.setVisible(UiEditLock.isLocked(this));
+
+        MenuItem appUsageTimeline = menu.add(Menu.NONE, MENU_APP_USAGE_TIMELINE, Menu.NONE,
+                "App usage timeline");
+        appUsageTimeline.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+
+        MenuItem appUsageToggle = menu.add(Menu.NONE, MENU_APP_USAGE_TOGGLE, Menu.NONE,
+                "Track app usage (365 days)");
+        appUsageToggle.setCheckable(true);
+        appUsageToggle.setChecked(AppUsageTracker.isEnabled(this));
+        appUsageToggle.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         return true;
     }
 
@@ -103,6 +117,22 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
             if (current instanceof PreferenceFragmentCompat) {
                 PreferenceScreen screen = ((PreferenceFragmentCompat) current).getPreferenceScreen();
                 if (screen != null) UiEditLock.refresh(this, screen);
+            }
+            return true;
+        }
+        if (item.getItemId() == MENU_APP_USAGE_TIMELINE) {
+            startActivity(new Intent(this, AppUsageActivity.class));
+            return true;
+        }
+        if (item.getItemId() == MENU_APP_USAGE_TOGGLE) {
+            boolean enabled = !AppUsageTracker.isEnabled(this);
+            prefs.edit().putBoolean(AppUsageTracker.PREF_ENABLED, enabled).apply();
+            AppUsageTracker.setEnabled(this, enabled);
+            item.setChecked(enabled);
+            if (enabled && !AppUsageTracker.hasUsageAccess(this)) {
+                Toast.makeText(this, "Grant Usage Access so Smart S can import phone usage",
+                        Toast.LENGTH_LONG).show();
+                startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
             }
             return true;
         }
@@ -145,7 +175,9 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-        if (UiEditLock.PREF_KEY.equals(key)) invalidateOptionsMenu();
+        if (UiEditLock.PREF_KEY.equals(key) || AppUsageTracker.PREF_ENABLED.equals(key)) {
+            invalidateOptionsMenu();
+        }
         if (SETTINGS_REQUIRING_RESTART.contains(key) || SETTINGS_REQUIRING_RESTART_FOR_SETTINGS_ACTIVITY.contains(key)) {
             requireFullRestart = true;
             if (SETTINGS_REQUIRING_RESTART_FOR_SETTINGS_ACTIVITY.contains(key)) recreate();
