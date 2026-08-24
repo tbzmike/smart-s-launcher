@@ -13,17 +13,18 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.lang.reflect.Field;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.utils.Log;
 
 /**
  * Applies fresh location data and a map preview to the dedicated Vertical Cards renderer.
- * This is intentionally separate from SmartCardListForwarder so normal card construction,
- * notification actions, sizing, gestures and existing card behavior remain untouched.
+ * It updates only the Maps card and never rebuilds the launcher when Home is pressed.
  */
 final class VerticalMapsCardForwarder extends Forwarder {
     private static final String TAG = "VerticalMapsCardForwarder";
@@ -39,25 +40,28 @@ final class VerticalMapsCardForwarder extends Forwarder {
     }
 
     void onCreate() {
-        refreshSoon();
+        refreshMapsCard(true);
     }
 
-    void onResume() {
-        refreshSoon();
-    }
+    /** Home resume deliberately does nothing. */
+    void onResume() { }
 
     void onDataSetChanged() {
-        refreshSoon();
+        refreshMapsCard(false);
     }
 
-    private void refreshSoon() {
+    private void refreshMapsCard(boolean requestFreshLocation) {
         if (!isVerticalCardsEnabled()) return;
         View anchor = mainActivity.listContainer;
         if (anchor == null) return;
         anchor.post(() -> {
             int position = findMapsPosition();
             if (position < 0) return;
-            MapLiveTileProvider.requestFreshLocation(mainActivity, this::refreshSoon);
+            showLocatingState(position);
+            if (requestFreshLocation) {
+                MapLiveTileProvider.requestFreshLocation(mainActivity,
+                        () -> loadAndApply(findMapsPosition()));
+            }
             loadAndApply(position);
         });
     }
@@ -71,92 +75,134 @@ final class VerticalMapsCardForwarder extends Forwarder {
         if (mainActivity.adapter == null) return -1;
         for (int i = 0; i < mainActivity.adapter.getCount(); i++) {
             Result<?> result = mainActivity.adapter.getItem(i);
-            if (result != null && result.getPojo() instanceof AppPojo) {
-                AppPojo app = (AppPojo) result.getPojo();
-                if (MapLiveTileProvider.MAPS_PACKAGE.equals(app.packageName)) return i;
-            }
+            if (isMapsResult(result)) return i;
         }
         return -1;
     }
 
+    private boolean isMapsResult(Result<?> result) {
+        if (result == null) return false;
+        Pojo pojo = result.getPojo();
+        if (pojo instanceof AppPojo
+                && MapLiveTileProvider.MAPS_PACKAGE.equals(((AppPojo) pojo).packageName)) return true;
+        String id = pojo.id == null ? "" : pojo.id.toLowerCase(Locale.ROOT);
+        if (id.contains(MapLiveTileProvider.MAPS_PACKAGE)) return true;
+        String name = pojo.getName();
+        return name != null && "maps".equals(name.trim().toLowerCase(Locale.ROOT));
+    }
+
     private void loadAndApply(int adapterPosition) {
-        if (!loadInFlight.compareAndSet(false, true)) return;
+        if (adapterPosition < 0 || !loadInFlight.compareAndSet(false, true)) return;
         AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
             LiveTileDataProvider.LiveTileData data = MapLiveTileProvider.latest(mainActivity);
             mainActivity.runOnUiThread(() -> {
                 loadInFlight.set(false);
-                if (data == null || !isVerticalCardsEnabled()) return;
+                if (!isVerticalCardsEnabled()) return;
+                if (data == null) {
+                    if (!MapLiveTileProvider.hasLocationPermission(mainActivity)) {
+                        updateStatus(adapterPosition, "Allow location for live Maps preview");
+                    } else {
+                        updateStatus(adapterPosition, "Locating current position…");
+                    }
+                    return;
+                }
                 applyToCard(adapterPosition, data);
             });
         });
     }
 
-    private void applyToCard(int adapterPosition, LiveTileDataProvider.LiveTileData data) {
-        LinearLayout column = readColumn();
-        if (column == null || adapterPosition < 0 || adapterPosition >= column.getChildCount()) return;
-        View wrapper = column.getChildAt(adapterPosition);
-        if (!(wrapper instanceof ViewGroup)) return;
-        ViewGroup wrapperGroup = (ViewGroup) wrapper;
-        if (wrapperGroup.getChildCount() == 0 || !(wrapperGroup.getChildAt(0) instanceof LinearLayout)) return;
-        LinearLayout card = (LinearLayout) wrapperGroup.getChildAt(0);
-        if (card.getChildCount() == 0 || !(card.getChildAt(0) instanceof LinearLayout)) return;
+    private void showLocatingState(int adapterPosition) {
+        if (MapLiveTileProvider.hasLocationPermission(mainActivity)) {
+            updateStatus(adapterPosition, "Locating current position…");
+        } else {
+            updateStatus(adapterPosition, "Location permission required");
+        }
+    }
 
-        LinearLayout mainRow = (LinearLayout) card.getChildAt(0);
-        LinearLayout center = findCenterColumn(mainRow);
-        if (center != null) updateLocationText(center, data.title);
+    private void updateStatus(int adapterPosition, String text) {
+        LinearLayout center = resolveCenter(adapterPosition);
+        if (center == null) return;
+        TextView target = ensureLocationLine(center);
+        hideStaleMapText(center, target);
+        target.setText(text);
+        target.setVisibility(View.VISIBLE);
+    }
+
+    private void applyToCard(int adapterPosition, LiveTileDataProvider.LiveTileData data) {
+        LinearLayout card = resolveCard(adapterPosition);
+        LinearLayout center = resolveCenter(adapterPosition);
+        if (card == null || center == null) return;
+
+        TextView location = ensureLocationLine(center);
+        hideStaleMapText(center, location);
+        location.setText(TextUtils.isEmpty(data.title) ? "Current location" : data.title);
+        location.setVisibility(View.VISIBLE);
+
+        if (!TextUtils.isEmpty(data.text)) {
+            TextView coordinates = new TextView(mainActivity);
+            coordinates.setTag(TAG_MAP_LOCATION + 1);
+            coordinates.setText(data.text);
+            coordinates.setTextColor(Color.argb(205, 255, 255, 255));
+            coordinates.setTextSize(11f);
+            coordinates.setSingleLine(true);
+            coordinates.setEllipsize(TextUtils.TruncateAt.END);
+            center.addView(coordinates, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(23)));
+        }
 
         removeTaggedChild(card, TAG_MAP_PREVIEW);
         if (data.artwork != null) {
             View preview = buildPreview(data.artwork);
             int insertAt = Math.min(1, card.getChildCount());
-            card.addView(preview, insertAt, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(118)));
+            LinearLayout.LayoutParams previewLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(132));
+            previewLp.topMargin = dp(8);
+            previewLp.bottomMargin = dp(6);
+            card.addView(preview, insertAt, previewLp);
         }
     }
 
-    private LinearLayout findCenterColumn(LinearLayout mainRow) {
-        for (int i = mainRow.getChildCount() - 1; i >= 0; i--) {
-            View child = mainRow.getChildAt(i);
-            if (child instanceof LinearLayout) return (LinearLayout) child;
-        }
-        return null;
-    }
-
-    private void updateLocationText(LinearLayout center, String location) {
-        if (TextUtils.isEmpty(location)) return;
-        TextView target = null;
+    private TextView ensureLocationLine(LinearLayout center) {
         for (int i = 0; i < center.getChildCount(); i++) {
             View child = center.getChildAt(i);
             if (Integer.valueOf(TAG_MAP_LOCATION).equals(child.getTag()) && child instanceof TextView) {
-                target = (TextView) child;
-                break;
+                return (TextView) child;
             }
         }
-        if (target == null) {
-            // The Vertical Card center has title first and subtitle second when an app subtitle exists.
-            if (center.getChildCount() > 1 && center.getChildAt(1) instanceof TextView) {
-                target = (TextView) center.getChildAt(1);
-            } else {
-                target = new TextView(mainActivity);
-                target.setTextColor(Color.WHITE);
-                target.setTextSize(13f);
-                target.setSingleLine(true);
-                target.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-                target.setMarqueeRepeatLimit(-1);
-                target.setSelected(true);
-                center.addView(target, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dp(27)));
+        TextView target = new TextView(mainActivity);
+        target.setTag(TAG_MAP_LOCATION);
+        target.setTextColor(Color.WHITE);
+        target.setTextSize(13f);
+        target.setSingleLine(true);
+        target.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        target.setMarqueeRepeatLimit(-1);
+        target.setSelected(true);
+        target.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        center.addView(target, Math.min(1, center.getChildCount()), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(28)));
+        return target;
+    }
+
+    private void hideStaleMapText(LinearLayout center, TextView keep) {
+        for (int i = center.getChildCount() - 1; i >= 0; i--) {
+            View child = center.getChildAt(i);
+            if (child == keep) continue;
+            Object tag = child.getTag();
+            if (Integer.valueOf(TAG_MAP_LOCATION + 1).equals(tag)) {
+                center.removeViewAt(i);
+                continue;
             }
-            target.setTag(TAG_MAP_LOCATION);
+            // Keep the first title line. All other TextViews on a Maps card are old subtitle or
+            // notification-derived location strings and must not override the live location.
+            if (child instanceof TextView && i > 0) child.setVisibility(View.GONE);
         }
-        target.setText(location);
-        target.setVisibility(View.VISIBLE);
     }
 
     private View buildPreview(Drawable mapDrawable) {
         FrameLayout frame = new FrameLayout(mainActivity);
         frame.setTag(TAG_MAP_PREVIEW);
-        frame.setClipToOutline(true);
+        frame.setClipChildren(true);
+        frame.setClipToPadding(true);
 
         ImageView map = new ImageView(mainActivity);
         map.setImageDrawable(mapDrawable);
@@ -171,11 +217,32 @@ final class VerticalMapsCardForwarder extends Forwarder {
         attribution.setTextSize(9f);
         attribution.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         attribution.setPadding(dp(5), 0, dp(5), 0);
-        attribution.setBackgroundColor(Color.argb(145, 0, 0, 0));
+        attribution.setBackgroundColor(Color.argb(160, 0, 0, 0));
         FrameLayout.LayoutParams attributionLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(20), Gravity.END | Gravity.BOTTOM);
         frame.addView(attribution, attributionLp);
         return frame;
+    }
+
+    private LinearLayout resolveCard(int adapterPosition) {
+        LinearLayout column = readColumn();
+        if (column == null || adapterPosition < 0 || adapterPosition >= column.getChildCount()) return null;
+        View wrapper = column.getChildAt(adapterPosition);
+        if (!(wrapper instanceof ViewGroup)) return null;
+        ViewGroup wrapperGroup = (ViewGroup) wrapper;
+        if (wrapperGroup.getChildCount() == 0 || !(wrapperGroup.getChildAt(0) instanceof LinearLayout)) return null;
+        return (LinearLayout) wrapperGroup.getChildAt(0);
+    }
+
+    private LinearLayout resolveCenter(int adapterPosition) {
+        LinearLayout card = resolveCard(adapterPosition);
+        if (card == null || card.getChildCount() == 0 || !(card.getChildAt(0) instanceof LinearLayout)) return null;
+        LinearLayout mainRow = (LinearLayout) card.getChildAt(0);
+        for (int i = mainRow.getChildCount() - 1; i >= 0; i--) {
+            View child = mainRow.getChildAt(i);
+            if (child instanceof LinearLayout) return (LinearLayout) child;
+        }
+        return null;
     }
 
     private void removeTaggedChild(ViewGroup parent, int tag) {
