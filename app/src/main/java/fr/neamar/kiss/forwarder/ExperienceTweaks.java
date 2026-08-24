@@ -221,17 +221,18 @@ public class ExperienceTweaks extends Forwarder {
      * Keep the newest/highest-priority history result anchored above the IME. Android resizes the
      * launcher over multiple frames while the keyboard animates, so scroll once on the next layout
      * pass and once more after the IME has settled. This never rebuilds the adapter or re-runs a
-     * search; it only changes the current ListView position.
+     * search; it only changes the current visible history position.
      */
     private void onKeyboardVisibilityChanged(boolean keyboardIsVisible) {
         mainActivity.onKeyboardVisibilityChanged(keyboardIsVisible);
+        VerticalCardKeyboardAnchor.onKeyboardVisibilityChanged(mainActivity, keyboardIsVisible);
         if (!keyboardIsVisible) return;
 
-        // Undo any temporary list-height manipulation left by KeyboardScrollHider before anchoring
-        // the viewport to the newest item in the newly resized window.
+        // Normal KISS list path. Vertical Cards have their own ScrollView and are anchored by
+        // VerticalCardKeyboardAnchor above; do not assume mainActivity.list is the visible surface.
         if (mainActivity.hider != null) mainActivity.hider.fixScroll();
         mainActivity.list.post(this::scrollToLatestResult);
-        mainActivity.list.postDelayed(this::scrollToLatestResult, 180L);
+        mainActivity.list.postDelayed(this::scrollToLatestResult, 220L);
     }
 
     private void scrollToLatestResult() {
