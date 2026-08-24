@@ -95,13 +95,12 @@ public class ForwarderManager extends Forwarder {
         // These two listeners are explicitly unregistered in onPause and therefore must be restored.
         experienceTweaks.onResume();
         notificationForwarder.onResume();
-        // Usage time is real external state that changes while another app is in front. Updating the
-        // label is intentionally allowed on every resume and does not rebuild or refresh Home.
-        verticalCardUsageForwarder.onResume();
 
         if (initialResumeComplete) {
-            // Returning Home must preserve the already-rendered launcher surface. Do not re-run
-            // history/card/U/Maps/communication layout pipelines just because Activity.onResume fired.
+            // Returning Home must preserve the already-rendered launcher surface. Usage time is
+            // external state that changed while another app was foreground, so refresh only that
+            // metadata asynchronously without rebuilding cards/history.
+            verticalCardUsageForwarder.onResume();
             return;
         }
 
@@ -115,6 +114,11 @@ public class ForwarderManager extends Forwarder {
         verticalMapsCardForwarder.onResume();
         verticalCardGroupResizeController.onResume();
         verticalCardNotificationHistoryForwarder.onResume();
+        // The usage label must be applied after SmartCardListForwarder has rebuilt the initial
+        // Vertical Cards and after notification/launch metadata has been attached. Running this
+        // before the rebuild creates a race where a fast cached UsageStats result is immediately
+        // erased by the subsequent card reconstruction.
+        verticalCardUsageForwarder.onResume();
         squareUStabilityController.onResume();
         squareUEdgeBoundsController.onResume();
         historyVisualEnhancer.onResume();
