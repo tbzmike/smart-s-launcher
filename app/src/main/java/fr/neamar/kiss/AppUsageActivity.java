@@ -36,6 +36,8 @@ import fr.neamar.kiss.appusage.AppUsageTracker;
 
 /** Tree-style, local timeline of phone/app usage retained for up to 365 days. */
 public final class AppUsageActivity extends AppCompatActivity {
+    private static final String KIND_PHONE_DAILY = "PHONE_DAILY";
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r ->
             new Thread(r, "smart-s-app-usage-ui"));
     private final AtomicInteger loadGeneration = new AtomicInteger();
@@ -102,7 +104,8 @@ public final class AppUsageActivity extends AppCompatActivity {
 
         grantAccess = new Button(this);
         grantAccess.setText("Grant Usage Access");
-        grantAccess.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
+        grantAccess.setOnClickListener(v ->
+                startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
         root.addView(grantAccess, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -154,9 +157,14 @@ public final class AppUsageActivity extends AppCompatActivity {
         root.addView(sourceNote);
 
         rangeSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view,
-                                                 int position, long id) { reload(); }
-            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view,
+                                       int position, long id) {
+                reload();
+            }
+
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) { }
         });
         setContentView(root);
     }
@@ -182,9 +190,25 @@ public final class AppUsageActivity extends AppCompatActivity {
             List<AppUsageStore.TimelineEntry> combined = new ArrayList<>();
             combined.addAll(store.getTimeline(since, 4500));
             combined.addAll(store.getDailyUsageTimeline(since, 2500));
+            for (AppUsageStore.DailyPhoneState phone : store.getDailyPhoneStates(since, 366)) {
+                combined.add(new AppUsageStore.TimelineEntry(
+                        "daily-phone:" + phone.dayMs,
+                        phone.dayMs + 23L * 60L * 60L * 1000L + 59L * 60L * 1000L,
+                        0L,
+                        KIND_PHONE_DAILY,
+                        null,
+                        null,
+                        phone.screenOnMs,
+                        false,
+                        phone.screenOffMs + "|" + phone.unlockCount,
+                        null,
+                        null));
+            }
             combined.sort(Comparator.comparingLong((AppUsageStore.TimelineEntry e) -> e.startMs)
                     .reversed());
-            if (combined.size() > 5000) combined = new ArrayList<>(combined.subList(0, 5000));
+            if (combined.size() > 5000) {
+                combined = new ArrayList<>(combined.subList(0, 5000));
+            }
             AppUsageStore.Summary totals = store.getSummary(since, now);
             List<Row> rows = buildRows(combined);
             runOnUiThread(() -> {
@@ -192,6 +216,7 @@ public final class AppUsageActivity extends AppCompatActivity {
                 progress.setVisibility(View.GONE);
                 summary.setText("Apps used: " + totals.appsUsed
                         + "   •   App time: " + duration(totals.appUsageMs)
+                        + "   •   Unlocks: " + totals.unlockCount
                         + "\nScreen on: " + duration(totals.screenOnMs)
                         + "   •   Screen off: " + duration(totals.screenOffMs));
                 adapter.setRows(rows);
@@ -202,16 +227,22 @@ public final class AppUsageActivity extends AppCompatActivity {
     private int selectedDays() {
         if (rangeSpinner == null) return 7;
         switch (rangeSpinner.getSelectedItemPosition()) {
-            case 0: return 1;
-            case 1: return 7;
-            case 2: return 30;
-            default: return 365;
+            case 0:
+                return 1;
+            case 1:
+                return 7;
+            case 2:
+                return 30;
+            default:
+                return 365;
         }
     }
 
     private List<Row> buildRows(List<AppUsageStore.TimelineEntry> entries) {
-        if (entries.isEmpty()) return Collections.singletonList(new Row(false,
-                "No usage events are stored for this period yet."));
+        if (entries.isEmpty()) {
+            return Collections.singletonList(new Row(false,
+                    "No usage events are stored for this period yet."));
+        }
         List<Row> rows = new ArrayList<>();
         SimpleDateFormat dayFormat = new SimpleDateFormat("EEEE, dd MMM yyyy", Locale.getDefault());
         SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
@@ -236,10 +267,14 @@ public final class AppUsageActivity extends AppCompatActivity {
             case AppUsageStore.KIND_APP_USAGE:
                 b.append("📱 ").append(app).append(system)
                         .append("\n│   Used ").append(duration(e.durationMs));
+                if (!TextUtils.isEmpty(e.detail)) b.append("\n│   ").append(e.detail);
                 break;
             case "APP_DAILY_USAGE":
                 b.append("📊 ").append(app).append(system)
                         .append("\n│   Daily total ").append(duration(e.durationMs));
+                break;
+            case KIND_PHONE_DAILY:
+                appendDailyPhoneState(b, e);
                 break;
             case AppUsageStore.KIND_SCREEN_ON:
                 b.append("☀ Screen ON\n│   Interactive for ").append(duration(e.durationMs));
@@ -267,9 +302,11 @@ public final class AppUsageActivity extends AppCompatActivity {
                 break;
             case AppUsageStore.KIND_APP_INTERACTION:
                 b.append("• User interaction · ").append(app).append(system);
+                if (!TextUtils.isEmpty(e.detail)) b.append("\n│   ").append(e.detail);
                 break;
             case AppUsageStore.KIND_SHORTCUT:
                 b.append("↗ Shortcut · ").append(app).append(system);
+                if (!TextUtils.isEmpty(e.detail)) b.append("\n│   ").append(e.detail);
                 break;
             default:
                 b.append(e.kind);
@@ -283,10 +320,37 @@ public final class AppUsageActivity extends AppCompatActivity {
         return b.toString();
     }
 
+    private void appendDailyPhoneState(StringBuilder b, AppUsageStore.TimelineEntry e) {
+        long screenOff = 0L;
+        int unlocks = 0;
+        if (!TextUtils.isEmpty(e.detail)) {
+            String[] parts = e.detail.split("\\|", -1);
+            if (parts.length > 0) {
+                try {
+                    screenOff = Long.parseLong(parts[0]);
+                } catch (NumberFormatException ignored) { }
+            }
+            if (parts.length > 1) {
+                try {
+                    unlocks = Integer.parseInt(parts[1]);
+                } catch (NumberFormatException ignored) { }
+            }
+        }
+        b.append("🕘 Daily phone summary")
+                .append("\n│   Screen on: ").append(duration(e.durationMs))
+                .append(" · off: ").append(duration(screenOff))
+                .append(" · unlocks: ").append(unlocks);
+    }
+
     private void appendSource(StringBuilder b, AppUsageStore.TimelineEntry e) {
-        if (!TextUtils.isEmpty(e.source)) b.append("\n│   Source: ").append(e.source);
-        else b.append("\n│   Source: not exposed by Android");
-        if (!TextUtils.isEmpty(e.sourceUri)) b.append("\n│   Store page: ").append(e.sourceUri);
+        if (!TextUtils.isEmpty(e.source)) {
+            b.append("\n│   Source: ").append(e.source);
+        } else {
+            b.append("\n│   Source: not exposed by Android");
+        }
+        if (!TextUtils.isEmpty(e.sourceUri)) {
+            b.append("\n│   Store page: ").append(e.sourceUri);
+        }
     }
 
     private static String duration(long ms) {
@@ -308,7 +372,11 @@ public final class AppUsageActivity extends AppCompatActivity {
     private static final class Row {
         final boolean header;
         final String text;
-        Row(boolean header, String text) { this.header = header; this.text = text; }
+
+        Row(boolean header, String text) {
+            this.header = header;
+            this.text = text;
+        }
     }
 
     private final class TimelineAdapter extends RecyclerView.Adapter<TimelineAdapter.Holder> {
@@ -336,14 +404,21 @@ public final class AppUsageActivity extends AppCompatActivity {
             holder.text.setTypeface(null, row.header
                     ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
             holder.text.setPadding(dp(row.header ? 4 : 12), dp(row.header ? 12 : 6),
-                    dp(4), dp(row.header ? 6 : 6));
+                    dp(4), dp(6));
         }
 
-        @Override public int getItemCount() { return rows.size(); }
+        @Override
+        public int getItemCount() {
+            return rows.size();
+        }
 
         final class Holder extends RecyclerView.ViewHolder {
             final TextView text;
-            Holder(TextView text) { super(text); this.text = text; }
+
+            Holder(TextView text) {
+                super(text);
+                this.text = text;
+            }
         }
     }
 }
