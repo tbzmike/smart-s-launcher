@@ -2,6 +2,7 @@ package fr.neamar.kiss.forwarder;
 
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.text.TextUtils;
 import android.view.ContextMenu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
@@ -35,6 +36,8 @@ public class ForwarderManager extends Forwarder {
     private final HistoryVisualEnhancer historyVisualEnhancer;
     private final UNotificationHistoryLongPressForwarder uNotificationHistoryLongPressForwarder;
     private final CommunicationHistoryForwarder communicationHistoryForwarder;
+    private boolean initialResumeComplete;
+    private String lastSearchQuery;
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -86,10 +89,18 @@ public class ForwarderManager extends Forwarder {
 
     public void onResume() {
         UiEditLock.syncRuntimeState(mainActivity);
-        interfaceTweaks.onResume();
+        // These two listeners are explicitly unregistered in onPause and therefore must be restored.
         experienceTweaks.onResume();
-        lockedHistoryGestureBridge.onResume();
         notificationForwarder.onResume();
+
+        if (initialResumeComplete) {
+            // Returning Home must preserve the already-rendered launcher surface. Do not re-run
+            // history/card/U/Maps/communication layout pipelines just because Activity.onResume fired.
+            return;
+        }
+
+        interfaceTweaks.onResume();
+        lockedHistoryGestureBridge.onResume();
         tagsMenu.onResume();
         communicationHistoryForwarder.onResume();
         historyDisplayForwarder.onResume();
@@ -102,16 +113,12 @@ public class ForwarderManager extends Forwarder {
         squareUEdgeBoundsController.onResume();
         historyVisualEnhancer.onResume();
         uNotificationHistoryLongPressForwarder.onResume();
+        initialResumeComplete = true;
     }
 
     public void onPause() {
-        uNotificationHistoryLongPressForwarder.onPause();
-        lockedHistoryGestureBridge.onPause();
-        verticalCardNotificationHistoryForwarder.onPause();
-        verticalCardGroupResizeController.onPause();
-        squareUEdgeBoundsController.onPause();
-        squareUStabilityController.onPause();
-        squareUHostFullscreenController.onPause();
+        // Keep the visual/gesture hierarchy intact while another app is in front. Only listeners
+        // that explicitly need lifecycle unregister/register are paused.
         experienceTweaks.onPause();
         notificationForwarder.onPause();
     }
@@ -147,7 +154,18 @@ public class ForwarderManager extends Forwarder {
         lockedHistoryGestureBridge.onDataSetChanged();
     }
 
-    public void updateSearchRecords(String query) { experienceTweaks.updateSearchRecords(query); }
+    public void updateSearchRecords(String query) {
+        String normalized = query == null ? "" : query;
+        boolean sameQuery = TextUtils.equals(lastSearchQuery, normalized);
+        if (initialResumeComplete && !mainActivity.hasWindowFocus() && sameQuery) {
+            // MainActivity calls updateSearchRecords() from onResume. On a normal Home return the
+            // query has not changed, so keep the current adapter and scroll position untouched.
+            return;
+        }
+        lastSearchQuery = normalized;
+        experienceTweaks.updateSearchRecords(query);
+    }
+
     public void onFavoriteChange() { favoritesForwarder.onFavoriteChange(); experienceTweaks.onFavoriteChange(); }
     public void onDisplayKissBar(boolean display) { experienceTweaks.onDisplayKissBar(display); }
     public boolean onMenuButtonClicked(View menuButton) { return tagsMenu.onMenuButtonClicked(menuButton); }
