@@ -1,5 +1,6 @@
 package fr.neamar.kiss.appusage;
 
+import android.app.usage.EventStats;
 import android.app.usage.UsageEvents;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
@@ -10,6 +11,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.PersistableBundle;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
@@ -35,6 +37,9 @@ public final class AppUsageSync {
         if (AppUsageTracker.hasUsageAccess(appContext)) {
             importUsageEvents(appContext, store, now);
             importDailyUsage(appContext, store, now);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                importDailyPhoneState(appContext, store, now);
+            }
         }
         store.prune(now);
     }
@@ -149,7 +154,7 @@ public final class AppUsageSync {
         if (events == null) return;
 
         PackageManager pm = context.getPackageManager();
-        Map<String, Long> foregroundStarts = new HashMap<>();
+        Map<String, SessionStart> foregroundStarts = new HashMap<>();
         int screenState = 0; // 1 interactive, -1 non-interactive, 0 unknown
         long screenStateStart = 0L;
         UsageEvents.Event event = new UsageEvents.Event();
@@ -163,18 +168,21 @@ public final class AppUsageSync {
 
             // MOVE_TO_FOREGROUND / ACTIVITY_RESUMED share value 1 across supported Android versions.
             if (type == 1 && !TextUtils.isEmpty(pkg)) {
-                foregroundStarts.put(pkg, time);
+                foregroundStarts.put(pkg, new SessionStart(time, event.getClassName()));
                 continue;
             }
             // MOVE_TO_BACKGROUND / ACTIVITY_PAUSED share value 2.
             if (type == 2 && !TextUtils.isEmpty(pkg)) {
-                Long start = foregroundStarts.remove(pkg);
-                if (start != null && time >= start) {
+                SessionStart start = foregroundStarts.remove(pkg);
+                if (start != null && time >= start.timeMs) {
                     PackageMeta meta = packageMeta(pm, pkg, null);
+                    String detail = TextUtils.isEmpty(start.className)
+                            ? "Foreground app session"
+                            : "Foreground app session · " + start.className;
                     store.putTimeline(new AppUsageStore.TimelineEntry(
-                            "use:" + pkg + ":" + start,
-                            start, time, AppUsageStore.KIND_APP_USAGE, pkg, meta.label,
-                            time - start, meta.system, "Foreground app session", null, null));
+                            "use:" + pkg + ":" + start.timeMs,
+                            start.timeMs, time, AppUsageStore.KIND_APP_USAGE, pkg, meta.label,
+                            time - start.timeMs, meta.system, detail, null, null));
                 }
                 continue;
             }
@@ -208,25 +216,48 @@ public final class AppUsageSync {
                 continue;
             }
             if (type == UsageEvents.Event.USER_INTERACTION && !TextUtils.isEmpty(pkg)) {
-                // Cap noisy interaction events to one row per app/minute.
+                // Cap noisy interaction events to one row per app/minute. Android 15+ can also
+                // expose a category/action for the interaction; keep it when present.
                 long minute = time / 60_000L;
                 PackageMeta meta = packageMeta(pm, pkg, null);
+                String detail = interactionDetail(event);
                 store.putTimeline(new AppUsageStore.TimelineEntry(
                         "interaction:" + pkg + ":" + minute,
                         time, 0L, AppUsageStore.KIND_APP_INTERACTION, pkg, meta.label,
-                        0L, meta.system, "User interaction recorded by Android", null, null));
+                        0L, meta.system, detail, null, null));
                 continue;
             }
             if (type == UsageEvents.Event.SHORTCUT_INVOCATION && !TextUtils.isEmpty(pkg)) {
                 PackageMeta meta = packageMeta(pm, pkg, null);
+                String detail = "App shortcut invoked";
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1
+                        && !TextUtils.isEmpty(event.getShortcutId())) {
+                    detail += " · " + event.getShortcutId();
+                }
                 store.putTimeline(new AppUsageStore.TimelineEntry(
                         "shortcut:" + pkg + ":" + time,
                         time, 0L, AppUsageStore.KIND_SHORTCUT, pkg, meta.label,
-                        0L, meta.system, "App shortcut invoked", null, null));
+                        0L, meta.system, detail, null, null));
             }
         }
 
         store.setMeta(META_LAST_EVENT_SYNC, now);
+    }
+
+    private static String interactionDetail(UsageEvents.Event event) {
+        String detail = "User interaction recorded by Android";
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return detail;
+        try {
+            PersistableBundle extras = event.getExtras();
+            if (extras == null || extras.isEmpty()) return detail;
+            String category = extras.getString(UsageStatsManager.EXTRA_EVENT_CATEGORY);
+            String action = extras.getString(UsageStatsManager.EXTRA_EVENT_ACTION);
+            if (!TextUtils.isEmpty(category)) detail += " · " + category;
+            if (!TextUtils.isEmpty(action)) detail += " / " + action;
+        } catch (RuntimeException ignored) {
+            // Some OEM builds omit extended interaction extras.
+        }
+        return detail;
     }
 
     private static void importDailyUsage(Context context, AppUsageStore store, long now) {
@@ -263,6 +294,53 @@ public final class AppUsageSync {
             PackageMeta meta = metas.get(pkg);
             store.putDailyUsage(day, pkg, meta == null ? pkg : meta.label,
                     entry.getValue(), meta != null && meta.system);
+        }
+    }
+
+    /**
+     * Android keeps aggregate screen/keyguard EventStats longer than raw UsageEvents on many
+     * devices. Preserve those daily totals so 30/365-day views do not depend only on the few days
+     * of exact screen-transition events Android still has.
+     */
+    private static void importDailyPhoneState(Context context, AppUsageStore store, long now) {
+        UsageStatsManager manager = (UsageStatsManager)
+                context.getSystemService(Context.USAGE_STATS_SERVICE);
+        if (manager == null) return;
+        long begin = now - AppUsageStore.RETENTION_MS;
+        List<EventStats> stats;
+        try {
+            stats = manager.queryEventStats(UsageStatsManager.INTERVAL_DAILY, begin, now);
+        } catch (RuntimeException e) {
+            return;
+        }
+        if (stats == null) return;
+
+        long firstDay = AppUsageStore.startOfDay(begin);
+        Map<Long, PhoneAggregate> days = new HashMap<>();
+        for (EventStats stat : stats) {
+            if (stat == null) continue;
+            long stamp = stat.getFirstTimeStamp();
+            long day = AppUsageStore.startOfDay(stamp > 0L ? stamp : now);
+            if (day < firstDay) continue;
+            PhoneAggregate aggregate = days.computeIfAbsent(day, ignored -> new PhoneAggregate());
+            switch (stat.getEventType()) {
+                case UsageEvents.Event.SCREEN_INTERACTIVE:
+                    aggregate.screenOnMs += Math.max(0L, stat.getTotalTime());
+                    break;
+                case UsageEvents.Event.SCREEN_NON_INTERACTIVE:
+                    aggregate.screenOffMs += Math.max(0L, stat.getTotalTime());
+                    break;
+                case UsageEvents.Event.KEYGUARD_HIDDEN:
+                    aggregate.unlockCount += Math.max(0, stat.getCount());
+                    break;
+                default:
+                    break;
+            }
+        }
+        for (Map.Entry<Long, PhoneAggregate> entry : days.entrySet()) {
+            PhoneAggregate aggregate = entry.getValue();
+            store.putDailyPhoneState(entry.getKey(), aggregate.screenOnMs,
+                    aggregate.screenOffMs, aggregate.unlockCount);
         }
     }
 
@@ -348,6 +426,22 @@ public final class AppUsageSync {
             default:
                 return "Unspecified source";
         }
+    }
+
+    private static final class SessionStart {
+        final long timeMs;
+        final String className;
+
+        SessionStart(long timeMs, @Nullable String className) {
+            this.timeMs = timeMs;
+            this.className = className;
+        }
+    }
+
+    private static final class PhoneAggregate {
+        long screenOnMs;
+        long screenOffMs;
+        int unlockCount;
     }
 
     private static final class PackageMeta {
