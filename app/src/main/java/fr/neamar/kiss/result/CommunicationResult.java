@@ -1,20 +1,28 @@
 package fr.neamar.kiss.result;
 
 import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.provider.Telephony;
+import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.preference.PreferenceManager;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
 import java.util.Date;
 
@@ -26,29 +34,78 @@ import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public final class CommunicationResult extends Result<CommunicationPojo> {
+    private static final String TRUECALLER_PACKAGE = "com.truecaller";
     private volatile Drawable icon;
 
     public CommunicationResult(@NonNull CommunicationPojo pojo) { super(pojo); }
 
     @NonNull @Override
     public View display(Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
-        if (view == null) view = inflateFromId(context, R.layout.item_search, parent);
+        if (view == null) view = inflateFromId(context, R.layout.item_communication, parent);
+
         ImageView image = view.findViewById(R.id.item_search_icon);
-        TextView text = view.findViewById(R.id.item_search_text);
+        TextView title = view.findViewById(R.id.item_communication_title);
+        TextView meta = view.findViewById(R.id.item_communication_meta);
+        TextView body = view.findViewById(R.id.item_communication_body);
+        View actions = view.findViewById(R.id.item_communication_actions);
+        Button markRead = view.findViewById(R.id.item_communication_mark_read);
+        Button open = view.findViewById(R.id.item_communication_open);
+
         if (isHideIcons(context)) image.setImageDrawable(null); else setAsyncDrawable(image);
 
-        String kind;
-        switch (pojo.kind) {
-            case CALL: kind = "Call"; break;
-            case SMS: kind = "Message"; break;
-            default: kind = "Truecaller"; break;
-        }
-        String display = pojo.getName() == null ? "" : pojo.getName();
         String when = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
                 .format(new Date(pojo.timestamp));
-        text.setText(kind + " · " + display + " · " + when);
-        text.setMaxLines(3);
+        String label = pojo.primaryLabel();
+        if (TextUtils.isEmpty(label)) label = pojo.address;
+
+        switch (pojo.kind) {
+            case CALL:
+                title.setText(TextUtils.isEmpty(label) ? "Call" : label);
+                meta.setText("Call · " + when + (TextUtils.isEmpty(pojo.address) ? "" : " · " + pojo.address));
+                body.setText(pojo.body);
+                body.setVisibility(TextUtils.isEmpty(pojo.body) ? View.GONE : View.VISIBLE);
+                actions.setVisibility(View.GONE);
+                break;
+
+            case SMS:
+                title.setText(TextUtils.isEmpty(label) ? "Message" : label);
+                meta.setText("Message · " + when + (TextUtils.isEmpty(pojo.address) ? "" : " · " + pojo.address));
+                body.setText(cleanMessageBody(pojo.body));
+                body.setVisibility(View.VISIBLE);
+                actions.setVisibility(View.VISIBLE);
+                markRead.setVisibility(View.VISIBLE);
+                markRead.setOnClickListener(v -> markMessageRead(v.getContext()));
+                open.setText("Open message");
+                open.setOnClickListener(v -> openMessage(v.getContext(), v, true));
+                break;
+
+            case TRUECALLER_NOTIFICATION:
+            default:
+                title.setText(TextUtils.isEmpty(label) ? "Truecaller" : label);
+                meta.setText("Message · " + when);
+                String expanded = !TextUtils.isEmpty(pojo.notificationId)
+                        ? NotificationListener.getExpandedNotificationText(context, pojo.notificationId)
+                        : "";
+                body.setText(!TextUtils.isEmpty(expanded) ? expanded : pojo.body);
+                body.setVisibility(View.VISIBLE);
+                actions.setVisibility(View.VISIBLE);
+                markRead.setVisibility(View.VISIBLE);
+                markRead.setOnClickListener(v -> markMessageRead(v.getContext()));
+                open.setText("Open message");
+                open.setOnClickListener(v -> openMessage(v.getContext(), v, true));
+                break;
+        }
+
+        title.setSelected(true);
         return view;
+    }
+
+    private String cleanMessageBody(String raw) {
+        if (raw == null) return "";
+        String body = raw.trim();
+        if (body.startsWith("SMS · ")) return body.substring(6).trim();
+        if (body.startsWith("Sent SMS · ")) return body.substring(11).trim();
+        return body;
     }
 
     @Override public Drawable getDrawable(Context context) {
@@ -76,34 +133,129 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                 if (!pojo.address.isEmpty() && openCallInApp(context, v)) return;
                 break;
             case SMS:
-                if (!pojo.address.isEmpty()) {
-                    Intent sms = new Intent(Intent.ACTION_SENDTO,
-                            Uri.parse("smsto:" + Uri.encode(pojo.address)));
-                    sms.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    setSourceBounds(sms, v);
-                    try {
-                        context.startActivity(sms);
-                        return;
-                    } catch (ActivityNotFoundException | SecurityException ignored) { }
-                }
-                break;
             case TRUECALLER_NOTIFICATION:
-                if (!pojo.notificationId.isEmpty()
-                        && NotificationListener.openNotification(context, pojo.notificationId)) return;
-                if (!pojo.packageName.isEmpty()
-                        && AppLaunchUtils.launchPackage(context, pojo.packageName)) return;
+                if (openMessage(context, v, false)) return;
                 break;
         }
         Toast.makeText(context, "Unable to open this communication item", Toast.LENGTH_SHORT).show();
+    }
+
+    private boolean openMessage(Context context, View v, boolean showFailure) {
+        // Highest-fidelity route: the exact PendingIntent captured from the active notification.
+        if (!TextUtils.isEmpty(pojo.notificationId)
+                && NotificationListener.openNotification(context, pojo.notificationId)) {
+            return true;
+        }
+
+        PackageManager pm = context.getPackageManager();
+        String sourceId = sourceId("sms");
+
+        // Some message apps, including some Truecaller versions, accept a direct SMS provider row.
+        if (!TextUtils.isEmpty(sourceId) && sourceId.matches("[0-9]+")) {
+            Uri messageUri = Uri.withAppendedPath(Telephony.Sms.CONTENT_URI, sourceId);
+            if (tryStart(context, v, new Intent(Intent.ACTION_VIEW, messageUri)
+                    .setPackage(pojo.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), pm)) return true;
+        }
+
+        // Prefer the owning app and an address-specific VIEW conversation over generic app launch.
+        if (!TextUtils.isEmpty(pojo.address)) {
+            Uri conversation = Uri.parse("smsto:" + Uri.encode(pojo.address));
+            if (!TextUtils.isEmpty(pojo.packageName)
+                    && tryStart(context, v, new Intent(Intent.ACTION_VIEW, conversation)
+                    .setPackage(pojo.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), pm)) return true;
+
+            if (tryStart(context, v, new Intent(Intent.ACTION_VIEW, conversation)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), pm)) return true;
+
+            if (tryStart(context, v, new Intent(Intent.ACTION_SENDTO, conversation)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), pm)) return true;
+        }
+
+        // A bare package launch is deliberately last because it does not identify the message.
+        if (!TextUtils.isEmpty(pojo.packageName)
+                && AppLaunchUtils.launchPackage(context, pojo.packageName)) return true;
+
+        if (showFailure) Toast.makeText(context, "Unable to open this exact message", Toast.LENGTH_SHORT).show();
+        return false;
+    }
+
+    private boolean tryStart(Context context, View source, Intent intent, PackageManager pm) {
+        if (intent.getPackage() != null && !AppLaunchUtils.ensurePackageEnabled(context, intent.getPackage())) {
+            return false;
+        }
+        if (pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY) == null) return false;
+        setSourceBounds(intent, source);
+        try {
+            context.startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException | SecurityException ignored) {
+            return false;
+        }
+    }
+
+    private void markMessageRead(Context context) {
+        if (!TextUtils.isEmpty(pojo.notificationId)
+                && NotificationListener.markNotificationRead(context, pojo.notificationId)) {
+            Toast.makeText(context, "Marked as read", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (pojo.kind == CommunicationPojo.Kind.SMS && markSmsProviderRead(context)) {
+            Toast.makeText(context, "Marked as read", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Toast.makeText(context, "This message cannot be marked read directly; open the message instead",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private boolean markSmsProviderRead(Context context) {
+        String sourceId = sourceId("sms");
+        if (TextUtils.isEmpty(sourceId) || !sourceId.matches("[0-9]+")) return false;
+        Uri uri = Uri.withAppendedPath(Telephony.Sms.CONTENT_URI, sourceId);
+        ContentValues values = new ContentValues();
+        values.put(Telephony.Sms.READ, 1);
+        try {
+            if (context.getContentResolver().update(uri, values, null, null) > 0) return true;
+        } catch (RuntimeException ignored) {
+            // Android normally reserves SMS-provider writes for the active SMS role holder.
+        }
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        if (!prefs.getBoolean("root-mode", false)) return false;
+        return markSmsReadWithRoot(sourceId);
+    }
+
+    private boolean markSmsReadWithRoot(String sourceId) {
+        if (!sourceId.matches("[0-9]+")) return false;
+        Process process = null;
+        try {
+            process = Runtime.getRuntime().exec("su");
+            String command = "content update --uri content://sms/" + sourceId + " --bind read:i:1\nexit\n";
+            process.getOutputStream().write(command.getBytes(StandardCharsets.UTF_8));
+            process.getOutputStream().flush();
+            process.getOutputStream().close();
+            return process.waitFor() == 0;
+        } catch (IOException | InterruptedException | SecurityException ignored) {
+            if (ignored instanceof InterruptedException) Thread.currentThread().interrupt();
+            return false;
+        } finally {
+            if (process != null) process.destroy();
+        }
+    }
+
+    private String sourceId(String expectedSource) {
+        String id = pojo.id == null ? "" : pojo.id;
+        String prefix = "communication://" + expectedSource + "/";
+        return id.startsWith(prefix) ? id.substring(prefix.length()) : "";
     }
 
     private boolean openCallInApp(Context context, View v) {
         Uri tel = Uri.parse("tel:" + Uri.encode(pojo.address));
         PackageManager pm = context.getPackageManager();
 
-        // CommunicationIndexer stores the owning phone app package for call-log rows (currently
-        // Truecaller). Try an explicit tel: deep link first. Because the package is pinned, this
-        // path cannot resolve to a browser.
         if (!pojo.packageName.isEmpty()) {
             Intent appNumber = new Intent(Intent.ACTION_VIEW, tel)
                     .setPackage(pojo.packageName)
@@ -115,15 +267,9 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                     return true;
                 } catch (ActivityNotFoundException | SecurityException ignored) { }
             }
-
-            // Some versions of Truecaller do not publicly expose a number-specific VIEW intent.
-            // In that case open the app itself rather than changing this call-history item into a
-            // web URL. This is still the user's requested app-first behavior.
             if (AppLaunchUtils.launchPackage(context, pojo.packageName)) return true;
         }
 
-        // Truecaller missing/unavailable: use Android's dialer resolution. This remains tel:, never
-        // http/https, so call history cannot fall through to a web browser.
         Intent dial = new Intent(Intent.ACTION_DIAL, tel).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         setSourceBounds(dial, v);
         try {
