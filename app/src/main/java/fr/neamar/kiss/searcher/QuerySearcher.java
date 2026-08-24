@@ -19,12 +19,18 @@ import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.PojoWithTags;
+import fr.neamar.kiss.pojo.SearchPojo;
+import fr.neamar.kiss.pojo.SearchPojoType;
 
 /**
  * AsyncTask retrieving data from the providers and updating the view.
  *
  * Semantic mode uses a hybrid reranker instead of treating embeddings as a weak fallback. Exact
  * lexical matches remain protected, while strong semantic matches can outrank weak fuzzy matches.
+ *
+ * Normal lexical/fuzzy mode also keeps local indexed results on a stable relevance scale. Fuzzy
+ * MatchInfo scores are intentionally pattern-dependent, so they must not be compared directly with
+ * fixed relevance constants used by generic web/app-store search actions.
  */
 public class QuerySearcher extends Searcher {
     public static final String PREF_SEMANTIC_RERANK = "semantic-rerank-enabled";
@@ -85,15 +91,28 @@ public class QuerySearcher extends Searcher {
 
             int originalRelevance = pojo.relevance;
             Integer historyValue = knownIds == null ? null : knownIds.get(pojo.id);
-            if (historyValue != null && !pojo.isDisabled()) {
-                originalRelevance += 25 * historyValue;
-            }
 
             if (semanticEnabled && semanticRerank) {
+                if (historyValue != null && !pojo.isDisabled()) {
+                    originalRelevance += 25 * historyValue;
+                }
                 float semanticScore = SemanticEmbeddingScorer.score(query, pojo, semanticDimensions);
                 pojo.relevance = hybridRelevance(pojo, originalRelevance, semanticScore, true);
-            } else {
+            } else if (pojo instanceof SearchPojo) {
+                // SearchPojo relevance is deliberately authored by SearchProvider. Preserve explicit
+                // commands/actions and passive external-search suggestions exactly as authored.
+                // Local indexed records are normalized separately below so a raw fuzzy score can no
+                // longer accidentally fall beneath a passive Search YouTube/Play Store suggestion.
                 pojo.relevance = originalRelevance;
+            } else {
+                // MatchInfo.score explicitly has no fixed global range. Map every genuine local
+                // provider match monotonically into a stable band above passive external searches.
+                // This preserves ordering among local fuzzy matches while making result classes
+                // comparable. Range is approximately -60..260 before history/disabled adjustments.
+                pojo.relevance = normalizeLocalLexicalRelevance(originalRelevance);
+                if (historyValue != null && !pojo.isDisabled()) {
+                    pojo.relevance += Math.min(150, 25 * historyValue);
+                }
                 if (pojo.isDisabled()) pojo.relevance -= 200;
             }
         }
@@ -132,6 +151,14 @@ public class QuerySearcher extends Searcher {
         semanticThreshold = parseFloatPreference("semantic-threshold", 0.26f, 0.05f, 0.95f);
         semanticRerank = prefs.getBoolean(PREF_SEMANTIC_RERANK, true);
         semanticWeight = parseFloatPreference(PREF_SEMANTIC_WEIGHT, 0.58f, 0.20f, 0.85f);
+    }
+
+    private int normalizeLocalLexicalRelevance(int rawRelevance) {
+        // Monotonic compression: no assumptions about FuzzyScoreV1/V2 numeric range, while retaining
+        // their ordering for one query. Passive configured search providers are currently -500, so
+        // even the low end of this local band stays ahead of them (including the disabled penalty).
+        double normalized = Math.tanh(rawRelevance / 350.0d);
+        return 100 + (int) Math.round(160.0d * normalized);
     }
 
     private int hybridRelevance(Pojo pojo, int providerRelevance, float semanticScore,
