@@ -45,6 +45,7 @@ final class MapLiveTileProvider {
     private static final long REFRESH_MIN_MS = 30_000L;
     private static final float MIN_MOVEMENT_METERS = 20f;
     private static final AtomicBoolean REQUEST_IN_FLIGHT = new AtomicBoolean(false);
+    private static final AtomicBoolean PERMISSION_PROMPT_IN_FLIGHT = new AtomicBoolean(false);
     private static volatile long lastRequestTime;
     private static volatile Location lastLocation;
     private static volatile String lastStreet = "";
@@ -53,11 +54,17 @@ final class MapLiveTileProvider {
 
     static void requestFreshLocation(MainActivity activity, Runnable onChanged) {
         if (activity == null) return;
-        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.ACCESS_COARSE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            Permission.askPermission(Permission.PERMISSION_ACCESS_COARSE_LOCATION,
+        if (!hasLocationPermission(activity)) {
+            if (!PERMISSION_PROMPT_IN_FLIGHT.compareAndSet(false, true)) return;
+            Permission.askPermission(Permission.PERMISSION_ACCESS_FINE_LOCATION,
                     new Permission.PermissionResultListener() {
-                        @Override public void onGranted() { requestFreshLocation(activity, onChanged); }
+                        @Override public void onGranted() {
+                            PERMISSION_PROMPT_IN_FLIGHT.set(false);
+                            requestFreshLocation(activity, onChanged);
+                        }
+                        @Override public void onDenied() {
+                            PERMISSION_PROMPT_IN_FLIGHT.set(false);
+                        }
                     });
             return;
         }
@@ -68,7 +75,6 @@ final class MapLiveTileProvider {
 
         LocationManager manager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
         if (manager == null) { REQUEST_IN_FLIGHT.set(false); return; }
-
         String provider = manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
                 ? LocationManager.NETWORK_PROVIDER : LocationManager.GPS_PROVIDER;
         try {
@@ -98,33 +104,38 @@ final class MapLiveTileProvider {
     }
 
     static LiveTileDataProvider.LiveTileData latest(Context context) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) return null;
-
+        if (!hasLocationPermission(context)) return null;
         Location location = lastLocation != null ? new Location(lastLocation) : bestLastKnown(context);
         if (location == null) return null;
-        acceptLocation(location);
+        if (lastLocation == null) acceptLocation(location);
 
         String street = reverseGeocode(context, location);
         if (!TextUtils.isEmpty(street)) lastStreet = street;
         String title = TextUtils.isEmpty(lastStreet) ? "Current location" : lastStreet;
-        String text = String.format(Locale.US, "%.5f, %.5f", location.getLatitude(), location.getLongitude());
+        String accuracy = location.hasAccuracy() ? " ±" + Math.round(location.getAccuracy()) + " m" : "";
+        String text = String.format(Locale.US, "%.5f, %.5f%s", location.getLatitude(), location.getLongitude(), accuracy);
         Bitmap map = loadMapPreview(context, location);
         return new LiveTileDataProvider.LiveTileData(
                 map == null ? null : new BitmapDrawable(context.getResources(), map),
-                title, text, "Live location", 0, 0, false);
+                title, text, "Live · © OpenStreetMap contributors", 0, 0, false);
+    }
+
+    private static boolean hasLocationPermission(Context context) {
+        return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
     }
 
     private static boolean acceptLocation(Location location) {
         if (location == null) return false;
         Location previous = lastLocation;
-        boolean changed = previous == null || previous.distanceTo(location) >= MIN_MOVEMENT_METERS
-                || Math.abs(previous.getTime() - location.getTime()) > REFRESH_MIN_MS;
-        if (changed) {
-            lastLocation = new Location(location);
-            lastStreet = "";
-        }
-        return changed;
+        boolean moved = previous == null || previous.distanceTo(location) >= MIN_MOVEMENT_METERS;
+        // Keep the freshest fix even if movement is small, but reverse-geocode/redraw only after
+        // meaningful movement so Home is not continuously disturbed.
+        lastLocation = new Location(location);
+        if (moved) lastStreet = "";
+        return moved;
     }
 
     private static Location bestLastKnown(Context context) {
@@ -144,6 +155,7 @@ final class MapLiveTileProvider {
     private static String reverseGeocode(Context context, Location location) {
         try {
             Geocoder geocoder = new Geocoder(context, Locale.getDefault());
+            if (!Geocoder.isPresent()) return "";
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 final String[] result = new String[]{""};
                 final Object lock = new Object();
@@ -183,9 +195,7 @@ final class MapLiveTileProvider {
         if (!dir.exists() && !dir.mkdirs()) return null;
         File file = new File(dir, ZOOM + "_" + x + "_" + y + ".png");
         Bitmap bitmap = readBitmap(file);
-        if (bitmap == null) {
-            bitmap = downloadTile(file, x, y);
-        }
+        if (bitmap == null) bitmap = downloadTile(file, x, y);
         if (bitmap == null) return null;
         return drawPositionMarker(bitmap, location, x, y);
     }
