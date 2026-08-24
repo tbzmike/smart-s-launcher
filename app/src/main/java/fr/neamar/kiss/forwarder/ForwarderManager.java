@@ -26,6 +26,7 @@ public class ForwarderManager extends Forwarder {
     private final Notification notificationForwarder;
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final SmartCardListForwarder smartCardListForwarder;
+    private final VerticalMapsCardForwarder verticalMapsCardForwarder;
     private final VerticalCardGroupResizeController verticalCardGroupResizeController;
     private final VerticalCardNotificationHistoryForwarder verticalCardNotificationHistoryForwarder;
     private final SquareUHostFullscreenController squareUHostFullscreenController;
@@ -49,6 +50,7 @@ public class ForwarderManager extends Forwarder {
         this.tagsMenu = new TagsMenu(mainActivity);
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
         this.smartCardListForwarder = new SmartCardListForwarder(mainActivity);
+        this.verticalMapsCardForwarder = new VerticalMapsCardForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(mainActivity, smartCardListForwarder);
         this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
         this.squareUHostFullscreenController = new SquareUHostFullscreenController(mainActivity, historyDisplayForwarder);
@@ -70,6 +72,7 @@ public class ForwarderManager extends Forwarder {
         historyDisplayForwarder.onCreate();
         squareUHostFullscreenController.onCreate();
         smartCardListForwarder.onCreate();
+        verticalMapsCardForwarder.onCreate();
         verticalCardGroupResizeController.onCreate();
         verticalCardNotificationHistoryForwarder.onCreate();
         squareUStabilityController.onCreate();
@@ -92,6 +95,7 @@ public class ForwarderManager extends Forwarder {
         historyDisplayForwarder.onResume();
         squareUHostFullscreenController.onResume();
         smartCardListForwarder.onResume();
+        verticalMapsCardForwarder.onResume();
         verticalCardGroupResizeController.onResume();
         verticalCardNotificationHistoryForwarder.onResume();
         squareUStabilityController.onResume();
@@ -133,6 +137,7 @@ public class ForwarderManager extends Forwarder {
         squareUHostFullscreenController.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
         smartCardListForwarder.onDataSetChanged();
+        verticalMapsCardForwarder.onDataSetChanged();
         verticalCardGroupResizeController.onDataSetChanged();
         verticalCardNotificationHistoryForwarder.onDataSetChanged();
         squareUStabilityController.onDataSetChanged();
