@@ -92,12 +92,26 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
     /**
      * Add one or more pojos to results.
      * This is called from the background thread by the providers.
+     *
+     * Keep only the best configured number of candidates while the search is running. Previously
+     * the queue could grow to every fuzzy/provider match and was trimmed only in onPostExecute().
+     * Since RelevanceComparator makes the queue head the weakest result, immediately polling when
+     * the limit is exceeded preserves the same final top-N set while substantially reducing queue
+     * allocations/comparisons for large app, contact and shortcut indexes.
      */
     public boolean addResults(List<? extends Pojo> pojos) {
-        if (isCancelled())
-            return false;
+        if (isCancelled()) return false;
 
-        return this.processedPojos.addAll(pojos);
+        boolean changed = false;
+        int maxResults = Math.max(0, getMaxResultCount());
+        for (Pojo pojo : pojos) {
+            if (pojo == null) continue;
+            changed |= this.processedPojos.offer(pojo);
+            if (this.processedPojos.size() > maxResults) {
+                this.processedPojos.poll();
+            }
+        }
+        return changed;
     }
 
     @CallSuper
