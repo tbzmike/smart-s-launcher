@@ -3,9 +3,11 @@ package fr.neamar.kiss.forwarder;
 import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 
 import java.lang.reflect.Field;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.AppUsageTodayStore;
@@ -17,15 +19,28 @@ import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
-/** Adds Android UsageStats foreground time for today to each app-backed Vertical Card. */
+/**
+ * Adds Android UsageStats foreground time for today to app-backed Vertical Cards.
+ *
+ * UsageStats queries can be expensive and must never run in scrolling/layout callbacks. A single
+ * background worker refreshes the snapshot when the launcher becomes active; ordinary dataset
+ * changes only reuse the last snapshot already in memory.
+ */
 final class VerticalCardUsageForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
     private static final String USAGE_MARKER = "  •  Used today: ";
 
     private final SmartCardListForwarder smartCardListForwarder;
+    private final ExecutorService usageExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "smart-s-usage-stats");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
+    private final AtomicBoolean refreshInFlight = new AtomicBoolean(false);
+
     private ViewGroup column;
-    private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
-    private AppUsageTodayStore.Snapshot snapshot;
+    private volatile AppUsageTodayStore.Snapshot snapshot;
+    private volatile boolean destroyed;
 
     VerticalCardUsageForwarder(MainActivity activity, SmartCardListForwarder smartCardListForwarder) {
         super(activity);
@@ -33,25 +48,32 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     void onCreate() {
-        refreshSnapshotAndAttach();
+        resolveColumn();
+        refreshSnapshotAsync();
     }
 
     void onResume() {
-        // This is intentionally lightweight and does not rebuild history. Returning Home should
-        // update only the usage text because the foreground time may have changed while an app was open.
-        refreshSnapshotAndAttach();
+        // Usage changes while another app is foreground. Refresh asynchronously and update only
+        // the existing metadata text when the snapshot arrives; never rebuild Home.
+        resolveColumn();
+        refreshSnapshotAsync();
     }
 
     void onDataSetChanged() {
-        refreshSnapshotAndAttach();
+        // A provider/history update must stay cheap. SmartCardListForwarder has already rebuilt the
+        // column synchronously, so reuse the cached snapshot and apply once on the next UI turn.
+        resolveColumn();
+        postApplySnapshot();
     }
 
     void onConfigurationChanged() {
-        refreshSnapshotAndAttach();
+        resolveColumn();
+        postApplySnapshot();
     }
 
     void onDestroy() {
-        detach();
+        destroyed = true;
+        usageExecutor.shutdownNow();
         column = null;
         snapshot = null;
     }
@@ -61,50 +83,50 @@ final class VerticalCardUsageForwarder extends Forwarder {
                 HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL));
     }
 
-    private void refreshSnapshotAndAttach() {
-        if (!isEnabled()) {
-            detach();
+    private void refreshSnapshotAsync() {
+        if (destroyed || !isEnabled()) {
             snapshot = null;
             return;
         }
-        snapshot = AppUsageTodayStore.getToday(mainActivity);
-        resolveColumn();
-        attach();
-        if (column != null) column.post(this::apply);
+        if (!refreshInFlight.compareAndSet(false, true)) {
+            return;
+        }
+
+        final android.content.Context appContext = mainActivity.getApplicationContext();
+        usageExecutor.execute(() -> {
+            AppUsageTodayStore.Snapshot fresh = AppUsageTodayStore.getToday(appContext);
+            refreshInFlight.set(false);
+            if (destroyed) return;
+            snapshot = fresh;
+            mainActivity.runOnUiThread(this::postApplySnapshot);
+        });
     }
 
     private void resolveColumn() {
+        if (column != null) return;
         try {
             Field field = SmartCardListForwarder.class.getDeclaredField("column");
             field.setAccessible(true);
             Object value = field.get(smartCardListForwarder);
-            ViewGroup newColumn = value instanceof ViewGroup ? (ViewGroup) value : null;
-            if (newColumn != column) {
-                detach();
-                column = newColumn;
-            }
+            column = value instanceof ViewGroup ? (ViewGroup) value : null;
         } catch (ReflectiveOperationException ignored) {
-            detach();
             column = null;
         }
     }
 
-    private void attach() {
-        if (column == null || layoutListener != null) return;
-        layoutListener = this::apply;
-        column.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
+    private void postApplySnapshot() {
+        if (destroyed || column == null || snapshot == null || !isEnabled()) return;
+        column.removeCallbacks(this::applySnapshot);
+        column.post(this::applySnapshot);
     }
 
-    private void detach() {
-        if (column != null && layoutListener != null) {
-            ViewTreeObserver observer = column.getViewTreeObserver();
-            if (observer.isAlive()) observer.removeOnGlobalLayoutListener(layoutListener);
+    private void applySnapshot() {
+        AppUsageTodayStore.Snapshot currentSnapshot = snapshot;
+        if (destroyed || !isEnabled() || column == null || currentSnapshot == null
+                || mainActivity.adapter == null) {
+            return;
         }
-        layoutListener = null;
-    }
 
-    private void apply() {
-        if (!isEnabled() || column == null || snapshot == null || mainActivity.adapter == null) return;
         int count = Math.min(column.getChildCount(), mainActivity.adapter.getCount());
         for (int position = 0; position < count; position++) {
             View wrapper = column.getChildAt(position);
@@ -120,16 +142,18 @@ final class VerticalCardUsageForwarder extends Forwarder {
             if (marker >= 0) current = current.substring(0, marker);
 
             String usageText;
-            if (!snapshot.available) {
+            if (!currentSnapshot.available) {
                 usageText = "unavailable";
             } else {
-                Long foregroundMs = snapshot.foregroundMsByPackage.get(packageName);
+                Long foregroundMs = currentSnapshot.foregroundMsByPackage.get(packageName);
                 usageText = formatDuration(foregroundMs == null ? 0L : foregroundMs);
             }
 
             String updated = current + USAGE_MARKER + usageText;
-            if (!TextUtils.equals(strip.getText(), updated)) strip.setText(updated);
-            strip.setContentDescription(updated);
+            if (!TextUtils.equals(strip.getText(), updated)) {
+                strip.setText(updated);
+                strip.setContentDescription(updated);
+            }
         }
     }
 
