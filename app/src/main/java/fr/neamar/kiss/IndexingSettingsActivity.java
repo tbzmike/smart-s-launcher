@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -13,6 +14,7 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -30,6 +32,7 @@ import fr.neamar.kiss.index.CommunicationIndexer;
 import fr.neamar.kiss.loader.LoadAppPojos;
 import fr.neamar.kiss.searcher.QuerySearcher;
 import fr.neamar.kiss.searcher.SemanticEmbeddingScorer;
+import fr.neamar.kiss.utils.ShortcutUtil;
 
 public final class IndexingSettingsActivity extends AppCompatActivity {
     private static final int REQUEST_COMM_PERMISSIONS = 9204;
@@ -77,14 +80,12 @@ public final class IndexingSettingsActivity extends AppCompatActivity {
         root.addView(toggle("Notification history index", "enable-notification-history", true));
 
         Button rebuildCore = new Button(this);
-        rebuildCore.setText("Rebuild apps & shortcuts index now");
-        rebuildCore.setOnClickListener(v -> {
-            DataHandler dataHandler = KissApplication.getApplication(this).getDataHandler();
-            dataHandler.reloadApps();
-            dataHandler.reloadShortcuts();
-            refreshStatus();
-        });
+        rebuildCore.setText("Index All Apps & Shortcuts");
+        rebuildCore.setOnClickListener(v -> indexAllAppsAndShortcuts(rebuildCore));
         root.addView(rebuildCore);
+        TextView coreIndexNote = body();
+        coreIndexNote.setText("Use this while apps are defrosted to scan all installed apps and permanently remember every Android-exposed dynamic, manifest and pinned shortcut. After freezing, remembered shortcuts remain searchable in their disabled/grey state.");
+        root.addView(coreIndexNote);
 
         root.addView(title("SEMANTIC SEARCH & RERANKING"));
         root.addView(toggle("Enable semantic search", "semantic-search-enabled", false));
@@ -187,6 +188,42 @@ public final class IndexingSettingsActivity extends AppCompatActivity {
         note.setText("Privacy: indexing is local on the device. Smart S only reads sources you enable and for which Android grants permission. Truecaller calls/SMS are indexed from the Android call/SMS providers, while Truecaller-only in-app data is indexed only when it appears in a notification captured by Smart S.");
         root.addView(note);
         return scroll;
+    }
+
+    private void indexAllAppsAndShortcuts(Button button) {
+        button.setEnabled(false);
+        button.setText("Indexing apps & shortcuts…");
+
+        // The explicit action opts into permanent disabled/frozen retention and makes sure both
+        // providers are enabled before scanning. It does not clear the shortcut DB; remembered
+        // shortcuts are intentionally cumulative so a later freeze cannot erase known entries.
+        prefs.edit()
+                .putBoolean("enable-app", true)
+                .putBoolean("enable-shortcuts", true)
+                .putBoolean(LoadAppPojos.PREF_INDEX_DISABLED_APPS, true)
+                .apply();
+
+        DataHandler dataHandler = KissApplication.getApplication(this).getDataHandler();
+        dataHandler.reloadApps();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ShortcutUtil.addAllShortcuts(this);
+        } else {
+            dataHandler.reloadShortcuts();
+        }
+
+        // LoadShortcutsPojos also persists every currently exposed shortcut, so reload once now to
+        // immediately expose the complete catalog. SaveAllOreoShortcutsAsync performs another reload
+        // after its background capture if it discovers additional rows.
+        dataHandler.reloadShortcuts();
+        button.postDelayed(() -> {
+            button.setEnabled(true);
+            button.setText("Index All Apps & Shortcuts");
+            refreshStatus();
+            Toast.makeText(this,
+                    "App and shortcut index refreshed. Known shortcuts will remain searchable when frozen.",
+                    Toast.LENGTH_LONG).show();
+        }, 1200L);
     }
 
     private Switch toggle(String label, String key, boolean defaultValue) {
