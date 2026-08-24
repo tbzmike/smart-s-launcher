@@ -43,9 +43,10 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
     private Map<String, LaunchHistoryStatsStore.Stats> launchStats = Collections.emptyMap();
 
-    private MotionEvent pendingBottomSwipeDown;
+    private float bottomSwipeDownRawX;
+    private float bottomSwipeDownRawY;
     private boolean bottomSwipeStartedOnCard;
-    private boolean forwardingBottomSwipe;
+    private boolean bottomSwipeTriggered;
 
     VerticalCardNotificationHistoryForwarder(MainActivity activity,
                                              SmartCardListForwarder smartCardListForwarder) {
@@ -114,12 +115,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             layoutListener = this::apply;
             column.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
         }
-        if (scroller != null) {
-            // Once the ScrollView intercepts an upward drag from a child card, continue observing
-            // that same gesture here. This listener does not arm gestures that begin on empty space;
-            // those already belong to the launcher's normal root gesture path.
-            scroller.setOnTouchListener(this::handleBottomCardSwipeTouch);
-        }
     }
 
     private void detach() {
@@ -128,7 +123,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             if (observer.isAlive()) observer.removeOnGlobalLayoutListener(layoutListener);
         }
         layoutListener = null;
-        if (scroller != null) scroller.setOnTouchListener(null);
         resetBottomSwipe();
     }
 
@@ -162,9 +156,11 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     /**
-     * Observe card touches without replacing their click/long-click behavior. A gesture is eligible
-     * only when ACTION_DOWN happened on a card while the Vertical Cards scroller was already at its
-     * bottom/newest position. Until a deliberate upward drag is verified this listener returns false.
+     * Observe the complete touch stream at the card views themselves. The gesture is armed only if
+     * ACTION_DOWN occurs while the Vertical Cards scroller is already at its bottom/newest edge.
+     * Once a clear upward drag is verified, dispatch one clean synthetic upward fling through the
+     * launcher's existing gesture detector. This deliberately avoids depending on the remainder of
+     * the original touch stream, because ScrollView may cancel/re-parent that stream at its edge.
      */
     private void applyBottomSwipeTouchRecursively(View view) {
         if (view == null || view instanceof Button) return;
@@ -181,69 +177,69 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                // A DOWN delivered directly to the ScrollView means empty/padding space. The root
-                // launcher gesture system already handles that case, so do not arm a second path.
-                if (source == scroller) return false;
                 resetBottomSwipe();
                 if (scroller.canScrollVertically(1)) return false;
                 bottomSwipeStartedOnCard = true;
-                pendingBottomSwipeDown = MotionEvent.obtain(event);
+                bottomSwipeDownRawX = event.getRawX();
+                bottomSwipeDownRawY = event.getRawY();
                 return false;
 
             case MotionEvent.ACTION_MOVE:
-                if (!bottomSwipeStartedOnCard || pendingBottomSwipeDown == null) return false;
-                float deltaX = event.getRawX() - pendingBottomSwipeDown.getRawX();
-                float deltaY = event.getRawY() - pendingBottomSwipeDown.getRawY();
+                if (!bottomSwipeStartedOnCard || bottomSwipeTriggered) return bottomSwipeTriggered;
+                float deltaX = event.getRawX() - bottomSwipeDownRawX;
+                float deltaY = event.getRawY() - bottomSwipeDownRawY;
                 float absX = Math.abs(deltaX);
                 float absY = Math.abs(deltaY);
                 float threshold = BOTTOM_SWIPE_THRESHOLD_DP
                         * mainActivity.getResources().getDisplayMetrics().density;
 
-                if (!forwardingBottomSwipe) {
-                    if (deltaY >= 0f || absY < threshold || absY <= absX * BOTTOM_SWIPE_AXIS_BIAS) {
-                        return false;
-                    }
-
-                    // Reuse the exact launcher gesture detector that handles empty-space swipes.
-                    // Feed it the stored original DOWN first, then the current verified MOVE.
-                    forwardingBottomSwipe = true;
-                    mainActivity.onTouch(source, pendingBottomSwipeDown);
-                    mainActivity.onTouch(source, event);
-                } else {
-                    mainActivity.onTouch(source, event);
+                if (deltaY >= 0f || absY < threshold || absY <= absX * BOTTOM_SWIPE_AXIS_BIAS) {
+                    return false;
                 }
 
-                // Once the ScrollView owns the drag, consume it so overscroll/card clicks cannot
-                // compete with the configured launcher gesture.
-                return source == scroller;
+                bottomSwipeTriggered = true;
+                dispatchCleanConfiguredSwipeUp(source, event.getRawX(), event.getRawY());
+                return true;
 
             case MotionEvent.ACTION_UP:
-                if (forwardingBottomSwipe) {
-                    mainActivity.onTouch(source, event);
-                    resetBottomSwipe();
-                    return true;
-                }
-                resetBottomSwipe();
-                return false;
-
             case MotionEvent.ACTION_CANCEL:
-                // A child card receives CANCEL when ScrollView starts intercepting its drag. Keep
-                // the stored DOWN alive so the ScrollView listener can finish the same gesture.
-                if (source == scroller) resetBottomSwipe();
-                return false;
+                boolean consumed = bottomSwipeTriggered;
+                resetBottomSwipe();
+                return consumed;
 
             default:
-                return forwardingBottomSwipe && source == scroller;
+                return bottomSwipeTriggered;
+        }
+    }
+
+    /**
+     * Feed a deterministic upward fling into the same MainActivity/ForwarderManager gesture path
+     * used by empty-space swipes. Both events use one coordinate space and an explicit velocity, so
+     * GestureDetector.onFling() reliably resolves the configured "gesture-up" preference.
+     */
+    private void dispatchCleanConfiguredSwipeUp(View source, float rawX, float rawY) {
+        long downTime = android.os.SystemClock.uptimeMillis();
+        float distance = Math.max(
+                140f * mainActivity.getResources().getDisplayMetrics().density,
+                240f);
+        MotionEvent down = MotionEvent.obtain(
+                downTime, downTime, MotionEvent.ACTION_DOWN, rawX, rawY + distance, 0);
+        MotionEvent up = MotionEvent.obtain(
+                downTime, downTime + 70L, MotionEvent.ACTION_UP, rawX, rawY, 0);
+        try {
+            mainActivity.onTouch(source, down);
+            mainActivity.onTouch(source, up);
+        } finally {
+            down.recycle();
+            up.recycle();
         }
     }
 
     private void resetBottomSwipe() {
-        if (pendingBottomSwipeDown != null) {
-            pendingBottomSwipeDown.recycle();
-            pendingBottomSwipeDown = null;
-        }
+        bottomSwipeDownRawX = 0f;
+        bottomSwipeDownRawY = 0f;
         bottomSwipeStartedOnCard = false;
-        forwardingBottomSwipe = false;
+        bottomSwipeTriggered = false;
     }
 
     private void applyEasyIconTap(View wrapper, Result<?> result, int adapterPosition) {
@@ -259,8 +255,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         if (icon == null) return;
 
         icon.setClickable(true);
-        // Forward the whole card wrapper as the launch source so the new transition flips and
-        // expands the actual tile, while the enlarged invisible icon hit target remains intact.
         icon.setOnClickListener(v -> mainActivity.adapter.onClick(adapterPosition, wrapper));
 
         if (!(icon.getParent() instanceof ViewGroup)) return;
