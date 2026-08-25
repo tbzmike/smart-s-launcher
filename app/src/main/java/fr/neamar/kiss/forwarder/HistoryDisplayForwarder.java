@@ -4,6 +4,7 @@ import android.animation.ValueAnimator;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
@@ -20,7 +21,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import fr.neamar.kiss.MainActivity;
@@ -45,8 +46,15 @@ final class HistoryDisplayForwarder extends Forwarder {
     private static final float SQUARE_VISIBLE_RADIUS = 6.15f;
     private static final float SQUARE_BOTTOM_BAND = 2.05f;
     private static final int ACCENT_SAMPLE_SIZE = 10;
+    private static final int ACCENT_CACHE_SIZE = 256;
 
-    private final Map<Long, Integer> accentCache = new HashMap<>();
+    private final Map<Long, Integer> accentCache = new LinkedHashMap<Long, Integer>(
+            ACCENT_CACHE_SIZE + 1, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Long, Integer> eldest) {
+            return size() > ACCENT_CACHE_SIZE;
+        }
+    };
 
     private FrameLayout container;
     private HorizontalScrollView scroller;
@@ -329,7 +337,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         int tilePercent = horizontalTilePercent();
         int iconPercent = horizontalIconPercent();
         FrameLayout tile = baseTile(dp(112) * tilePercent / 100, dp(102) * tilePercent / 100);
-        Drawable iconDrawable = resolveIcon(source, result);
+        Drawable iconDrawable = resolveIcon(source);
         styleCard(tile, dp(16), false, accentFor(result, iconDrawable));
         CharSequence label = extractLabel(source);
 
@@ -341,6 +349,7 @@ final class HistoryDisplayForwarder extends Forwarder {
                 iconSize, iconSize, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         iconParams.topMargin = dp(5);
         tile.addView(icon, iconParams);
+        bindRenderedIcon(result, icon, tile, dp(16), false);
 
         addFullLabel(tile, label, 12f, dp(44) * tilePercent / 100, 1);
         return tile;
@@ -350,7 +359,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         int tilePercent = horizontalTilePercent();
         int iconPercent = horizontalIconPercent();
         FrameLayout tile = baseTile(dp(190) * tilePercent / 100, dp(76) * tilePercent / 100);
-        Drawable iconDrawable = resolveIcon(source, result);
+        Drawable iconDrawable = resolveIcon(source);
         styleCard(tile, dp(16), false, accentFor(result, iconDrawable));
 
         int iconSize = dp(42) * iconPercent / 100;
@@ -361,6 +370,7 @@ final class HistoryDisplayForwarder extends Forwarder {
                 iconSize, iconSize, Gravity.START | Gravity.CENTER_VERTICAL);
         iconParams.leftMargin = dp(8);
         tile.addView(icon, iconParams);
+        bindRenderedIcon(result, icon, tile, dp(16), false);
 
         TextView name = buildMarqueeLabel(extractLabel(source), 16f);
         name.setPadding(dp(8), dp(7), dp(8), dp(7));
@@ -377,7 +387,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         int iconPercent = horizontalIconPercent();
         FrameLayout card = baseTile(dp(CARD_WIDTH_DP) * tilePercent / 100,
                 dp(CARD_HEIGHT_DP) * tilePercent / 100);
-        Drawable iconDrawable = resolveIcon(source, result);
+        Drawable iconDrawable = resolveIcon(source);
         styleCard(card, dp(18), false, accentFor(result, iconDrawable));
         CharSequence label = extractLabel(source);
 
@@ -386,14 +396,15 @@ final class HistoryDisplayForwarder extends Forwarder {
                 && notificationRow.getVisibility() == View.VISIBLE;
         if (hasRichPreview) addMutedPreview(card, source);
 
-        addForegroundIconAndLabel(card, iconDrawable, label,
+        ImageView icon = addForegroundIconAndLabel(card, iconDrawable, label,
                 dp(58) * iconPercent / 100, 14f, dp(14));
+        bindRenderedIcon(result, icon, card, dp(18), false);
         return card;
     }
 
     private View createSquareCard(View source, Result<?> result) {
         FrameLayout card = new FrameLayout(mainActivity);
-        Drawable iconDrawable = resolveIcon(source, result);
+        Drawable iconDrawable = resolveIcon(source);
         styleCard(card, dp(18), true, accentFor(result, iconDrawable));
         card.setClipChildren(false);
         card.setClipToPadding(false);
@@ -410,6 +421,7 @@ final class HistoryDisplayForwarder extends Forwarder {
                 iconSize, iconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
         iconParams.topMargin = dp(15);
         card.addView(icon, iconParams);
+        bindRenderedIcon(result, icon, card, dp(18), true);
 
         addFullLabel(card, label, 14f, dp(42), 1);
         return card;
@@ -423,9 +435,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         card.addView(source, previewParams);
     }
 
-    private void addForegroundIconAndLabel(FrameLayout card, Drawable iconDrawable,
-                                           CharSequence label, int iconSize,
-                                           float textSize, int topMargin) {
+    private ImageView addForegroundIconAndLabel(FrameLayout card, Drawable iconDrawable,
+                                                CharSequence label, int iconSize,
+                                                float textSize, int topMargin) {
         ImageView icon = new ImageView(mainActivity);
         icon.setImageDrawable(iconDrawable);
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -434,6 +446,18 @@ final class HistoryDisplayForwarder extends Forwarder {
         iconParams.topMargin = topMargin;
         card.addView(icon, iconParams);
         addFullLabel(card, label, textSize, dp(42), 1);
+        return icon;
+    }
+
+    private void bindRenderedIcon(Result<?> result, ImageView icon, FrameLayout card,
+                                  float radius, boolean square) {
+        result.bindDrawable(icon, drawable -> {
+            long key = result.getUniqueId();
+            Integer cached = accentCache.get(key);
+            int accent = cached == null ? sampleAccent(drawable) : cached;
+            if (cached == null) accentCache.put(key, accent);
+            styleCard(card, radius, square, accent);
+        });
     }
 
     private TextView buildMarqueeLabel(CharSequence label, float textSize) {
@@ -499,10 +523,13 @@ final class HistoryDisplayForwarder extends Forwarder {
                 && !"Reply".equalsIgnoreCase(normalized);
     }
 
-    private Drawable resolveIcon(View source, Result<?> result) {
+    private Drawable resolveIcon(View source) {
         Drawable drawable = extractIcon(source);
-        if (drawable == null) drawable = result.getDrawable(mainActivity);
-        if (drawable == null) drawable = mainActivity.getPackageManager().getDefaultActivityIcon();
+        // A cold adapter row uses android.R.color.transparent until its async load finishes.
+        // Never copy that one-time placeholder into a renderer-owned tile.
+        if (!isRenderableIcon(drawable)) {
+            drawable = mainActivity.getPackageManager().getDefaultActivityIcon();
+        }
         return drawable;
     }
 
@@ -513,14 +540,14 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private ImageView findIconView(View source) {
         ImageView appIcon = source.findViewById(R.id.item_app_icon);
-        if (appIcon != null && appIcon.getDrawable() != null) return appIcon;
+        if (appIcon != null && isRenderableIcon(appIcon.getDrawable())) return appIcon;
         return findFirstVisibleImage(source);
     }
 
     private ImageView findFirstVisibleImage(View view) {
         if (view instanceof ImageView
                 && view.getVisibility() == View.VISIBLE
-                && ((ImageView) view).getDrawable() != null) {
+                && isRenderableIcon(((ImageView) view).getDrawable())) {
             return (ImageView) view;
         }
         if (!(view instanceof ViewGroup)) return null;
@@ -532,13 +559,21 @@ final class HistoryDisplayForwarder extends Forwarder {
         return null;
     }
 
+    private boolean isRenderableIcon(Drawable drawable) {
+        boolean transparentColorPlaceholder = drawable instanceof ColorDrawable
+                && Color.alpha(((ColorDrawable) drawable).getColor()) == 0;
+        return HistoryIconPolicy.isRenderable(
+                drawable != null, drawable == null ? 0 : drawable.getAlpha(),
+                transparentColorPlaceholder);
+    }
+
     private int accentFor(Result<?> result, Drawable drawable) {
         long key = result.getUniqueId();
         Integer cached = accentCache.get(key);
         if (cached != null) return cached;
-        int accent = sampleAccent(drawable);
-        accentCache.put(key, accent);
-        return accent;
+        // Do not cache this provisional value: on a cold renderer it may come from the generic
+        // placeholder. bindRenderedIcon() stores the first verified result-owned drawable.
+        return sampleAccent(drawable);
     }
 
     private int sampleAccent(Drawable drawable) {

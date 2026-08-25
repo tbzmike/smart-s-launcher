@@ -57,6 +57,7 @@ import fr.neamar.kiss.broadcast.IncomingCallHandler;
 import fr.neamar.kiss.dataprovider.AppProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.SearchProvider;
 import fr.neamar.kiss.forwarder.ForwarderManager;
+import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.SearchPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.QueryInterface;
@@ -438,6 +439,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             displayLoader(false);
             onFavoriteChange();
         }
+
+        // Persistent notification details are only a rendering cache. Verify them synchronously
+        // against Android's panel before HistorySearcher can pin any supposedly active rows.
+        NotificationListener.reconcileActiveNotifications();
 
         // We need to update the history in case an external event created new items
         // (for instance, installed a new app, got a phone call or simply clicked on a favorite)

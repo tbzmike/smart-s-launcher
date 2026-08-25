@@ -91,11 +91,32 @@ public class SettingsResult extends Result<SettingPojo> {
         appName.setText(notification.appName);
         title.setText(notification.getSummary());
 
-        View.OnClickListener openGroup = v -> showNotificationGroup(context, notification);
+        boolean individualRecord = notification.id.startsWith(
+                NotificationListener.NOTIFICATION_SCHEME);
+        boolean groupRecord = notification.id.startsWith(
+                NotificationListener.NOTIFICATION_GROUP_SCHEME);
+        boolean individualActive = individualRecord
+                && NotificationListener.isNotificationActive(context, notification.id);
+        int activeGroupCount = groupRecord
+                ? NotificationListener.getGroupNotifications(
+                        context, notification.groupKey).size()
+                : 0;
+        NotificationActionPolicy.Target actionTarget = NotificationActionPolicy.resolve(
+                individualRecord, groupRecord, individualActive, activeGroupCount);
+
+        View.OnClickListener openGroup = actionTarget == NotificationActionPolicy.Target.NONE
+                ? null : v -> showNotificationGroup(context, notification);
         nativeContainer.setInterceptChildTouches(true);
         nativeContainer.setOnClickListener(openGroup);
 
-        View nativeView = NotificationListener.createNativeGroupView(context, notification.groupKey, nativeContainer, false);
+        View nativeView = null;
+        if (actionTarget == NotificationActionPolicy.Target.INDIVIDUAL) {
+            nativeView = NotificationListener.createNativeNotificationView(
+                    context, notification.id, nativeContainer, false);
+        } else if (actionTarget == NotificationActionPolicy.Target.GROUP) {
+            nativeView = NotificationListener.createNativeGroupView(
+                    context, notification.groupKey, nativeContainer, false);
+        }
         if (nativeView != null) {
             nativeContainer.removeAllViews();
             nativeContainer.addView(nativeView);
@@ -127,8 +148,20 @@ public class SettingsResult extends Result<SettingPojo> {
         text.setOnClickListener(openGroup);
 
         markRead.setText(R.string.notification_mark_read);
+        if (actionTarget == NotificationActionPolicy.Target.NONE) {
+            markRead.setVisibility(View.GONE);
+            markRead.setEnabled(false);
+            markRead.setOnClickListener(null);
+            return view;
+        }
+
+        markRead.setVisibility(View.VISIBLE);
+        markRead.setEnabled(true);
         markRead.setOnClickListener(v -> {
-            if (NotificationListener.markGroupRead(context, notification.groupKey)) {
+            boolean marked = actionTarget == NotificationActionPolicy.Target.INDIVIDUAL
+                    ? NotificationListener.markNotificationRead(context, notification.id)
+                    : NotificationListener.markGroupRead(context, notification.groupKey);
+            if (marked) {
                 markRead.setEnabled(false);
                 view.setVisibility(View.GONE);
                 context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));

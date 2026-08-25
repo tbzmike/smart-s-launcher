@@ -475,6 +475,31 @@ public abstract class Result<T extends Pojo> {
                                     @NonNull Supplier<Boolean> isCachedSupplier,
                                     @NonNull Function<Context, Drawable> drawableGetter,
                                     @NonNull Consumer<Drawable> cachedDrawableSetter) {
+        setAsyncDrawable(imageView, defaultResId, invalidateDrawable, isCachedSupplier,
+                drawableGetter, cachedDrawableSetter, null);
+    }
+
+    /**
+     * Bind this result's primary drawable directly to a renderer-owned ImageView.
+     *
+     * Custom history renderers cannot safely copy the drawable from the temporary adapter row:
+     * on a cold cache that row only contains a transparent placeholder and its asynchronous task
+     * later updates the discarded row. Binding the rendered ImageView itself keeps the eventual
+     * drawable attached to the card that is actually on screen.
+     */
+    public final void bindDrawable(@NonNull ImageView imageView,
+                                   @Nullable Consumer<Drawable> onDrawableBound) {
+        setAsyncDrawable(imageView, 0, false, this::isDrawableCached, this::getDrawable,
+                this::setDrawableCache, onDrawableBound);
+    }
+
+    private void setAsyncDrawable(@NonNull ImageView imageView,
+                                  @DrawableRes int defaultResId,
+                                  boolean invalidateDrawable,
+                                  @NonNull Supplier<Boolean> isCachedSupplier,
+                                  @NonNull Function<Context, Drawable> drawableGetter,
+                                  @NonNull Consumer<Drawable> cachedDrawableSetter,
+                                  @Nullable Consumer<Drawable> onDrawableBound) {
         Utilities.AsyncRun<Drawable> taskToCancel = getTask(imageView);
         if (taskToCancel != null) {
             if (!taskToCancel.isCancelled()) {
@@ -484,8 +509,10 @@ public abstract class Result<T extends Pojo> {
         }
 
         if (isCachedSupplier.get()) {
-            imageView.setImageDrawable(drawableGetter.apply(imageView.getContext()));
+            Drawable drawable = drawableGetter.apply(imageView.getContext());
+            imageView.setImageDrawable(drawable);
             imageView.setTag(TAG_RUNNING_TASK, null);
+            if (drawable != null && onDrawableBound != null) onDrawableBound.accept(drawable);
         } else {
             if (defaultResId != 0) {
                 imageView.setImageResource(defaultResId);
@@ -505,6 +532,7 @@ public abstract class Result<T extends Pojo> {
                     if (invalidateDrawable) {
                         imageView.invalidateDrawable(drawable);
                     }
+                    if (onDrawableBound != null) onDrawableBound.accept(drawable);
                 }
             });
             imageView.setTag(TAG_RUNNING_TASK, newTask);

@@ -11,7 +11,6 @@ import android.view.ViewGroup;
 import android.widget.ListView;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -117,10 +116,9 @@ class Notification extends Forwarder {
 
     private void queueAllActiveTimelineIds() {
         if (detailPreferences == null || !isTimelineEnabled()) return;
-        Set<String> active = detailPreferences.getStringSet(
-                NotificationListener.ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
-        if (active == null) return;
-        for (String id : new HashSet<>(active)) queueTimelineId(id);
+        for (String id : NotificationListener.getVerifiedActiveNotificationIds()) {
+            queueTimelineId(id);
+        }
     }
 
     private void queueTimelineId(String id) {

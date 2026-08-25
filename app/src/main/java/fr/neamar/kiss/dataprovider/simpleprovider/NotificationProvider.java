@@ -6,7 +6,6 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -50,8 +49,10 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
         SharedPreferences details = details();
 
         if (id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
-            NotificationPojo live = buildIndividual(details, id);
-            if (live != null) return live;
+            if (NotificationListener.isNotificationActive(context, id)) {
+                NotificationPojo live = buildIndividual(details, id);
+                if (live != null) return live;
+            }
 
             // History must keep resolving after Android removes the live notification cache.
             NotificationHistoryRecord record = NotificationTimelineStore.findLatest(context, id);
@@ -72,9 +73,8 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
     @Override
     public List<NotificationPojo> getPojos() {
         SharedPreferences details = details();
-        Set<String> active = details.getStringSet(
-                NotificationListener.ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
-        if (active == null || active.isEmpty()) return Collections.emptyList();
+        Set<String> active = NotificationListener.getVerifiedActiveNotificationIds();
+        if (active.isEmpty()) return java.util.Collections.emptyList();
 
         List<NotificationPojo> result = new ArrayList<>(active.size());
         for (String id : new HashSet<>(active)) {
@@ -125,9 +125,8 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
     }
 
     private List<NotificationPojo> getGroupedPojos(SharedPreferences details) {
-        Set<String> active = details.getStringSet(
-                NotificationListener.ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
-        if (active == null || active.isEmpty()) return Collections.emptyList();
+        Set<String> active = NotificationListener.getVerifiedActiveNotificationIds();
+        if (active.isEmpty()) return java.util.Collections.emptyList();
 
         Map<String, List<String>> idsByGroup = new HashMap<>();
         for (String id : new HashSet<>(active)) {

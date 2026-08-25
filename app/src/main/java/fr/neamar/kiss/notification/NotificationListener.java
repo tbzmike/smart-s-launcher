@@ -63,29 +63,55 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private static volatile NotificationListener instance;
+    /**
+     * Process-local platform verification. Persistent preferences are only a rendering cache and
+     * can outlive a missed removal callback or a killed listener process, so they must never be
+     * treated as proof that a notification is still present in Android's panel.
+     */
+    private static volatile Set<String> verifiedActiveIds = Collections.emptySet();
+    private static volatile boolean activeStateVerified;
     private SharedPreferences prefs;
     private SharedPreferences details;
 
     @Override public void onCreate() {
         super.onCreate();
-        instance = this;
         prefs = getBaseContext().getSharedPreferences(NOTIFICATION_PREFERENCES_NAME, Context.MODE_PRIVATE);
         details = getBaseContext().getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
+        publishUnverifiedActiveState();
+        // Publish the service instance only after its caches are initialized; MainActivity may
+        // request a synchronous reconciliation as soon as Launcher Home resumes.
+        instance = this;
     }
 
     @Override public void onDestroy() {
-        if (instance == this) instance = null;
+        if (instance == this) {
+            instance = null;
+            publishUnverifiedActiveState();
+            sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        }
         super.onDestroy();
     }
 
     @Override public void onListenerConnected() {
         super.onListenerConnected();
-        refreshAllNotifications(true);
+        if (refreshAllNotifications(true)) {
+            sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        }
     }
 
-    private void refreshAllNotifications(boolean seedTimeline) {
-        StatusBarNotification[] sbns = getActiveNotifications();
-        if (sbns == null) sbns = new StatusBarNotification[0];
+    private boolean refreshAllNotifications(boolean seedTimeline) {
+        StatusBarNotification[] sbns;
+        try {
+            sbns = getActiveNotifications();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to verify active notifications", e);
+            publishUnverifiedActiveState();
+            return false;
+        }
+        if (sbns == null) {
+            publishUnverifiedActiveState();
+            return false;
+        }
 
         Map<String, Set<String>> notificationsByPackage = new HashMap<>();
         Set<String> activeIds = new HashSet<>();
@@ -103,6 +129,7 @@ public class NotificationListener extends NotificationListenerService {
             timeline.add(sbn);
         }
         detailEditor.putStringSet(ACTIVE_NOTIFICATION_IDS, activeIds).apply();
+        publishVerifiedActiveIds(activeIds);
 
         SharedPreferences.Editor editor = prefs.edit();
         Set<String> allKeys = new HashSet<>(prefs.getAll().keySet());
@@ -121,17 +148,24 @@ public class NotificationListener extends NotificationListenerService {
                 if (seeded.add(groupKey)) KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(groupKey));
             }
         }
+        return true;
     }
 
     @Override public void onListenerDisconnected() {
         prefs.edit().clear().apply();
         details.edit().clear().apply();
+        publishUnverifiedActiveState();
+        sendBroadcast(new Intent(MainActivity.LOAD_OVER));
         super.onListenerDisconnected();
     }
 
     @Override public void onNotificationRankingUpdate(RankingMap rankingMap) {
         super.onNotificationRankingUpdate(rankingMap);
-        refreshAllNotifications(false);
+        Set<String> before = getVerifiedActiveNotificationIds();
+        if (refreshAllNotifications(false)
+                && !before.equals(getVerifiedActiveNotificationIds())) {
+            sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        }
     }
 
     @Override public void onNotificationPosted(StatusBarNotification sbn) {
@@ -152,6 +186,8 @@ public class NotificationListener extends NotificationListenerService {
         detailEditor.putStringSet(ACTIVE_NOTIFICATION_IDS, active);
         storeNotificationDetail(detailEditor, id, packageKey, sbn);
         detailEditor.apply();
+        if (activeStateVerified) addVerifiedActiveId(id);
+        else refreshAllNotifications(false);
 
         if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
             KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(packageKey));
@@ -213,6 +249,7 @@ public class NotificationListener extends NotificationListenerService {
         else prefs.edit().putStringSet(packageKey, currentNotifications).apply();
 
         String id = getTimelineId(sbn);
+        removeVerifiedActiveId(id);
         Set<String> active = new HashSet<>(details.getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet()));
         active.remove(id);
         SharedPreferences.Editor edit = details.edit()
@@ -249,8 +286,44 @@ public class NotificationListener extends NotificationListenerService {
         return currentNotifications == null ? new HashSet<>() : new HashSet<>(currentNotifications);
     }
 
+    /**
+     * Synchronously reconcile the rendering cache before Launcher Home builds its history.
+     * Returns false when the listener is not connected; callers then expose no live actions until
+     * onListenerConnected() supplies a verified platform snapshot and requests a refresh.
+     */
+    public static boolean reconcileActiveNotifications() {
+        NotificationListener listener = instance;
+        if (listener == null) {
+            publishUnverifiedActiveState();
+            return false;
+        }
+        return listener.refreshAllNotifications(false);
+    }
+
+    public static Set<String> getVerifiedActiveNotificationIds() {
+        if (instance == null || !activeStateVerified) return Collections.emptySet();
+        return new HashSet<>(verifiedActiveIds);
+    }
+
+    public static boolean hasActiveNotificationGroup(Context context, String packageKey) {
+        if (packageKey == null || packageKey.isEmpty()) return false;
+        SharedPreferences cache = context.getSharedPreferences(
+                DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
+        for (String id : getVerifiedActiveNotificationIds()) {
+            if (packageKey.equals(cache.getString(id + "|group", ""))) return true;
+        }
+        return false;
+    }
+
     public static String getLatestMessage(Context context, String packageKey) {
-        return context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(packageKey + "|text", "");
+        List<NotificationSnapshot> active = getGroupNotifications(context, packageKey);
+        if (active.isEmpty()) return "";
+        NotificationSnapshot latest = active.get(0);
+        String title = latest.title == null ? "" : latest.title.trim();
+        String text = latest.text == null ? "" : latest.text.trim();
+        if (title.isEmpty()) return text;
+        if (text.isEmpty() || title.equals(text)) return title;
+        return title + ": " + text;
     }
 
     public static String getNotificationPackage(Context context, String notificationId) {
@@ -259,9 +332,10 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     public static boolean isNotificationActive(Context context, String notificationId) {
-        Set<String> active = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE)
-                .getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
-        return active != null && active.contains(notificationId);
+        return notificationId != null
+                && instance != null
+                && activeStateVerified
+                && verifiedActiveIds.contains(notificationId);
     }
 
     public static String getExpandedNotificationText(Context context, String notificationId) {
@@ -588,8 +662,8 @@ public class NotificationListener extends NotificationListenerService {
 
     public static List<NotificationSnapshot> getGroupNotifications(Context context, String groupKey) {
         SharedPreferences details = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
-        Set<String> active = details.getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
-        if (active == null || active.isEmpty()) return Collections.emptyList();
+        Set<String> active = getVerifiedActiveNotificationIds();
+        if (active.isEmpty()) return Collections.emptyList();
         List<NotificationSnapshot> result = new ArrayList<>();
         for (String id : new HashSet<>(active)) {
             if (!groupKey.equals(details.getString(id + "|group", ""))) continue;
@@ -600,6 +674,30 @@ public class NotificationListener extends NotificationListenerService {
         }
         result.sort(Comparator.comparingLong((NotificationSnapshot n) -> n.postTime).reversed());
         return result;
+    }
+
+    private static synchronized void publishVerifiedActiveIds(Set<String> ids) {
+        verifiedActiveIds = Collections.unmodifiableSet(new HashSet<>(ids));
+        activeStateVerified = true;
+    }
+
+    private static synchronized void publishUnverifiedActiveState() {
+        activeStateVerified = false;
+        verifiedActiveIds = Collections.emptySet();
+    }
+
+    private static synchronized void addVerifiedActiveId(String id) {
+        if (!activeStateVerified || id == null || id.isEmpty()) return;
+        Set<String> updated = new HashSet<>(verifiedActiveIds);
+        updated.add(id);
+        verifiedActiveIds = Collections.unmodifiableSet(updated);
+    }
+
+    private static synchronized void removeVerifiedActiveId(String id) {
+        if (!activeStateVerified || id == null || id.isEmpty()) return;
+        Set<String> updated = new HashSet<>(verifiedActiveIds);
+        updated.remove(id);
+        verifiedActiveIds = Collections.unmodifiableSet(updated);
     }
 
     public static String getTimelineId(StatusBarNotification sbn) {

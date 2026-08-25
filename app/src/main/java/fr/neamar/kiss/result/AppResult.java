@@ -6,7 +6,6 @@ import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherApps;
 import android.graphics.ColorFilter;
@@ -112,10 +111,11 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
     private void displayNotificationDot(Context context, View view, boolean isFavorite) {
         String packageKey = getPackageKey();
-        SharedPreferences notificationPrefs = context.getSharedPreferences(NotificationListener.NOTIFICATION_PREFERENCES_NAME, Context.MODE_PRIVATE);
         ImageView notificationView = view.findViewById(R.id.item_notification_dot);
         if (notificationView == null) return;
-        notificationView.setVisibility(notificationPrefs.contains(packageKey) ? View.VISIBLE : View.GONE);
+        notificationView.setVisibility(
+                NotificationListener.hasActiveNotificationGroup(context, packageKey)
+                        ? View.VISIBLE : View.GONE);
         notificationView.setTag(packageKey);
         notificationView.setColorFilter(UIColors.getNotificationDotColor(context, isFavorite));
     }

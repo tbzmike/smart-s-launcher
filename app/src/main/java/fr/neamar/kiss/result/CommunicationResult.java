@@ -24,7 +24,6 @@ import androidx.preference.PreferenceManager;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
-import java.util.Collections;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Set;
@@ -80,8 +79,7 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                 body.setText(!TextUtils.isEmpty(smsExpanded) ? smsExpanded : cleanMessageBody(pojo.body));
                 body.setVisibility(View.VISIBLE);
                 actions.setVisibility(View.VISIBLE);
-                markRead.setVisibility(View.VISIBLE);
-                markRead.setOnClickListener(v -> markMessageRead(v.getContext()));
+                configureVerifiedMarkRead(markRead, smsNotificationId);
                 open.setText("Open message");
                 open.setOnClickListener(v -> openMessage(v.getContext(), v, true));
                 break;
@@ -97,8 +95,7 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                 body.setText(!TextUtils.isEmpty(expanded) ? expanded : pojo.body);
                 body.setVisibility(View.VISIBLE);
                 actions.setVisibility(View.VISIBLE);
-                markRead.setVisibility(View.VISIBLE);
-                markRead.setOnClickListener(v -> markMessageRead(v.getContext()));
+                configureVerifiedMarkRead(markRead, notificationId);
                 open.setText("Open message");
                 open.setOnClickListener(v -> openMessage(v.getContext(), v, true));
                 break;
@@ -106,6 +103,14 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
 
         title.setSelected(true);
         return view;
+    }
+
+    private void configureVerifiedMarkRead(Button markRead, String notificationId) {
+        boolean active = !TextUtils.isEmpty(notificationId);
+        markRead.setVisibility(active ? View.VISIBLE : View.GONE);
+        markRead.setEnabled(active);
+        markRead.setOnClickListener(active
+                ? v -> markMessageRead(v.getContext()) : null);
     }
 
     private String cleanMessageBody(String raw) {
@@ -219,14 +224,16 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
     }
 
     private String effectiveNotificationId(Context context) {
-        if (!TextUtils.isEmpty(pojo.notificationId)) return pojo.notificationId;
+        if (!TextUtils.isEmpty(pojo.notificationId)) {
+            return NotificationListener.isNotificationActive(context, pojo.notificationId)
+                    ? pojo.notificationId : "";
+        }
         if (pojo.kind != CommunicationPojo.Kind.SMS) return "";
 
         SharedPreferences details = context.getSharedPreferences(
                 NotificationListener.DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
-        Set<String> activeIds = details.getStringSet(
-                NotificationListener.ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
-        if (activeIds == null || activeIds.isEmpty()) return "";
+        Set<String> activeIds = NotificationListener.getVerifiedActiveNotificationIds();
+        if (activeIds.isEmpty()) return "";
 
         String expectedBody = normalizeForMatch(cleanMessageBody(pojo.body));
         String expectedAddress = normalizeForMatch(pojo.address);

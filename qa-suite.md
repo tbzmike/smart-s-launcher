@@ -119,6 +119,21 @@ As best as possible, only actual KISS code is tested, not standard Android syste
 * [ ] Keep the screen on for two one-minute samples: screen-on rate becomes available; repeat with screen off for the screen-off bucket
 * [ ] Compare Current now, percent, charging state, temperature, and voltage against Android's battery state; signed current is not rewritten from an assumed state
 
+#### Authoritative notification actions in Vertical List
+* [ ] Post a notification and open ordinary Vertical List: its exact live row shows Mark read and dismisses only that Android notification
+* [ ] Swipe the notification away in Android's notification panel, then return Home: its saved history row remains readable but Mark read is absent
+* [ ] Post a newer notification from the same app while an older saved row exists: the older row cannot open, dismiss, or mark the newer notification
+* [ ] Repeat with saved SMS and Truecaller/message history: Mark read appears only while the matched notification is currently present in Android's panel; Open message remains available
+* [ ] Kill and restart Smart S with stale notification cache data: no notification dot, bottom-pinned live row, native notification view, or Mark read action appears until Android supplies a verified active snapshot
+* [ ] Disconnect and reconnect notification-listener access: live actions disappear immediately on disconnect and return only for notifications in the new platform snapshot
+
+#### U-style icon loading
+* [ ] Clear Smart S from memory, launch directly into U style, and verify every visible card replaces its temporary icon with the correct app, shortcut, contact, setting, notification, or communication icon
+* [ ] Rotate or rebuild U style while icons are still loading: renderer-owned cards update in place and never remain transparent
+* [ ] Verify the icon-derived card accent updates when the asynchronous icon arrives
+* [ ] Repeat the cold-cache check in horizontal Icons, Names, and Cards modes
+* [ ] Scroll and search a long cold-cache history: icon decoding stays off the UI thread and interaction remains responsive
+
 #### Automated history
 * [ ] When "Show incoming calls" is disabled, callers are not added to history
 * [ ] When "Show incoming calls" is enabled, callers are added to history
