@@ -43,6 +43,7 @@ public class ForwarderManager extends Forwarder {
     private final CommunicationHistoryForwarder communicationHistoryForwarder;
     private boolean initialResumeComplete;
     private boolean lastUiEditLocked;
+    private boolean pausedSinceLastResume;
     private String lastSearchQuery;
     private Intent lastResumedIntent;
 
@@ -64,7 +65,8 @@ public class ForwarderManager extends Forwarder {
         this.verticalMapsCardForwarder = new VerticalMapsCardForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(mainActivity, smartCardListForwarder);
         this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
-        this.verticalCardUsageForwarder = new VerticalCardUsageForwarder(mainActivity, smartCardListForwarder);
+        this.verticalCardUsageForwarder = new VerticalCardUsageForwarder(
+                mainActivity, smartCardListForwarder, verticalCardViewportController);
         this.squareUHostFullscreenController = new SquareUHostFullscreenController(mainActivity, historyDisplayForwarder);
         this.squareUStabilityController = new SquareUStabilityController(mainActivity, historyDisplayForwarder);
         this.squareUEdgeBoundsController = new SquareUEdgeBoundsController(mainActivity, historyDisplayForwarder);
@@ -100,8 +102,15 @@ public class ForwarderManager extends Forwarder {
     public void onStart() { widgetsForwarder.onStart(); }
 
     public void onResume() {
+        // A HOME intent received after onPause means the user is merely returning to the launcher
+        // from another app/lock screen and must keep the exact old position. Only a fresh HOME
+        // intent received without an intervening pause means Home was pressed again while already
+        // on Home, which intentionally jumps to the newest/bottom card.
+        boolean returningAfterPause = pausedSinceLastResume;
+        pausedSinceLastResume = false;
         Intent resumedIntent = mainActivity.getIntent();
         boolean explicitHomeIntent = initialResumeComplete
+                && !returningAfterPause
                 && resumedIntent != lastResumedIntent
                 && isHomeIntent(resumedIntent);
         lastResumedIntent = resumedIntent;
@@ -116,8 +125,6 @@ public class ForwarderManager extends Forwarder {
         notificationForwarder.onResume();
 
         if (initialResumeComplete) {
-            // Back/unlock/resume preserves the exact visible history position. A fresh HOME intent
-            // is different: it is the user's explicit request to return to the newest/bottom card.
             if (explicitHomeIntent) verticalCardViewportController.onExplicitHomeIntent();
 
             // If the UI-lock preference changed while Settings was in front, only re-sync the
@@ -125,7 +132,8 @@ public class ForwarderManager extends Forwarder {
             if (uiEditLockChanged) verticalCardGroupResizeController.onResume();
 
             // Usage time is external state that changed while another app was foreground, so
-            // refresh only that metadata asynchronously without rebuilding cards/history.
+            // refresh only that metadata asynchronously without rebuilding cards/history. Its
+            // content-height mutation is protected by VerticalCardViewportController.
             verticalCardUsageForwarder.onResume();
             return;
         }
@@ -141,9 +149,7 @@ public class ForwarderManager extends Forwarder {
         verticalCardGroupResizeController.onResume();
         verticalCardNotificationHistoryForwarder.onResume();
         // The usage label must be applied after SmartCardListForwarder has rebuilt the initial
-        // Vertical Cards and after notification/launch metadata has been attached. Running this
-        // before the rebuild creates a race where a fast cached UsageStats result is immediately
-        // erased by the subsequent card reconstruction.
+        // Vertical Cards and after notification/launch metadata has been attached.
         verticalCardUsageForwarder.onResume();
         squareUStabilityController.onResume();
         squareUEdgeBoundsController.onResume();
@@ -153,8 +159,9 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onPause() {
-        // Keep the visual/gesture hierarchy intact while another app is in front. Only listeners
-        // that explicitly need lifecycle unregister/register are paused.
+        // Remember that the next resume is a return, not a second Home press. Keep the visual/
+        // gesture hierarchy intact while another app or the lock screen is in front.
+        pausedSinceLastResume = true;
         experienceTweaks.onPause();
         notificationForwarder.onPause();
     }
@@ -219,6 +226,10 @@ public class ForwarderManager extends Forwarder {
             // return the query has not changed, so keep the current adapter and scroll position.
             return;
         }
+
+        // Only a genuinely new query/result set requests bottom. Ordinary provider refreshes while
+        // the user is manually browsing older cards preserve that exact position.
+        if (!sameQuery) verticalCardViewportController.requestBottomOnNextRebuild();
         lastSearchQuery = normalized;
         experienceTweaks.updateSearchRecords(query);
     }
@@ -246,8 +257,8 @@ public class ForwarderManager extends Forwarder {
         squareUHostFullscreenController.onConfigurationChanged();
         verticalCardGroupResizeController.onConfigurationChanged();
         verticalCardNotificationHistoryForwarder.onConfigurationChanged();
-        verticalCardUsageForwarder.onConfigurationChanged();
         verticalCardViewportController.onConfigurationChanged();
+        verticalCardUsageForwarder.onConfigurationChanged();
         squareUStabilityController.onConfigurationChanged();
         squareUEdgeBoundsController.onConfigurationChanged();
         uNotificationHistoryLongPressForwarder.onConfigurationChanged();
