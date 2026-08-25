@@ -91,7 +91,7 @@ class Notification extends Forwarder {
         if (notificationPreferences != null) {
             notificationPreferences.registerOnSharedPreferenceChangeListener(onNotificationDisplayed);
         }
-        if (detailPreferences != null) {
+        if (detailPreferences != null && isTimelineEnabled()) {
             detailPreferences.registerOnSharedPreferenceChangeListener(onNotificationDetailChanged);
             queueAllActiveTimelineIds();
             catchUpPersistedTimelineAsync();
@@ -111,8 +111,12 @@ class Notification extends Forwarder {
         }
     }
 
+    private boolean isTimelineEnabled() {
+        return prefs.getBoolean("enable-notification-history", false);
+    }
+
     private void queueAllActiveTimelineIds() {
-        if (detailPreferences == null) return;
+        if (detailPreferences == null || !isTimelineEnabled()) return;
         Set<String> active = detailPreferences.getStringSet(
                 NotificationListener.ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
         if (active == null) return;
@@ -120,7 +124,8 @@ class Notification extends Forwarder {
     }
 
     private void queueTimelineId(String id) {
-        if (id == null || !id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
+        if (!isTimelineEnabled() || id == null
+                || !id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
                 || mainActivity.list == null) return;
         synchronized (pendingTimelineIds) {
             pendingTimelineIds.add(id);
@@ -133,7 +138,7 @@ class Notification extends Forwarder {
     }
 
     private void flushPendingTimeline() {
-        if (detailPreferences == null || mainActivity.isFinishing()) return;
+        if (!isTimelineEnabled() || detailPreferences == null || mainActivity.isFinishing()) return;
         List<String> ids;
         synchronized (pendingTimelineIds) {
             if (pendingTimelineIds.isEmpty()) return;
@@ -174,6 +179,7 @@ class Notification extends Forwarder {
 
     /** Catch notifications that arrived while the launcher Activity was paused. */
     private void catchUpPersistedTimelineAsync() {
+        if (!isTimelineEnabled()) return;
         long lastScan = NotificationTimelineState.getLastPersistedScan(mainActivity);
         if (lastScan <= 0L) lastScan = System.currentTimeMillis() - FIRST_SCAN_LOOKBACK_MS;
         final long scanAfter = Math.max(0L, lastScan - 1L);
@@ -186,7 +192,7 @@ class Notification extends Forwarder {
             if (mainActivity.list != null) {
                 if (records.isEmpty()) {
                     mainActivity.list.post(() -> NotificationTimelineState.setLastPersistedScan(
-                            mainActivity, scanStartedAt));
+                            mainActivity, Math.max(0L, scanStartedAt - 5000L)));
                 } else {
                     mainActivity.list.post(() -> indexPersistedRecords(records));
                 }
@@ -196,7 +202,8 @@ class Notification extends Forwarder {
     }
 
     private void indexPersistedRecords(List<NotificationHistoryRecord> records) {
-        if (records == null || records.isEmpty() || mainActivity.isFinishing()) return;
+        if (!isTimelineEnabled() || records == null || records.isEmpty()
+                || mainActivity.isFinishing()) return;
         boolean changed = false;
         long newestPost = 0L;
         for (NotificationHistoryRecord record : records) {
