@@ -249,18 +249,31 @@ public final class AppUsageStore extends SQLiteOpenHelper {
     public synchronized Summary getSummary(long sinceMs, long untilMs) {
         SQLiteDatabase db = getReadableDatabase();
         long dayStart = startOfDay(sinceMs);
-        long appMs = scalarLong(db,
+
+        // Android's daily aggregates and Smart S's retained exact foreground sessions do not
+        // always become available at the same moment. Keep the overview consistent with the
+        // per-app list by accepting whichever source already contains the stronger recorded total.
+        long dailyAppMs = scalarLong(db,
                 "SELECT COALESCE(SUM(duration_ms),0) FROM daily_usage WHERE day_ms>=? AND day_ms<?",
                 new String[]{Long.toString(dayStart), Long.toString(untilMs)});
+        long exactAppMs = scalarLong(db,
+                "SELECT COALESCE(SUM(duration_ms),0) FROM timeline WHERE kind=? AND start_ms>=? AND start_ms<?",
+                new String[]{KIND_APP_USAGE, Long.toString(sinceMs), Long.toString(untilMs)});
+        long appMs = Math.max(dailyAppMs, exactAppMs);
+
         long screenOn = scalarLong(db,
                 "SELECT COALESCE(SUM(screen_on_ms),0) FROM daily_phone_state WHERE day_ms>=? AND day_ms<?",
                 new String[]{Long.toString(dayStart), Long.toString(untilMs)});
         long screenOff = scalarLong(db,
                 "SELECT COALESCE(SUM(screen_off_ms),0) FROM daily_phone_state WHERE day_ms>=? AND day_ms<?",
                 new String[]{Long.toString(dayStart), Long.toString(untilMs)});
-        int unlocks = (int) scalarLong(db,
+        int aggregateUnlocks = (int) scalarLong(db,
                 "SELECT COALESCE(SUM(unlock_count),0) FROM daily_phone_state WHERE day_ms>=? AND day_ms<?",
                 new String[]{Long.toString(dayStart), Long.toString(untilMs)});
+        int exactUnlocks = (int) scalarLong(db,
+                "SELECT COUNT(*) FROM timeline WHERE kind=? AND start_ms>=? AND start_ms<?",
+                new String[]{KIND_UNLOCKED, Long.toString(sinceMs), Long.toString(untilMs)});
+        int unlocks = Math.max(aggregateUnlocks, exactUnlocks);
 
         // API 28+ normally supplies daily EventStats. Fall back to exact imported transitions if
         // the device/API has no aggregate screen-state data.
@@ -272,9 +285,14 @@ public final class AppUsageStore extends SQLiteOpenHelper {
                     "SELECT COALESCE(SUM(duration_ms),0) FROM timeline WHERE kind=? AND start_ms>=? AND start_ms<?",
                     new String[]{KIND_SCREEN_OFF, Long.toString(sinceMs), Long.toString(untilMs)});
         }
-        int apps = (int) scalarLong(db,
+
+        int dailyApps = (int) scalarLong(db,
                 "SELECT COUNT(DISTINCT package_name) FROM daily_usage WHERE day_ms>=? AND day_ms<? AND duration_ms>0",
                 new String[]{Long.toString(dayStart), Long.toString(untilMs)});
+        int exactApps = (int) scalarLong(db,
+                "SELECT COUNT(DISTINCT package_name) FROM timeline WHERE kind=? AND start_ms>=? AND start_ms<? AND duration_ms>0 AND package_name IS NOT NULL AND package_name<>''",
+                new String[]{KIND_APP_USAGE, Long.toString(sinceMs), Long.toString(untilMs)});
+        int apps = Math.max(dailyApps, exactApps);
         return new Summary(appMs, screenOn, screenOff, apps, unlocks);
     }
 
