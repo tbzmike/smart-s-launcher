@@ -6,10 +6,11 @@ import android.os.Looper;
 import androidx.annotation.NonNull;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
 public class SearchHandler {
 
-    private static final long QUERY_DEBOUNCE_MS = 45L;
+    private static final long QUERY_DEBOUNCE_MS = 16L;
     private static volatile SearchHandler instance;
 
     public static SearchHandler getInstance() {
@@ -39,8 +40,9 @@ public class SearchHandler {
     private Searcher runningSearch;
 
     /**
-     * Create search task and execute. Rapid query typing is very lightly debounced so obsolete
-     * searches do not repeatedly rebuild complex horizontal/Square-U history views.
+     * Create search task and execute. Rapid query typing is debounced by one display-frame-sized
+     * interval so obsolete searches do not repeatedly rebuild complex history/card views without
+     * making the first useful result feel delayed.
      */
     public void search(@NonNull Searcher.Type type, @NonNull MainActivity activity,
                        String query, boolean isRefresh) {
@@ -62,6 +64,9 @@ public class SearchHandler {
 
     private void startSearch(@NonNull Searcher.Type type, @NonNull MainActivity activity,
                              String query, boolean isRefresh) {
+        // SmartMatcher caches only immutable preparation for this one search generation. Starting
+        // a new operation invalidates it so repeated identical text still observes changed prefs.
+        SmartMatcher.beginSearch();
         runningSearch = createSearcher(type, activity, query, isRefresh);
         runningSearch.setSearchDoneCallback((searcher, isCancelled) -> {
             if (runningSearch == searcher) resetRunningSearch();
