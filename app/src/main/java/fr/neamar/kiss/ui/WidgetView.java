@@ -9,6 +9,9 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.widget.AbsListView;
+import android.widget.HorizontalScrollView;
+import android.widget.ScrollView;
 
 import java.util.Collections;
 
@@ -30,10 +33,14 @@ public class WidgetView extends AppWidgetHostView {
     public boolean dispatchTouchEvent(MotionEvent ev) {
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                // Collection widgets (calendar, mail, feeds, lists, etc.) must own their
-                // scrolling gesture.  Without this, a freeform/stack parent can steal MOVE
-                // events before the widget's ListView/RecyclerView gets a chance to scroll.
-                protectScrollableGesture = hasScrollableDescendant(this);
+                // RemoteViews collection widgets must keep the complete DOWN->MOVE->UP stream.
+                // Relying only on canScroll*() is not enough: ListView/GridView can legitimately
+                // report false during the initial DOWN/layout edge even though they are the native
+                // scrolling surface. Detect real scroll containers too. A narrow left/right strip
+                // is intentionally left unprotected so workspace widget stacks can still be changed
+                // with their explicit edge gesture without stealing normal interior scrolling.
+                protectScrollableGesture = hasScrollableDescendant(this)
+                        && !isReservedStackEdge(ev.getX());
                 if (protectScrollableGesture && getParent() != null) {
                     getParent().requestDisallowInterceptTouchEvent(true);
                 }
@@ -55,11 +62,14 @@ public class WidgetView extends AppWidgetHostView {
         return super.dispatchTouchEvent(ev);
     }
 
+    private boolean isReservedStackEdge(float x) {
+        int edge = Math.round(28f * getResources().getDisplayMetrics().density);
+        int width = getWidth();
+        return width > edge * 2 && (x < edge || x > width - edge);
+    }
+
     private boolean hasScrollableDescendant(View view) {
-        if (view != this && (view.canScrollVertically(-1) || view.canScrollVertically(1)
-                || view.canScrollHorizontally(-1) || view.canScrollHorizontally(1))) {
-            return true;
-        }
+        if (view != this && isNativeScrollContainer(view)) return true;
         if (!(view instanceof ViewGroup)) return false;
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
@@ -67,6 +77,18 @@ public class WidgetView extends AppWidgetHostView {
             if (child.getVisibility() == View.VISIBLE && hasScrollableDescendant(child)) return true;
         }
         return false;
+    }
+
+    private boolean isNativeScrollContainer(View view) {
+        if (view instanceof AbsListView
+                || view instanceof ScrollView
+                || view instanceof HorizontalScrollView) {
+            return true;
+        }
+        // Keep support for custom/provider scrolling containers that correctly expose their
+        // capability through View.canScroll*().
+        return view.canScrollVertically(-1) || view.canScrollVertically(1)
+                || view.canScrollHorizontally(-1) || view.canScrollHorizontally(1);
     }
 
     public boolean onInterceptTouchEvent(MotionEvent ev) {
