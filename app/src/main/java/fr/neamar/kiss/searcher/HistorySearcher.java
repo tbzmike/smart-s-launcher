@@ -141,6 +141,11 @@ public class HistorySearcher extends Searcher {
      */
     private void pinActiveNotificationTimeline(MainActivity activity, List<Pojo> pojos,
                                                Set<String> excludedPojoById) {
+        // The existing Notification History toggle remains the single source of truth. When it is
+        // off, active notification dots can still work, but no notification is injected into the
+        // launcher history/timeline and no attention tile is pinned at the bottom.
+        if (!prefs.getBoolean("enable-notification-history", false)) return;
+
         int max = getMaxResultCount();
         if (max <= 0) return;
 
