@@ -5,10 +5,11 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
-import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -17,43 +18,66 @@ import android.os.PowerManager;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
 import java.util.Locale;
 
 import fr.neamar.kiss.BatteryHistoryActivity;
 import fr.neamar.kiss.R;
-import fr.neamar.kiss.utils.Log;
 
-public class BatteryMonitorService extends Service {
-    public static final String ACTION_START = "fr.neamar.kiss.action.START_BATTERY_MONITOR";
-    public static final String ACTION_STOP = "fr.neamar.kiss.action.STOP_BATTERY_MONITOR";
-    public static final String ACTION_REFRESH = "fr.neamar.kiss.action.REFRESH_BATTERY_MONITOR";
-    private static final String TAG = BatteryMonitorService.class.getSimpleName();
+public final class BatteryMonitorService extends Service {
+    public static final String ACTION_START = "fr.neamar.kiss.battery.START";
+    public static final String ACTION_STOP = "fr.neamar.kiss.battery.STOP";
     private static final String CHANNEL_LIVE = "smart_battery_live";
     private static final String CHANNEL_ALERTS = "smart_battery_alerts";
-    private static final int LIVE_ID = 7401;
-    private static final int ALERT_ID = 7402;
-    private static final long SCREEN_ON_INTERVAL_MS = 60_000L;
-    private static final long SCREEN_OFF_INTERVAL_MS = 3L * 60_000L;
-    private static final long RATE_CACHE_MS = 60_000L;
-    private static final long WIDGET_REFRESH_MS = 15L * 60_000L;
+    private static final int LIVE_ID = 8450;
+    private static final int ALERT_ID = 8451;
+
+    // History persistence stays conservative, while live status is refreshed much more often.
+    private static final long SAMPLE_CHARGING_MS = 60_000L;
+    private static final long SAMPLE_SCREEN_ON_MS = 60_000L;
+    private static final long SAMPLE_SCREEN_OFF_MS = 3L * 60_000L;
+    private static final long SAMPLE_LOW_SCREEN_OFF_MS = 60_000L;
+    private static final long LIVE_ACTIVE_REFRESH_MS = 2_000L;
+    private static final long LIVE_IDLE_REFRESH_MS = 15_000L;
+    private static final long WIDGET_REFRESH_MIN_MS = 15_000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable periodicSample = new Runnable() {
-        @Override public void run() {
-            sampleAndPublish(false);
-            handler.postDelayed(this, isScreenOn() ? SCREEN_ON_INTERVAL_MS : SCREEN_OFF_INTERVAL_MS);
-        }
-    };
     private BatteryHistoryStore store;
+    private long lastWidgetRefreshMs;
+    private int lastWidgetPercent = -1;
+    private boolean lastWidgetCharging;
+    private boolean receiverRegistered;
+    private boolean forceNextWidgetRefresh;
     private BatteryRateCalculator.ScreenRates cachedRates;
     private boolean cachedRatesCharging;
     private boolean cachedRatesScreenOn;
-    private long cachedRatesAtMs;
-    private int lastWidgetPercent = Integer.MIN_VALUE;
-    private boolean lastWidgetCharging;
-    private long lastWidgetRefreshMs;
+
+    private final Runnable sampler = new Runnable() {
+        @Override public void run() {
+            boolean forceWidgets = forceNextWidgetRefresh;
+            forceNextWidgetRefresh = false;
+            BatterySnapshot s = sampleNow(forceWidgets);
+            handler.postDelayed(this, nextSampleDelay(s));
+        }
+    };
+
+    private final Runnable liveRefresher = new Runnable() {
+        @Override public void run() {
+            BatterySnapshot s = refreshLiveNow();
+            handler.postDelayed(this, nextLiveRefreshDelay(s));
+        }
+    };
+
+    private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (intent == null) return;
+            // Every registered action changes live battery data or the screen-state rate bucket.
+            // Persist and publish it immediately instead of waiting for the periodic sampler.
+            scheduleSampleNow(true);
+        }
+    };
 
     @Override public void onCreate() {
         super.onCreate();
@@ -62,63 +86,66 @@ public class BatteryMonitorService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        String action = intent == null ? null : intent.getAction();
-        if (ACTION_STOP.equals(action)) {
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             PreferenceManager.getDefaultSharedPreferences(this).edit()
                     .putBoolean("smart-battery-monitor-enabled", false).apply();
-            handler.removeCallbacks(periodicSample);
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
         }
+
         PreferenceManager.getDefaultSharedPreferences(this).edit()
                 .putBoolean("smart-battery-monitor-enabled", true).apply();
-        BatterySnapshot snapshot = BatteryMonitorEngine.readSnapshot(this);
-        startForeground(LIVE_ID, buildLiveNotification(snapshot));
-        sampleAndPublish(true);
-        handler.removeCallbacks(periodicSample);
-        handler.postDelayed(periodicSample,
-                isScreenOn() ? SCREEN_ON_INTERVAL_MS : SCREEN_OFF_INTERVAL_MS);
+
+        BatterySnapshot initial = BatteryMonitorEngine.read(this);
+        startForeground(LIVE_ID, buildLiveNotification(initial));
+        registerStateReceiver();
+
+        handler.removeCallbacks(sampler);
+        handler.removeCallbacks(liveRefresher);
+        handler.post(sampler);
+        handler.postDelayed(liveRefresher, nextLiveRefreshDelay(initial));
         return START_STICKY;
+    }
+
+    @Override public void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
+        if (receiverRegistered) {
+            try {
+                unregisterReceiver(stateReceiver);
+            } catch (IllegalArgumentException ignored) {
+                // Already unregistered by the framework/service teardown.
+            }
+            receiverRegistered = false;
+        }
+        if (store != null) store.close();
+        super.onDestroy();
     }
 
     @Nullable @Override public IBinder onBind(Intent intent) { return null; }
 
-    @Override public void onDestroy() {
-        handler.removeCallbacks(periodicSample);
-        super.onDestroy();
+    private NotificationManager notificationManager() {
+        return (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
     }
 
-    private void sampleAndPublish(boolean forceWidgetRefresh) {
-        BatterySnapshot snapshot = BatteryMonitorEngine.readSnapshot(this);
-        boolean screenOn = isScreenOn();
-        store.record(snapshot, screenOn);
-        cachedRates = BatteryRateCalculator.calculate(store, snapshot,
-                store.estimatedFullCapacityUah(), screenOn);
-        cachedRatesCharging = snapshot.isCharging();
-        cachedRatesScreenOn = screenOn;
-        cachedRatesAtMs = System.currentTimeMillis();
-        NotificationManager nm = notificationManager();
-        if (nm != null) nm.notify(LIVE_ID, buildLiveNotification(snapshot));
-        checkAlerts(snapshot);
-        maybeRefreshWidgets(snapshot, forceWidgetRefresh);
+    private void registerStateReceiver() {
+        if (receiverRegistered) return;
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_BATTERY_CHANGED);
+        filter.addAction(Intent.ACTION_POWER_CONNECTED);
+        filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_BATTERY_LOW);
+        filter.addAction(Intent.ACTION_BATTERY_OKAY);
+        ContextCompat.registerReceiver(this, stateReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+        receiverRegistered = true;
     }
 
-    private BatteryRateCalculator.ScreenRates calculateRates(BatterySnapshot snapshot) {
-        boolean screenOn = isScreenOn();
-        long now = System.currentTimeMillis();
-        if (cachedRates != null
-                && cachedRatesCharging == snapshot.isCharging()
-                && cachedRatesScreenOn == screenOn
-                && now - cachedRatesAtMs < RATE_CACHE_MS) {
-            return cachedRates;
-        }
-        cachedRates = BatteryRateCalculator.calculate(store, snapshot,
-                store.estimatedFullCapacityUah(), screenOn);
-        cachedRatesCharging = snapshot.isCharging();
-        cachedRatesScreenOn = screenOn;
-        cachedRatesAtMs = now;
-        return cachedRates;
+    private void scheduleSampleNow(boolean forceWidgets) {
+        forceNextWidgetRefresh |= forceWidgets;
+        handler.removeCallbacks(sampler);
+        handler.post(sampler);
     }
 
     private boolean isScreenOn() {
@@ -126,22 +153,53 @@ public class BatteryMonitorService extends Service {
         return pm == null || pm.isInteractive();
     }
 
-    private NotificationManager notificationManager() {
-        return (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+    private long nextSampleDelay(BatterySnapshot s) {
+        if (s.isCharging()) return SAMPLE_CHARGING_MS;
+        if (isScreenOn()) return SAMPLE_SCREEN_ON_MS;
+        return s.percent() >= 0 && s.percent() <= 15
+                ? SAMPLE_LOW_SCREEN_OFF_MS : SAMPLE_SCREEN_OFF_MS;
+    }
+
+    private long nextLiveRefreshDelay(BatterySnapshot s) {
+        return s.isCharging() || isScreenOn() ? LIVE_ACTIVE_REFRESH_MS : LIVE_IDLE_REFRESH_MS;
+    }
+
+    private BatterySnapshot sampleNow(boolean forceWidgets) {
+        BatterySnapshot s = BatteryMonitorEngine.read(this);
+        store.add(s);
+        cachedRates = calculateRates(s);
+        cachedRatesCharging = s.isCharging();
+        cachedRatesScreenOn = isScreenOn();
+        NotificationManager nm = notificationManager();
+        if (nm != null) nm.notify(LIVE_ID, buildLiveNotification(s));
+        maybeRefreshWidgets(s, forceWidgets);
+        checkAlerts(s);
+        return s;
+    }
+
+    private BatterySnapshot refreshLiveNow() {
+        BatterySnapshot s = BatteryMonitorEngine.read(this);
+        NotificationManager nm = notificationManager();
+        if (nm != null) nm.notify(LIVE_ID, buildLiveNotification(s));
+        maybeRefreshWidgets(s, false);
+        return s;
+    }
+
+    private BatteryRateCalculator.ScreenRates calculateRates(BatterySnapshot s) {
+        long observedCapacityUah = store.estimatedFullCapacityUah();
+        BatteryCapacityEstimator.Estimate capacity = BatteryCapacityEstimator.resolve(
+                this, observedCapacityUah, s);
+        return BatteryRateCalculator.calculate(store, s, capacity.fullCapacityUah, isScreenOn());
     }
 
     private void maybeRefreshWidgets(BatterySnapshot s, boolean force) {
         long now = System.currentTimeMillis();
-        boolean charging = s.isCharging();
-        int percent = s.percent();
-        if (!force && percent == lastWidgetPercent && charging == lastWidgetCharging
-                && now - lastWidgetRefreshMs < WIDGET_REFRESH_MS) return;
-        Intent refresh = new Intent("fr.neamar.kiss.action.BATTERY_MONITOR_UPDATED")
-                .setPackage(getPackageName());
-        sendBroadcast(refresh);
+        boolean stateChanged = s.percent() != lastWidgetPercent || s.isCharging() != lastWidgetCharging;
+        if (!force && !stateChanged && now - lastWidgetRefreshMs < WIDGET_REFRESH_MIN_MS) return;
+        BatteryWidgetProvider.updateAll(this);
         lastWidgetRefreshMs = now;
-        lastWidgetPercent = percent;
-        lastWidgetCharging = charging;
+        lastWidgetPercent = s.percent();
+        lastWidgetCharging = s.isCharging();
     }
 
     private Notification buildLiveNotification(BatterySnapshot s) {
