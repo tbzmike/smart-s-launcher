@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import fr.neamar.kiss.db.NotificationHistoryRecord;
+import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.searcher.Searcher;
@@ -38,22 +40,93 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
 
     @Override
     public boolean mayFindById(String id) {
-        return id != null && id.startsWith(NotificationListener.NOTIFICATION_GROUP_SCHEME);
+        return id != null && (id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
+                || id.startsWith(NotificationListener.NOTIFICATION_GROUP_SCHEME));
     }
 
     @Override
     public NotificationPojo findById(String id) {
         if (!mayFindById(id)) return null;
-        for (NotificationPojo pojo : getPojos()) {
+        SharedPreferences details = details();
+
+        if (id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
+            NotificationPojo live = buildIndividual(details, id);
+            if (live != null) return live;
+
+            // History must keep resolving after Android removes the live notification cache.
+            NotificationHistoryRecord record = NotificationTimelineStore.findLatest(context, id);
+            return record == null ? null : buildPersisted(record);
+        }
+
+        // Legacy grouped history ids are still readable so existing databases upgrade cleanly.
+        for (NotificationPojo pojo : getGroupedPojos(details)) {
             if (pojo.id.equals(id)) return pojo;
         }
         return null;
     }
 
+    /**
+     * Active notification search results are deliberately one-notification-per-pojo. This is also
+     * the source used by HistorySearcher to pin the live notification timeline at the bottom.
+     */
     @Override
     public List<NotificationPojo> getPojos() {
-        SharedPreferences details = context.getSharedPreferences(NotificationListener.DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
-        Set<String> active = details.getStringSet(NotificationListener.ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
+        SharedPreferences details = details();
+        Set<String> active = details.getStringSet(
+                NotificationListener.ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
+        if (active == null || active.isEmpty()) return Collections.emptyList();
+
+        List<NotificationPojo> result = new ArrayList<>(active.size());
+        for (String id : new HashSet<>(active)) {
+            NotificationPojo pojo = buildIndividual(details, id);
+            if (pojo != null) result.add(pojo);
+        }
+        result.sort(Comparator.comparingLong((NotificationPojo p) -> p.postTime).reversed());
+        return result;
+    }
+
+    private SharedPreferences details() {
+        return context.getSharedPreferences(
+                NotificationListener.DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
+    }
+
+    private NotificationPojo buildIndividual(SharedPreferences details, String id) {
+        if (id == null || !id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) return null;
+        String packageName = details.getString(id + "|package", "");
+        if (packageName == null || packageName.isEmpty()) return null;
+        String groupKey = details.getString(id + "|group", packageName);
+        if (groupKey == null || groupKey.isEmpty()) groupKey = packageName;
+        String title = details.getString(id + "|title", "");
+        String text = details.getString(id + "|text", "");
+        long postTime = details.getLong(id + "|post", 0L);
+        return new NotificationPojo(
+                id,
+                packageName,
+                getAppName(packageName),
+                groupKey,
+                1,
+                title == null ? "" : title,
+                text == null ? "" : text,
+                postTime);
+    }
+
+    private NotificationPojo buildPersisted(NotificationHistoryRecord record) {
+        String appName = record.appName == null || record.appName.trim().isEmpty()
+                ? getAppName(record.packageName) : record.appName;
+        return new NotificationPojo(
+                record.notificationId,
+                record.packageName,
+                appName,
+                record.packageName,
+                1,
+                record.title == null ? "" : record.title,
+                record.text == null ? "" : record.text,
+                record.postTime);
+    }
+
+    private List<NotificationPojo> getGroupedPojos(SharedPreferences details) {
+        Set<String> active = details.getStringSet(
+                NotificationListener.ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
         if (active == null || active.isEmpty()) return Collections.emptyList();
 
         Map<String, List<String>> idsByGroup = new HashMap<>();
@@ -70,7 +143,6 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
             NotificationPojo pojo = buildGroup(details, entry.getKey(), entry.getValue());
             if (pojo != null) result.add(pojo);
         }
-        result.sort(Comparator.comparingLong((NotificationPojo p) -> p.postTime).reversed());
         return result;
     }
 
@@ -106,7 +178,8 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
     private String getAppName(String packageName) {
         try {
             PackageManager pm = context.getPackageManager();
-            ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+            ApplicationInfo info = pm.getApplicationInfo(
+                    packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
             CharSequence label = info.loadLabel(pm);
             if (label != null && label.length() > 0) return label.toString();
         } catch (PackageManager.NameNotFoundException ignored) {
