@@ -31,6 +31,10 @@ final class VerticalCardKeyboardAnchor {
         ScrollView scroller = findVisibleVerticalCardsScroller(activity);
         if (scroller == null) return;
 
+        // Invalidate any older rebuild/content-position restoration before the IME changes the
+        // viewport. Keyboard-open is an explicit request to expose the newest/strongest result.
+        VerticalCardViewportController.noteKeyboardBottom(activity);
+
         // adjustResize, favorites visibility and the IME animation can complete on different
         // frames. Anchor after each relevant stage so the newest/search-result card ends above the
         // final visible bottom rather than underneath the keyboard or favorites/search controls.
