@@ -35,6 +35,10 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -55,6 +59,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import fr.neamar.kiss.appusage.AppUsageStore;
+import fr.neamar.kiss.appusage.AppUsageTimelineCompactor;
 import fr.neamar.kiss.appusage.AppUsageTracker;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
@@ -97,6 +102,7 @@ public final class AppUsageActivity extends AppCompatActivity {
 
     private TextView subtitle;
     private TextView status;
+    private View accessBar;
     private Button grantAccess;
     private Button rangeButton;
     private ProgressBar progress;
@@ -117,6 +123,7 @@ public final class AppUsageActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (getSupportActionBar() != null) getSupportActionBar().hide();
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
         buildUi();
@@ -149,19 +156,21 @@ public final class AppUsageActivity extends AppCompatActivity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
 
-        root.addView(buildTopBar());
+        View topBar = buildTopBar();
+        root.addView(topBar);
         root.addView(buildTabs());
 
-        LinearLayout accessBar = new LinearLayout(this);
-        accessBar.setOrientation(LinearLayout.HORIZONTAL);
-        accessBar.setGravity(Gravity.CENTER_VERTICAL);
-        accessBar.setPadding(dp(12), dp(4), dp(10), dp(4));
-        accessBar.setBackgroundColor(Color.rgb(25, 25, 25));
+        LinearLayout access = new LinearLayout(this);
+        accessBar = access;
+        access.setOrientation(LinearLayout.HORIZONTAL);
+        access.setGravity(Gravity.CENTER_VERTICAL);
+        access.setPadding(dp(12), dp(3), dp(8), dp(3));
+        access.setBackgroundColor(Color.rgb(25, 25, 25));
 
         status = new TextView(this);
         status.setTextColor(TEXT_MUTED);
         status.setTextSize(11f);
-        accessBar.addView(status, new LinearLayout.LayoutParams(0,
+        access.addView(status, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         grantAccess = new Button(this);
@@ -170,9 +179,9 @@ public final class AppUsageActivity extends AppCompatActivity {
         grantAccess.setTextSize(11f);
         grantAccess.setOnClickListener(v ->
                 startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
-        accessBar.addView(grantAccess, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)));
-        root.addView(accessBar);
+        access.addView(grantAccess, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(34)));
+        root.addView(access);
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setIndeterminate(true);
@@ -187,31 +196,39 @@ public final class AppUsageActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         setContentView(root);
+        ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars()
+                    | WindowInsetsCompat.Type.displayCutout());
+            view.setPadding(bars.left, 0, bars.right, bars.bottom);
+            topBar.setPadding(dp(4), dp(3) + bars.top, dp(4), dp(3));
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(root);
     }
 
     private View buildTopBar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(8), dp(8), dp(6), dp(6));
+        bar.setPadding(dp(4), dp(3), dp(4), dp(3));
         bar.setBackgroundColor(BG_DARK);
 
         ImageButton back = toolbarButton(android.R.drawable.ic_media_previous, "Back");
         back.setOnClickListener(v -> finish());
-        bar.addView(back, new LinearLayout.LayoutParams(dp(48), dp(52)));
+        bar.addView(back, new LinearLayout.LayoutParams(dp(44), dp(48)));
 
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
         TextView title = new TextView(this);
         title.setText("Usage history");
         title.setTextColor(TEXT);
-        title.setTextSize(24f);
+        title.setTextSize(22f);
         title.setSingleLine(true);
         titles.addView(title);
         subtitle = new TextView(this);
         subtitle.setText("Daily");
         subtitle.setTextColor(TEXT_SECONDARY);
-        subtitle.setTextSize(13f);
+        subtitle.setTextSize(12f);
         titles.addView(subtitle);
         bar.addView(titles, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -222,16 +239,19 @@ public final class AppUsageActivity extends AppCompatActivity {
         rangeButton.setTextColor(TEXT);
         rangeButton.setTextSize(12f);
         rangeButton.setBackgroundColor(Color.TRANSPARENT);
+        rangeButton.setMinWidth(0);
+        rangeButton.setMinimumWidth(0);
+        rangeButton.setPadding(dp(3), 0, dp(3), 0);
         rangeButton.setOnClickListener(this::showRangeMenu);
-        bar.addView(rangeButton, new LinearLayout.LayoutParams(dp(88), dp(48)));
+        bar.addView(rangeButton, new LinearLayout.LayoutParams(dp(76), dp(44)));
 
         ImageButton filter = toolbarButton(android.R.drawable.ic_menu_search, "Filter usage");
         filter.setOnClickListener(v -> showFilterDialog());
-        bar.addView(filter, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        bar.addView(filter, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
         ImageButton refresh = toolbarButton(android.R.drawable.ic_popup_sync, "Refresh usage");
         refresh.setOnClickListener(v -> reload(true));
-        bar.addView(refresh, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        bar.addView(refresh, new LinearLayout.LayoutParams(dp(44), dp(44)));
         return bar;
     }
 
@@ -241,7 +261,7 @@ public final class AppUsageActivity extends AppCompatActivity {
         button.setColorFilter(Color.WHITE);
         button.setContentDescription(description);
         button.setBackgroundColor(Color.TRANSPARENT);
-        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        button.setPadding(dp(10), dp(10), dp(10), dp(10));
         return button;
     }
 
@@ -259,16 +279,16 @@ public final class AppUsageActivity extends AppCompatActivity {
             LinearLayout tab = new LinearLayout(this);
             tab.setOrientation(LinearLayout.VERTICAL);
             tab.setGravity(Gravity.CENTER);
-            tab.setPadding(dp(10), 0, dp(10), 0);
+            tab.setPadding(dp(8), 0, dp(8), 0);
 
             TextView label = new TextView(this);
             label.setText(names[i]);
             label.setTextColor(TEXT);
-            label.setTextSize(16f);
+            label.setTextSize(15f);
             label.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
             label.setGravity(Gravity.CENTER);
             label.setSingleLine(true);
-            label.setPadding(dp(4), dp(12), dp(4), dp(10));
+            label.setPadding(dp(3), dp(8), dp(3), dp(8));
             label.setOnClickListener(v -> selectView(index));
             tab.addView(label, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -276,7 +296,7 @@ public final class AppUsageActivity extends AppCompatActivity {
             View underline = new View(this);
             underline.setBackgroundColor(index == activeView ? ACCENT : Color.TRANSPARENT);
             tab.addView(underline, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(3)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(2)));
             tab.setOnClickListener(v -> selectView(index));
             tabs.addView(tab, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -383,6 +403,8 @@ public final class AppUsageActivity extends AppCompatActivity {
         final boolean enabled = AppUsageTracker.isEnabled(this);
         final boolean access = AppUsageTracker.hasUsageAccess(this);
         grantAccess.setVisibility(access ? View.GONE : View.VISIBLE);
+        // A healthy tracker needs no permanent banner. Keep this row only when the user must act.
+        accessBar.setVisibility(enabled && access ? View.GONE : View.VISIBLE);
         status.setText(enabled
                 ? (access ? "Tracking ON · 365-day local history"
                           : "Tracking ON · Usage Access is required")
@@ -493,7 +515,8 @@ public final class AppUsageActivity extends AppCompatActivity {
     }
 
     private List<TimelineRow> buildTimelineRows(Snapshot data) {
-        List<AppUsageStore.TimelineEntry> entries = filteredExact(data);
+        List<AppUsageStore.TimelineEntry> entries =
+                AppUsageTimelineCompactor.compact(filteredExact(data));
         if (entries.isEmpty()) return Collections.singletonList(TimelineRow.empty());
         List<TimelineRow> rows = new ArrayList<>();
         SimpleDateFormat day = new SimpleDateFormat("MMMM d, yyyy", Locale.getDefault());
@@ -774,20 +797,6 @@ public final class AppUsageActivity extends AppCompatActivity {
         return action;
     }
 
-    private String eventExtra(AppUsageStore.TimelineEntry e) {
-        StringBuilder out = new StringBuilder();
-        if (e.systemApp && !TextUtils.isEmpty(e.packageName)) out.append("System app");
-        if (AppUsageStore.KIND_APP_USAGE.equals(e.kind) && !TextUtils.isEmpty(e.detail)) {
-            if (out.length() > 0) out.append(" · ");
-            out.append(e.detail.replace("Foreground app session · ", ""));
-        }
-        if (isPackageKind(e.kind) && !TextUtils.isEmpty(e.source)) {
-            if (out.length() > 0) out.append("\n");
-            out.append("Source: ").append(e.source);
-        }
-        return out.toString();
-    }
-
     private String eventGlyph(AppUsageStore.TimelineEntry e) {
         switch (e.kind) {
             case AppUsageStore.KIND_SCREEN_ON: return "☀";
@@ -883,9 +892,6 @@ public final class AppUsageActivity extends AppCompatActivity {
             String sub = eventSubtitle(e);
             holder.subtitle.setText(sub);
             holder.subtitle.setVisibility(TextUtils.isEmpty(sub) ? View.GONE : View.VISIBLE);
-            String extra = eventExtra(e);
-            holder.extra.setText(extra);
-            holder.extra.setVisibility(TextUtils.isEmpty(extra) ? View.GONE : View.VISIBLE);
             if (!TextUtils.isEmpty(e.packageName)) {
                 holder.icon.setImageDrawable(appIcon(e.packageName));
                 holder.icon.setVisibility(View.VISIBLE);
@@ -906,25 +912,27 @@ public final class AppUsageActivity extends AppCompatActivity {
         LinearLayout row = new LinearLayout(parent.getContext());
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(82));
-        row.setPadding(0, dp(2), dp(8), dp(2));
+        row.setMinimumHeight(dp(64));
+        row.setPadding(0, dp(1), dp(6), dp(1));
 
         TextView time = new TextView(parent.getContext());
         time.setId(View.generateViewId());
         time.setTextColor(TEXT);
         time.setTextSize(12f);
         time.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        time.setPadding(dp(2), 0, dp(6), 0);
-        row.addView(time, new LinearLayout.LayoutParams(dp(78), ViewGroup.LayoutParams.MATCH_PARENT));
+        time.setPadding(dp(2), 0, dp(4), 0);
+        row.addView(time, new LinearLayout.LayoutParams(dp(64), ViewGroup.LayoutParams.MATCH_PARENT));
 
         FrameLayout marker = new FrameLayout(parent.getContext());
         marker.setId(View.generateViewId());
-        LinearLayout.LayoutParams markerLp = new LinearLayout.LayoutParams(dp(66), ViewGroup.LayoutParams.MATCH_PARENT);
+        LinearLayout.LayoutParams markerLp = new LinearLayout.LayoutParams(
+                dp(50), ViewGroup.LayoutParams.MATCH_PARENT);
         row.addView(marker, markerLp);
 
         View rail = new View(parent.getContext());
         rail.setBackgroundColor(TIMELINE_RAIL);
-        FrameLayout.LayoutParams railLp = new FrameLayout.LayoutParams(dp(3), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_HORIZONTAL);
+        FrameLayout.LayoutParams railLp = new FrameLayout.LayoutParams(
+                dp(2), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER_HORIZONTAL);
         marker.addView(rail, railLp);
 
         ImageView icon = new ImageView(parent.getContext());
@@ -932,7 +940,8 @@ public final class AppUsageActivity extends AppCompatActivity {
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
         icon.setBackground(oval(Color.WHITE));
         icon.setPadding(dp(3), dp(3), dp(3), dp(3));
-        FrameLayout.LayoutParams iconLp = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER);
+        FrameLayout.LayoutParams iconLp = new FrameLayout.LayoutParams(
+                dp(40), dp(40), Gravity.CENTER);
         marker.addView(icon, iconLp);
 
         TextView glyph = new TextView(parent.getContext());
@@ -942,33 +951,30 @@ public final class AppUsageActivity extends AppCompatActivity {
         glyph.setTextSize(20f);
         glyph.setTypeface(Typeface.DEFAULT_BOLD);
         glyph.setBackground(oval(TIMELINE_RAIL));
-        FrameLayout.LayoutParams glyphLp = new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER);
+        FrameLayout.LayoutParams glyphLp = new FrameLayout.LayoutParams(
+                dp(32), dp(32), Gravity.CENTER);
         marker.addView(glyph, glyphLp);
 
         LinearLayout body = new LinearLayout(parent.getContext());
         body.setOrientation(LinearLayout.VERTICAL);
         body.setGravity(Gravity.CENTER_VERTICAL);
-        body.setPadding(dp(4), dp(7), 0, dp(7));
+        body.setPadding(dp(3), dp(4), 0, dp(4));
         TextView title = new AutoMarqueeTextView(parent.getContext());
         title.setId(View.generateViewId());
         title.setTextColor(TEXT);
         title.setTextSize(16f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         body.addView(title);
-        TextView sub = new TextView(parent.getContext());
+        TextView sub = new AutoMarqueeTextView(parent.getContext());
         sub.setId(View.generateViewId());
         sub.setTextColor(TEXT);
-        sub.setTextSize(14f);
+        sub.setTextSize(13f);
         body.addView(sub);
-        TextView extra = new AutoMarqueeTextView(parent.getContext());
-        extra.setId(View.generateViewId());
-        extra.setTextColor(TEXT_MUTED);
-        extra.setTextSize(11f);
-        body.addView(extra);
         row.addView(body, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        row.setTag(new int[]{time.getId(), icon.getId(), glyph.getId(), title.getId(), sub.getId(), extra.getId()});
+        row.setTag(new int[]{time.getId(), icon.getId(), glyph.getId(),
+                title.getId(), sub.getId()});
         return row;
     }
 
@@ -978,7 +984,6 @@ public final class AppUsageActivity extends AppCompatActivity {
         final TextView glyph;
         final TextView title;
         final TextView subtitle;
-        final TextView extra;
         EventHolder(View item) {
             super(item);
             int[] ids = (int[]) item.getTag();
@@ -987,16 +992,16 @@ public final class AppUsageActivity extends AppCompatActivity {
             glyph = item.findViewById(ids[2]);
             title = item.findViewById(ids[3]);
             subtitle = item.findViewById(ids[4]);
-            extra = item.findViewById(ids[5]);
         }
     }
 
     private View headerView(ViewGroup parent) {
         TextView text = new TextView(parent.getContext());
         text.setTextColor(TEXT);
-        text.setTextSize(17f);
+        text.setTextSize(15f);
         text.setGravity(Gravity.CENTER_VERTICAL);
-        text.setPadding(dp(90), dp(9), dp(12), dp(9));
+        text.setMinHeight(dp(34));
+        text.setPadding(dp(117), dp(5), dp(10), dp(5));
         text.setBackgroundColor(BG_HEADER);
         return text;
     }

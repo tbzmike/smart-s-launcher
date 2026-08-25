@@ -88,6 +88,14 @@ As best as possible, only actual KISS code is tested, not standard Android syste
 * [ ] In edit mode, use the up/down layer controls: the selected widget moves in front of or behind the other widgets
 * [ ] Restart Smart S: overlapping positions and exact back-to-front layer order are restored
 
+#### Compact app-usage timeline
+* [ ] Open Usage history on a gesture-navigation device: the title and actions start below the status bar and the final row ends above the navigation inset
+* [ ] With tracking enabled and Usage Access granted, no permanent tracking-status strip consumes timeline space
+* [ ] Verify app rows contain only time, compact icon, app name and duration; package/activity names are absent from the default timeline
+* [ ] Move between multiple activities inside one app: adjacent activity records render as one continuous app session with the full elapsed duration
+* [ ] Leave an app and return later, or place another app/screen event between uses: the distinct sessions remain separate
+* [ ] Use a long app or event label: the two-line row remains fixed-height and overflowing text auto-scrolls instead of creating another line
+
 #### Battery monitor
 * [ ] Change charging state or battery level: monitor notification, dashboard, and hosted widgets show the new Android status without waiting for the periodic history sample
 * [ ] With charge-counter support, verify capacity resolves from either a 5% charging or discharging range and remains available across restarts
