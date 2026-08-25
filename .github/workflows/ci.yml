@@ -26,6 +26,7 @@ jobs:
       - name: Lint code
         run: bash ./gradlew lint --stacktrace
       - name: Unit tests
+        if: ${{ always() }}
         run: bash ./gradlew testDebugUnitTest --stacktrace
   apk:
     name: Generate APK
