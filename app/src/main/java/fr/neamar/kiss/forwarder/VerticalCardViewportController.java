@@ -2,9 +2,13 @@ package fr.neamar.kiss.forwarder;
 
 import android.annotation.SuppressLint;
 import android.text.TextUtils;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.AbsListView;
+import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.ScrollView;
 
 import androidx.annotation.Nullable;
@@ -15,6 +19,7 @@ import java.util.List;
 import java.util.WeakHashMap;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 
@@ -50,13 +55,20 @@ final class VerticalCardViewportController extends Forwarder {
     private final View.OnLayoutChangeListener geometryListener =
             (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                     onGeometryChanged();
+    private final ViewTreeObserver.OnScrollChangedListener scrollChangedListener =
+            this::scheduleLatestCardControlsUpdate;
 
+    private FrameLayout host;
     private ScrollView scroller;
     private ViewGroup column;
+    private ImageButton leftLatestCardButton;
+    private ImageButton rightLatestCardButton;
     private ViewportSnapshot pendingRebuildSnapshot;
     private ViewportSnapshot savedReturnSnapshot;
     private boolean returnRestoreRequested;
     private boolean bottomPassScheduled;
+    private boolean latestControlsUpdateScheduled;
+    private boolean resumed;
     private int generation;
     private boolean destroyed;
 
@@ -71,6 +83,7 @@ final class VerticalCardViewportController extends Forwarder {
 
     void onCreate() {
         resolveViews();
+        installLatestCardControls();
         savedReturnSnapshot = loadSavedReturnSnapshot();
     }
 
@@ -82,6 +95,7 @@ final class VerticalCardViewportController extends Forwarder {
             generation++;
             pendingRebuildSnapshot = null;
         }
+        scheduleLatestCardControlsUpdate();
     }
 
     /** Capture the user's viewport immediately before SmartCardListForwarder replaces its views. */
@@ -109,8 +123,8 @@ final class VerticalCardViewportController extends Forwarder {
     void afterDataSetChanged() {
         ViewportSnapshot snapshot = pendingRebuildSnapshot;
         pendingRebuildSnapshot = null;
-        if (snapshot == null || !canControlViewport()) return;
-        scheduleRestore(snapshot, generation);
+        if (snapshot != null && canControlViewport()) scheduleRestore(snapshot, generation);
+        scheduleLatestCardControlsUpdate();
     }
 
     /**
@@ -151,17 +165,13 @@ final class VerticalCardViewportController extends Forwarder {
         }
         if (action == LauncherHomeNavigationPolicy.Action.KEEP_CURRENT_POSITION) return;
 
-        clearSavedReturnSnapshot();
-        generation++;
-        pendingRebuildSnapshot = null;
-        policy.requestImmediateBottom();
-        resolveViews();
-        scheduleBottomPass();
-        anchorNormalListToLatest();
+        requestExplicitBottom();
     }
 
     /** Capture the exact history viewport before another activity can replace this launcher. */
     void onLauncherPaused() {
+        resumed = false;
+        setLatestCardControlsVisible(false);
         resolveViews();
         if (!isRestorableHistoryViewport()) {
             if (!isEnabled()
@@ -180,8 +190,10 @@ final class VerticalCardViewportController extends Forwarder {
 
     /** Restore after either HOME or Back returns to a launcher instance that had been paused. */
     void onLauncherResumed() {
+        resumed = true;
         ensureSavedReturnSnapshotLoaded();
         requestSavedReturnRestore();
+        scheduleLatestCardControlsUpdate();
     }
 
     /** Forward exact IME state into the layout-driven viewport policy. */
@@ -200,11 +212,16 @@ final class VerticalCardViewportController extends Forwarder {
         pendingRebuildSnapshot = null;
         returnRestoreRequested = false;
         bottomPassScheduled = false;
+        latestControlsUpdateScheduled = false;
         policy.resetForConfiguration();
-        detachGeometryListeners();
+        detachViewportListeners();
+        removeLatestCardControls();
+        host = null;
         scroller = null;
         column = null;
         resolveViews();
+        installLatestCardControls();
+        scheduleLatestCardControlsUpdate();
     }
 
     void onDestroy() {
@@ -213,16 +230,21 @@ final class VerticalCardViewportController extends Forwarder {
         pendingRebuildSnapshot = null;
         returnRestoreRequested = false;
         bottomPassScheduled = false;
-        detachGeometryListeners();
+        latestControlsUpdateScheduled = false;
+        resumed = false;
+        detachViewportListeners();
+        removeLatestCardControls();
         synchronized (INSTANCES) {
             INSTANCES.remove(mainActivity);
         }
+        host = null;
         scroller = null;
         column = null;
     }
 
     private void onKeyboardVisibilityChanged(boolean visible) {
         policy.setKeyboardVisible(visible);
+        scheduleLatestCardControlsUpdate();
         if (!visible) return;
 
         clearSavedReturnSnapshot();
@@ -244,20 +266,39 @@ final class VerticalCardViewportController extends Forwarder {
 
     private void resolveViews() {
         if (destroyed) return;
+        FrameLayout nextHost = mainActivity.listContainer instanceof FrameLayout
+                ? (FrameLayout) mainActivity.listContainer : null;
+        if (nextHost != host) {
+            removeLatestCardControls();
+            host = nextHost;
+            installLatestCardControls();
+        }
+
         ScrollView nextScroller = smartCardListForwarder.getScroller();
         ViewGroup nextColumn = smartCardListForwarder.getColumn();
-        if (nextScroller == scroller && nextColumn == column) return;
+        if (nextScroller == scroller && nextColumn == column) {
+            scheduleLatestCardControlsUpdate();
+            return;
+        }
 
-        detachGeometryListeners();
+        detachViewportListeners();
         scroller = nextScroller;
         column = nextColumn;
         if (scroller != null) scroller.addOnLayoutChangeListener(geometryListener);
         if (column != null) column.addOnLayoutChangeListener(geometryListener);
+        if (scroller != null) {
+            scroller.getViewTreeObserver().addOnScrollChangedListener(scrollChangedListener);
+        }
+        scheduleLatestCardControlsUpdate();
     }
 
-    private void detachGeometryListeners() {
+    private void detachViewportListeners() {
         if (scroller != null) scroller.removeOnLayoutChangeListener(geometryListener);
         if (column != null) column.removeOnLayoutChangeListener(geometryListener);
+        if (scroller != null) {
+            ViewTreeObserver observer = scroller.getViewTreeObserver();
+            if (observer.isAlive()) observer.removeOnScrollChangedListener(scrollChangedListener);
+        }
     }
 
     private void onGeometryChanged() {
@@ -267,6 +308,7 @@ final class VerticalCardViewportController extends Forwarder {
         } else if (policy.shouldPinGeometry()) {
             scheduleBottomPass();
         }
+        scheduleLatestCardControlsUpdate();
     }
 
     private void scheduleBottomPass() {
@@ -282,7 +324,109 @@ final class VerticalCardViewportController extends Forwarder {
                 return;
             }
             if (scrollToBottom(target)) policy.onBottomApplied();
+            scheduleLatestCardControlsUpdate();
         });
+    }
+
+    private void requestExplicitBottom() {
+        setLatestCardControlsVisible(false);
+        clearSavedReturnSnapshot();
+        generation++;
+        pendingRebuildSnapshot = null;
+        policy.requestImmediateBottom();
+        resolveViews();
+        scheduleBottomPass();
+        anchorNormalListToLatest();
+    }
+
+    private void installLatestCardControls() {
+        if (destroyed || host == null || leftLatestCardButton != null
+                || rightLatestCardButton != null) {
+            return;
+        }
+        leftLatestCardButton = createLatestCardButton(Gravity.START);
+        rightLatestCardButton = createLatestCardButton(Gravity.END);
+    }
+
+    private ImageButton createLatestCardButton(int horizontalGravity) {
+        ImageButton button = new ImageButton(mainActivity);
+        button.setImageResource(R.drawable.ic_jump_to_latest_finger);
+        button.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
+        button.setBackground(null);
+        button.setPadding(toPx(11), toPx(10), toPx(11), toPx(10));
+        button.setAlpha(0.96f);
+        button.setElevation(toPx(28));
+        button.setContentDescription(mainActivity.getString(R.string.main_jump_to_latest));
+        button.setVisibility(View.GONE);
+        button.setOnClickListener(view -> requestExplicitBottom());
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                toPx(52), toPx(64), Gravity.CENTER_VERTICAL | horizontalGravity);
+        if (horizontalGravity == Gravity.START) params.leftMargin = toPx(1);
+        else params.rightMargin = toPx(1);
+        host.addView(button, params);
+        return button;
+    }
+
+    private void removeLatestCardControls() {
+        removeLatestCardControl(leftLatestCardButton);
+        removeLatestCardControl(rightLatestCardButton);
+        leftLatestCardButton = null;
+        rightLatestCardButton = null;
+    }
+
+    private static void removeLatestCardControl(@Nullable View control) {
+        if (control != null && control.getParent() instanceof ViewGroup) {
+            ((ViewGroup) control.getParent()).removeView(control);
+        }
+    }
+
+    private void scheduleLatestCardControlsUpdate() {
+        if (destroyed || latestControlsUpdateScheduled) return;
+        View target = scroller != null ? scroller : host;
+        if (target == null) return;
+        latestControlsUpdateScheduled = true;
+        target.postOnAnimation(() -> {
+            latestControlsUpdateScheduled = false;
+            updateLatestCardControls();
+        });
+    }
+
+    private void updateLatestCardControls() {
+        boolean eligibleHistory = resumed
+                && canControlViewport()
+                && mainActivity.isViewingSearchResults()
+                && TextUtils.isEmpty(mainActivity.searchEditText.getText())
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+        boolean automaticBottomPending = policy.shouldPinGeometry()
+                || policy.shouldBottomRebuild();
+        int count = column == null ? 0 : column.getChildCount();
+        int latestCardBottom = 0;
+        if (count > 0) {
+            latestCardBottom = column.getTop() + column.getChildAt(count - 1).getBottom();
+        }
+        int visibleViewportBottom = scroller == null ? 0
+                : scroller.getScrollY() + scroller.getHeight() - scroller.getPaddingBottom();
+        boolean show = LatestCardJumpPolicy.shouldShow(
+                eligibleHistory,
+                automaticBottomPending,
+                count,
+                latestCardBottom,
+                visibleViewportBottom,
+                0);
+        setLatestCardControlsVisible(show);
+    }
+
+    private void setLatestCardControlsVisible(boolean visible) {
+        int visibility = visible ? View.VISIBLE : View.GONE;
+        setLatestCardControlVisible(leftLatestCardButton, visibility);
+        setLatestCardControlVisible(rightLatestCardButton, visibility);
+    }
+
+    private static void setLatestCardControlVisible(@Nullable View control, int visibility) {
+        if (control == null || control.getVisibility() == visibility) return;
+        control.setVisibility(visibility);
+        if (visibility == View.VISIBLE) control.bringToFront();
     }
 
     private ViewportSnapshot captureCurrentViewport() {
@@ -349,6 +493,7 @@ final class VerticalCardViewportController extends Forwarder {
         }
         target.scrollTo(target.getScrollX(), clampScrollY(target, targetY));
         completeSavedReturnRestoreIfNeeded(snapshot);
+        scheduleLatestCardControlsUpdate();
     }
 
     private int resolveStableAnchorIndex(ViewportSnapshot snapshot) {

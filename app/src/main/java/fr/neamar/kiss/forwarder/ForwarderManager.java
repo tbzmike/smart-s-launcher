@@ -245,6 +245,7 @@ public class ForwarderManager extends Forwarder {
         squareUStabilityController.onDestroy();
         squareUHostFullscreenController.onDestroy();
         widgetsForwarder.onDestroy();
+        smartCardListForwarder.onDestroy();
     }
 
     public void onConfigurationChanged(@NonNull Configuration newConfig) {

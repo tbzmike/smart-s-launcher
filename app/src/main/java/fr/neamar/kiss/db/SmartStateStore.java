@@ -12,7 +12,9 @@ import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import fr.neamar.kiss.utils.Log;
@@ -99,6 +101,33 @@ public final class SmartStateStore {
         return result;
     }
 
+    /**
+     * Return the newest stored notification for every package in one indexed database query.
+     *
+     * Vertical Cards used to issue one query per app on every history rebuild. Grouping the lookup
+     * keeps the exact same newest-message behavior while avoiding repeated cursor creation and
+     * database traversal on the main thread. A post-time tie is resolved by the newest row id.
+     */
+    @NonNull
+    public static Map<String, NotificationHistoryRecord> queryLatestNotificationsByPackage(
+            @NonNull Context context) {
+        Map<String, NotificationHistoryRecord> result = new LinkedHashMap<>();
+        String sql = "SELECT n._id,n.notification_id,n.package,n.app_name,n.title,n.body,"
+                + "n.post_time,n.is_permanent FROM notification_history n INNER JOIN "
+                + "(SELECT package,MAX(post_time) latest_time FROM notification_history "
+                + "GROUP BY package) latest ON latest.package=n.package "
+                + "AND latest.latest_time=n.post_time ORDER BY n.post_time DESC,n._id DESC";
+        try (Cursor cursor = db(context).rawQuery(sql, null)) {
+            while (cursor.moveToNext()) {
+                NotificationHistoryRecord record = readNotificationRecord(cursor);
+                if (record.packageName != null && !result.containsKey(record.packageName)) {
+                    result.put(record.packageName, record);
+                }
+            }
+        }
+        return result;
+    }
+
     public static void saveNotification(@NonNull Context context, @NonNull String notificationId,
                                         @NonNull String packageName, @NonNull String appName,
                                         @Nullable String title, @Nullable String body, long postTime,
@@ -180,18 +209,22 @@ public final class SmartStateStore {
                 args.isEmpty() ? null : args.toArray(new String[0]),
                 null, null, "post_time DESC", limitText)) {
             while (cursor.moveToNext()) {
-                NotificationHistoryRecord record = new NotificationHistoryRecord();
-                record.dbId = cursor.getLong(0);
-                record.notificationId = cursor.getString(1);
-                record.packageName = cursor.getString(2);
-                record.appName = cursor.getString(3);
-                record.title = cursor.getString(4);
-                record.text = cursor.getString(5);
-                record.postTime = cursor.getLong(6);
-                record.permanent = cursor.getInt(7) != 0;
-                result.add(record);
+                result.add(readNotificationRecord(cursor));
             }
         }
         return result;
+    }
+
+    private static NotificationHistoryRecord readNotificationRecord(Cursor cursor) {
+        NotificationHistoryRecord record = new NotificationHistoryRecord();
+        record.dbId = cursor.getLong(0);
+        record.notificationId = cursor.getString(1);
+        record.packageName = cursor.getString(2);
+        record.appName = cursor.getString(3);
+        record.title = cursor.getString(4);
+        record.text = cursor.getString(5);
+        record.postTime = cursor.getLong(6);
+        record.permanent = cursor.getInt(7) != 0;
+        return record;
     }
 }

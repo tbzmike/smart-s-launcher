@@ -42,6 +42,7 @@
     <string name="main_clear">Clear search bar</string>
     <string name="main_kiss">Display app list</string>
     <string name="main_kiss_back">Display history</string>
+    <string name="main_jump_to_latest">Jump to newest history card</string>
     <string name="reset_name">Reset history</string>
     <string name="reset_excluded_apps_name">Reset list of apps excluded from KISS</string>
     <string name="reset_excluded_apps_warn">Do you really want to reset your excluded app list?</string>

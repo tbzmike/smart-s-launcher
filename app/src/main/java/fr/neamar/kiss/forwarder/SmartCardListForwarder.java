@@ -15,8 +15,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.util.HashMap;
-import java.util.List;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import fr.neamar.kiss.MainActivity;
@@ -38,8 +38,15 @@ final class SmartCardListForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
     private static final String LEGACY_PREF_ENABLED = "smart-card-list-enabled";
     private static final int ACCENT_SAMPLE_SIZE = 10;
+    private static final int MAX_ACCENT_CACHE_SIZE = 256;
 
-    private final Map<Long, Integer> accentCache = new HashMap<>();
+    private final Map<Long, Integer> accentCache =
+            new LinkedHashMap<Long, Integer>(MAX_ACCENT_CACHE_SIZE, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Long, Integer> eldest) {
+                    return size() > MAX_ACCENT_CACHE_SIZE;
+                }
+            };
     private FrameLayout container;
     private ScrollView scroller;
     private LinearLayout column;
@@ -88,6 +95,14 @@ final class SmartCardListForwarder extends Forwarder {
         if (isEnabled()) rebuild();
     }
 
+    void onDestroy() {
+        accentCache.clear();
+        container = null;
+        scroller = null;
+        column = null;
+        edgeEffect = null;
+    }
+
     ScrollView getScroller() {
         return scroller;
     }
@@ -132,14 +147,17 @@ final class SmartCardListForwarder extends Forwarder {
 
     private void rebuild() {
         if (column == null || mainActivity.adapter == null) return;
+        Map<String, NotificationHistoryRecord> latestNotifications =
+                prefs.getBoolean("enable-notification-history", false)
+                        ? SmartStateStore.queryLatestNotificationsByPackage(mainActivity)
+                        : Collections.emptyMap();
         column.removeAllViews();
-        accentCache.clear();
 
         int count = mainActivity.adapter.getCount();
         for (int position = 0; position < count; position++) {
             Result<?> result = mainActivity.adapter.getItem(position);
             View source = mainActivity.adapter.getView(position, null, column);
-            View item = createCardItem(source, result, position);
+            View item = createCardItem(source, result, position, latestNotifications);
             column.addView(item);
         }
 
@@ -154,7 +172,8 @@ final class SmartCardListForwarder extends Forwarder {
         });
     }
 
-    private View createCardItem(View source, Result<?> result, int adapterPosition) {
+    private View createCardItem(View source, Result<?> result, int adapterPosition,
+                                Map<String, NotificationHistoryRecord> latestNotifications) {
         int heightPercent = prefInt("smart-list-card-height-percent", 100, 70, 170);
         int iconPercent = prefInt("smart-list-card-icon-percent", 100, 60, 180);
         int radiusDp = prefInt("smart-list-card-radius-dp", 22, 6, 40);
@@ -206,7 +225,8 @@ final class SmartCardListForwarder extends Forwarder {
         View notificationRow = source.findViewById(R.id.item_notification_row);
         boolean hasActiveNotification = notificationRow != null
                 && notificationRow.getVisibility() == View.VISIBLE;
-        String latestMessage = latestKnownNotificationMessage(result, source);
+        String latestMessage = latestKnownNotificationMessage(
+                result, source, latestNotifications);
         boolean hasMessage = !TextUtils.isEmpty(latestMessage);
 
         LinearLayout mainRow = new LinearLayout(mainActivity);
@@ -406,17 +426,18 @@ final class SmartCardListForwarder extends Forwarder {
         return TextUtils.isEmpty(call.address) || !name.equalsIgnoreCase(call.address.trim());
     }
 
-    private String latestKnownNotificationMessage(Result<?> result, View source) {
+    private String latestKnownNotificationMessage(
+            Result<?> result,
+            View source,
+            Map<String, NotificationHistoryRecord> latestNotifications) {
         TextView active = source.findViewById(R.id.item_notification_text);
         String activeMessage = active == null || active.getVisibility() != View.VISIBLE
                 ? "" : cleanText(active.getText());
 
         if (result instanceof AppResult) {
             String packageName = ((AppResult) result).getClassName().getPackageName();
-            List<NotificationHistoryRecord> history = SmartStateStore.queryNotifications(
-                    mainActivity, packageName, null, 1);
-            if (!history.isEmpty()) {
-                NotificationHistoryRecord latest = history.get(0);
+            NotificationHistoryRecord latest = latestNotifications.get(packageName);
+            if (latest != null) {
                 String historical = combineNotification(latest.title, latest.text);
                 if (!historical.isEmpty()) return historical;
             }

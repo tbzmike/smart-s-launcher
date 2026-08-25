@@ -54,6 +54,7 @@ import java.util.List;
 
 import fr.neamar.kiss.adapter.RecordAdapter;
 import fr.neamar.kiss.broadcast.IncomingCallHandler;
+import fr.neamar.kiss.dataprovider.AppProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.SearchProvider;
 import fr.neamar.kiss.forwarder.ForwarderManager;
 import fr.neamar.kiss.pojo.SearchPojo;
@@ -430,6 +431,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return;
         }
 
+        AppProvider.setLauncherUiVisible(true);
         dismissPopup();
 
         if (KissApplication.getApplication(this).getDataHandler().isAllProvidersLoaded()) {
@@ -475,6 +477,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     protected void onStop() {
+        AppProvider.setLauncherUiVisible(false);
         homeLifecycleState.onStopped();
         super.onStop();
     }

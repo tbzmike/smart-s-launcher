@@ -23,7 +23,7 @@ import fr.neamar.kiss.utils.UserHandle;
 class DB extends SQLiteOpenHelper {
 
     private final static String DB_NAME = "kiss.s3db";
-    private final static int DB_VERSION = 13;
+    private final static int DB_VERSION = 14;
     private static final String TAG = DB.class.getSimpleName();
 
     private final Context mContext;
@@ -70,6 +70,7 @@ class DB extends SQLiteOpenHelper {
         database.execSQL("CREATE TABLE IF NOT EXISTS notification_history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id TEXT NOT NULL, package TEXT NOT NULL, app_name TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', post_time INTEGER NOT NULL, is_permanent INTEGER NOT NULL DEFAULT 0)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_time ON notification_history(post_time DESC)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package ON notification_history(package)");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package_time ON notification_history(package,post_time DESC)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_permanent ON notification_history(is_permanent)");
     }
 
@@ -109,6 +110,9 @@ class DB extends SQLiteOpenHelper {
                 case 12:
                     database.execSQL("ALTER TABLE notification_history ADD COLUMN is_permanent INTEGER NOT NULL DEFAULT 0");
                     database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_permanent ON notification_history(is_permanent)");
+                    // fall through
+                case 13:
+                    database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package_time ON notification_history(package,post_time DESC)");
                     break;
                 default:
                     break;
@@ -121,6 +125,9 @@ class DB extends SQLiteOpenHelper {
         Log.w("onDowngrade", "Updating database from version " + oldVersion + " to version " + newVersion);
         if (newVersion < oldVersion) {
             switch (newVersion) {
+                case 13:
+                    database.execSQL("DROP INDEX IF EXISTS idx_notification_history_package_time");
+                    break;
                 case 11:
                     database.execSQL("DROP INDEX IF EXISTS idx_notification_history_permanent");
                     database.execSQL("DROP INDEX IF EXISTS idx_notification_history_package");

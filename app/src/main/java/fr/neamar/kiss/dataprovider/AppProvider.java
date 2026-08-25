@@ -30,10 +30,13 @@ import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
 public class AppProvider extends Provider<AppPojo> {
     private static final long FROZEN_RECONCILE_MS = 15000L;
+    private static volatile boolean launcherUiVisible;
+    private static volatile AppProvider activeInstance;
     private final Handler stateHandler = new Handler(Looper.getMainLooper());
     private LauncherApps launcherApps;
     private final Runnable reconcileFrozenState = new Runnable() {
         @Override public void run() {
+            if (!launcherUiVisible) return;
             boolean changed = false;
             if (isLoaded()) {
                 PackageManager pm = getPackageManager();
@@ -69,12 +72,28 @@ public class AppProvider extends Provider<AppPojo> {
                 KissApplication.getApplication(AppProvider.this).resetIconsHandler();
                 sendBroadcast(new Intent(MainActivity.LOAD_OVER));
             }
-            stateHandler.postDelayed(this, FROZEN_RECONCILE_MS);
+            if (launcherUiVisible) {
+                stateHandler.postDelayed(this, FROZEN_RECONCILE_MS);
+            }
         }
     };
 
+    /**
+     * Keep fallback frozen-app reconciliation active only while its results can be seen.
+     * LauncherApps callbacks remain registered continuously, and returning Home triggers an
+     * immediate reconciliation, so no app-state feature is removed while background package scans
+     * stop consuming battery.
+     */
+    public static void setLauncherUiVisible(boolean visible) {
+        boolean changed = launcherUiVisible != visible;
+        launcherUiVisible = visible;
+        AppProvider provider = activeInstance;
+        if (changed && provider != null) provider.updateFrozenReconcileSchedule(visible);
+    }
+
     @Override
     public void onCreate() {
+        activeInstance = this;
         launcherApps = ContextCompat.getSystemService(this, LauncherApps.class);
         assert launcherApps != null;
         launcherApps.registerCallback(new LauncherAppsCallback() {
@@ -90,12 +109,18 @@ public class AppProvider extends Provider<AppPojo> {
             }
         });
         super.onCreate();
-        stateHandler.postDelayed(reconcileFrozenState, FROZEN_RECONCILE_MS);
+        updateFrozenReconcileSchedule(launcherUiVisible);
     }
 
     @Override public void onDestroy() {
         stateHandler.removeCallbacks(reconcileFrozenState);
+        if (activeInstance == this) activeInstance = null;
         super.onDestroy();
+    }
+
+    private void updateFrozenReconcileSchedule(boolean visible) {
+        stateHandler.removeCallbacks(reconcileFrozenState);
+        if (visible) stateHandler.post(reconcileFrozenState);
     }
 
     @Override public void reload() { super.reload(); this.initialize(new LoadAppPojos(this)); }

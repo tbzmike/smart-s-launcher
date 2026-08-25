@@ -70,6 +70,22 @@ As best as possible, only actual KISS code is tested, not standard Android syste
 * [ ] Kill the paused launcher process after launching an app, then press Home: the persisted card position and offset are restored
 * [ ] Press Home while a query is active: the query clears, favorites return when enabled, and the final history card is visible above them
 
+#### Jump to newest history card
+* [ ] Scroll upward until the newest bottom card is fully hidden: downward-pointing fingers appear in the marked left and right side areas
+* [ ] Leave the newest card even slightly below the visible bottom boundary: the controls remain visible until that card is fully inside the viewport
+* [ ] Stop with only the spacing below the newest card clipped: the controls stay hidden because the card itself is fully visible
+* [ ] Tap either finger: history moves to the true bottom card and both controls disappear immediately
+* [ ] Manually scroll upward again: the controls reappear from the real ScrollView position, without a timer or delayed guess
+* [ ] Enter a search or show the keyboard: the controls remain hidden and the existing search/IME bottom-pinning behavior stays authoritative
+* [ ] Launch an app from older history and return Home: the saved position and visible finger controls return; a second Home press still goes to the bottom
+
+#### Performance and battery preservation
+* [ ] Leave Smart S behind another app for at least one minute: the fallback installed-app state scan does not run while launcher Home is stopped
+* [ ] Return Home after freezing or unfreezing an app: reconciliation runs immediately and the correct state appears without a background polling delay
+* [ ] Rebuild a long notification history: card messages remain identical while one grouped newest-notification query replaces per-card database queries
+* [ ] Rebuild the same cards repeatedly: sampled accent colors remain stable and the bounded cache does not grow beyond 256 entries
+* [ ] Verify notifications, widgets, app usage, battery monitoring, animations, search, favourites and every history layout remain available
+
 #### Tile text overflow
 * [ ] Use long app, shortcut, contact, notification, and communication labels: every clipped single-line tile field auto-scrolls while Smart S is visible
 * [ ] Verify notification previews and live/usage/map card labels auto-scroll instead of ending with an ellipsis
