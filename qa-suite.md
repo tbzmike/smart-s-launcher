@@ -57,6 +57,16 @@ As best as possible, only actual KISS code is tested, not standard Android syste
 * [ ] Unchecking "Freeze history" ensures history is populated again
 * [ ] TODO: history mode
 
+#### Vertical Cards viewport invariants
+* [ ] Enter a query with enough matches to scroll: the strongest bottom card is visible immediately without manual scrolling
+* [ ] Keep typing while results update: every completed result set remains anchored to its strongest bottom card
+* [ ] Open the keyboard during a search: the strongest bottom card remains fully above the keyboard throughout the resize
+* [ ] Hide and show the external favorites bar: result cards remain above whichever bottom bar is actually visible
+* [ ] Repeat the checks with Flexible Workspace enabled: the history pane uses the same visible bottom boundary
+* [ ] Manually browse older history, leave and return with Back: the exact non-bottom position is preserved
+* [ ] Manually browse older history, then press or swipe Home: the launcher moves to the bottom card every time
+* [ ] Press Home while a query is active: the query clears, favorites return when enabled, and the final history card is visible above them
+
 #### Automated history
 * [ ] When "Show incoming calls" is disabled, callers are not added to history
 * [ ] When "Show incoming calls" is enabled, callers are added to history

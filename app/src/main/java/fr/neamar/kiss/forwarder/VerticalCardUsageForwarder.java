@@ -8,7 +8,6 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import java.lang.reflect.Field;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -72,7 +71,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
         // SmartCardListForwarder already rebuilt the card column. Reuse the in-memory snapshot;
         // never query Android UsageStats from a provider/history change. The rebuild viewport
         // controller already captured the pre-rebuild position, so this apply must not capture a
-        // second (temporary) position while SmartCardListForwarder's legacy fullScroll is pending.
+        // second temporary position before the controller's measured restore pass.
         resolveColumn();
         postApplySnapshot(false, true);
     }
@@ -115,18 +114,10 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void resolveColumn() {
-        try {
-            Field field = SmartCardListForwarder.class.getDeclaredField("column");
-            field.setAccessible(true);
-            Object value = field.get(smartCardListForwarder);
-            ViewGroup resolved = value instanceof ViewGroup ? (ViewGroup) value : null;
-            if (resolved != column) {
-                if (column != null) column.removeCallbacks(applySnapshotRunnable);
-                column = resolved;
-            }
-        } catch (ReflectiveOperationException ignored) {
+        ViewGroup resolved = smartCardListForwarder.getColumn();
+        if (resolved != column) {
             if (column != null) column.removeCallbacks(applySnapshotRunnable);
-            column = null;
+            column = resolved;
         }
     }
 

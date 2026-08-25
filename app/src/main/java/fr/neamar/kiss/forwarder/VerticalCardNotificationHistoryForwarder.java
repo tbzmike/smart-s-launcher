@@ -19,7 +19,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.lang.reflect.Field;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -140,19 +139,9 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void resolveViews() {
-        try {
-            Field columnField = SmartCardListForwarder.class.getDeclaredField("column");
-            columnField.setAccessible(true);
-            Object columnValue = columnField.get(smartCardListForwarder);
-            column = columnValue instanceof ViewGroup ? (ViewGroup) columnValue : null;
-
-            Field scrollerField = SmartCardListForwarder.class.getDeclaredField("scroller");
-            scrollerField.setAccessible(true);
-            Object scrollerValue = scrollerField.get(smartCardListForwarder);
-            scroller = scrollerValue instanceof ScrollView ? (ScrollView) scrollerValue : null;
-        } catch (ReflectiveOperationException ignored) {
-            column = null;
-            scroller = null;
+        column = smartCardListForwarder.getColumn();
+        scroller = smartCardListForwarder.getScroller();
+        if (column == null || scroller == null) {
             resetBottomSwipe();
             resetAttentionBorders();
         }

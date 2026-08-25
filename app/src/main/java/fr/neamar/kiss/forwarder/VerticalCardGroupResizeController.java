@@ -15,11 +15,8 @@ import android.widget.TextView;
 
 import androidx.preference.PreferenceManager;
 
-import java.lang.reflect.Field;
-
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.preference.UiEditLock;
-import fr.neamar.kiss.utils.Log;
 
 /**
  * Whole-stack size editor for the Vertical Cards history style.
@@ -30,7 +27,6 @@ import fr.neamar.kiss.utils.Log;
  * instead of leaving large WRAP_CONTENT cards behind.
  */
 final class VerticalCardGroupResizeController {
-    private static final String TAG = VerticalCardGroupResizeController.class.getSimpleName();
     private static final String VERTICAL_CARDS = "vertical_cards";
     private static final String PREF_WIDTH = "smart-list-card-width-percent";
     private static final String PREF_HEIGHT = "smart-list-card-height-percent";
@@ -45,6 +41,7 @@ final class VerticalCardGroupResizeController {
 
     private final MainActivity activity;
     private final SmartCardListForwarder cardForwarder;
+    private final VerticalCardViewportController viewportController;
     private final SharedPreferences prefs;
 
     private FrameLayout host;
@@ -54,9 +51,11 @@ final class VerticalCardGroupResizeController {
     private AlertDialog dialog;
 
     VerticalCardGroupResizeController(MainActivity activity,
-                                      SmartCardListForwarder cardForwarder) {
+                                      SmartCardListForwarder cardForwarder,
+                                      VerticalCardViewportController viewportController) {
         this.activity = activity;
         this.cardForwarder = cardForwarder;
+        this.viewportController = viewportController;
         this.prefs = PreferenceManager.getDefaultSharedPreferences(activity);
     }
 
@@ -114,24 +113,12 @@ final class VerticalCardGroupResizeController {
     private void resolveViews() {
         FrameLayout nextHost = activity.listContainer instanceof FrameLayout
                 ? (FrameLayout) activity.listContainer : null;
-        LinearLayout nextColumn = readColumn();
+        LinearLayout nextColumn = cardForwarder.getColumn();
         if (nextColumn != column) {
             detachObserver();
             column = nextColumn;
         }
         host = nextHost;
-    }
-
-    private LinearLayout readColumn() {
-        try {
-            Field field = SmartCardListForwarder.class.getDeclaredField("column");
-            field.setAccessible(true);
-            Object value = field.get(cardForwarder);
-            return value instanceof LinearLayout ? (LinearLayout) value : null;
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            Log.e(TAG, "Unable to resolve Vertical Cards column", e);
-            return null;
-        }
     }
 
     private void installButton() {
@@ -298,7 +285,7 @@ final class VerticalCardGroupResizeController {
                             .putInt(PREF_NAME, 100)
                             .putInt(PREF_SPACING, 12)
                             .apply();
-                    cardForwarder.onDataSetChanged();
+                    rebuildCards();
                     applyWidthSoon();
                 })
                 .create();
@@ -318,8 +305,14 @@ final class VerticalCardGroupResizeController {
                 .putInt(PREF_NAME, namePercent)
                 .putInt(PREF_SPACING, spacing)
                 .apply();
-        cardForwarder.onDataSetChanged();
+        rebuildCards();
         applyWidthSoon();
+    }
+
+    private void rebuildCards() {
+        viewportController.beforeDataSetChanged();
+        cardForwarder.onDataSetChanged();
+        viewportController.afterDataSetChanged();
     }
 
     private void dismissDialog() {

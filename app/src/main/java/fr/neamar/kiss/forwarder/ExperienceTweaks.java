@@ -217,12 +217,7 @@ public class ExperienceTweaks extends Forwarder {
         }
     }
 
-    /**
-     * Keep the newest/highest-priority history result anchored above the IME. Android resizes the
-     * launcher over multiple frames while the keyboard animates, so scroll once on the next layout
-     * pass and once more after the IME has settled. This never rebuilds the adapter or re-runs a
-     * search; it only changes the current visible history position.
-     */
+    /** Keep the newest/highest-priority history result anchored above each real IME resize. */
     private void onKeyboardVisibilityChanged(boolean keyboardIsVisible) {
         mainActivity.onKeyboardVisibilityChanged(keyboardIsVisible);
         VerticalCardKeyboardAnchor.onKeyboardVisibilityChanged(mainActivity, keyboardIsVisible);

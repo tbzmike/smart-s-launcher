@@ -12,7 +12,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import java.lang.reflect.Field;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -20,14 +19,12 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.result.Result;
-import fr.neamar.kiss.utils.Log;
 
 /**
  * Applies fresh location data and a map preview to the dedicated Vertical Cards renderer.
  * It updates only the Maps card and never rebuilds the launcher when Home is pressed.
  */
 final class VerticalMapsCardForwarder extends Forwarder {
-    private static final String TAG = "VerticalMapsCardForwarder";
     private static final int TAG_MAP_PREVIEW = 0x534D4D01;
     private static final int TAG_MAP_LOCATION = 0x534D4D02;
 
@@ -254,15 +251,7 @@ final class VerticalMapsCardForwarder extends Forwarder {
     }
 
     private LinearLayout readColumn() {
-        try {
-            Field field = SmartCardListForwarder.class.getDeclaredField("column");
-            field.setAccessible(true);
-            Object value = field.get(smartCards);
-            return value instanceof LinearLayout ? (LinearLayout) value : null;
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            Log.e(TAG, "Unable to access Vertical Cards column", e);
-            return null;
-        }
+        return smartCards.getColumn();
     }
 
     private int dp(int value) {

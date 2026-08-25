@@ -88,6 +88,14 @@ final class SmartCardListForwarder extends Forwarder {
         if (isEnabled()) rebuild();
     }
 
+    ScrollView getScroller() {
+        return scroller;
+    }
+
+    LinearLayout getColumn() {
+        return column;
+    }
+
     private void migrateLegacySelection() {
         String mode = prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL);
         if (prefs.getBoolean(LEGACY_PREF_ENABLED, false)
@@ -136,7 +144,6 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         scroller.post(() -> {
-            scroller.fullScroll(View.FOCUS_DOWN);
             int childCount = column.getChildCount();
             int first = Math.max(0, childCount - 16);
             int visualIndex = 0;

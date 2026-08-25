@@ -35,6 +35,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.AbsListView;
 import android.widget.ImageView;
 import android.widget.PopupWindow;
+import android.widget.RelativeLayout;
 import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
@@ -501,6 +502,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
         // Close the backButton context menu
         closeContextMenu();
+
+        // singleTask delivers the actual launcher HOME action here. Route that exact event after
+        // clearing search/favorites state so the final visible card, not the old search surface,
+        // is anchored to the bottom.
+        forwarderManager.onNewIntent(intent);
     }
 
     public void clearSearchText() {
@@ -1046,11 +1052,48 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     public void setFavoritesBarVisible(boolean isVisible) {
-        if (isVisible && (favoritesBar.getAdapter() == null || favoritesBar.getAdapter().getItemCount() > 0)) {
-            favoritesBar.setVisibility(View.VISIBLE);
-        } else {
-            favoritesBar.setVisibility(View.GONE);
+        boolean showFavorites = isVisible
+                && (favoritesBar.getAdapter() == null
+                || favoritesBar.getAdapter().getItemCount() > 0);
+        boolean externalFavoritesVisible = showFavorites
+                && favoritesBar.getId() == R.id.externalFavoriteBar;
+
+        // A RelativeLayout ABOVE rule targeting a GONE view does not reserve a dependable result
+        // viewport. Anchor the actual root-level content host to whichever bottom control is real:
+        // external favorites in normal history, or the search bar when favorites are hidden or
+        // embedded inside the KISS bar. Walking to the root-level ancestor also covers Flexible
+        // Workspace, which reparents resultLayout.
+        anchorMainContentAbove(externalFavoritesVisible
+                ? R.id.externalFavoriteBar : R.id.searchEditLayout);
+        favoritesBar.setVisibility(showFavorites ? View.VISIBLE : View.GONE);
+    }
+
+    private void anchorMainContentAbove(int anchorId) {
+        View searchBar = findViewById(R.id.searchEditLayout);
+        if (!(searchBar.getParent() instanceof RelativeLayout)) return;
+        RelativeLayout root = (RelativeLayout) searchBar.getParent();
+        anchorDirectRootChild(findViewById(R.id.resultLayout), root, anchorId);
+        anchorDirectRootChild(findViewById(android.R.id.empty), root, anchorId);
+    }
+
+    private static void anchorDirectRootChild(@Nullable View content,
+                                              RelativeLayout root,
+                                              int anchorId) {
+        if (content == null) return;
+        View directChild = content;
+        while (directChild.getParent() instanceof View && directChild.getParent() != root) {
+            directChild = (View) directChild.getParent();
         }
+        if (directChild.getParent() != root
+                || !(directChild.getLayoutParams() instanceof RelativeLayout.LayoutParams)) {
+            return;
+        }
+
+        RelativeLayout.LayoutParams params =
+                (RelativeLayout.LayoutParams) directChild.getLayoutParams();
+        if (params.getRules()[RelativeLayout.ABOVE] == anchorId) return;
+        params.addRule(RelativeLayout.ABOVE, anchorId);
+        directChild.setLayoutParams(params);
     }
 
     public void onKeyboardVisibilityChanged(boolean keyboardIsVisible) {
