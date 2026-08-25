@@ -11,6 +11,8 @@ public class AnimatedListView extends BlockableListView {
 
     protected final HashMap<Long, ItemInfo> mItemMap = new HashMap<>();
     private SmartScrollAnimationController smartScrollAnimations;
+    private ViewTreeObserver pendingAnimationObserver;
+    private ViewTreeObserver.OnPreDrawListener pendingAnimationListener;
 
     public AnimatedListView(Context context) {
         super(context);
@@ -38,6 +40,7 @@ public class AnimatedListView extends BlockableListView {
     }
 
     public void prepareChangeAnim() {
+        cancelPendingChangeAnimation();
         mItemMap.clear();
 
         // store positions before the update
@@ -56,23 +59,30 @@ public class AnimatedListView extends BlockableListView {
         if (mItemMap.isEmpty())
             return;
 
-        // check if we can use the ViewTreeObserver for animations
+        // Only one pre-draw animation may own a list update. Search can replace results more than
+        // once before the next frame; stacking listeners here made the same child receive several
+        // conflicting translations/scales and produced the visible vertical-card jump.
+        cancelPendingChangeAnimation();
+
         final ViewTreeObserver observer = this.getViewTreeObserver();
         if (!observer.isAlive())
             return;
 
         int animationDuration = getContext().getResources().getInteger(android.R.integer.config_shortAnimTime);
 
-        // postpone animation to after the layout is computed and views are rebound
-        observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+        pendingAnimationObserver = observer;
+        pendingAnimationListener = new ViewTreeObserver.OnPreDrawListener() {
             @Override
             public boolean onPreDraw() {
-                if (!observer.isAlive())
-                    return true;
-                observer.removeOnPreDrawListener(this);
-                AnimatedListView listView = AnimatedListView.this;
+                if (observer.isAlive()) {
+                    observer.removeOnPreDrawListener(this);
+                }
+                if (pendingAnimationListener == this) {
+                    pendingAnimationListener = null;
+                    pendingAnimationObserver = null;
+                }
 
-                // this is called after the layout is updated to the new list
+                AnimatedListView listView = AnimatedListView.this;
                 int firstVisiblePosition = listView.getFirstVisiblePosition();
                 int nCount = Math.min(listView.getChildCount(), getAdapter().getCount() - firstVisiblePosition);
                 for (int i = 0; i < nCount; i += 1) {
@@ -84,16 +94,12 @@ public class AnimatedListView extends BlockableListView {
 
                     if (itemInfo != null) {
                         int topBeforeLayout = itemInfo.top;
-                        // this view may have moved
                         int topAfterLayout = child.getTop();
                         delta = topBeforeLayout - topAfterLayout;
                     } else {
-                        // this is a new view
                         if (i == 0) {
-                            // the first visible position can slide from the top
                             delta = -child.getHeight() - listView.getDividerHeight();
                         } else {
-                            // animate new views
                             child.setScaleY(0.f);
                             child.animate()
                                     .setDuration(animationDuration)
@@ -110,7 +116,23 @@ public class AnimatedListView extends BlockableListView {
 
                 return false;
             }
-        });
+        };
+        observer.addOnPreDrawListener(pendingAnimationListener);
+    }
+
+    private void cancelPendingChangeAnimation() {
+        if (pendingAnimationObserver != null && pendingAnimationListener != null
+                && pendingAnimationObserver.isAlive()) {
+            pendingAnimationObserver.removeOnPreDrawListener(pendingAnimationListener);
+        }
+        pendingAnimationObserver = null;
+        pendingAnimationListener = null;
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        cancelPendingChangeAnimation();
+        super.onDetachedFromWindow();
     }
 
     protected static class ItemInfo {
