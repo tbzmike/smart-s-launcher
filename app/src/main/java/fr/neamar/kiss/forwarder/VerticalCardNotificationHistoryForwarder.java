@@ -1,23 +1,37 @@
 package fr.neamar.kiss.forwarder;
 
+import android.graphics.Color;
 import android.graphics.Rect;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
+import android.text.format.DateUtils;
 import android.view.MotionEvent;
 import android.view.TouchDelegate;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.TextView;
 
 import java.lang.reflect.Field;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.LaunchHistoryStatsStore;
+import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.notification.NotificationTimelineState;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
@@ -37,18 +51,50 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
     private static final String STATS_MARKER = "  •  Last: ";
+    private static final String TIMELINE_PREVIEW_TAG = "smart-notification-timeline-preview";
     private static final float BOTTOM_SWIPE_THRESHOLD_DP = 28f;
     private static final float BOTTOM_SWIPE_AXIS_BIAS = 1.15f;
+    private static final long ATTENTION_PULSE_MS = 550L;
 
     private final SmartCardListForwarder smartCardListForwarder;
+    private final Handler attentionHandler = new Handler(Looper.getMainLooper());
+    private final List<AttentionBorder> attentionBorders = new ArrayList<>();
     private ViewGroup column;
     private ScrollView scroller;
     private Map<String, LaunchHistoryStatsStore.Stats> launchStats = Collections.emptyMap();
+    private boolean attentionBright;
 
     private float bottomSwipeDownRawX;
     private float bottomSwipeDownRawY;
     private boolean bottomSwipeStartedOnCard;
     private boolean bottomSwipeTriggered;
+
+    private final Runnable attentionPulse = new Runnable() {
+        @Override
+        public void run() {
+            attentionBright = !attentionBright;
+            for (int i = attentionBorders.size() - 1; i >= 0; i--) {
+                AttentionBorder binding = attentionBorders.get(i);
+                if (!binding.card.isAttachedToWindow()
+                        || !NotificationTimelineState.isUnread(mainActivity, binding.notificationId)) {
+                    binding.card.getOverlay().remove(binding.border);
+                    attentionBorders.remove(i);
+                    continue;
+                }
+                binding.border.setBounds(0, 0,
+                        Math.max(1, binding.card.getWidth()), Math.max(1, binding.card.getHeight()));
+                int stroke = attentionBright ? dp(4) : dp(2);
+                int color = attentionBright
+                        ? Color.argb(255, 255, 255, 255)
+                        : Color.argb(235, 255, 176, 32);
+                binding.border.setStroke(stroke, color);
+                binding.card.invalidate();
+            }
+            if (!attentionBorders.isEmpty()) {
+                attentionHandler.postDelayed(this, ATTENTION_PULSE_MS);
+            }
+        }
+    };
 
     VerticalCardNotificationHistoryForwarder(MainActivity activity,
                                              SmartCardListForwarder smartCardListForwarder) {
@@ -61,9 +107,14 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     void onDataSetChanged() { refresh(); }
     void onConfigurationChanged() { refresh(); }
 
-    void onPause() { resetBottomSwipe(); }
+    void onPause() {
+        resetBottomSwipe();
+        resetAttentionBorders();
+    }
+
     void onDestroy() {
         resetBottomSwipe();
+        resetAttentionBorders();
         column = null;
         scroller = null;
         launchStats = Collections.emptyMap();
@@ -80,6 +131,7 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             column = null;
             scroller = null;
             resetBottomSwipe();
+            resetAttentionBorders();
             return;
         }
         launchStats = LaunchHistoryStatsStore.getAll(mainActivity);
@@ -102,11 +154,13 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             column = null;
             scroller = null;
             resetBottomSwipe();
+            resetAttentionBorders();
         }
     }
 
     private void apply() {
         if (!isEnabled() || column == null || mainActivity.adapter == null) return;
+        resetAttentionBorders();
         int count = Math.min(column.getChildCount(), mainActivity.adapter.getCount());
         for (int position = 0; position < count; position++) {
             View wrapper = column.getChildAt(position);
@@ -115,6 +169,15 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
             applyLaunchStats(wrapper, result);
             applyEasyIconTap(wrapper, result, adapterPosition);
+
+            NotificationPojo notification = result.getPojo() instanceof NotificationPojo
+                    ? (NotificationPojo) result.getPojo() : null;
+            if (notification != null
+                    && notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
+                applyNotificationTimelinePreview(wrapper, notification);
+                attachAttentionBorder(wrapper, notification);
+            }
+
             applyBottomSwipeTouchRecursively(wrapper);
 
             View.OnLongClickListener historyFirstLongPress = v -> {
@@ -126,12 +189,149 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             };
             applyLongPressRecursively(wrapper, historyFirstLongPress);
 
-            if (result.getPojo() instanceof NotificationPojo) {
-                View.OnClickListener notificationClick = v ->
-                        mainActivity.adapter.onClick(adapterPosition, v);
+            if (notification != null) {
+                View.OnClickListener notificationClick = v -> {
+                    if (notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
+                        NotificationTimelineState.markRead(mainActivity, notification.id);
+                        clearAttentionFor(notification.id);
+                    }
+                    mainActivity.adapter.onClick(adapterPosition, v);
+                };
                 applyNotificationClickRecursively(wrapper, notificationClick);
             }
         }
+        startAttentionPulse();
+    }
+
+    /** Replace generic card metadata with the exact individual notification preview. */
+    private void applyNotificationTimelinePreview(View wrapper, NotificationPojo notification) {
+        View card = cardView(wrapper);
+        if (!(card instanceof ViewGroup)) return;
+        ViewGroup cardGroup = (ViewGroup) card;
+        if (cardGroup.getChildCount() == 0 || !(cardGroup.getChildAt(0) instanceof ViewGroup)) return;
+        ViewGroup mainRow = (ViewGroup) cardGroup.getChildAt(0);
+        if (mainRow.getChildCount() < 2 || !(mainRow.getChildAt(1) instanceof LinearLayout)) return;
+        LinearLayout center = (LinearLayout) mainRow.getChildAt(1);
+        if (center.getChildCount() == 0) return;
+
+        View first = center.getChildAt(0);
+        if (first instanceof TextView) {
+            ((TextView) first).setText(notification.appName);
+            first.setContentDescription(notification.appName + " notification");
+        }
+
+        // Remove previews we previously injected if refresh() runs without a card rebuild. Preserve
+        // the renderer-owned views but hide their generic/group metadata for an individual tile.
+        for (int i = center.getChildCount() - 1; i >= 1; i--) {
+            View child = center.getChildAt(i);
+            if (TIMELINE_PREVIEW_TAG.equals(child.getTag())) center.removeViewAt(i);
+            else child.setVisibility(View.GONE);
+        }
+
+        String when = timelineTime(notification.postTime);
+        String title = notification.latestTitle == null ? "" : notification.latestTitle.trim();
+        String body = notification.latestText == null ? "" : notification.latestText.trim();
+
+        TextView headline = new TextView(mainActivity);
+        headline.setTag(TIMELINE_PREVIEW_TAG);
+        headline.setText(when + "  •  " + (title.isEmpty() ? "Notification" : title));
+        headline.setTextColor(Color.WHITE);
+        headline.setTextSize(13.5f);
+        headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        headline.setMaxLines(2);
+        headline.setEllipsize(TextUtils.TruncateAt.END);
+        headline.setPadding(0, dp(2), 0, dp(1));
+        center.addView(headline, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        if (!body.isEmpty() && !body.equals(title)) {
+            TextView preview = new TextView(mainActivity);
+            preview.setTag(TIMELINE_PREVIEW_TAG);
+            preview.setText(body);
+            preview.setTextColor(Color.argb(238, 255, 255, 255));
+            preview.setTextSize(13f);
+            preview.setMaxLines(3);
+            preview.setEllipsize(TextUtils.TruncateAt.END);
+            preview.setPadding(0, dp(2), 0, dp(2));
+            center.addView(preview, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
+        if (wrapper instanceof ViewGroup) {
+            ViewGroup wrapperGroup = (ViewGroup) wrapper;
+            for (int i = wrapperGroup.getChildCount() - 1; i >= 0; i--) {
+                View child = wrapperGroup.getChildAt(i);
+                if (child instanceof AutoMarqueeTextView) {
+                    AutoMarqueeTextView timelineLabel = (AutoMarqueeTextView) child;
+                    timelineLabel.setText("Notification  •  " + when);
+                    timelineLabel.setContentDescription(
+                            "Notification from " + notification.appName + " at " + when);
+                    break;
+                }
+            }
+        }
+    }
+
+    private String timelineTime(long timestamp) {
+        long safe = timestamp > 0L ? timestamp : System.currentTimeMillis();
+        String pattern = DateFormat.is24HourFormat(mainActivity) ? "HH:mm:ss" : "h:mm:ss a";
+        String time = new SimpleDateFormat(pattern, Locale.getDefault()).format(new Date(safe));
+        if (DateUtils.isToday(safe)) return time;
+        return DateFormat.getMediumDateFormat(mainActivity).format(new Date(safe)) + "  " + time;
+    }
+
+    private void attachAttentionBorder(View wrapper, NotificationPojo notification) {
+        if (!NotificationTimelineState.isUnread(mainActivity, notification.id)) return;
+        View card = cardView(wrapper);
+        if (card == null) return;
+
+        GradientDrawable border = new GradientDrawable();
+        border.setColor(Color.TRANSPARENT);
+        border.setCornerRadius(dp(22));
+        border.setStroke(dp(2), Color.argb(235, 255, 176, 32));
+        AttentionBorder binding = new AttentionBorder(card, border, notification.id);
+        attentionBorders.add(binding);
+        card.post(() -> {
+            if (!card.isAttachedToWindow()
+                    || !NotificationTimelineState.isUnread(mainActivity, notification.id)) return;
+            border.setBounds(0, 0, Math.max(1, card.getWidth()), Math.max(1, card.getHeight()));
+            card.getOverlay().add(border);
+            card.invalidate();
+        });
+    }
+
+    private View cardView(View wrapper) {
+        if (!(wrapper instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) wrapper;
+        return group.getChildCount() > 0 ? group.getChildAt(0) : null;
+    }
+
+    private void startAttentionPulse() {
+        attentionHandler.removeCallbacks(attentionPulse);
+        if (attentionBorders.isEmpty()) return;
+        attentionBright = false;
+        attentionHandler.post(attentionPulse);
+    }
+
+    private void clearAttentionFor(String notificationId) {
+        for (int i = attentionBorders.size() - 1; i >= 0; i--) {
+            AttentionBorder binding = attentionBorders.get(i);
+            if (!TextUtils.equals(notificationId, binding.notificationId)) continue;
+            binding.card.getOverlay().remove(binding.border);
+            binding.card.invalidate();
+            attentionBorders.remove(i);
+        }
+        if (attentionBorders.isEmpty()) attentionHandler.removeCallbacks(attentionPulse);
+    }
+
+    private void resetAttentionBorders() {
+        attentionHandler.removeCallbacks(attentionPulse);
+        for (AttentionBorder binding : attentionBorders) {
+            binding.card.getOverlay().remove(binding.border);
+            binding.card.invalidate();
+        }
+        attentionBorders.clear();
+        attentionBright = false;
     }
 
     private void applyBottomSwipeTouchRecursively(View view) {
@@ -252,7 +452,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void applyLaunchStats(View wrapper, Result<?> result) {
-        if (!(wrapper instanceof ViewGroup) || result == null || result.getPojo() == null) return;
+        if (!(wrapper instanceof ViewGroup) || result == null || result.getPojo() == null
+                || result.getPojo() instanceof NotificationPojo) return;
         ViewGroup group = (ViewGroup) wrapper;
         AutoMarqueeTextView strip = null;
 
@@ -308,6 +509,22 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
             applyNotificationClickRecursively(group.getChildAt(i), listener);
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * mainActivity.getResources().getDisplayMetrics().density);
+    }
+
+    private static final class AttentionBorder {
+        final View card;
+        final GradientDrawable border;
+        final String notificationId;
+
+        AttentionBorder(View card, GradientDrawable border, String notificationId) {
+            this.card = card;
+            this.border = border;
+            this.notificationId = notificationId;
         }
     }
 }
