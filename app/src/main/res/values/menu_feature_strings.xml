@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="menu_app_usage">App usage</string>
+    <string name="menu_notification_history">Notification history</string>
+    <string name="menu_battery_monitor">Battery monitor</string>
+</resources>
