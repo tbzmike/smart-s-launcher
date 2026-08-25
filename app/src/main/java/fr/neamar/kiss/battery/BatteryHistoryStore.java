@@ -14,6 +14,11 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
     private static final String DB = "smart_battery.db";
     private static final int VERSION = 3;
     private static final long KEEP_MS = 1000L * 60L * 60L * 24L * 180L;
+    private static final int CAPACITY_SAMPLE_LIMIT = 1000;
+    private static final int MIN_CAPACITY_LEVEL_SPAN = 5;
+    private static final long MAX_CAPACITY_SAMPLE_GAP_MS = 45L * 60_000L;
+    private static final String LEARNING_PREFS = "smart_battery_learning";
+    private static final String PREF_OBSERVED_CAPACITY_UAH = "observed_capacity_uah";
     private final Context context;
 
     public static final class SamplePoint {
@@ -117,6 +122,7 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
     }
 
     public void add(BatterySnapshot s) {
+        if (s.percent() < 0) return;
         ContentValues v = new ContentValues();
         v.put("ts", s.timestamp);
         v.put("level", s.percent());
@@ -125,7 +131,8 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
         v.put("screen_on", pm == null || pm.isInteractive() ? 1 : 0);
         v.put("temp", s.temperatureC);
         v.put("voltage", s.voltageMv);
-        if (s.currentUa != Long.MIN_VALUE) v.put("current_ua", s.currentUa);
+        long sampledCurrentUa = s.sampleCurrentUa();
+        if (sampledCurrentUa != Long.MIN_VALUE) v.put("current_ua", sampledCurrentUa);
         if (s.averageCurrentUa != Long.MIN_VALUE) v.put("avg_ua", s.averageCurrentUa);
         if (s.chargeCounterUah != Long.MIN_VALUE) v.put("charge_uah", s.chargeCounterUah);
         if (s.energyNwh != Long.MIN_VALUE) v.put("energy_nwh", s.energyNwh);
@@ -136,47 +143,88 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
 
     public long estimatedFullCapacityUah() {
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT level,charge_uah FROM samples WHERE charging=1 AND charge_uah IS NOT NULL ORDER BY ts DESC LIMIT 500",
-                null);
-        int[] levels = new int[500];
-        long[] charges = new long[500];
-        int n = 0;
+                "SELECT ts,level,charging,charge_uah FROM samples "
+                        + "WHERE charge_uah IS NOT NULL ORDER BY ts DESC LIMIT ?",
+                new String[]{Integer.toString(CAPACITY_SAMPLE_LIMIT)});
+        List<SamplePoint> newestFirst = new ArrayList<>();
         try {
-            while (c.moveToNext() && n < levels.length) {
-                levels[n] = c.getInt(0);
-                charges[n] = c.getLong(1);
-                n++;
+            while (c.moveToNext()) {
+                newestFirst.add(new SamplePoint(c.getLong(0), c.getInt(1), c.getInt(2) != 0,
+                        true, Float.NaN, Long.MIN_VALUE, c.getLong(3)));
             }
         } finally {
             c.close();
         }
-        double weighted = 0;
-        double weights = 0;
-        int count = 0;
-        for (int newer = 0; newer < n; newer++) {
-            for (int older = newer + 1; older < n; older++) {
-                int dp = levels[newer] - levels[older];
-                long dq = charges[newer] - charges[older];
-                if (dp >= 15 && dq > 0) {
-                    double full = dq * 100.0 / dp;
-                    if (full > 300_000 && full < 20_000_000) {
-                        double weight = Math.min(1.0, dp / 40.0);
-                        weighted += full * weight;
-                        weights += weight;
-                        count++;
-                        break;
-                    }
-                }
-            }
-            if (count >= 40) break;
+
+        List<SamplePoint> chronological = new ArrayList<>(newestFirst.size());
+        for (int i = newestFirst.size() - 1; i >= 0; i--) {
+            chronological.add(newestFirst.get(i));
         }
-        return weights == 0 ? -1 : Math.round(weighted / weights);
+        long observed = estimateFullCapacityUah(chronological);
+        android.content.SharedPreferences learning = context.getSharedPreferences(
+                LEARNING_PREFS, Context.MODE_PRIVATE);
+        if (BatteryCapacityEstimator.isValidFullCapacityUah(observed)) {
+            learning.edit().putLong(PREF_OBSERVED_CAPACITY_UAH, observed).apply();
+            return observed;
+        }
+
+        long saved = learning.getLong(PREF_OBSERVED_CAPACITY_UAH, -1L);
+        return BatteryCapacityEstimator.isValidFullCapacityUah(saved) ? saved : -1L;
+    }
+
+    static long estimateFullCapacityUah(List<SamplePoint> points) {
+        if (points == null || points.size() < 2) return -1L;
+        double weighted = 0.0;
+        double weights = 0.0;
+        int anchor = 0;
+
+        for (int i = 1; i < points.size(); i++) {
+            SamplePoint previous = points.get(i - 1);
+            SamplePoint next = points.get(i);
+            if (next.charging != previous.charging
+                    || next.ts <= previous.ts
+                    || next.ts - previous.ts > MAX_CAPACITY_SAMPLE_GAP_MS
+                    || next.chargeUah == Long.MIN_VALUE) {
+                anchor = i;
+                continue;
+            }
+
+            SamplePoint first = points.get(anchor);
+            if (first.charging != next.charging || first.chargeUah == Long.MIN_VALUE) {
+                anchor = i;
+                continue;
+            }
+
+            int levelDelta = next.level - first.level;
+            long chargeDelta = next.chargeUah - first.chargeUah;
+            int levelSpan = Math.abs(levelDelta);
+            if (levelSpan < MIN_CAPACITY_LEVEL_SPAN) continue;
+
+            boolean correctDirection = next.charging
+                    ? levelDelta > 0 && chargeDelta > 0
+                    : levelDelta < 0 && chargeDelta < 0;
+            if (!correctDirection) {
+                anchor = i;
+                continue;
+            }
+
+            long full = Math.round(Math.abs(chargeDelta) * 100.0 / levelSpan);
+            if (BatteryCapacityEstimator.isValidFullCapacityUah(full)) {
+                double weight = Math.min(2.0, levelSpan / 10.0);
+                weighted += full * weight;
+                weights += weight;
+            }
+            anchor = i;
+        }
+        return weights <= 0.0 ? -1L : Math.round(weighted / weights);
     }
 
     public List<SamplePoint> recentSamples(long windowMs, int max) {
         List<SamplePoint> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT ts,level,charging,screen_on,temp,current_ua,charge_uah FROM samples WHERE ts>? ORDER BY ts ASC LIMIT ?",
+                "SELECT ts,level,charging,screen_on,temp,current_ua,charge_uah FROM ("
+                        + "SELECT ts,level,charging,screen_on,temp,current_ua,charge_uah "
+                        + "FROM samples WHERE ts>? ORDER BY ts DESC LIMIT ?) ORDER BY ts ASC",
                 new String[]{Long.toString(System.currentTimeMillis() - windowMs), Integer.toString(Math.max(1, max))});
         try {
             while (c.moveToNext()) {
@@ -191,11 +239,13 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
 
     public CurrentSessionStats currentSessionStats(BatterySnapshot current) {
         List<SamplePoint> points = recentSamples(48L * 60L * 60L * 1000L, 1500);
-        if (points.isEmpty()) {
-            return new CurrentSessionStats(current.isCharging(), 0L, Double.NaN, Double.NaN,
-                    Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
-                    current.isCharging() ? current.chargeTimeRemainingMs : Long.MIN_VALUE);
+        if (current.percent() >= 0
+                && (points.isEmpty() || current.timestamp > points.get(points.size() - 1).ts)) {
+            points.add(new SamplePoint(current.timestamp, current.percent(), current.isCharging(),
+                    isScreenOn(), current.temperatureC, current.sampleCurrentUa(),
+                    current.chargeCounterUah));
         }
+        if (points.isEmpty()) return emptySession(current);
 
         int start = points.size() - 1;
         while (start > 0 && points.get(start - 1).charging == current.isCharging()) start--;
@@ -241,9 +291,11 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
         double onSigned = Double.isNaN(onAbs) ? Double.NaN : (current.isCharging() ? onAbs : -onAbs);
         double offSigned = Double.isNaN(offAbs) ? Double.NaN : (current.isCharging() ? offAbs : -offAbs);
 
-        int deltaPercent = current.percent() - first.level;
+        int deltaPercent = current.percent() < 0 ? 0 : current.percent() - first.level;
         double percentPerHour = hours >= (5.0 / 60.0) ? deltaPercent / hours : Double.NaN;
-        long capacityUah = estimatedFullCapacityUah();
+        long observedCapacityUah = estimatedFullCapacityUah();
+        long capacityUah = BatteryCapacityEstimator.resolve(context, observedCapacityUah, current)
+                .fullCapacityUah;
 
         double totalMah = Double.NaN;
         if (firstWithCharge != null && lastWithCharge != null && firstWithCharge != lastWithCharge) {
@@ -264,15 +316,32 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
         long remainingMs = Long.MIN_VALUE;
         if (current.isCharging()) {
             remainingMs = current.chargeTimeRemainingMs;
-        } else if (!Double.isNaN(percentPerHour) && percentPerHour < -0.1) {
+        } else if (current.percent() >= 0 && !Double.isNaN(percentPerHour) && percentPerHour < -0.1) {
             remainingMs = Math.round((current.percent() / Math.abs(percentPerHour)) * 3_600_000.0);
-        } else if (capacityUah > 0 && !Double.isNaN(avgAbs) && avgAbs > 1.0) {
+        } else if (current.percent() >= 0 && capacityUah > 0
+                && !Double.isNaN(avgAbs) && avgAbs > 1.0) {
             double remainingMah = (capacityUah / 1000.0) * current.percent() / 100.0;
             remainingMs = Math.round((remainingMah / avgAbs) * 3_600_000.0);
         }
 
         return new CurrentSessionStats(current.isCharging(), durationMs, avgSigned,
                 percentPerHour, totalMah, onSigned, onPercent, offSigned, offPercent, remainingMs);
+    }
+
+    private CurrentSessionStats emptySession(BatterySnapshot current) {
+        double now = current.sampleCurrentMa();
+        double signed = Double.isNaN(now) ? Double.NaN
+                : (current.isCharging() ? Math.abs(now) : -Math.abs(now));
+        boolean screenOn = isScreenOn();
+        return new CurrentSessionStats(current.isCharging(), 0L, signed, Double.NaN,
+                Double.NaN, screenOn ? signed : Double.NaN, Double.NaN,
+                screenOn ? Double.NaN : signed, Double.NaN,
+                current.isCharging() ? current.chargeTimeRemainingMs : Long.MIN_VALUE);
+    }
+
+    private boolean isScreenOn() {
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        return pm == null || pm.isInteractive();
     }
 
     private static double currentEquivalentPercentRate(double currentMa, long capacityUah,
@@ -320,6 +389,10 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
 
     private long estimateDeliveredUah(SamplePoint first, SamplePoint last) {
         long capacity = estimatedFullCapacityUah();
+        if (capacity <= 0) {
+            int designMah = BatteryCapacityEstimator.designCapacityMah(context);
+            if (designMah > 0) capacity = designMah * 1000L;
+        }
         if (capacity <= 0) return -1;
         int delta = Math.abs(last.level - first.level);
         return Math.round(capacity * (delta / 100.0));

@@ -23,9 +23,9 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 
 /**
- * Opt-in flexible launcher workspace. The original two-pane path is preserved exactly as the
- * default. Four-pane mode is a separate opt-in geometry that keeps the existing history/results
- * and widget containers authoritative instead of cloning/replacing them.
+ * Opt-in flexible launcher workspace. Two- and four-pane geometry share an explicit assignment
+ * policy that keeps the existing history/results and widget containers authoritative instead of
+ * cloning/replacing them.
  */
 public final class SmartWorkspaceController {
     public static final String PREF_ENABLED = "smart-workspace-enabled";
@@ -146,18 +146,33 @@ public final class SmartWorkspaceController {
         widgetScroller.addView(widgetArea, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        boolean widgetsFirst = "widgets".equals(prefs.getString(PREF_PRIMARY_CONTENT, "history"));
-        View firstPane = widgetsFirst ? widgetScroller : historyPane;
-        View secondPane = widgetsFirst ? historyPane : widgetScroller;
+        boolean legacyWidgetsFirst = "widgets".equals(
+                prefs.getString(PREF_PRIMARY_CONTENT, "history"));
 
         String layoutMode = prefs.getString(PREF_LAYOUT_MODE, LAYOUT_TWO_PANE);
         if (LAYOUT_QUADRANTS.equals(layoutMode)) {
+            int historyPosition = WorkspacePaneAssignments.readPosition(prefs,
+                    WorkspacePaneAssignments.PREF_FOUR_PANE_HISTORY_POSITION,
+                    legacyWidgetsFirst ? 2 : 1, 4);
+            int widgetsPosition = WorkspacePaneAssignments.readPosition(prefs,
+                    WorkspacePaneAssignments.PREF_FOUR_PANE_WIDGETS_POSITION,
+                    legacyWidgetsFirst ? 1 : 2, 4);
+            WorkspacePaneAssignments.Content[] assignments = WorkspacePaneAssignments.resolve(
+                    4, historyPosition, widgetsPosition);
+            View[] panes = createAssignedPanes(activity, assignments, historyPane, widgetScroller);
             return installQuadrants(activity, prefs, root, widgetArea, historyPane, widgetScroller,
-                    firstPane, secondPane, emptyView);
+                    panes, assignments, emptyView);
         }
 
+        int historyPosition = WorkspacePaneAssignments.readPosition(prefs,
+                WorkspacePaneAssignments.PREF_TWO_PANE_HISTORY_POSITION,
+                legacyWidgetsFirst ? 2 : 1, 2);
+        int widgetsPosition = historyPosition == 1 ? 2 : 1;
+        WorkspacePaneAssignments.Content[] assignments = WorkspacePaneAssignments.resolve(
+                2, historyPosition, widgetsPosition);
+        View[] panes = createAssignedPanes(activity, assignments, historyPane, widgetScroller);
         return installTwoPane(activity, prefs, root, widgetArea, historyPane, widgetScroller,
-                firstPane, secondPane, emptyView);
+                panes[0], panes[1], emptyView);
     }
 
     private static SmartWorkspaceController installTwoPane(MainActivity activity,
@@ -200,9 +215,13 @@ public final class SmartWorkspaceController {
                                                               ViewGroup widgetArea,
                                                               FrameLayout historyPane,
                                                               ScrollView widgetScroller,
-                                                              View firstPane,
-                                                              View secondPane,
+                                                              View[] panes,
+                                                              WorkspacePaneAssignments.Content[] assignments,
                                                               View emptyView) {
+        View firstPane = panes[0];
+        View secondPane = panes[1];
+        View thirdPane = panes[2];
+        View fourthPane = panes[3];
         LinearLayout workspace = new LinearLayout(activity);
         workspace.setOrientation(LinearLayout.VERTICAL);
         workspace.setWeightSum(100f);
@@ -221,9 +240,6 @@ public final class SmartWorkspaceController {
         bottomRow.setWeightSum(100f);
         bottomRow.setClipChildren(false);
         bottomRow.setClipToPadding(false);
-
-        FrameLayout thirdPane = createEmptyQuadrant(activity, "Smart S workspace pane 3");
-        FrameLayout fourthPane = createEmptyQuadrant(activity, "Smart S workspace pane 4");
 
         int columnPercent = clamp(prefs.getInt(PREF_QUADRANT_COLUMN_PERCENT, 50),
                 MIN_PANE_PERCENT, MAX_PANE_PERCENT);
@@ -254,12 +270,39 @@ public final class SmartWorkspaceController {
                 topColumnDivider, bottomColumnDivider, rowDivider);
         controller.configureQuadrantDividers();
         controller.configureEmptySurfaces(historyPane, emptyView, widgetScroller, widgetArea, workspace);
-        controller.configureGestureOnly(thirdPane, fourthPane);
+        for (int i = 0; i < panes.length; i++) {
+            if (assignments[i] == WorkspacePaneAssignments.Content.EMPTY) {
+                controller.configureEmptySurfaces(panes[i]);
+            }
+        }
         controller.observeWidgetPaneSize();
         return controller;
     }
 
-    private static FrameLayout createEmptyQuadrant(MainActivity activity, String description) {
+    private static View[] createAssignedPanes(
+            MainActivity activity,
+            WorkspacePaneAssignments.Content[] assignments,
+            FrameLayout historyPane,
+            ScrollView widgetScroller) {
+        View[] panes = new View[assignments.length];
+        for (int i = 0; i < assignments.length; i++) {
+            switch (assignments[i]) {
+                case APPS_AND_HISTORY:
+                    panes[i] = historyPane;
+                    break;
+                case WIDGETS:
+                    panes[i] = widgetScroller;
+                    break;
+                default:
+                    panes[i] = createEmptyPane(activity,
+                            "Smart S workspace pane " + (i + 1) + " · Empty");
+                    break;
+            }
+        }
+        return panes;
+    }
+
+    private static FrameLayout createEmptyPane(MainActivity activity, String description) {
         FrameLayout pane = new FrameLayout(activity);
         pane.setClipChildren(false);
         pane.setClipToPadding(false);
@@ -285,13 +328,6 @@ public final class SmartWorkspaceController {
             if (surface == null) continue;
             if (gesturesEnabled) surface.setOnTouchListener(activity);
             if (longPressWidgetsEnabled) activity.registerForContextMenu(surface);
-        }
-    }
-
-    private void configureGestureOnly(View... surfaces) {
-        if (!prefs.getBoolean(PREF_EMPTY_GESTURES, true)) return;
-        for (View surface : surfaces) {
-            if (surface != null) surface.setOnTouchListener(activity);
         }
     }
 

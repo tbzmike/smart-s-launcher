@@ -32,29 +32,38 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
     static RemoteViews build(Context context, boolean detailed) {
         BatterySnapshot s = BatteryMonitorEngine.read(context);
         BatteryHistoryStore store = new BatteryHistoryStore(context);
-        long cap = store.estimatedFullCapacityUah();
+        long observedCapacityUah = store.estimatedFullCapacityUah();
+        BatteryCapacityEstimator.Estimate capacityEstimate = BatteryCapacityEstimator.resolve(
+                context, observedCapacityUah, s);
+        long cap = capacityEstimate.fullCapacityUah;
         BatteryHistoryStore.CurrentSessionStats session = store.currentSessionStats(s);
         double cycles30 = detailed ? store.equivalentChargeCycles(30L * 86_400_000L) : Double.NaN;
         store.close();
         int design = detailed ? BatteryCapacityEstimator.designCapacityMah(context) : -1;
-        double health = detailed ? BatteryCapacityEstimator.healthPercent(context, cap) : Double.NaN;
+        double health = detailed && capacityEstimate.supportsHealthEstimate()
+                ? BatteryCapacityEstimator.healthPercent(context, cap) : Double.NaN;
 
         RemoteViews v = new RemoteViews(context.getPackageName(), widgetLayout(context, detailed));
-        v.setTextViewText(R.id.battery_widget_percent, s.percent() + "%");
+        v.setTextViewText(R.id.battery_widget_percent,
+                s.percent() < 0 ? "—%" : s.percent() + "%");
         String sessionAge = session.durationMs >= 60_000L ? " · " + formatDuration(session.durationMs) : "";
-        v.setTextViewText(R.id.battery_widget_state, s.isCharging()
-                ? "Charging · " + BatteryMonitorEngine.sourceName(s.plugged) + sessionAge
-                : "Discharging" + sessionAge);
+        String source = s.plugged == 0 ? "" : " · " + BatteryMonitorEngine.sourceName(s.plugged);
+        v.setTextViewText(R.id.battery_widget_state,
+                BatteryMonitorEngine.statusName(s.status) + source + sessionAge);
 
         double nowMa = s.currentMa();
-        if (!Double.isNaN(nowMa)) nowMa = s.isCharging() ? Math.abs(nowMa) : -Math.abs(nowMa);
+        String nowLabel = "Now";
+        if (Double.isNaN(nowMa)) {
+            nowMa = s.averageCurrentMa();
+            nowLabel = "Hardware avg";
+        }
         String remaining = session.estimatedRemainingMs == Long.MIN_VALUE ? ""
                 : " (" + formatDuration(session.estimatedRemainingMs) + (s.isCharging() ? " to full" : " left") + ")";
-        String now = Double.isNaN(nowMa) ? "Now: — mA"
-                : String.format(Locale.US, "Now: %+.0f mA", nowMa);
+        String now = Double.isNaN(nowMa) ? "Current: unavailable"
+                : nowLabel + String.format(Locale.US, ": %+.0f mA", nowMa);
         v.setTextViewText(R.id.battery_widget_line1, now + remaining);
 
-        String avg = Double.isNaN(session.averageCurrentMa) ? "Avg: learning…"
+        String avg = Double.isNaN(session.averageCurrentMa) ? "Avg: unavailable"
                 : String.format(Locale.US, "Avg: %+.0f mA", session.averageCurrentMa);
         if (!Double.isNaN(session.percentPerHour)) avg += String.format(Locale.US, " · %+.1f%%/h", session.percentPerHour);
         if (!Double.isNaN(session.totalMah)) avg += String.format(Locale.US, " · %+.0f mAh total", s.isCharging() ? session.totalMah : -session.totalMah);
@@ -67,9 +76,11 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
             String voltage = s.voltageMv > 0 ? s.voltageMv + " mV" : "— mV";
             String power = Double.isNaN(s.powerW()) ? "— W" : String.format(Locale.US, "%.2f W", s.powerW());
             v.setTextViewText(R.id.battery_widget_line5, power + " · " + temp + " · " + voltage);
-            String capacity = cap > 0 ? String.format(Locale.US, "%.0f mAh", cap / 1000.0) : "learning";
-            String healthText = Double.isNaN(health) ? "health learning" : String.format(Locale.US, "health %.1f%%", health);
-            String designText = design > 0 ? " / " + design + " design" : "";
+            String capacity = formatCapacity(capacityEstimate);
+            String healthText = Double.isNaN(health) ? "health unavailable"
+                    : String.format(Locale.US, "health %.1f%%", health);
+            String designText = design > 0 && capacityEstimate.source != BatteryCapacityEstimator.Source.DESIGN
+                    ? " / " + design + " design" : "";
             v.setTextViewText(R.id.battery_widget_line6, "Capacity " + capacity + designText + " · " + healthText
                     + String.format(Locale.US, " · 30d cycles %.2f", cycles30));
         }
@@ -108,9 +119,21 @@ public class BatteryWidgetProvider extends AppWidgetProvider {
     }
 
     private static String formatScreenLine(String label, double ma, double percentPerHour) {
-        String text = Double.isNaN(ma) ? label + ": learning…" : String.format(Locale.US, "%s: %+.0f mA", label, ma);
+        String text = Double.isNaN(ma) ? label + ": not observed"
+                : String.format(Locale.US, "%s: %+.0f mA", label, ma);
         if (!Double.isNaN(percentPerHour)) text += String.format(Locale.US, " · %+.1f%%/h", percentPerHour);
         return text;
+    }
+
+    private static String formatCapacity(BatteryCapacityEstimator.Estimate estimate) {
+        if (!estimate.isAvailable()) return "unavailable";
+        String value = String.format(Locale.US, "%.0f mAh", estimate.fullCapacityUah / 1000.0);
+        switch (estimate.source) {
+            case OBSERVED: return value + " observed";
+            case LIVE_CHARGE_COUNTER: return value + " live estimate";
+            case DESIGN: return value + " design";
+            default: return "unavailable";
+        }
     }
 
     private static String formatDuration(long ms) {

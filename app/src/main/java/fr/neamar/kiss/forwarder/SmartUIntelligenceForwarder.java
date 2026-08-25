@@ -29,6 +29,7 @@ import fr.neamar.kiss.battery.BatteryMonitorEngine;
 import fr.neamar.kiss.battery.BatterySnapshot;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
 import fr.neamar.kiss.utils.Log;
 
 /**
@@ -186,10 +187,6 @@ final class SmartUIntelligenceForwarder {
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.setPadding(dp(10), 0, 0, 0);
         heroTitle = text(18f, Color.WHITE);
-        heroTitle.setSingleLine(true);
-        heroTitle.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        heroTitle.setMarqueeRepeatLimit(-1);
-        heroTitle.setSelected(true);
         heroMeta = text(12.5f, Color.argb(230, 205, 223, 250));
         texts.addView(heroTitle);
         texts.addView(heroMeta);
@@ -203,8 +200,6 @@ final class SmartUIntelligenceForwarder {
 
         preview = text(12.5f, Color.argb(235, 236, 242, 255));
         preview.setGravity(Gravity.CENTER);
-        preview.setMaxLines(3);
-        preview.setEllipsize(TextUtils.TruncateAt.END);
         preview.setPadding(dp(4), dp(4), dp(4), dp(7));
         dashboard.addView(preview, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -228,7 +223,7 @@ final class SmartUIntelligenceForwarder {
     }
 
     private TextView text(float size, int color) {
-        TextView v = new TextView(activity);
+        AutoMarqueeTextView v = new AutoMarqueeTextView(activity);
         v.setTextSize(size);
         v.setTextColor(color);
         return v;

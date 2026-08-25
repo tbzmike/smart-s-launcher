@@ -187,28 +187,36 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
 
     private void updateDashboard() {
         BatterySnapshot s = BatteryMonitorEngine.read(this);
-        String current = Double.isNaN(s.currentMa()) ? "Unavailable" : String.format(Locale.US, "%.0f mA", s.currentMa());
-        String avg = Double.isNaN(s.averageCurrentMa()) ? "Unavailable" : String.format(Locale.US, "%.0f mA", s.averageCurrentMa());
+        String current = Double.isNaN(s.currentMa()) ? "Unavailable"
+                : String.format(Locale.US, "%+.0f mA", s.currentMa());
+        String avg = Double.isNaN(s.averageCurrentMa()) ? "Unavailable"
+                : String.format(Locale.US, "%+.0f mA", s.averageCurrentMa());
         String power = Double.isNaN(s.powerW()) ? "Unavailable" : String.format(Locale.US, "%.2f W", s.powerW());
         String time = s.chargeTimeRemainingMs == Long.MIN_VALUE ? "Unavailable" : formatDuration(s.chargeTimeRemainingMs);
         String temperature = Float.isNaN(s.temperatureC) ? "Unavailable" : String.format(Locale.US, "%.1f°C", s.temperatureC);
-        live.setText("Battery: " + s.percent() + "%\nState: " + (s.isCharging() ? "Charging" : "Discharging")
+        live.setText("Battery: " + (s.percent() < 0 ? "Unavailable" : s.percent() + "%")
+                + "\nState: " + BatteryMonitorEngine.statusName(s.status)
                 + " via " + BatteryMonitorEngine.sourceName(s.plugged)
                 + "\nCurrent now: " + current + "\nAverage current: " + avg + "\nPower: " + power
                 + "\nTemperature: " + temperature
                 + "\nVoltage: " + (s.voltageMv > 0 ? s.voltageMv + " mV" : "Unavailable") + "\nTime to full: " + time);
 
-        long estimated = store.estimatedFullCapacityUah();
+        long observedCapacityUah = store.estimatedFullCapacityUah();
+        BatteryCapacityEstimator.Estimate capacity = BatteryCapacityEstimator.resolve(
+                this, observedCapacityUah, s);
         int design = BatteryCapacityEstimator.designCapacityMah(this);
-        double healthPercent = BatteryCapacityEstimator.healthPercent(this, estimated);
-        String cap = estimated > 0 ? String.format(Locale.US, "%.0f mAh", estimated / 1000.0) : "Learning — needs charging ranges of at least 15%";
+        double healthPercent = capacity.supportsHealthEstimate()
+                ? BatteryCapacityEstimator.healthPercent(this, capacity.fullCapacityUah)
+                : Double.NaN;
+        String cap = formatCapacity(capacity);
         String counter = s.chargeCounterUah == Long.MIN_VALUE ? "Unavailable" : String.format(Locale.US, "%.0f mAh", s.chargeCounterUah / 1000.0);
         String energy = s.energyNwh == Long.MIN_VALUE ? "Unavailable" : String.format(Locale.US, "%.2f Wh", s.energyNwh / 1_000_000.0);
         String cycles = s.cycleCount < 0 ? "Unavailable on this device" : Integer.toString(s.cycleCount);
         health.setText("Android health: " + BatteryMonitorEngine.healthName(s.health)
                 + "\nDesign capacity: " + (design > 0 ? design + " mAh" : "Unavailable")
                 + "\nEstimated full capacity: " + cap
-                + "\nEstimated health: " + (Double.isNaN(healthPercent) ? "Learning…" : String.format(Locale.US, "%.1f%%", healthPercent))
+                + "\nEstimated health: " + (Double.isNaN(healthPercent) ? "Unavailable"
+                : String.format(Locale.US, "%.1f%%", healthPercent))
                 + "\nCharge counter: " + counter + "\nEnergy counter: " + energy
                 + "\nHardware cycle count: " + cycles);
 
@@ -222,9 +230,10 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
                 + "\nScreen-on drain: " + formatMa(screenOn)
                 + "\nScreen-off drain: " + formatMa(screenOff)
                 + "\nCharging-rate baseline: " + formatMa(charging)
-                + "\n24h average temperature: " + (Double.isNaN(avgTemp) ? "Learning…" : String.format(Locale.US, "%.1f°C", avgTemp))
+                + "\n24h average temperature: " + (Double.isNaN(avgTemp) ? "Not observed yet"
+                : String.format(Locale.US, "%.1f°C", avgTemp))
                 + "\nSmart alerts: high heat · high drain · slow charging · charge target"
-                + "\nHistory retention: 180 days · adaptive sampling: 1 min charging / 3 min discharging");
+                + "\nHistory retention: 180 days · sampling: 1 min active/charging, 3 min screen-off");
 
         graph.setPoints(store.recentSamples(DAY_MS, 500));
         sessions.setText(formatSessions(store.recentSessions(8)));
@@ -237,7 +246,8 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
         double drain7 = store.averageDrainMa7d();
         reports.setText("Today\n• average drain: " + formatMa(avgDrain)
                 + "\n• screen-on: " + formatMa(screenOn) + " · screen-off: " + formatMa(screenOff)
-                + "\n• average temperature: " + (Double.isNaN(avgTemp) ? "Learning…" : String.format(Locale.US, "%.1f°C", avgTemp))
+                + "\n• average temperature: " + (Double.isNaN(avgTemp) ? "Not observed yet"
+                : String.format(Locale.US, "%.1f°C", avgTemp))
                 + "\n\n7-day trend\n• average discharge: " + formatMa(drain7)
                 + "\n\n30-day charging\n• equivalent cycles: " + String.format(Locale.US, "%.2f", cycles30));
 
@@ -247,7 +257,7 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
     }
 
     private String formatSessions(List<BatteryHistoryStore.SessionSummary> list) {
-        if (list.isEmpty()) return "Learning sessions… Keep the monitor enabled while charging and discharging.";
+        if (list.isEmpty()) return "Collecting the current session — the first session appears after 10 minutes.";
         SimpleDateFormat fmt = new SimpleDateFormat("MMM d HH:mm", Locale.getDefault());
         StringBuilder out = new StringBuilder();
         for (int i = list.size() - 1; i >= 0; i--) {
@@ -266,7 +276,18 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
     }
 
     private String formatMa(double value) {
-        return Double.isNaN(value) ? "Learning…" : String.format(Locale.US, "%.0f mA", value);
+        return Double.isNaN(value) ? "Not observed yet" : String.format(Locale.US, "%.0f mA", value);
+    }
+
+    private String formatCapacity(BatteryCapacityEstimator.Estimate estimate) {
+        if (!estimate.isAvailable()) return "Unavailable on this device";
+        String value = String.format(Locale.US, "%.0f mAh", estimate.fullCapacityUah / 1000.0);
+        switch (estimate.source) {
+            case OBSERVED: return value + " (observed charge/discharge ranges)";
+            case LIVE_CHARGE_COUNTER: return value + " (live charge-counter estimate)";
+            case DESIGN: return value + " (design fallback)";
+            default: return "Unavailable on this device";
+        }
     }
 
     private TextView sectionTitle(String text) {

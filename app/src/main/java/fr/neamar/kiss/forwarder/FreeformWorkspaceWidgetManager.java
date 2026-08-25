@@ -396,7 +396,21 @@ final class FreeformWorkspaceWidgetManager {
         if (editingFrame != null && editingFrame != frame) editingFrame.setEditing(false);
         editingFrame = frame;
         frame.setEditing(true);
+        bringFrameToFront(frame);
+    }
+
+    private void bringFrameToFront(FreeformWidgetFrame frame) {
+        boolean changed = WidgetLayerOrder.bringToFront(states, frame.state);
         frame.bringToFront();
+        if (changed) saveState();
+    }
+
+    private void sendFrameToBack(FreeformWidgetFrame frame) {
+        if (!WidgetLayerOrder.sendToBack(states, frame.state)) return;
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) frame.getLayoutParams();
+        surface.removeView(frame);
+        surface.addView(frame, 0, params);
+        saveState();
     }
 
     private void exitEditMode() {
@@ -603,6 +617,7 @@ final class FreeformWorkspaceWidgetManager {
             addResizeHandle(Gravity.RIGHT | Gravity.BOTTOM, RIGHT | BOTTOM);
             addMoveControl();
             addStackControl();
+            addLayerControls();
             removeFromStackControl = addRemoveFromStackControl();
             addRemoveControl();
             updateStackChrome();
@@ -694,6 +709,38 @@ final class FreeformWorkspaceWidgetManager {
             addView(add, params);
             add.setOnClickListener(v -> startAddWidgetToStack(this));
             editControls.add(add);
+        }
+
+        private void addLayerControls() {
+            LinearLayout layers = new LinearLayout(activity);
+            layers.setOrientation(LinearLayout.HORIZONTAL);
+            layers.setGravity(Gravity.CENTER);
+
+            TextView forward = layerButton("↑", "Bring widget to front");
+            forward.setOnClickListener(v -> bringFrameToFront(this));
+            TextView behind = layerButton("↓", "Send widget behind others");
+            behind.setOnClickListener(v -> sendFrameToBack(this));
+            layers.addView(forward, new LinearLayout.LayoutParams(dp(38), dp(28)));
+            layers.addView(behind, new LinearLayout.LayoutParams(dp(38), dp(28)));
+
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(76), dp(28),
+                    Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+            params.topMargin = dp(24);
+            addView(layers, params);
+            editControls.add(layers);
+        }
+
+        private TextView layerButton(String symbol, String description) {
+            TextView control = new TextView(activity);
+            control.setText(symbol);
+            control.setContentDescription(description);
+            control.setTextColor(Color.WHITE);
+            control.setGravity(Gravity.CENTER);
+            control.setTextSize(17f);
+            control.setBackground(darkControlBackground());
+            control.setClickable(true);
+            control.setFocusable(true);
+            return control;
         }
 
         private TextView addRemoveFromStackControl() {
@@ -793,6 +840,11 @@ final class FreeformWorkspaceWidgetManager {
 
         @Override
         public boolean onInterceptTouchEvent(MotionEvent event) {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN
+                    && !prefs.getBoolean("smart-ui-locked", false)
+                    && prefs.getBoolean("smart-workspace-free-widget-resize", true)) {
+                bringFrameToFront(this);
+            }
             if (hostViews.size() <= 1) return super.onInterceptTouchEvent(event);
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:

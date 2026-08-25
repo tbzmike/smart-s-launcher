@@ -25,6 +25,21 @@ public final class BatteryMonitorEngine {
         long avg = property(manager, BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE);
         long charge = property(manager, BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER);
         long energy = property(manager, BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER);
+        if ((level < 0 || scale <= 0) && manager != null) {
+            int capacity = intProperty(manager, BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            if (capacity >= 0 && capacity <= 100) {
+                level = capacity;
+                scale = 100;
+            }
+        }
+        if (status == BatteryManager.BATTERY_STATUS_UNKNOWN
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager != null) {
+            int managerStatus = intProperty(manager, BatteryManager.BATTERY_PROPERTY_STATUS);
+            if (managerStatus >= BatteryManager.BATTERY_STATUS_UNKNOWN
+                    && managerStatus <= BatteryManager.BATTERY_STATUS_FULL) {
+                status = managerStatus;
+            }
+        }
         long time = Long.MIN_VALUE;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && manager != null) {
             try {
@@ -52,6 +67,15 @@ public final class BatteryMonitorEngine {
         }
     }
 
+    private static int intProperty(BatteryManager manager, int property) {
+        if (manager == null) return Integer.MIN_VALUE;
+        try {
+            return manager.getIntProperty(property);
+        } catch (RuntimeException ignored) {
+            return Integer.MIN_VALUE;
+        }
+    }
+
     public static String sourceName(int plugged) {
         if ((plugged & BatteryManager.BATTERY_PLUGGED_WIRELESS) != 0) return "Wireless";
         if ((plugged & BatteryManager.BATTERY_PLUGGED_USB) != 0) return "USB";
@@ -67,6 +91,16 @@ public final class BatteryMonitorEngine {
             case BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE: return "Over-voltage";
             case BatteryManager.BATTERY_HEALTH_COLD: return "Cold";
             default: return "Unknown";
+        }
+    }
+
+    public static String statusName(int status) {
+        switch (status) {
+            case BatteryManager.BATTERY_STATUS_CHARGING: return "Charging";
+            case BatteryManager.BATTERY_STATUS_DISCHARGING: return "Discharging";
+            case BatteryManager.BATTERY_STATUS_FULL: return "Full";
+            case BatteryManager.BATTERY_STATUS_NOT_CHARGING: return "Not charging";
+            default: return "Status unavailable";
         }
     }
 }

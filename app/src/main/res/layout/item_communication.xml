@@ -28,18 +28,14 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
-            <TextView
+            <fr.neamar.kiss.ui.AutoMarqueeTextView
                 android:id="@+id/item_communication_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="?attr/resultColor"
-                android:textSize="?attr/resultTitleSize"
-                android:singleLine="true"
-                android:ellipsize="marquee"
-                android:marqueeRepeatLimit="marquee_forever"
-                android:focusable="false" />
+                android:textSize="?attr/resultTitleSize" />
 
-            <TextView
+            <fr.neamar.kiss.ui.AutoMarqueeTextView
                 android:id="@+id/item_communication_meta"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

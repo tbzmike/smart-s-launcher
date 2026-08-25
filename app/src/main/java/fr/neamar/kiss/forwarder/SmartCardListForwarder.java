@@ -434,11 +434,12 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void configureCollapsedMessage(TextView text) {
-        text.setSingleLine(false);
-        text.setMaxLines(2);
-        text.setEllipsize(TextUtils.TruncateAt.END);
-        text.setHorizontallyScrolling(false);
-        text.setSelected(false);
+        text.setSingleLine(true);
+        text.setMaxLines(1);
+        text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        text.setMarqueeRepeatLimit(-1);
+        text.setHorizontallyScrolling(true);
+        text.setSelected(true);
         text.setTextColor(Color.WHITE);
         text.setTextSize(13f);
         text.setGravity(Gravity.START);
@@ -451,8 +452,7 @@ final class SmartCardListForwarder extends Forwarder {
         int available = text.getWidth() - text.getPaddingLeft() - text.getPaddingRight();
         if (available <= 0) return true;
         float measured = text.getPaint().measureText(value.toString());
-        int lines = Math.max(1, text.getMaxLines());
-        return measured > available * lines;
+        return measured > available;
     }
 
     private void expandMessage(TextView text) {

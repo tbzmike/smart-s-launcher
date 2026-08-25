@@ -16,6 +16,8 @@ import androidx.preference.SeekBarPreference;
 import androidx.preference.SwitchPreference;
 
 import fr.neamar.kiss.preference.UiLivePreviewPreference;
+import fr.neamar.kiss.ui.SmartWorkspaceController;
+import fr.neamar.kiss.ui.WorkspacePaneAssignments;
 
 /**
  * Isolated preference hierarchy for Smart S extensions.
@@ -265,6 +267,7 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
     }
 
     private void addWorkspacePreferences(PreferenceGroup root) {
+        migrateLegacyWorkspaceAssignments();
         PreferenceCategory category = new PreferenceCategory(requireContext());
         category.setTitle("Flexible panes");
         root.addPreference(category);
@@ -276,9 +279,19 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         enabled.setDefaultValue(false);
         category.addPreference(enabled);
 
+        ListPreference layoutMode = new ListPreference(requireContext());
+        layoutMode.setKey("smart-workspace-layout-mode");
+        layoutMode.setTitle("Workspace layout");
+        layoutMode.setEntries(R.array.smart_workspace_layout_entries);
+        layoutMode.setEntryValues(R.array.smart_workspace_layout_values);
+        layoutMode.setDefaultValue("two-pane");
+        layoutMode.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        layoutMode.setDependency("smart-workspace-enabled");
+        category.addPreference(layoutMode);
+
         ListPreference orientation = new ListPreference(requireContext());
         orientation.setKey("smart-workspace-orientation");
-        orientation.setTitle("Split direction");
+        orientation.setTitle("Two-pane split direction");
         orientation.setEntries(new CharSequence[]{"Left / right", "Top / bottom"});
         orientation.setEntryValues(new CharSequence[]{"horizontal", "vertical"});
         orientation.setDefaultValue("horizontal");
@@ -286,20 +299,32 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         orientation.setDependency("smart-workspace-enabled");
         category.addPreference(orientation);
 
-        ListPreference primaryContent = new ListPreference(requireContext());
-        primaryContent.setKey("smart-workspace-primary-content");
-        primaryContent.setTitle("First pane content");
-        primaryContent.setEntries(new CharSequence[]{"Apps & history", "Widgets"});
-        primaryContent.setEntryValues(new CharSequence[]{"history", "widgets"});
-        primaryContent.setDefaultValue("history");
-        primaryContent.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        primaryContent.setDependency("smart-workspace-enabled");
-        category.addPreference(primaryContent);
+        ListPreference twoPaneHistory = panePositionPreference(
+                WorkspacePaneAssignments.PREF_TWO_PANE_HISTORY_POSITION,
+                "Two panes · Apps & history",
+                R.array.smart_workspace_two_pane_position_entries,
+                R.array.smart_workspace_two_pane_position_values, "1");
+        category.addPreference(twoPaneHistory);
+
+        ListPreference fourPaneHistory = panePositionPreference(
+                WorkspacePaneAssignments.PREF_FOUR_PANE_HISTORY_POSITION,
+                "Four panes · Apps & history",
+                R.array.smart_workspace_four_pane_position_entries,
+                R.array.smart_workspace_four_pane_position_values, "1");
+        category.addPreference(fourPaneHistory);
+
+        ListPreference fourPaneWidgets = panePositionPreference(
+                WorkspacePaneAssignments.PREF_FOUR_PANE_WIDGETS_POSITION,
+                "Four panes · Widgets",
+                R.array.smart_workspace_four_pane_position_entries,
+                R.array.smart_workspace_four_pane_position_values, "2");
+        category.addPreference(fourPaneWidgets);
+        installPaneSwapListeners(fourPaneHistory, fourPaneWidgets);
 
         SeekBarPreference split = new SeekBarPreference(requireContext());
         split.setKey("smart-workspace-split-percent");
-        split.setTitle("First pane size (%)");
-        split.setSummary("Initial size of the first pane; the divider can also be dragged directly on the launcher");
+        split.setTitle("Two-pane first pane size (%)");
+        split.setSummary("Saved independently from the four-pane row and column sizes");
         split.setMin(15);
         split.setMax(85);
         split.setSeekBarIncrement(1);
@@ -309,6 +334,28 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         split.setDependency("smart-workspace-enabled");
         category.addPreference(split);
 
+        SeekBarPreference columns = new SeekBarPreference(requireContext());
+        columns.setKey("smart-workspace-quadrant-column-percent");
+        columns.setTitle("Four-pane left column size (%)");
+        columns.setMin(15);
+        columns.setMax(85);
+        columns.setSeekBarIncrement(1);
+        columns.setShowSeekBarValue(true);
+        columns.setDefaultValue(50);
+        columns.setDependency("smart-workspace-enabled");
+        category.addPreference(columns);
+
+        SeekBarPreference rows = new SeekBarPreference(requireContext());
+        rows.setKey("smart-workspace-quadrant-row-percent");
+        rows.setTitle("Four-pane top row size (%)");
+        rows.setMin(15);
+        rows.setMax(85);
+        rows.setSeekBarIncrement(1);
+        rows.setShowSeekBarValue(true);
+        rows.setDefaultValue(50);
+        rows.setDependency("smart-workspace-enabled");
+        category.addPreference(rows);
+
         SwitchPreference draggable = new SwitchPreference(requireContext());
         draggable.setKey("smart-workspace-draggable");
         draggable.setTitle("Resizable divider");
@@ -317,11 +364,69 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         draggable.setDependency("smart-workspace-enabled");
         category.addPreference(draggable);
 
+        SwitchPreference freeform = new SwitchPreference(requireContext());
+        freeform.setKey("smart-workspace-free-widget-resize");
+        freeform.setTitle("Freeform widget editing");
+        freeform.setSummary("Widgets may overlap; long-press to move, resize, or change their saved layer order");
+        freeform.setDefaultValue(true);
+        freeform.setDependency("smart-workspace-enabled");
+        category.addPreference(freeform);
+
         Preference note = new Preference(requireContext());
         note.setTitle("Pane architecture");
-        note.setSummary("The first version supports Apps & history and Android widgets on either side. The pane system is designed for additional Smart S panels and Smart S widgets later.");
+        note.setSummary("Choose the authoritative apps/history and widgets positions in either geometry. Four-pane selections swap on collision, and unassigned panes stay empty.");
         note.setSelectable(false);
         category.addPreference(note);
+    }
+
+    private ListPreference panePositionPreference(String key, String title,
+                                                  int entries, int values,
+                                                  String defaultValue) {
+        ListPreference preference = new ListPreference(requireContext());
+        preference.setKey(key);
+        preference.setTitle(title);
+        preference.setEntries(entries);
+        preference.setEntryValues(values);
+        preference.setDefaultValue(defaultValue);
+        preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        preference.setDependency("smart-workspace-enabled");
+        return preference;
+    }
+
+    private void installPaneSwapListeners(ListPreference history, ListPreference widgets) {
+        if (history.getValue() != null && history.getValue().equals(widgets.getValue())) {
+            widgets.setValue("2".equals(history.getValue()) ? "1" : "2");
+        }
+        history.setOnPreferenceChangeListener((preference, newValue) -> {
+            String next = String.valueOf(newValue);
+            if (next.equals(widgets.getValue())) widgets.setValue(history.getValue());
+            return true;
+        });
+        widgets.setOnPreferenceChangeListener((preference, newValue) -> {
+            String next = String.valueOf(newValue);
+            if (next.equals(history.getValue())) history.setValue(widgets.getValue());
+            return true;
+        });
+    }
+
+    private void migrateLegacyWorkspaceAssignments() {
+        if (prefs.getBoolean(WorkspacePaneAssignments.PREF_ASSIGNMENTS_MIGRATED, false)) return;
+        boolean widgetsFirst = "widgets".equals(
+                prefs.getString(SmartWorkspaceController.PREF_PRIMARY_CONTENT, "history"));
+        SharedPreferences.Editor editor = prefs.edit();
+        if (!prefs.contains(WorkspacePaneAssignments.PREF_TWO_PANE_HISTORY_POSITION)) {
+            editor.putString(WorkspacePaneAssignments.PREF_TWO_PANE_HISTORY_POSITION,
+                    widgetsFirst ? "2" : "1");
+        }
+        if (!prefs.contains(WorkspacePaneAssignments.PREF_FOUR_PANE_HISTORY_POSITION)) {
+            editor.putString(WorkspacePaneAssignments.PREF_FOUR_PANE_HISTORY_POSITION,
+                    widgetsFirst ? "2" : "1");
+        }
+        if (!prefs.contains(WorkspacePaneAssignments.PREF_FOUR_PANE_WIDGETS_POSITION)) {
+            editor.putString(WorkspacePaneAssignments.PREF_FOUR_PANE_WIDGETS_POSITION,
+                    widgetsFirst ? "1" : "2");
+        }
+        editor.putBoolean(WorkspacePaneAssignments.PREF_ASSIGNMENTS_MIGRATED, true).apply();
     }
 
     private void clearPreferenceGroup(PreferenceGroup group) {

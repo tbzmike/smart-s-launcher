@@ -26,6 +26,7 @@ import java.util.Map;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 
 final class HistoryDisplayForwarder extends Forwarder {
@@ -436,20 +437,12 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private TextView buildMarqueeLabel(CharSequence label, float textSize) {
-        TextView name = new TextView(mainActivity);
+        AutoMarqueeTextView name = new AutoMarqueeTextView(mainActivity);
         name.setText(label);
         name.setTextColor(Color.WHITE);
         name.setAlpha(1f);
         name.setTextSize(textSize);
         name.setGravity(Gravity.CENTER_VERTICAL | Gravity.CENTER_HORIZONTAL);
-        name.setSingleLine(true);
-        name.setMaxLines(1);
-        name.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        name.setMarqueeRepeatLimit(-1);
-        name.setHorizontallyScrolling(true);
-        name.setSelected(true);
-        name.setFocusable(false);
-        name.setFocusableInTouchMode(false);
         name.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
         return name;
     }

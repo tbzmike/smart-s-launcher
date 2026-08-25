@@ -176,7 +176,8 @@ public final class BatteryHistoryActivity extends AppCompatActivity {
         double wearCycles = charged / 100d;
         double coverage = charged > 0d ? Math.min(100d, used / charged * 100d) : Double.NaN;
         String range = rangeText(points);
-        String efficiency = Double.isNaN(coverage) ? "Learning…" : String.format(Locale.US, "%.0f%%", coverage);
+        String efficiency = Double.isNaN(coverage) ? "No charging recorded"
+                : String.format(Locale.US, "%.0f%%", coverage);
         periodSummary.setText(range
                 + "\n\n🔵 Charged        " + String.format(Locale.US, "%.0f%%", charged)
                 + "\n⚪ Battery usage  " + String.format(Locale.US, "%.0f%%", used)
@@ -243,7 +244,9 @@ public final class BatteryHistoryActivity extends AppCompatActivity {
         TextView detail = body();
         long screenOnMs = screenOnMs(s, all);
         double screenShare = s.durationMs() > 0 ? screenOnMs * 100d / s.durationMs() : 0d;
-        String mah = s.deliveredUah > 0 ? String.format(Locale.US, "%.0f mAh", s.deliveredUah / 1000d) : "mAh learning…";
+        String mah = s.deliveredUah > 0
+                ? String.format(Locale.US, "%.0f mAh", s.deliveredUah / 1000d)
+                : "mAh unavailable";
         if (s.charging) {
             double wear = Math.max(0, s.endLevel - s.startLevel) / 100d;
             detail.setText("Battery wear: " + String.format(Locale.US, "%.2f cycles", wear) + "                         " + mah);

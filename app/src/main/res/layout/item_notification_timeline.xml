@@ -18,23 +18,19 @@
         android:orientation="vertical"
         android:paddingEnd="8dp">
 
-        <TextView
+        <fr.neamar.kiss.ui.AutoMarqueeTextView
             android:id="@+id/item_notification_app"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
             android:textColor="?attr/resultColor"
             android:textSize="?attr/resultSubtitleSize"
             android:textStyle="bold"
             tools:text="WhatsApp" />
 
-        <TextView
+        <fr.neamar.kiss.ui.AutoMarqueeTextView
             android:id="@+id/item_notification_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
             android:textColor="?attr/resultColor"
             android:textSize="?attr/resultTitleSize"
             tools:text="5 notifications" />
@@ -47,12 +43,10 @@
             android:clipChildren="true"
             android:visibility="gone" />
 
-        <TextView
+        <fr.neamar.kiss.ui.AutoMarqueeTextView
             android:id="@+id/item_notification_text"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="2"
             android:textColor="?android:attr/textColorSecondary"
             android:textSize="?attr/resultSubtitleSize"
             tools:text="Fallback notification preview." />

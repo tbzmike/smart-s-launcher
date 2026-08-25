@@ -56,6 +56,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import fr.neamar.kiss.appusage.AppUsageStore;
 import fr.neamar.kiss.appusage.AppUsageTracker;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
 /**
  * Detailed, local, 365-day phone usage explorer.
@@ -948,25 +949,21 @@ public final class AppUsageActivity extends AppCompatActivity {
         body.setOrientation(LinearLayout.VERTICAL);
         body.setGravity(Gravity.CENTER_VERTICAL);
         body.setPadding(dp(4), dp(7), 0, dp(7));
-        TextView title = new TextView(parent.getContext());
+        TextView title = new AutoMarqueeTextView(parent.getContext());
         title.setId(View.generateViewId());
         title.setTextColor(TEXT);
         title.setTextSize(16f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setMaxLines(1);
-        title.setEllipsize(TextUtils.TruncateAt.END);
         body.addView(title);
         TextView sub = new TextView(parent.getContext());
         sub.setId(View.generateViewId());
         sub.setTextColor(TEXT);
         sub.setTextSize(14f);
         body.addView(sub);
-        TextView extra = new TextView(parent.getContext());
+        TextView extra = new AutoMarqueeTextView(parent.getContext());
         extra.setId(View.generateViewId());
         extra.setTextColor(TEXT_MUTED);
         extra.setTextSize(11f);
-        extra.setMaxLines(2);
-        extra.setEllipsize(TextUtils.TruncateAt.END);
         body.addView(extra);
         row.addView(body, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -1090,13 +1087,11 @@ public final class AppUsageActivity extends AppCompatActivity {
         LinearLayout body = new LinearLayout(parent.getContext());
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(dp(14), 0, 0, 0);
-        TextView title = new TextView(parent.getContext());
+        TextView title = new AutoMarqueeTextView(parent.getContext());
         title.setId(View.generateViewId());
         title.setTextColor(TEXT);
         title.setTextSize(17f);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.END);
         body.addView(title);
         TextView usage = new TextView(parent.getContext());
         usage.setId(View.generateViewId());
@@ -1210,31 +1205,25 @@ public final class AppUsageActivity extends AppCompatActivity {
         LinearLayout body = new LinearLayout(parent.getContext());
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(dp(10), 0, 0, 0);
-        TextView title = new TextView(parent.getContext());
+        TextView title = new AutoMarqueeTextView(parent.getContext());
         title.setId(View.generateViewId());
         title.setTextColor(TEXT);
         title.setTextSize(16f);
-        title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.END);
         body.addView(title);
-        TextView detail = new TextView(parent.getContext());
+        TextView detail = new AutoMarqueeTextView(parent.getContext());
         detail.setId(View.generateViewId());
         detail.setTextColor(TEXT_SECONDARY);
         detail.setTextSize(12f);
-        detail.setMaxLines(2);
-        detail.setEllipsize(TextUtils.TruncateAt.END);
         body.addView(detail);
         TextView time = new TextView(parent.getContext());
         time.setId(View.generateViewId());
         time.setTextColor(TEXT);
         time.setTextSize(13f);
         body.addView(time);
-        TextView source = new TextView(parent.getContext());
+        TextView source = new AutoMarqueeTextView(parent.getContext());
         source.setId(View.generateViewId());
         source.setTextColor(TEXT_MUTED);
         source.setTextSize(10f);
-        source.setMaxLines(2);
-        source.setEllipsize(TextUtils.TruncateAt.END);
         body.addView(source);
         root.addView(body, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));

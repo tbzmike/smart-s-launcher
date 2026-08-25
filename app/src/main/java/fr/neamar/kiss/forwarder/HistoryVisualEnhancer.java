@@ -29,6 +29,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.result.ShortcutsResult;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
 import fr.neamar.kiss.utils.Log;
 
 /**
@@ -304,13 +305,11 @@ final class HistoryVisualEnhancer {
         appendDistinct(content, data.subText);
         if (content.length() == 0) return;
 
-        TextView information = new TextView(activity);
+        AutoMarqueeTextView information = new AutoMarqueeTextView(activity);
         information.setTag(TAG_LIVE_TEXT);
         information.setText(content.toString());
         information.setTextColor(Color.WHITE);
         information.setTextSize(square ? 10.5f : 11.5f);
-        information.setMaxLines(square ? 3 : 2);
-        information.setEllipsize(TextUtils.TruncateAt.END);
         information.setGravity(Gravity.START | Gravity.BOTTOM);
         information.setPadding(dp(7), dp(4), dp(7), dp(4));
         information.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);

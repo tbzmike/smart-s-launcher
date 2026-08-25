@@ -19,6 +19,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
 /**
  * Applies fresh location data and a map preview to the dedicated Vertical Cards renderer.
@@ -138,13 +139,11 @@ final class VerticalMapsCardForwarder extends Forwarder {
         location.setVisibility(View.VISIBLE);
 
         if (!TextUtils.isEmpty(data.text)) {
-            TextView coordinates = new TextView(mainActivity);
+            AutoMarqueeTextView coordinates = new AutoMarqueeTextView(mainActivity);
             coordinates.setTag(TAG_MAP_LOCATION + 1);
             coordinates.setText(data.text);
             coordinates.setTextColor(Color.argb(205, 255, 255, 255));
             coordinates.setTextSize(11f);
-            coordinates.setSingleLine(true);
-            coordinates.setEllipsize(TextUtils.TruncateAt.END);
             center.addView(coordinates, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(23)));
         }
@@ -168,14 +167,10 @@ final class VerticalMapsCardForwarder extends Forwarder {
                 return (TextView) child;
             }
         }
-        TextView target = new TextView(mainActivity);
+        AutoMarqueeTextView target = new AutoMarqueeTextView(mainActivity);
         target.setTag(TAG_MAP_LOCATION);
         target.setTextColor(Color.WHITE);
         target.setTextSize(13f);
-        target.setSingleLine(true);
-        target.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        target.setMarqueeRepeatLimit(-1);
-        target.setSelected(true);
         target.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         center.addView(target, Math.min(1, center.getChildCount()), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(28)));

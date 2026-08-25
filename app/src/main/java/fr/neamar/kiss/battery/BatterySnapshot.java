@@ -37,7 +37,8 @@ public final class BatterySnapshot {
     }
 
     public int percent() {
-        return scale > 0 ? Math.max(0, Math.min(100, Math.round(level * 100f / scale))) : level;
+        if (level < 0 || scale <= 0) return -1;
+        return Math.max(0, Math.min(100, Math.round(level * 100f / scale)));
     }
 
     public boolean isCharging() {
@@ -51,6 +52,19 @@ public final class BatterySnapshot {
 
     public double averageCurrentMa() {
         return averageCurrentUa == Long.MIN_VALUE ? Double.NaN : averageCurrentUa / 1000.0;
+    }
+
+    /**
+     * Best current value the device exposes for analytics samples. Instantaneous current remains
+     * authoritative when available; the hardware average is only a compatibility fallback.
+     */
+    public long sampleCurrentUa() {
+        return currentUa != Long.MIN_VALUE ? currentUa : averageCurrentUa;
+    }
+
+    public double sampleCurrentMa() {
+        long value = sampleCurrentUa();
+        return value == Long.MIN_VALUE ? Double.NaN : value / 1000.0;
     }
 
     public double powerW() {

@@ -17,6 +17,7 @@ import androidx.preference.PreferenceManager;
 import java.lang.reflect.Field;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
 import fr.neamar.kiss.utils.Log;
 
 /** Final Square-U-only visuals, accessibility and performance tuning for 3.28.99+. */
@@ -140,12 +141,10 @@ final class SmartUFinalPolishForwarder {
     }
 
     private TextView createChip() {
-        TextView v = new TextView(activity);
+        AutoMarqueeTextView v = new AutoMarqueeTextView(activity);
         v.setTextColor(Color.WHITE);
         v.setTextSize(12f);
         v.setGravity(Gravity.CENTER);
-        v.setSingleLine(true);
-        v.setEllipsize(TextUtils.TruncateAt.END);
         v.setClickable(true);
         v.setFocusable(true);
         v.setMinWidth(dp(48));

@@ -37,11 +37,31 @@
             app:useSimpleSummaryProvider="true" />
 
         <ListPreference
-            app:key="smart-workspace-primary-content"
-            app:defaultValue="history"
-            app:title="First pane content"
-            app:entries="@array/smart_workspace_content_entries"
-            app:entryValues="@array/smart_workspace_content_values"
+            app:key="smart-workspace-two-pane-history-position"
+            app:defaultValue="1"
+            app:title="Two panes · Apps &amp; history"
+            app:summary="Choose the pane for apps, search results, and history; widgets use the other pane"
+            app:entries="@array/smart_workspace_two_pane_position_entries"
+            app:entryValues="@array/smart_workspace_two_pane_position_values"
+            app:dependency="smart-workspace-enabled"
+            app:useSimpleSummaryProvider="true" />
+
+        <ListPreference
+            app:key="smart-workspace-four-pane-history-position"
+            app:defaultValue="1"
+            app:title="Four panes · Apps &amp; history"
+            app:entries="@array/smart_workspace_four_pane_position_entries"
+            app:entryValues="@array/smart_workspace_four_pane_position_values"
+            app:dependency="smart-workspace-enabled"
+            app:useSimpleSummaryProvider="true" />
+
+        <ListPreference
+            app:key="smart-workspace-four-pane-widgets-position"
+            app:defaultValue="2"
+            app:title="Four panes · Widgets"
+            app:summary="Selecting an occupied pane swaps the two live panels; the other panes stay empty"
+            app:entries="@array/smart_workspace_four_pane_position_entries"
+            app:entryValues="@array/smart_workspace_four_pane_position_values"
             app:dependency="smart-workspace-enabled"
             app:useSimpleSummaryProvider="true" />
 
@@ -105,12 +125,12 @@
 
         <Preference
             app:title="Four-pane behavior"
-            app:summary="Four-pane mode creates a true 2 × 2 workspace. Existing apps/history and widgets remain authoritative live panes; the two additional quadrants are independent empty workspace surfaces with KISS gestures. Switching back restores the saved two-pane layout."
+            app:summary="Four-pane mode creates a true 2 × 2 workspace. You choose the positions of apps/history and widgets; selecting the other live panel's position swaps them. The remaining panes are independent empty workspace surfaces."
             app:selectable="false" />
 
         <Preference
             app:title="Freeform widget behavior"
-            app:summary="Workspace widgets use a separate Smart S host: resize from left, right, top, bottom or any corner; move widgets freely; handles disappear outside edit mode. Legacy KISS widget sizing remains only for legacy mode."
+            app:summary="Workspace widgets may overlap. Long-press to edit, move or resize from every edge/corner, and use the layer arrows to bring a widget forward or send it behind another. Position and stacking order are saved."
             app:selectable="false" />
 
         <Preference

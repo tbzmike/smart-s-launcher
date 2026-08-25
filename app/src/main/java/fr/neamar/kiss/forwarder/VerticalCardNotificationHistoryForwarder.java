@@ -221,26 +221,22 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         String title = notification.latestTitle == null ? "" : notification.latestTitle.trim();
         String body = notification.latestText == null ? "" : notification.latestText.trim();
 
-        TextView headline = new TextView(mainActivity);
+        AutoMarqueeTextView headline = new AutoMarqueeTextView(mainActivity);
         headline.setTag(TIMELINE_PREVIEW_TAG);
         headline.setText(when + "  •  " + (title.isEmpty() ? "Notification" : title));
         headline.setTextColor(Color.WHITE);
         headline.setTextSize(13.5f);
         headline.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        headline.setMaxLines(2);
-        headline.setEllipsize(TextUtils.TruncateAt.END);
         headline.setPadding(0, dp(2), 0, dp(1));
         center.addView(headline, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         if (!body.isEmpty() && !body.equals(title)) {
-            TextView preview = new TextView(mainActivity);
+            AutoMarqueeTextView preview = new AutoMarqueeTextView(mainActivity);
             preview.setTag(TIMELINE_PREVIEW_TAG);
             preview.setText(body);
             preview.setTextColor(Color.argb(238, 255, 255, 255));
             preview.setTextSize(13f);
-            preview.setMaxLines(3);
-            preview.setEllipsize(TextUtils.TruncateAt.END);
             preview.setPadding(0, dp(2), 0, dp(2));
             center.addView(preview, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));

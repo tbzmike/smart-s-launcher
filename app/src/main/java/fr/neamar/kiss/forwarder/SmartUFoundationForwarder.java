@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
 import fr.neamar.kiss.utils.Log;
 
 /**
@@ -416,16 +417,12 @@ final class SmartUFoundationForwarder {
         background.setStroke(dp(2), Color.argb(220, 104, 161, 255));
         header.setBackground(background);
 
-        title = new TextView(activity);
+        title = new AutoMarqueeTextView(activity);
         title.setTextColor(Color.WHITE);
         title.setTextSize(17.5f);
         title.setGravity(Gravity.CENTER);
-        title.setSingleLine(true);
-        title.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        title.setMarqueeRepeatLimit(-1);
-        title.setSelected(true);
 
-        subtitle = new TextView(activity);
+        subtitle = new AutoMarqueeTextView(activity);
         subtitle.setTextColor(Color.argb(225, 205, 222, 250));
         subtitle.setTextSize(12f);
         subtitle.setGravity(Gravity.CENTER);

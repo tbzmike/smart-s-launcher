@@ -39,9 +39,9 @@ public final class BatteryMonitorService extends Service {
     private static final long SAMPLE_SCREEN_ON_MS = 60_000L;
     private static final long SAMPLE_SCREEN_OFF_MS = 3L * 60_000L;
     private static final long SAMPLE_LOW_SCREEN_OFF_MS = 60_000L;
-    private static final long LIVE_ACTIVE_REFRESH_MS = 20_000L;
-    private static final long LIVE_IDLE_REFRESH_MS = 60_000L;
-    private static final long WIDGET_REFRESH_MIN_MS = 60_000L;
+    private static final long LIVE_ACTIVE_REFRESH_MS = 2_000L;
+    private static final long LIVE_IDLE_REFRESH_MS = 15_000L;
+    private static final long WIDGET_REFRESH_MIN_MS = 15_000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private BatteryHistoryStore store;
@@ -49,12 +49,16 @@ public final class BatteryMonitorService extends Service {
     private int lastWidgetPercent = -1;
     private boolean lastWidgetCharging;
     private boolean receiverRegistered;
+    private boolean forceNextWidgetRefresh;
     private BatteryRateCalculator.ScreenRates cachedRates;
     private boolean cachedRatesCharging;
+    private boolean cachedRatesScreenOn;
 
     private final Runnable sampler = new Runnable() {
         @Override public void run() {
-            BatterySnapshot s = sampleNow();
+            boolean forceWidgets = forceNextWidgetRefresh;
+            forceNextWidgetRefresh = false;
+            BatterySnapshot s = sampleNow(forceWidgets);
             handler.postDelayed(this, nextSampleDelay(s));
         }
     };
@@ -69,14 +73,9 @@ public final class BatteryMonitorService extends Service {
     private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
-            String action = intent.getAction();
-            scheduleLiveRefreshNow();
-            if (Intent.ACTION_POWER_CONNECTED.equals(action)
-                    || Intent.ACTION_POWER_DISCONNECTED.equals(action)
-                    || Intent.ACTION_SCREEN_ON.equals(action)
-                    || Intent.ACTION_SCREEN_OFF.equals(action)) {
-                scheduleSampleNow();
-            }
+            // Every registered action changes live battery data or the screen-state rate bucket.
+            // Persist and publish it immediately instead of waiting for the periodic sampler.
+            scheduleSampleNow(true);
         }
     };
 
@@ -137,16 +136,14 @@ public final class BatteryMonitorService extends Service {
         filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
         filter.addAction(Intent.ACTION_SCREEN_ON);
         filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_BATTERY_LOW);
+        filter.addAction(Intent.ACTION_BATTERY_OKAY);
         ContextCompat.registerReceiver(this, stateReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
         receiverRegistered = true;
     }
 
-    private void scheduleLiveRefreshNow() {
-        handler.removeCallbacks(liveRefresher);
-        handler.post(liveRefresher);
-    }
-
-    private void scheduleSampleNow() {
+    private void scheduleSampleNow(boolean forceWidgets) {
+        forceNextWidgetRefresh |= forceWidgets;
         handler.removeCallbacks(sampler);
         handler.post(sampler);
     }
@@ -159,21 +156,23 @@ public final class BatteryMonitorService extends Service {
     private long nextSampleDelay(BatterySnapshot s) {
         if (s.isCharging()) return SAMPLE_CHARGING_MS;
         if (isScreenOn()) return SAMPLE_SCREEN_ON_MS;
-        return s.percent() <= 15 ? SAMPLE_LOW_SCREEN_OFF_MS : SAMPLE_SCREEN_OFF_MS;
+        return s.percent() >= 0 && s.percent() <= 15
+                ? SAMPLE_LOW_SCREEN_OFF_MS : SAMPLE_SCREEN_OFF_MS;
     }
 
     private long nextLiveRefreshDelay(BatterySnapshot s) {
         return s.isCharging() || isScreenOn() ? LIVE_ACTIVE_REFRESH_MS : LIVE_IDLE_REFRESH_MS;
     }
 
-    private BatterySnapshot sampleNow() {
+    private BatterySnapshot sampleNow(boolean forceWidgets) {
         BatterySnapshot s = BatteryMonitorEngine.read(this);
         store.add(s);
-        cachedRates = BatteryRateCalculator.calculate(store, s);
+        cachedRates = calculateRates(s);
         cachedRatesCharging = s.isCharging();
+        cachedRatesScreenOn = isScreenOn();
         NotificationManager nm = notificationManager();
         if (nm != null) nm.notify(LIVE_ID, buildLiveNotification(s));
-        maybeRefreshWidgets(s);
+        maybeRefreshWidgets(s, forceWidgets);
         checkAlerts(s);
         return s;
     }
@@ -182,14 +181,21 @@ public final class BatteryMonitorService extends Service {
         BatterySnapshot s = BatteryMonitorEngine.read(this);
         NotificationManager nm = notificationManager();
         if (nm != null) nm.notify(LIVE_ID, buildLiveNotification(s));
-        maybeRefreshWidgets(s);
+        maybeRefreshWidgets(s, false);
         return s;
     }
 
-    private void maybeRefreshWidgets(BatterySnapshot s) {
+    private BatteryRateCalculator.ScreenRates calculateRates(BatterySnapshot s) {
+        long observedCapacityUah = store.estimatedFullCapacityUah();
+        BatteryCapacityEstimator.Estimate capacity = BatteryCapacityEstimator.resolve(
+                this, observedCapacityUah, s);
+        return BatteryRateCalculator.calculate(store, s, capacity.fullCapacityUah, isScreenOn());
+    }
+
+    private void maybeRefreshWidgets(BatterySnapshot s, boolean force) {
         long now = System.currentTimeMillis();
         boolean stateChanged = s.percent() != lastWidgetPercent || s.isCharging() != lastWidgetCharging;
-        if (!stateChanged && now - lastWidgetRefreshMs < WIDGET_REFRESH_MIN_MS) return;
+        if (!force && !stateChanged && now - lastWidgetRefreshMs < WIDGET_REFRESH_MIN_MS) return;
         BatteryWidgetProvider.updateAll(this);
         lastWidgetRefreshMs = now;
         lastWidgetPercent = s.percent();
@@ -204,12 +210,15 @@ public final class BatteryMonitorService extends Service {
         PendingIntent stopPi = PendingIntent.getService(this, 1, stop,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        double rawCurrent = s.currentMa();
-        double signedCurrent = Double.isNaN(rawCurrent) ? Double.NaN
-                : (s.isCharging() ? Math.abs(rawCurrent) : -Math.abs(rawCurrent));
-        String current = Double.isNaN(signedCurrent)
-                ? "unavailable"
-                : String.format(Locale.US, "%+.0f mA", signedCurrent);
+        double displayedCurrent = s.currentMa();
+        String currentLabel = "Current";
+        if (Double.isNaN(displayedCurrent)) {
+            displayedCurrent = s.averageCurrentMa();
+            currentLabel = "Average current";
+        }
+        String current = Double.isNaN(displayedCurrent)
+                ? "unavailable on this device"
+                : String.format(Locale.US, "%+.0f mA", displayedCurrent);
         String remaining = s.chargeCounterUah == Long.MIN_VALUE
                 ? "unavailable"
                 : String.format(Locale.US, "%.0f mAh", s.chargeCounterUah / 1000.0);
@@ -218,17 +227,23 @@ public final class BatteryMonitorService extends Service {
                 : String.format(Locale.US, "%.1f°C", s.temperatureC);
 
         BatteryRateCalculator.ScreenRates rates = cachedRates;
-        if (rates == null || cachedRatesCharging != s.isCharging()) {
-            rates = BatteryRateCalculator.calculate(store, s);
+        boolean screenCurrentlyOn = isScreenOn();
+        if (rates == null || cachedRatesCharging != s.isCharging()
+                || cachedRatesScreenOn != screenCurrentlyOn) {
+            rates = calculateRates(s);
         }
-        String screenOn = formatPercentRate(rates.screenOnPercentPerHour);
+        String screenOnRate = formatPercentRate(rates.screenOnPercentPerHour);
         String screenOff = formatPercentRate(rates.screenOffPercentPerHour);
 
-        String title = "Battery " + s.percent() + "% · " + temp;
-        String collapsed = "Current " + current + " · Screen on " + screenOn + " · Screen off " + screenOff;
-        String expanded = "Battery: " + s.percent() + "% · " + temp
-                + "\nCurrent: " + current + " · Remaining: " + remaining
-                + "\nScreen on: " + screenOn
+        String percent = formatPercent(s.percent());
+        String title = "Battery " + percent + " · " + BatteryMonitorEngine.statusName(s.status)
+                + " · " + temp;
+        String collapsed = currentLabel + " " + current + " · Screen on " + screenOnRate
+                + " · Screen off " + screenOff;
+        String expanded = "Battery: " + percent + " · "
+                + BatteryMonitorEngine.statusName(s.status) + " · " + temp
+                + "\n" + currentLabel + ": " + current + " · Remaining: " + remaining
+                + "\nScreen on: " + screenOnRate
                 + "\nScreen off: " + screenOff;
 
         return new NotificationCompat.Builder(this, CHANNEL_LIVE).setSmallIcon(R.mipmap.ic_launcher)
@@ -245,10 +260,11 @@ public final class BatteryMonitorService extends Service {
         float tempAlarm = p.getFloat("smart-battery-temp-alarm", 42f);
         boolean chargeLatched = p.getBoolean("smart-battery-charge-alarm-latched", false);
         boolean tempLatched = p.getBoolean("smart-battery-temp-alarm-latched", false);
-        if (s.isCharging() && s.percent() >= chargeAlarm && !chargeLatched) {
+        if (s.percent() >= 0 && s.isCharging() && s.percent() >= chargeAlarm && !chargeLatched) {
             postAlert("Charge target reached", "Battery reached " + s.percent() + "% (target " + chargeAlarm + "%).");
             p.edit().putBoolean("smart-battery-charge-alarm-latched", true).apply();
-        } else if (!s.isCharging() || s.percent() < Math.max(0, chargeAlarm - 3)) {
+        } else if (!s.isCharging() || (s.percent() >= 0
+                && s.percent() < Math.max(0, chargeAlarm - 3))) {
             p.edit().putBoolean("smart-battery-charge-alarm-latched", false).apply();
         }
         if (!Float.isNaN(s.temperatureC) && s.temperatureC >= tempAlarm && !tempLatched) {
@@ -282,8 +298,12 @@ public final class BatteryMonitorService extends Service {
     }
 
     private String formatPercentRate(double value) {
-        if (Double.isNaN(value)) return "learning";
+        if (Double.isNaN(value)) return "not observed";
         return String.format(Locale.US, "%+.1f%%/h", value);
+    }
+
+    private String formatPercent(int percent) {
+        return percent < 0 ? "unavailable" : percent + "%";
     }
 
     private void maybePostRateLimited(String key, String title, String text) {

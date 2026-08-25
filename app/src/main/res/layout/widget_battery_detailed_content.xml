@@ -41,11 +41,11 @@
         </LinearLayout>
 
         <TextView android:id="@+id/battery_widget_line1" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Now: -- mA" android:textColor="#FFFFFFFF" android:textStyle="bold" android:textSize="15sp" />
-        <TextView android:id="@+id/battery_widget_line2" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Avg: learning…" android:textColor="#FFFFFFFF" android:textSize="14sp" />
-        <TextView android:id="@+id/battery_widget_line3" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Screen on: learning…" android:textColor="#FFE8EAED" android:textSize="14sp" />
-        <TextView android:id="@+id/battery_widget_line4" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Screen off: learning…" android:textColor="#FFE8EAED" android:textSize="14sp" />
+        <TextView android:id="@+id/battery_widget_line2" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Avg: unavailable" android:textColor="#FFFFFFFF" android:textSize="14sp" />
+        <TextView android:id="@+id/battery_widget_line3" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="Screen on: not observed" android:textColor="#FFE8EAED" android:textSize="14sp" />
+        <TextView android:id="@+id/battery_widget_line4" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Screen off: not observed" android:textColor="#FFE8EAED" android:textSize="14sp" />
         <TextView android:id="@+id/battery_widget_line5" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:text="-- W · --°C · -- mV" android:textColor="#FFDADCE0" android:textSize="12sp" />
-        <TextView android:id="@+id/battery_widget_line6" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Capacity / health learning…" android:textColor="#FFBDC1C6" android:textSize="11sp" android:maxLines="2" />
+        <TextView android:id="@+id/battery_widget_line6" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Capacity / health unavailable" android:textColor="#FFBDC1C6" android:textSize="11sp" android:maxLines="2" />
     </LinearLayout>
 
     <TextView

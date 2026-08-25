@@ -18,12 +18,25 @@
         <item>vertical</item>
     </string-array>
 
-    <string-array name="smart_workspace_content_entries">
-        <item>Apps &amp; history</item>
-        <item>Widgets</item>
+    <string-array name="smart_workspace_two_pane_position_entries">
+        <item>Pane 1 · left / top</item>
+        <item>Pane 2 · right / bottom</item>
     </string-array>
-    <string-array name="smart_workspace_content_values">
-        <item>history</item>
-        <item>widgets</item>
+    <string-array name="smart_workspace_two_pane_position_values">
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+
+    <string-array name="smart_workspace_four_pane_position_entries">
+        <item>Pane 1 · top left</item>
+        <item>Pane 2 · top right</item>
+        <item>Pane 3 · bottom left</item>
+        <item>Pane 4 · bottom right</item>
+    </string-array>
+    <string-array name="smart_workspace_four_pane_position_values">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
     </string-array>
 </resources>

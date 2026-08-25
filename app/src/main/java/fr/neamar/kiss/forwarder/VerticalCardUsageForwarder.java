@@ -20,13 +20,14 @@ import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
 /**
  * Adds Android UsageStats foreground time for today to app-backed Vertical Cards.
  *
  * UsageStats queries run only on a low-priority background worker. The visible usage value lives
- * in its own non-marquee TextView so launch-stat decoration can never overwrite it and so adding
- * usage does not make every card's continuously animated metadata line longer.
+ * in its own TextView so launch-stat decoration can never overwrite it. It auto-scrolls only when
+ * the usage label is wider than the card.
  */
 final class VerticalCardUsageForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -185,15 +186,11 @@ final class VerticalCardUsageForwarder extends Forwarder {
             }
         }
 
-        TextView usage = new TextView(mainActivity);
+        AutoMarqueeTextView usage = new AutoMarqueeTextView(mainActivity);
         usage.setTag(USAGE_VIEW_TAG);
         usage.setTextColor(Color.argb(220, 255, 255, 255));
         usage.setTextSize(12f);
         usage.setGravity(Gravity.CENTER);
-        usage.setSingleLine(true);
-        usage.setEllipsize(TextUtils.TruncateAt.END);
-        usage.setHorizontallyScrolling(false);
-        usage.setFocusable(false);
         usage.setClickable(false);
         usage.setPadding(dp(8), 0, dp(8), dp(5));
 

@@ -67,6 +67,31 @@ As best as possible, only actual KISS code is tested, not standard Android syste
 * [ ] Manually browse older history, then press or swipe Home: the launcher moves to the bottom card every time
 * [ ] Press Home while a query is active: the query clears, favorites return when enabled, and the final history card is visible above them
 
+#### Tile text overflow
+* [ ] Use long app, shortcut, contact, notification, and communication labels: every clipped single-line tile field auto-scrolls while Smart S is visible
+* [ ] Verify notification previews and live/usage/map card labels auto-scroll instead of ending with an ellipsis
+* [ ] Open a full communication body or expanded card detail: intentional long-form text remains readable as multiline content
+
+#### Flexible workspace assignments
+* [ ] In two-pane mode, select pane 1 and pane 2 for Apps & history: widgets always occupy the other pane
+* [ ] In four-pane mode, assign Apps & history and Widgets independently to each of the four positions
+* [ ] Select the other live panel's occupied four-pane position: the two panels swap and neither is duplicated or lost
+* [ ] Switch between two- and four-pane layouts: each geometry restores its own saved assignments and divider sizes
+* [ ] Upgrade a legacy Widgets-first layout: the same visual order is preserved by the migrated pane assignments
+
+#### Overlapping workspace widgets
+* [ ] Move one freeform widget partly or fully over another: both saved bounds are preserved without collision correction
+* [ ] Touch or long-press a visible portion of the lower widget: it becomes the top widget
+* [ ] In edit mode, use the up/down layer controls: the selected widget moves in front of or behind the other widgets
+* [ ] Restart Smart S: overlapping positions and exact back-to-front layer order are restored
+
+#### Battery monitor
+* [ ] Change charging state or battery level: monitor notification, dashboard, and hosted widgets show the new Android status without waiting for the periodic history sample
+* [ ] With charge-counter support, verify capacity resolves from either a 5% charging or discharging range and remains available across restarts
+* [ ] Without charge-counter support, verify current/design or direct-level fallbacks produce a terminal value or explicit Unavailable state—never permanent Learning
+* [ ] Keep the screen on for two one-minute samples: screen-on rate becomes available; repeat with screen off for the screen-off bucket
+* [ ] Compare Current now, percent, charging state, temperature, and voltage against Android's battery state; signed current is not rewritten from an assumed state
+
 #### Automated history
 * [ ] When "Show incoming calls" is disabled, callers are not added to history
 * [ ] When "Show incoming calls" is enabled, callers are added to history
