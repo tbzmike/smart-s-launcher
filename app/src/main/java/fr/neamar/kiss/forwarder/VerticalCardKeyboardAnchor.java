@@ -4,6 +4,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ScrollView;
 
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 import fr.neamar.kiss.MainActivity;
 
 /**
@@ -16,7 +19,8 @@ import fr.neamar.kiss.MainActivity;
  * adapter or refreshing launcher data.
  */
 final class VerticalCardKeyboardAnchor {
-    private static final long IME_SETTLE_DELAY_MS = 220L;
+    private static final long FIRST_SETTLE_DELAY_MS = 120L;
+    private static final long FINAL_SETTLE_DELAY_MS = 320L;
 
     private VerticalCardKeyboardAnchor() {
     }
@@ -27,10 +31,14 @@ final class VerticalCardKeyboardAnchor {
         ScrollView scroller = findVisibleVerticalCardsScroller(activity);
         if (scroller == null) return;
 
-        // First pass runs after the next layout produced by adjustResize. The second pass catches
-        // the final IME animation frame on keyboards that animate their inset/height over time.
-        scroller.post(() -> anchorToBottom(activity, scroller));
-        scroller.postDelayed(() -> anchorToBottom(activity, scroller), IME_SETTLE_DELAY_MS);
+        // adjustResize, favorites visibility and the IME animation can complete on different
+        // frames. Anchor after each relevant stage so the newest/search-result card ends above the
+        // final visible bottom rather than underneath the keyboard or favorites/search controls.
+        scroller.post(() -> anchorToBottomIfImeVisible(activity, scroller));
+        scroller.postDelayed(
+                () -> anchorToBottomIfImeVisible(activity, scroller), FIRST_SETTLE_DELAY_MS);
+        scroller.postDelayed(
+                () -> anchorToBottomIfImeVisible(activity, scroller), FINAL_SETTLE_DELAY_MS);
     }
 
     private static ScrollView findVisibleVerticalCardsScroller(MainActivity activity) {
@@ -46,11 +54,24 @@ final class VerticalCardKeyboardAnchor {
         return null;
     }
 
+    private static void anchorToBottomIfImeVisible(MainActivity activity, ScrollView scroller) {
+        if (!isImeVisible(activity)) return;
+        anchorToBottom(activity, scroller);
+    }
+
+    private static boolean isImeVisible(MainActivity activity) {
+        View root = activity.findViewById(android.R.id.content);
+        WindowInsetsCompat insets = root == null ? null : ViewCompat.getRootWindowInsets(root);
+        // A null snapshot means the first IME layout has not been published yet. The callback that
+        // invoked us already reported visible, so allow that first anchoring pass.
+        return insets == null || insets.isVisible(WindowInsetsCompat.Type.ime());
+    }
+
     private static void anchorToBottom(MainActivity activity, ScrollView scroller) {
         if (activity.isFinishing() || scroller.getVisibility() != View.VISIBLE) return;
 
-        // requestLayout is intentional: the keyboard may have just changed the parent viewport.
-        // fullScroll then computes the bottom using the resized height rather than the pre-IME one.
+        // requestLayout is intentional: the keyboard/favorites may have just changed the parent
+        // viewport. fullScroll then computes the bottom from the resized visible result area.
         scroller.requestLayout();
         scroller.fullScroll(View.FOCUS_DOWN);
 
@@ -58,9 +79,9 @@ final class VerticalCardKeyboardAnchor {
         // of the card controls consumes FOCUS_DOWN.
         View child = scroller.getChildAt(0);
         if (child != null) {
-            int maxScrollY = Math.max(0,
-                    child.getMeasuredHeight() - scroller.getHeight()
-                            + scroller.getPaddingTop() + scroller.getPaddingBottom());
+            int viewportHeight = Math.max(0,
+                    scroller.getHeight() - scroller.getPaddingTop() - scroller.getPaddingBottom());
+            int maxScrollY = Math.max(0, child.getHeight() - viewportHeight);
             scroller.scrollTo(scroller.getScrollX(), maxScrollY);
         }
     }
