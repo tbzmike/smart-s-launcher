@@ -11,7 +11,10 @@ import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import fr.neamar.kiss.AppUsageActivity;
+import fr.neamar.kiss.BatteryMonitorActivity;
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.preference.UiEditLock;
 
@@ -146,8 +149,23 @@ public class ForwarderManager extends Forwarder {
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) { widgetsForwarder.onActivityResult(requestCode, resultCode, data); }
 
     public boolean onOptionsItemSelected(MenuItem item) {
+        int itemId = item.getItemId();
+        // Monitoring/history screens are read-only launcher tools. Keep them available even while
+        // the home interface is locked, and do not route them through widget/edit gesture logic.
+        if (itemId == R.id.app_usage) {
+            mainActivity.startActivity(new Intent(mainActivity, AppUsageActivity.class));
+            return true;
+        }
+        if (itemId == R.id.notification_history) {
+            mainActivity.startActivity(new Intent(mainActivity, NotificationHistoryActivity.class));
+            return true;
+        }
+        if (itemId == R.id.battery_monitor) {
+            mainActivity.startActivity(new Intent(mainActivity, BatteryMonitorActivity.class));
+            return true;
+        }
+
         if (UiEditLock.isLocked(mainActivity)) {
-            int itemId = item.getItemId();
             if (itemId == R.id.preferences || itemId == R.id.settings) return false;
             if (itemId == R.id.add_widget || itemId == R.id.wallpaper) { UiEditLock.allowEdit(mainActivity); return true; }
             return widgetsForwarder.onOptionsItemSelected(item);
