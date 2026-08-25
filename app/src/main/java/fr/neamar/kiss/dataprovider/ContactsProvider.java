@@ -88,8 +88,13 @@ public class ContactsProvider extends Provider<ContactsPojo> {
         }
 
         FuzzyScore fuzzyScore = FuzzyFactory.createFuzzyScore(this, queryNormalized.codePoints);
+        int checked = 0;
 
         for (ContactsPojo pojo : getPojos()) {
+            // A cancelled query may have no matches at all, so addResult() is not a reliable
+            // cancellation point. Check periodically to let the newest queued query start quickly.
+            if ((checked++ & 31) == 0 && searcher.isCancelled()) return;
+
             MatchInfo matchInfo;
             boolean match = false;
 
