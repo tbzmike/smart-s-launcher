@@ -21,7 +21,14 @@ public final class TypoTolerance {
         if (!prefs.getBoolean("enable-typo-tolerance", true)) {
             return MatchInfo.UNMATCHED;
         }
+        return matchPrepared(query, candidate);
+    }
 
+    /**
+     * Execute typo matching after the caller has already verified the preference for the current
+     * search. SmartMatcher uses this to avoid a SharedPreferences lookup for every candidate.
+     */
+    static MatchInfo matchPrepared(@NonNull String query, @NonNull String candidate) {
         String pattern = query.trim().toLowerCase(Locale.ROOT);
         String text = candidate.trim().toLowerCase(Locale.ROOT);
         if (pattern.length() < 3 || text.isEmpty()) {
