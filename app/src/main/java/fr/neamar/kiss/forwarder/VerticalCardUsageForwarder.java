@@ -34,6 +34,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
     private static final String USAGE_VIEW_TAG = "smart-s-used-today";
 
     private final SmartCardListForwarder smartCardListForwarder;
+    private final VerticalCardViewportController viewportController;
     private final ExecutorService usageExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "smart-s-usage-stats");
         thread.setPriority(Thread.MIN_PRIORITY);
@@ -45,10 +46,15 @@ final class VerticalCardUsageForwarder extends Forwarder {
     private ViewGroup column;
     private volatile AppUsageTodayStore.Snapshot snapshot;
     private volatile boolean destroyed;
+    private boolean pendingApplyFromDataSet;
+    private boolean pendingApplyNeedsViewportProtection;
 
-    VerticalCardUsageForwarder(MainActivity activity, SmartCardListForwarder smartCardListForwarder) {
+    VerticalCardUsageForwarder(MainActivity activity,
+                               SmartCardListForwarder smartCardListForwarder,
+                               VerticalCardViewportController viewportController) {
         super(activity);
         this.smartCardListForwarder = smartCardListForwarder;
+        this.viewportController = viewportController;
         this.applySnapshotRunnable = this::applySnapshot;
     }
 
@@ -64,14 +70,16 @@ final class VerticalCardUsageForwarder extends Forwarder {
 
     void onDataSetChanged() {
         // SmartCardListForwarder already rebuilt the card column. Reuse the in-memory snapshot;
-        // never query Android UsageStats from a provider/history change.
+        // never query Android UsageStats from a provider/history change. The rebuild viewport
+        // controller already captured the pre-rebuild position, so this apply must not capture a
+        // second (temporary) position while SmartCardListForwarder's legacy fullScroll is pending.
         resolveColumn();
-        postApplySnapshot();
+        postApplySnapshot(false, true);
     }
 
     void onConfigurationChanged() {
         resolveColumn();
-        postApplySnapshot();
+        postApplySnapshot(false, true);
     }
 
     void onDestroy() {
@@ -80,6 +88,8 @@ final class VerticalCardUsageForwarder extends Forwarder {
         if (column != null) column.removeCallbacks(applySnapshotRunnable);
         column = null;
         snapshot = null;
+        pendingApplyFromDataSet = false;
+        pendingApplyNeedsViewportProtection = false;
     }
 
     private boolean isEnabled() {
@@ -100,7 +110,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
             refreshInFlight.set(false);
             if (destroyed) return;
             snapshot = fresh;
-            mainActivity.runOnUiThread(this::postApplySnapshot);
+            mainActivity.runOnUiThread(() -> postApplySnapshot(true, false));
         });
     }
 
@@ -120,16 +130,27 @@ final class VerticalCardUsageForwarder extends Forwarder {
         }
     }
 
-    private void postApplySnapshot() {
+    private void postApplySnapshot(boolean protectViewport, boolean fromDataSet) {
         if (destroyed || column == null || snapshot == null || !isEnabled()) return;
+        pendingApplyNeedsViewportProtection |= protectViewport;
+        pendingApplyFromDataSet |= fromDataSet;
         column.removeCallbacks(applySnapshotRunnable);
         column.post(applySnapshotRunnable);
     }
 
     private void applySnapshot() {
         AppUsageTodayStore.Snapshot currentSnapshot = snapshot;
+        boolean fromDataSet = pendingApplyFromDataSet;
+        boolean protectViewport = pendingApplyNeedsViewportProtection && !fromDataSet;
+        pendingApplyFromDataSet = false;
+        pendingApplyNeedsViewportProtection = false;
+
         if (destroyed || !isEnabled() || column == null || currentSnapshot == null
                 || mainActivity.adapter == null) return;
+
+        VerticalCardViewportController.ViewportSnapshot viewport = protectViewport
+                ? viewportController.captureForContentMutation() : null;
+        boolean layoutChanged = false;
 
         int count = Math.min(column.getChildCount(), mainActivity.adapter.getCount());
         for (int position = 0; position < count; position++) {
@@ -138,8 +159,9 @@ final class VerticalCardUsageForwarder extends Forwarder {
             String packageName = resolvePackage(result == null ? null : result.getPojo());
             if (TextUtils.isEmpty(packageName)) continue;
 
-            TextView usageView = getOrCreateUsageView(wrapper);
-            if (usageView == null) continue;
+            UsageView usageResult = getOrCreateUsageView(wrapper);
+            if (usageResult == null) continue;
+            if (usageResult.created) layoutChanged = true;
 
             String usageText;
             if (!currentSnapshot.available) {
@@ -150,20 +172,25 @@ final class VerticalCardUsageForwarder extends Forwarder {
                         foregroundMs == null ? 0L : foregroundMs);
             }
 
-            if (!TextUtils.equals(usageView.getText(), usageText)) {
-                usageView.setText(usageText);
+            if (!TextUtils.equals(usageResult.view.getText(), usageText)) {
+                usageResult.view.setText(usageText);
+                layoutChanged = true;
             }
-            usageView.setContentDescription(usageText);
+            usageResult.view.setContentDescription(usageText);
+        }
+
+        if (protectViewport && layoutChanged) {
+            viewportController.restoreAfterContentMutation(viewport);
         }
     }
 
-    private TextView getOrCreateUsageView(View wrapper) {
+    private UsageView getOrCreateUsageView(View wrapper) {
         if (!(wrapper instanceof LinearLayout)) return null;
         LinearLayout group = (LinearLayout) wrapper;
         for (int i = 0; i < group.getChildCount(); i++) {
             View child = group.getChildAt(i);
             if (child instanceof TextView && USAGE_VIEW_TAG.equals(child.getTag())) {
-                return (TextView) child;
+                return new UsageView((TextView) child, false);
             }
         }
 
@@ -183,7 +210,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(dp(10), 0, dp(10), 0);
         group.addView(usage, lp);
-        return usage;
+        return new UsageView(usage, true);
     }
 
     private String resolvePackage(Pojo pojo) {
@@ -217,5 +244,15 @@ final class VerticalCardUsageForwarder extends Forwarder {
 
     private int dp(int value) {
         return Math.round(value * mainActivity.getResources().getDisplayMetrics().density);
+    }
+
+    private static final class UsageView {
+        final TextView view;
+        final boolean created;
+
+        UsageView(TextView view, boolean created) {
+            this.view = view;
+            this.created = created;
+        }
     }
 }
