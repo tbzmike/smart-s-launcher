@@ -292,7 +292,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         AttentionBorder binding = new AttentionBorder(card, border, notification.id);
         attentionBorders.add(binding);
         card.post(() -> {
-            if (!card.isAttachedToWindow()
+            if (!attentionBorders.contains(binding)
+                    || !card.isAttachedToWindow()
                     || !NotificationTimelineState.isUnread(mainActivity, notification.id)) return;
             border.setBounds(0, 0, Math.max(1, card.getWidth()), Math.max(1, card.getHeight()));
             card.getOverlay().add(border);
