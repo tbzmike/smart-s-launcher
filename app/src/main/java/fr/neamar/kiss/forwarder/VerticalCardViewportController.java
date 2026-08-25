@@ -116,7 +116,7 @@ final class VerticalCardViewportController extends Forwarder {
 
     private boolean isAtBottom() {
         if (scroller == null || column == null || column.getChildCount() == 0) return true;
-        return maxScrollY() - scroller.getScrollY() <= dp(BOTTOM_TOLERANCE_DP);
+        return maxScrollY() - scroller.getScrollY() <= toPx(BOTTOM_TOLERANCE_DP);
     }
 
     private ScrollAnchor captureAnchor() {
@@ -173,6 +173,11 @@ final class VerticalCardViewportController extends Forwarder {
             mainActivity.list.setTranscriptMode(AbsListView.TRANSCRIPT_MODE_NORMAL);
             mainActivity.list.setSelection(mainActivity.adapter.getCount() - 1);
         });
+    }
+
+    private int toPx(int valueDp) {
+        return Math.max(1, Math.round(
+                valueDp * mainActivity.getResources().getDisplayMetrics().density));
     }
 
     private void clearPending() {
