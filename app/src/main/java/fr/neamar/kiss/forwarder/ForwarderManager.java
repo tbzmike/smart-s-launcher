@@ -38,6 +38,7 @@ public class ForwarderManager extends Forwarder {
     private final UNotificationHistoryLongPressForwarder uNotificationHistoryLongPressForwarder;
     private final CommunicationHistoryForwarder communicationHistoryForwarder;
     private boolean initialResumeComplete;
+    private boolean lastUiEditLocked;
     private String lastSearchQuery;
 
     public ForwarderManager(MainActivity mainActivity) {
@@ -68,6 +69,7 @@ public class ForwarderManager extends Forwarder {
 
     public void onCreate() {
         UiEditLock.syncRuntimeState(mainActivity);
+        lastUiEditLocked = UiEditLock.isLocked(mainActivity);
         favoritesForwarder.onCreate();
         widgetsForwarder.onCreate();
         interfaceTweaks.onCreate();
@@ -92,14 +94,22 @@ public class ForwarderManager extends Forwarder {
 
     public void onResume() {
         UiEditLock.syncRuntimeState(mainActivity);
+        boolean uiEditLocked = UiEditLock.isLocked(mainActivity);
+        boolean uiEditLockChanged = uiEditLocked != lastUiEditLocked;
+        lastUiEditLocked = uiEditLocked;
+
         // These two listeners are explicitly unregistered in onPause and therefore must be restored.
         experienceTweaks.onResume();
         notificationForwarder.onResume();
 
         if (initialResumeComplete) {
-            // Returning Home must preserve the already-rendered launcher surface. Usage time is
-            // external state that changed while another app was foreground, so refresh only that
-            // metadata asynchronously without rebuilding cards/history.
+            // Returning Home must preserve the already-rendered launcher surface. If the UI-lock
+            // preference changed while Settings was in front, only re-sync the resize controller;
+            // this updates the edit handle without rebuilding cards/history or moving scroll state.
+            if (uiEditLockChanged) verticalCardGroupResizeController.onResume();
+
+            // Usage time is external state that changed while another app was foreground, so
+            // refresh only that metadata asynchronously without rebuilding cards/history.
             verticalCardUsageForwarder.onResume();
             return;
         }
