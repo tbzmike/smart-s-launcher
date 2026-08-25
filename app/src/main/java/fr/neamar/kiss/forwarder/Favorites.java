@@ -151,8 +151,10 @@ public class Favorites extends Forwarder {
         boolean morphLaunch = pojo instanceof AppPojo
                 || pojo instanceof ShortcutPojo
                 || pojo instanceof DisabledAppPojo;
-        if (!morphLaunch || !LaunchMorphTransition.start(
-                mainActivity, v, () -> result.fastLaunch(mainActivity, v))) {
+        if (morphLaunch) {
+            Runnable launch = () -> result.launch(mainActivity, v, mainActivity);
+            if (!LaunchMorphTransition.start(mainActivity, v, launch)) launch.run();
+        } else {
             result.fastLaunch(mainActivity, v);
         }
         v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);

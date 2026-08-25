@@ -175,6 +175,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     private ForwarderManager forwarderManager;
     private Permission permissionManager;
     private OnBackPressedCallback onBackPressedCallback;
+    private final LauncherHomeLifecycleState homeLifecycleState =
+            new LauncherHomeLifecycleState();
 
     /**
      * Called when the activity is first created.
@@ -461,13 +463,20 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
 
         super.onResume();
+        homeLifecycleState.onResumeCompleted();
     }
 
 
     @Override
     protected void onPause() {
-        super.onPause();
         forwarderManager.onPause();
+        super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        homeLifecycleState.onStopped();
+        super.onStop();
     }
 
     @Override
@@ -482,11 +491,16 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     protected void onNewIntent(@NonNull Intent intent) {
         super.onNewIntent(intent);
 
+        // Android pauses both cases before onNewIntent(). Only a genuine trip to another
+        // fullscreen activity passes through onStop(); a second Home redelivery does not.
+        boolean launcherWasForeground =
+                homeLifecycleState.launcherWasForegroundBeforeHomeIntent();
+
         //Set the intent so KISS can tell when it was launched as an assistant
         setIntent(intent);
 
-        // This is called when the user press Home again while already browsing MainActivity
-        // onResume() will be called right after, hiding the kissbar if any.
+        // singleTask routes both a Home return from another app and a second Home press here.
+        // onResume() is called afterward, hiding the kissbar if any.
         // http://developer.android.com/reference/android/app/Activity.html#onNewIntent(android.content.Intent)
         // Animation can't happen in this method, since the activity is not resumed yet, so they'll happen in the onResume()
         // https://github.com/Neamar/KISS/issues/569
@@ -503,10 +517,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // Close the backButton context menu
         closeContextMenu();
 
-        // singleTask delivers the actual launcher HOME action here. Route that exact event after
-        // clearing search/favorites state so the final visible card, not the old search surface,
-        // is anchored to the bottom.
-        forwarderManager.onNewIntent(intent);
+        // Route the exact HOME event only after clearing search/favorites state. The viewport owner
+        // applies the first-return/second-press contract using launcherWasForeground.
+        forwarderManager.onNewIntent(intent, launcherWasForeground);
     }
 
     public void clearSearchText() {
@@ -903,6 +916,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         } else if (isViewingAllApps()) {
             displayKissBar(false);
         }
+    }
+
+    @Override
+    public void externalResultLaunchOccurred() {
+        homeLifecycleState.onExternalResultLaunched();
     }
 
     public void registerPopup(ListPopup popup) {

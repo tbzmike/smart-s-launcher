@@ -64,6 +64,20 @@ class VerticalCardViewportPolicyTest {
         assertThat(policy.shouldPinGeometry(), is(false));
     }
 
+    @Test
+    void savedPositionRestoreSettlesOnlyPassiveBottomRequests() {
+        VerticalCardViewportPolicy startup = new VerticalCardViewportPolicy();
+        assertThat(startup.shouldBottomRebuild(), is(true));
+        startup.onPositionRestoreApplied();
+        assertThat(startup.shouldBottomRebuild(), is(false));
+
+        VerticalCardViewportPolicy search = settledPolicy();
+        search.onSearchQueryChanged(true, true);
+        search.onPositionRestoreApplied();
+        assertThat(search.shouldBottomRebuild(), is(true));
+        assertThat(search.shouldPinGeometry(), is(true));
+    }
+
     private static VerticalCardViewportPolicy settledPolicy() {
         VerticalCardViewportPolicy policy = new VerticalCardViewportPolicy();
         applyBottomRebuild(policy);

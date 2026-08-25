@@ -15,6 +15,9 @@ public interface QueryInterface {
 
     void launchOccurred();
 
+    /** A verified app/shortcut target was started and may cover the launcher without onStop(). */
+    void externalResultLaunchOccurred();
+
     void registerPopup(ListPopup popup);
 
     void showDialog(DialogFragment dialog);

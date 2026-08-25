@@ -53,6 +53,7 @@ import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.ContactsPojo;
+import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.PhonePojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.SearchPojo;
@@ -383,6 +384,16 @@ public abstract class Result<T extends Pojo> {
 
         // Launch
         doLaunch(context, v);
+
+        // LauncherApps can start a translucent target that pauses but does not stop MainActivity.
+        // Report only a verified successful app/shortcut launch so first-Home restoration does not
+        // depend solely on whether Android happened to call onStop().
+        if (queryInterface != null && canAddToHistory()
+                && (pojo instanceof AppPojo
+                || pojo instanceof ShortcutPojo
+                || pojo instanceof DisabledAppPojo)) {
+            queryInterface.externalResultLaunchOccurred();
+        }
 
         recordLaunch(context, queryInterface);
     }

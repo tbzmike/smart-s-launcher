@@ -168,6 +168,9 @@ final class SmartCardListForwarder extends Forwarder {
         wrapper.setGravity(Gravity.CENTER_HORIZONTAL);
         wrapper.setClipChildren(false);
         wrapper.setClipToPadding(false);
+        // The viewport controller uses this stable identity across history re-ranking/rebuilds.
+        // A numeric child position is not stable after a launch or notification insertion.
+        wrapper.setTag(result.getPojoId());
         LinearLayout.LayoutParams wrapperLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         wrapperLp.setMargins(dp(4), dp(spacingDp / 2), dp(4), dp(spacingDp / 2));

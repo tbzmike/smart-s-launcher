@@ -1,5 +1,7 @@
 package fr.neamar.kiss.forwarder;
 
+import android.annotation.SuppressLint;
+import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AbsListView;
@@ -8,20 +10,37 @@ import android.widget.ScrollView;
 import androidx.annotation.Nullable;
 
 import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.WeakHashMap;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.searcher.SearchHandler;
+import fr.neamar.kiss.searcher.Searcher;
 
 /**
  * Single owner of Vertical Cards viewport policy.
  *
  * Search, keyboard, favorites and workspace resizing are enforced from real layout changes rather
  * than guessed delays. Ordinary provider refreshes still preserve the exact visible card and
- * offset. A real HOME intent is an immediate, one-shot jump to the bottom.
+ * offset. A first HOME return restores the paused position; a second HOME press while this launcher
+ * is already resumed is an immediate, one-shot jump to the bottom.
  */
 final class VerticalCardViewportController extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
     private static final int BOTTOM_TOLERANCE_DP = 6;
+    private static final String PREF_RETURN_PENDING =
+            "runtime-vertical-card-return-pending";
+    private static final String PREF_RETURN_BOTTOM =
+            "runtime-vertical-card-return-bottom";
+    private static final String PREF_RETURN_STABLE_ID =
+            "runtime-vertical-card-return-stable-id";
+    private static final String PREF_RETURN_CHILD_INDEX =
+            "runtime-vertical-card-return-child-index";
+    private static final String PREF_RETURN_TOP_OFFSET =
+            "runtime-vertical-card-return-top-offset";
+    private static final String PREF_RETURN_ABSOLUTE_Y =
+            "runtime-vertical-card-return-absolute-y";
 
     private static final WeakHashMap<MainActivity, WeakReference<VerticalCardViewportController>>
             INSTANCES = new WeakHashMap<>();
@@ -35,6 +54,8 @@ final class VerticalCardViewportController extends Forwarder {
     private ScrollView scroller;
     private ViewGroup column;
     private ViewportSnapshot pendingRebuildSnapshot;
+    private ViewportSnapshot savedReturnSnapshot;
+    private boolean returnRestoreRequested;
     private boolean bottomPassScheduled;
     private int generation;
     private boolean destroyed;
@@ -50,11 +71,13 @@ final class VerticalCardViewportController extends Forwarder {
 
     void onCreate() {
         resolveViews();
+        savedReturnSnapshot = loadSavedReturnSnapshot();
     }
 
     /** Update the persistent search invariant and arm the first result set of a new query. */
     void onSearchQueryChanged(boolean active, boolean changed) {
         policy.onSearchQueryChanged(active, changed);
+        if (active) clearSavedReturnSnapshot();
         if (changed) {
             generation++;
             pendingRebuildSnapshot = null;
@@ -71,7 +94,10 @@ final class VerticalCardViewportController extends Forwarder {
             return;
         }
 
-        if (policy.shouldBottomRebuild()) {
+        if (returnRestoreRequested && savedReturnSnapshot != null
+                && !policy.preventsPositionRestore()) {
+            pendingRebuildSnapshot = savedReturnSnapshot;
+        } else if (policy.shouldBottomRebuild()) {
             policy.onBottomRebuildStarted();
             pendingRebuildSnapshot = ViewportSnapshot.bottom();
         } else {
@@ -95,6 +121,10 @@ final class VerticalCardViewportController extends Forwarder {
     ViewportSnapshot captureForContentMutation() {
         resolveViews();
         if (!canControlViewport()) return null;
+        if (returnRestoreRequested && savedReturnSnapshot != null
+                && !policy.preventsPositionRestore()) {
+            return savedReturnSnapshot;
+        }
         return policy.shouldPinGeometry()
                 ? ViewportSnapshot.bottom() : captureCurrentViewport();
     }
@@ -105,14 +135,53 @@ final class VerticalCardViewportController extends Forwarder {
         scheduleRestore(snapshot, generation);
     }
 
-    /** Every actual HOME intent goes to the bottom; no lifecycle inference is involved. */
-    void onHomeIntent() {
+    /**
+     * Apply the explicit two-stage HOME contract using the activity's verified resumed state.
+     * Returning from another app restores the saved history position; Home while already resumed
+     * deliberately navigates to the newest bottom card.
+     */
+    void onHomeIntent(boolean launcherWasForeground) {
+        ensureSavedReturnSnapshotLoaded();
+        LauncherHomeNavigationPolicy.Action action =
+                LauncherHomeNavigationPolicy.actionForHomeIntent(
+                        launcherWasForeground, savedReturnSnapshot != null);
+        if (action == LauncherHomeNavigationPolicy.Action.RESTORE_LAST_POSITION) {
+            requestSavedReturnRestore();
+            return;
+        }
+        if (action == LauncherHomeNavigationPolicy.Action.KEEP_CURRENT_POSITION) return;
+
+        clearSavedReturnSnapshot();
         generation++;
         pendingRebuildSnapshot = null;
         policy.requestImmediateBottom();
         resolveViews();
         scheduleBottomPass();
         anchorNormalListToLatest();
+    }
+
+    /** Capture the exact history viewport before another activity can replace this launcher. */
+    void onLauncherPaused() {
+        resolveViews();
+        if (!isRestorableHistoryViewport()) {
+            if (!isEnabled()
+                    || !TextUtils.isEmpty(mainActivity.searchEditText.getText())
+                    || mainActivity.isViewingAllApps()
+                    || SearchHandler.getInstance().getLastSearchType() != Searcher.Type.HISTORY) {
+                clearSavedReturnSnapshot();
+            }
+            return;
+        }
+
+        savedReturnSnapshot = captureCurrentViewport();
+        returnRestoreRequested = false;
+        persistSavedReturnSnapshot(savedReturnSnapshot);
+    }
+
+    /** Restore after either HOME or Back returns to a launcher instance that had been paused. */
+    void onLauncherResumed() {
+        ensureSavedReturnSnapshotLoaded();
+        requestSavedReturnRestore();
     }
 
     /** Forward exact IME state into the layout-driven viewport policy. */
@@ -129,6 +198,7 @@ final class VerticalCardViewportController extends Forwarder {
     void onConfigurationChanged() {
         generation++;
         pendingRebuildSnapshot = null;
+        returnRestoreRequested = false;
         bottomPassScheduled = false;
         policy.resetForConfiguration();
         detachGeometryListeners();
@@ -141,6 +211,7 @@ final class VerticalCardViewportController extends Forwarder {
         destroyed = true;
         generation++;
         pendingRebuildSnapshot = null;
+        returnRestoreRequested = false;
         bottomPassScheduled = false;
         detachGeometryListeners();
         synchronized (INSTANCES) {
@@ -154,6 +225,7 @@ final class VerticalCardViewportController extends Forwarder {
         policy.setKeyboardVisible(visible);
         if (!visible) return;
 
+        clearSavedReturnSnapshot();
         generation++;
         pendingRebuildSnapshot = null;
         resolveViews();
@@ -189,7 +261,12 @@ final class VerticalCardViewportController extends Forwarder {
     }
 
     private void onGeometryChanged() {
-        if (policy.shouldPinGeometry()) scheduleBottomPass();
+        if (returnRestoreRequested && savedReturnSnapshot != null
+                && !policy.preventsPositionRestore()) {
+            scheduleRestore(savedReturnSnapshot, generation);
+        } else if (policy.shouldPinGeometry()) {
+            scheduleBottomPass();
+        }
     }
 
     private void scheduleBottomPass() {
@@ -218,7 +295,10 @@ final class VerticalCardViewportController extends Forwarder {
         for (int i = 0; i < column.getChildCount(); i++) {
             View child = column.getChildAt(i);
             if (child.getBottom() > scrollY) {
-                return ViewportSnapshot.anchor(i, child.getTop() - scrollY, scrollY);
+                Object rawTag = child.getTag();
+                String stableId = rawTag instanceof String ? (String) rawTag : null;
+                return ViewportSnapshot.anchor(
+                        stableId, i, child.getTop() - scrollY, scrollY);
             }
         }
         return ViewportSnapshot.absolute(scrollY);
@@ -248,9 +328,13 @@ final class VerticalCardViewportController extends Forwarder {
     }
 
     private void restoreSnapshot(ScrollView target, ViewportSnapshot snapshot) {
-        if (snapshot.bottom || policy.shouldPinGeometry()) {
+        boolean applyingSavedReturn = returnRestoreRequested
+                && savedReturnSnapshot == snapshot
+                && !policy.preventsPositionRestore();
+        if (snapshot.bottom || (!applyingSavedReturn && policy.shouldPinGeometry())) {
             if (scrollToBottom(target)) {
                 policy.onBottomApplied();
+                completeSavedReturnRestoreIfNeeded(snapshot);
             } else {
                 scheduleBottomPass();
             }
@@ -258,12 +342,103 @@ final class VerticalCardViewportController extends Forwarder {
         }
 
         int targetY = snapshot.absoluteScrollY;
-        if (snapshot.childIndex >= 0 && column != null && column.getChildCount() > 0) {
-            int index = Math.max(0, Math.min(snapshot.childIndex, column.getChildCount() - 1));
+        int index = resolveStableAnchorIndex(snapshot);
+        if (index >= 0 && column != null) {
             View child = column.getChildAt(index);
             targetY = child.getTop() - snapshot.topOffset;
         }
         target.scrollTo(target.getScrollX(), clampScrollY(target, targetY));
+        completeSavedReturnRestoreIfNeeded(snapshot);
+    }
+
+    private int resolveStableAnchorIndex(ViewportSnapshot snapshot) {
+        if (column == null || column.getChildCount() == 0) return -1;
+        List<String> rebuiltIds = new ArrayList<>(column.getChildCount());
+        for (int i = 0; i < column.getChildCount(); i++) {
+            Object rawTag = column.getChildAt(i).getTag();
+            rebuiltIds.add(rawTag instanceof String ? (String) rawTag : null);
+        }
+        return StableViewportAnchor.resolveIndex(
+                snapshot.stableId, snapshot.childIndex, rebuiltIds);
+    }
+
+    private boolean isRestorableHistoryViewport() {
+        return canControlViewport()
+                && mainActivity.isViewingSearchResults()
+                && TextUtils.isEmpty(mainActivity.searchEditText.getText())
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                && !policy.preventsPositionRestore();
+    }
+
+    private void ensureSavedReturnSnapshotLoaded() {
+        if (savedReturnSnapshot == null) {
+            savedReturnSnapshot = loadSavedReturnSnapshot();
+        }
+    }
+
+    private void requestSavedReturnRestore() {
+        if (savedReturnSnapshot == null || policy.preventsPositionRestore()) return;
+        returnRestoreRequested = true;
+        generation++;
+        pendingRebuildSnapshot = null;
+        resolveViews();
+        if (canControlViewport() && column != null && column.getChildCount() > 0) {
+            scheduleRestore(savedReturnSnapshot, generation);
+        }
+    }
+
+    private void completeSavedReturnRestoreIfNeeded(ViewportSnapshot appliedSnapshot) {
+        if (!returnRestoreRequested || savedReturnSnapshot != appliedSnapshot
+                || policy.preventsPositionRestore()) {
+            return;
+        }
+        policy.onPositionRestoreApplied();
+        clearSavedReturnSnapshot();
+    }
+
+    @SuppressLint("ApplySharedPref")
+    private void persistSavedReturnSnapshot(ViewportSnapshot snapshot) {
+        android.content.SharedPreferences.Editor editor = prefs.edit()
+                .putBoolean(PREF_RETURN_PENDING, true)
+                .putBoolean(PREF_RETURN_BOTTOM, snapshot.bottom)
+                .putInt(PREF_RETURN_CHILD_INDEX, snapshot.childIndex)
+                .putInt(PREF_RETURN_TOP_OFFSET, snapshot.topOffset)
+                .putInt(PREF_RETURN_ABSOLUTE_Y, snapshot.absoluteScrollY);
+        if (snapshot.stableId == null) editor.remove(PREF_RETURN_STABLE_ID);
+        else editor.putString(PREF_RETURN_STABLE_ID, snapshot.stableId);
+
+        // This tiny state must reach disk before Android is allowed to kill the paused launcher.
+        editor.commit();
+    }
+
+    @Nullable
+    private ViewportSnapshot loadSavedReturnSnapshot() {
+        if (!prefs.getBoolean(PREF_RETURN_PENDING, false)) return null;
+        return new ViewportSnapshot(
+                prefs.getBoolean(PREF_RETURN_BOTTOM, false),
+                prefs.getString(PREF_RETURN_STABLE_ID, null),
+                prefs.getInt(PREF_RETURN_CHILD_INDEX, -1),
+                prefs.getInt(PREF_RETURN_TOP_OFFSET, 0),
+                Math.max(0, prefs.getInt(PREF_RETURN_ABSOLUTE_Y, 0)));
+    }
+
+    @SuppressLint("ApplySharedPref")
+    private void clearSavedReturnSnapshot() {
+        boolean storedPending = prefs.getBoolean(PREF_RETURN_PENDING, false);
+        boolean hadPendingRestore = savedReturnSnapshot != null || returnRestoreRequested;
+        savedReturnSnapshot = null;
+        returnRestoreRequested = false;
+        pendingRebuildSnapshot = null;
+        if (hadPendingRestore) generation++;
+        if (!storedPending) return;
+        prefs.edit()
+                .remove(PREF_RETURN_PENDING)
+                .remove(PREF_RETURN_BOTTOM)
+                .remove(PREF_RETURN_STABLE_ID)
+                .remove(PREF_RETURN_CHILD_INDEX)
+                .remove(PREF_RETURN_TOP_OFFSET)
+                .remove(PREF_RETURN_ABSOLUTE_Y)
+                .commit();
     }
 
     private static int clampScrollY(ScrollView target, int requested) {
@@ -307,28 +482,32 @@ final class VerticalCardViewportController extends Forwarder {
 
     static final class ViewportSnapshot {
         final boolean bottom;
+        final String stableId;
         final int childIndex;
         final int topOffset;
         final int absoluteScrollY;
 
-        private ViewportSnapshot(boolean bottom, int childIndex, int topOffset,
+        private ViewportSnapshot(boolean bottom, String stableId, int childIndex, int topOffset,
                                  int absoluteScrollY) {
             this.bottom = bottom;
+            this.stableId = stableId;
             this.childIndex = childIndex;
             this.topOffset = topOffset;
             this.absoluteScrollY = absoluteScrollY;
         }
 
         static ViewportSnapshot bottom() {
-            return new ViewportSnapshot(true, -1, 0, 0);
+            return new ViewportSnapshot(true, null, -1, 0, 0);
         }
 
-        static ViewportSnapshot anchor(int childIndex, int topOffset, int absoluteScrollY) {
-            return new ViewportSnapshot(false, childIndex, topOffset, absoluteScrollY);
+        static ViewportSnapshot anchor(String stableId, int childIndex, int topOffset,
+                                       int absoluteScrollY) {
+            return new ViewportSnapshot(
+                    false, stableId, childIndex, topOffset, absoluteScrollY);
         }
 
         static ViewportSnapshot absolute(int scrollY) {
-            return new ViewportSnapshot(false, -1, 0, scrollY);
+            return new ViewportSnapshot(false, null, -1, 0, scrollY);
         }
     }
 }

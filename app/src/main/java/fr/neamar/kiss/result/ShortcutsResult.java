@@ -50,6 +50,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     private volatile Drawable icon = null;
     private volatile Drawable appDrawable = null;
+    private boolean launchSucceeded;
 
     ShortcutsResult(@NonNull ShortcutPojo pojo) {
         super(pojo);
@@ -293,6 +294,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     @Override
     protected void doLaunch(Context context, View v) {
+        launchSucceeded = false;
         if (pojo.isOreoShortcut()) {
             // Oreo shortcuts
             doOreoLaunch(context, v);
@@ -302,6 +304,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 Intent intent = Intent.parseUri(pojo.intentUri, 0);
                 setSourceBounds(intent, v);
                 context.startActivity(intent);
+                launchSucceeded = true;
             } catch (Exception e) {
                 // Application was just removed?
                 Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
@@ -324,6 +327,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             if (shortcutInfo != null) {
                 try {
                     launcherApps.startShortcut(shortcutInfo, v.getClipBounds(), null);
+                    launchSucceeded = true;
                     return;
                 } catch (ActivityNotFoundException | IllegalStateException e) {
                     Log.w(TAG, "Unable to launch shortcut " + pojo.getName(), e);
@@ -333,6 +337,11 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
         // Application removed? Invalid shortcut? Shortcut to an app on an unmounted SD card?
         Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
+    }
+
+    @Override
+    protected boolean canAddToHistory() {
+        return launchSucceeded && !pojo.isDisabled();
     }
 
     @Nullable

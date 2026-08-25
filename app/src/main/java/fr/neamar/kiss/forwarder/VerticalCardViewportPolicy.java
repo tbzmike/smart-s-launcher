@@ -5,7 +5,8 @@ package fr.neamar.kiss.forwarder;
  *
  * Keeping this separate from Android views makes the navigation/search invariants executable in
  * unit tests. A search remains bottom-pinned across every result or geometry change. Query changes
- * also force the first rebuilt result set to the bottom, while Home is an immediate one-shot jump.
+ * also force the first rebuilt result set to the bottom, while a second Home press is an immediate
+ * one-shot jump.
  */
 final class VerticalCardViewportPolicy {
     private boolean searchActive;
@@ -45,12 +46,24 @@ final class VerticalCardViewportPolicy {
                 || rebuildBottomPending;
     }
 
+    /** Search, IME and an explicit second Home press always outrank a saved history position. */
+    boolean preventsPositionRestore() {
+        return searchActive || keyboardVisible || immediateBottomPending;
+    }
+
     void onBottomApplied() {
         immediateBottomPending = false;
         if (rebuildBottomPending) {
             rebuildBottomPending = false;
             forceBottomOnNextRebuild = false;
         }
+    }
+
+    /** A successful history-position restore settles any passive initial/rebuild bottom request. */
+    void onPositionRestoreApplied() {
+        if (preventsPositionRestore()) return;
+        rebuildBottomPending = false;
+        forceBottomOnNextRebuild = false;
     }
 
     void resetForConfiguration() {

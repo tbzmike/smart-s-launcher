@@ -64,7 +64,10 @@ As best as possible, only actual KISS code is tested, not standard Android syste
 * [ ] Hide and show the external favorites bar: result cards remain above whichever bottom bar is actually visible
 * [ ] Repeat the checks with Flexible Workspace enabled: the history pane uses the same visible bottom boundary
 * [ ] Manually browse older history, leave and return with Back: the exact non-bottom position is preserved
-* [ ] Manually browse older history, then press or swipe Home: the launcher moves to the bottom card every time
+* [ ] Launch an app from a non-bottom history position, then press or swipe Home from that app: the exact paused history position returns
+* [ ] From that restored launcher position, press or swipe Home again: the launcher moves to the true bottom card
+* [ ] Repeat the two-stage Home check with an app shortcut and with several notifications/history re-ranks arriving while away
+* [ ] Kill the paused launcher process after launching an app, then press Home: the persisted card position and offset are restored
 * [ ] Press Home while a query is active: the query clears, favorites return when enabled, and the final history card is visible above them
 
 #### Tile text overflow

@@ -106,6 +106,10 @@ public class ForwarderManager extends Forwarder {
         boolean uiEditLockChanged = uiEditLocked != lastUiEditLocked;
         lastUiEditLocked = uiEditLocked;
 
+        // Restore a persisted paused-history anchor before any asynchronous usage/layout mutation
+        // can capture and later re-apply the wrong pre-return position.
+        verticalCardViewportController.onLauncherResumed();
+
         // These two listeners are explicitly unregistered in onPause and therefore must be restored.
         experienceTweaks.onResume();
         notificationForwarder.onResume();
@@ -145,6 +149,9 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onPause() {
+        // Capture synchronously while the exact visible history geometry still exists. This also
+        // survives Android killing the launcher process while another app is in front.
+        verticalCardViewportController.onLauncherPaused();
         experienceTweaks.onPause();
         notificationForwarder.onPause();
     }
@@ -216,9 +223,11 @@ public class ForwarderManager extends Forwarder {
         experienceTweaks.updateSearchRecords(query);
     }
 
-    /** Route the exact Android HOME intent directly to the viewport owner. */
-    public void onNewIntent(@NonNull Intent intent) {
-        if (isHomeIntent(intent)) verticalCardViewportController.onHomeIntent();
+    /** Route the exact Android HOME intent with verified foreground/background lifecycle state. */
+    public void onNewIntent(@NonNull Intent intent, boolean launcherWasForeground) {
+        if (isHomeIntent(intent)) {
+            verticalCardViewportController.onHomeIntent(launcherWasForeground);
+        }
     }
 
     public void onFavoriteChange() { favoritesForwarder.onFavoriteChange(); experienceTweaks.onFavoriteChange(); }
