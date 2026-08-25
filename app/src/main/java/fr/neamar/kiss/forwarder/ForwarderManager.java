@@ -213,9 +213,12 @@ public class ForwarderManager extends Forwarder {
         boolean sameQuery = TextUtils.equals(lastSearchQuery, normalized);
         verticalCardViewportController.onSearchQueryChanged(
                 !TextUtils.isEmpty(normalized), !sameQuery);
-        if (initialResumeComplete && !mainActivity.hasWindowFocus() && sameQuery) {
-            // MainActivity calls updateSearchRecords() from onResume. On a normal back/unlock
-            // return the query has not changed, so keep the current adapter and scroll position.
+        if (initialResumeComplete && sameQuery) {
+            // A non-refresh request for the same query has no new search state to render. In
+            // particular, Android HOME gesture redelivery calls MainActivity.onResume() again;
+            // rebuilding history there made Vertical Cards jump even though nothing changed.
+            // Real provider/favorite/install changes use MainActivity's explicit isRefresh path
+            // before reaching this method, so they remain authoritative and still rebuild.
             return;
         }
 
