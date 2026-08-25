@@ -141,7 +141,7 @@ class Notification extends Forwarder {
             pendingTimelineIds.clear();
         }
 
-        boolean touched = false;
+        boolean changed = false;
         long newestPost = 0L;
         for (String id : ids) {
             long postTime = detailPreferences.getLong(id + "|post", 0L);
@@ -151,6 +151,7 @@ class Notification extends Forwarder {
             if (NotificationTimelineState.recordIncoming(mainActivity, id, postTime)) {
                 KissApplication.getApplication(mainActivity)
                         .getDataHandler().addToHistory(id);
+                changed = true;
             }
 
             String groupKey = detailPreferences.getString(id + "|group", "");
@@ -159,7 +160,6 @@ class Notification extends Forwarder {
                 // history entry so users do not see both a group tile and an individual tile.
                 DBHelper.removeFromHistory(mainActivity, NotificationListener.getGroupId(groupKey));
             }
-            touched = true;
         }
 
         if (newestPost > 0L) {
@@ -168,7 +168,8 @@ class Notification extends Forwarder {
                 NotificationTimelineState.setLastPersistedScan(mainActivity, newestPost);
             }
         }
-        if (touched) mainActivity.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        // Returning Home with the same active notifications must not rebuild history.
+        if (changed) mainActivity.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
     }
 
     /** Catch notifications that arrived while the launcher Activity was paused. */
@@ -176,13 +177,19 @@ class Notification extends Forwarder {
         long lastScan = NotificationTimelineState.getLastPersistedScan(mainActivity);
         if (lastScan <= 0L) lastScan = System.currentTimeMillis() - FIRST_SCAN_LOOKBACK_MS;
         final long scanAfter = Math.max(0L, lastScan - 1L);
+        final long scanStartedAt = System.currentTimeMillis();
 
         Thread worker = new Thread(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             List<NotificationHistoryRecord> records = NotificationTimelineStore.queryAfter(
                     mainActivity.getApplicationContext(), scanAfter, PERSISTED_CATCH_UP_BATCH);
             if (mainActivity.list != null) {
-                mainActivity.list.post(() -> indexPersistedRecords(records));
+                if (records.isEmpty()) {
+                    mainActivity.list.post(() -> NotificationTimelineState.setLastPersistedScan(
+                            mainActivity, scanStartedAt));
+                } else {
+                    mainActivity.list.post(() -> indexPersistedRecords(records));
+                }
             }
         }, "notification-timeline-catchup");
         worker.start();
