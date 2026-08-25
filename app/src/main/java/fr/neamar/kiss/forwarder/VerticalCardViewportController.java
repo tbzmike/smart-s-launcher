@@ -1,90 +1,155 @@
 package fr.neamar.kiss.forwarder;
 
-import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AbsListView;
 import android.widget.ScrollView;
 
+import androidx.annotation.Nullable;
+
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
+import java.util.WeakHashMap;
 
 import fr.neamar.kiss.MainActivity;
 
 /**
- * Owns Vertical Cards viewport policy without rebuilding launcher data.
+ * Single owner of Vertical Cards viewport policy.
  *
- * Normal history refreshes preserve the exact visible card/offset. If the user was already at the
- * bottom, the bottom remains pinned as new cards arrive. Active search results and an explicit Home
- * press always anchor to the newest/strongest result at the bottom.
+ * Ordinary history/provider refreshes preserve the exact visible card and offset. Only an explicit
+ * navigation event may force the newest/bottom card into view: a new query/result set, the IME
+ * opening, or Home pressed again while the launcher is already foreground.
  */
 final class VerticalCardViewportController extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
-    private static final long BOTTOM_SETTLE_DELAY_MS = 140L;
     private static final int BOTTOM_TOLERANCE_DP = 6;
+
+    private static final WeakHashMap<MainActivity, WeakReference<VerticalCardViewportController>>
+            INSTANCES = new WeakHashMap<>();
 
     private final SmartCardListForwarder smartCardListForwarder;
     private ScrollView scroller;
     private ViewGroup column;
 
-    private ScrollAnchor pendingAnchor;
-    private boolean pendingWasAtBottom;
-    private boolean pendingSearch;
+    private ViewportSnapshot pendingRebuildSnapshot;
+    private boolean forceBottomOnNextRebuild = true;
+    private int generation;
+    private boolean destroyed;
 
     VerticalCardViewportController(MainActivity activity,
                                    SmartCardListForwarder smartCardListForwarder) {
         super(activity);
         this.smartCardListForwarder = smartCardListForwarder;
+        synchronized (INSTANCES) {
+            INSTANCES.put(activity, new WeakReference<>(this));
+        }
     }
 
     void onCreate() {
         resolveViews();
     }
 
-    /** Capture the user's current visual anchor before SmartCardListForwarder replaces its views. */
-    void beforeDataSetChanged() {
-        resolveViews();
-        clearPending();
-        if (!isEnabled() || scroller == null || column == null) return;
-
-        pendingSearch = hasActiveSearch();
-        pendingWasAtBottom = isAtBottom();
-        if (!pendingSearch && !pendingWasAtBottom) {
-            pendingAnchor = captureAnchor();
-        }
+    /** A genuinely new query/result set must expose the strongest/latest bottom card. */
+    void requestBottomOnNextRebuild() {
+        generation++;
+        pendingRebuildSnapshot = null;
+        forceBottomOnNextRebuild = true;
     }
 
-    /** Restore after all card decorators have scheduled their work, overriding rebuild's old snap. */
-    void afterDataSetChanged() {
+    /** Capture the user's viewport immediately before SmartCardListForwarder replaces its views. */
+    void beforeDataSetChanged() {
+        generation++;
+        pendingRebuildSnapshot = null;
         resolveViews();
-        if (!isEnabled() || scroller == null || column == null) {
-            clearPending();
+        if (!canControlViewport() || mainActivity.adapter == null || mainActivity.adapter.isEmpty()) {
+            // Keep an explicit-bottom request armed through an empty/intermediate search result.
             return;
         }
 
-        if (hasActiveSearch() || pendingSearch || pendingWasAtBottom) {
-            anchorLatestSettled();
-        } else if (pendingAnchor != null) {
-            ScrollAnchor anchor = pendingAnchor;
-            scroller.post(() -> restoreAnchor(anchor));
+        if (forceBottomOnNextRebuild) {
+            pendingRebuildSnapshot = ViewportSnapshot.bottom();
+            forceBottomOnNextRebuild = false;
+        } else {
+            pendingRebuildSnapshot = captureCurrentViewport();
         }
-        clearPending();
     }
 
-    /** A real Home key/gesture is the one intentional command that discards an older scroll spot. */
-    void onExplicitHomeIntent() {
+    /** Restore after SmartCardListForwarder's posted fullScroll and all card decorators are queued. */
+    void afterDataSetChanged() {
+        ViewportSnapshot snapshot = pendingRebuildSnapshot;
+        pendingRebuildSnapshot = null;
+        if (snapshot == null || !canControlViewport()) return;
+        scheduleRestore(snapshot, generation);
+    }
+
+    /**
+     * Capture around an asynchronous visual mutation such as adding the Used-today line. This is
+     * intentionally independent of the adapter-rebuild snapshot so a late metadata layout cannot
+     * move either an older manually selected position or a bottom-anchored search result.
+     */
+    @Nullable
+    ViewportSnapshot captureForContentMutation() {
         resolveViews();
-        anchorLatestSettled();
+        if (!canControlViewport()) return null;
+        return captureCurrentViewport();
+    }
+
+    void restoreAfterContentMutation(@Nullable ViewportSnapshot snapshot) {
+        if (snapshot == null || destroyed) return;
+        generation++;
+        scheduleRestore(snapshot, generation);
+    }
+
+    /** A second Home press while already on Home deliberately discards an older scroll position. */
+    void onExplicitHomeIntent() {
+        generation++;
+        pendingRebuildSnapshot = null;
+        forceBottomOnNextRebuild = true;
+        resolveViews();
+        if (canControlViewport()) {
+            final ScrollView target = scroller;
+            target.post(() -> {
+                if (target == scroller && canControlViewport()) scrollToBottom(target);
+            });
+        }
         anchorNormalListToLatest();
     }
 
+    /** Keyboard anchoring cancels any older pending restore and keeps the next rebuild at bottom. */
+    static void noteKeyboardBottom(@Nullable MainActivity activity) {
+        if (activity == null) return;
+        VerticalCardViewportController controller = null;
+        synchronized (INSTANCES) {
+            WeakReference<VerticalCardViewportController> ref = INSTANCES.get(activity);
+            if (ref != null) controller = ref.get();
+        }
+        if (controller != null) controller.armExplicitBottom();
+    }
+
     void onConfigurationChanged() {
+        generation++;
+        pendingRebuildSnapshot = null;
+        scroller = null;
+        column = null;
+        forceBottomOnNextRebuild = true;
         resolveViews();
     }
 
     void onDestroy() {
+        destroyed = true;
+        generation++;
+        pendingRebuildSnapshot = null;
+        synchronized (INSTANCES) {
+            INSTANCES.remove(mainActivity);
+        }
         scroller = null;
         column = null;
-        clearPending();
+    }
+
+    private void armExplicitBottom() {
+        generation++;
+        pendingRebuildSnapshot = null;
+        forceBottomOnNextRebuild = true;
     }
 
     private boolean isEnabled() {
@@ -92,12 +157,13 @@ final class VerticalCardViewportController extends Forwarder {
                 HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL));
     }
 
-    private boolean hasActiveSearch() {
-        return mainActivity.searchEditText != null
-                && !TextUtils.isEmpty(mainActivity.searchEditText.getText());
+    private boolean canControlViewport() {
+        return !destroyed && isEnabled() && scroller != null && column != null
+                && scroller.getVisibility() == View.VISIBLE;
     }
 
     private void resolveViews() {
+        if (destroyed) return;
         try {
             Field scrollerField = SmartCardListForwarder.class.getDeclaredField("scroller");
             scrollerField.setAccessible(true);
@@ -114,56 +180,77 @@ final class VerticalCardViewportController extends Forwarder {
         }
     }
 
-    private boolean isAtBottom() {
-        if (scroller == null || column == null || column.getChildCount() == 0) return true;
-        return maxScrollY() - scroller.getScrollY() <= toPx(BOTTOM_TOLERANCE_DP);
-    }
+    private ViewportSnapshot captureCurrentViewport() {
+        if (isAtBottom()) return ViewportSnapshot.bottom();
+        if (column == null || column.getChildCount() == 0 || scroller == null) {
+            return ViewportSnapshot.absolute(0);
+        }
 
-    private ScrollAnchor captureAnchor() {
-        if (column == null || column.getChildCount() == 0) return null;
-        int scrollY = scroller.getScrollY();
+        int scrollY = Math.max(0, scroller.getScrollY());
         for (int i = 0; i < column.getChildCount(); i++) {
             View child = column.getChildAt(i);
             if (child.getBottom() > scrollY) {
-                return new ScrollAnchor(i, child.getTop() - scrollY);
+                return ViewportSnapshot.anchor(i, child.getTop() - scrollY, scrollY);
             }
         }
-        int last = column.getChildCount() - 1;
-        View child = column.getChildAt(last);
-        return new ScrollAnchor(last, child.getTop() - scrollY);
+        return ViewportSnapshot.absolute(scrollY);
     }
 
-    private void restoreAnchor(ScrollAnchor anchor) {
-        if (!isEnabled() || scroller == null || column == null || column.getChildCount() == 0) return;
-        int index = Math.max(0, Math.min(anchor.childIndex, column.getChildCount() - 1));
-        View child = column.getChildAt(index);
-        int targetY = child.getTop() - anchor.topOffset;
-        targetY = Math.max(0, Math.min(targetY, maxScrollY()));
-        scroller.scrollTo(scroller.getScrollX(), targetY);
+    private boolean isAtBottom() {
+        if (scroller == null || column == null || column.getChildCount() == 0) return true;
+        return maxScrollY(scroller) - scroller.getScrollY() <= toPx(BOTTOM_TOLERANCE_DP);
     }
 
-    private void anchorLatestSettled() {
-        if (!isEnabled() || scroller == null) return;
-        scroller.post(this::anchorLatestNow);
-        // Search/favorites/IME layout can finish one frame after the card rebuild. Re-anchor once
-        // after that resize so the final card is never left underneath the controls.
-        scroller.postDelayed(this::anchorLatestNow, BOTTOM_SETTLE_DELAY_MS);
+    private void scheduleRestore(ViewportSnapshot snapshot, int token) {
+        final ScrollView target = scroller;
+        if (target == null) return;
+
+        // SmartCardListForwarder posts its legacy fullScroll during rebuild. Queue once behind it,
+        // then restore on the next animation frame after card/favorites/metadata layout is measured.
+        target.post(() -> {
+            if (!isCurrent(token, target)) return;
+            target.postOnAnimation(() -> {
+                if (!isCurrent(token, target)) return;
+                restoreSnapshot(target, snapshot);
+            });
+        });
     }
 
-    private void anchorLatestNow() {
-        if (!isEnabled() || scroller == null || scroller.getVisibility() != View.VISIBLE) return;
-        scroller.requestLayout();
-        scroller.fullScroll(View.FOCUS_DOWN);
-        scroller.scrollTo(scroller.getScrollX(), maxScrollY());
+    private boolean isCurrent(int token, ScrollView target) {
+        return token == generation && target == scroller && canControlViewport();
     }
 
-    private int maxScrollY() {
-        if (scroller == null) return 0;
-        View content = scroller.getChildAt(0);
+    private void restoreSnapshot(ScrollView target, ViewportSnapshot snapshot) {
+        if (snapshot.bottom) {
+            scrollToBottom(target);
+            return;
+        }
+
+        int targetY = snapshot.absoluteScrollY;
+        if (snapshot.childIndex >= 0 && column != null && column.getChildCount() > 0) {
+            int index = Math.max(0, Math.min(snapshot.childIndex, column.getChildCount() - 1));
+            View child = column.getChildAt(index);
+            targetY = child.getTop() - snapshot.topOffset;
+        }
+        target.scrollTo(target.getScrollX(), clampScrollY(target, targetY));
+    }
+
+    private static int clampScrollY(ScrollView target, int requested) {
+        int max = maxScrollY(target);
+        return Math.max(0, Math.min(requested, max));
+    }
+
+    private static int maxScrollY(ScrollView target) {
+        View content = target.getChildAt(0);
         if (content == null) return 0;
         int viewportHeight = Math.max(0,
-                scroller.getHeight() - scroller.getPaddingTop() - scroller.getPaddingBottom());
+                target.getHeight() - target.getPaddingTop() - target.getPaddingBottom());
         return Math.max(0, content.getHeight() - viewportHeight);
+    }
+
+    private static void scrollToBottom(ScrollView target) {
+        target.fullScroll(View.FOCUS_DOWN);
+        target.scrollTo(target.getScrollX(), maxScrollY(target));
     }
 
     private void anchorNormalListToLatest() {
@@ -180,19 +267,30 @@ final class VerticalCardViewportController extends Forwarder {
                 valueDp * mainActivity.getResources().getDisplayMetrics().density));
     }
 
-    private void clearPending() {
-        pendingAnchor = null;
-        pendingWasAtBottom = false;
-        pendingSearch = false;
-    }
-
-    private static final class ScrollAnchor {
+    static final class ViewportSnapshot {
+        final boolean bottom;
         final int childIndex;
         final int topOffset;
+        final int absoluteScrollY;
 
-        ScrollAnchor(int childIndex, int topOffset) {
+        private ViewportSnapshot(boolean bottom, int childIndex, int topOffset,
+                                 int absoluteScrollY) {
+            this.bottom = bottom;
             this.childIndex = childIndex;
             this.topOffset = topOffset;
+            this.absoluteScrollY = absoluteScrollY;
+        }
+
+        static ViewportSnapshot bottom() {
+            return new ViewportSnapshot(true, -1, 0, 0);
+        }
+
+        static ViewportSnapshot anchor(int childIndex, int topOffset, int absoluteScrollY) {
+            return new ViewportSnapshot(false, childIndex, topOffset, absoluteScrollY);
+        }
+
+        static ViewportSnapshot absolute(int scrollY) {
+            return new ViewportSnapshot(false, -1, 0, scrollY);
         }
     }
 }
