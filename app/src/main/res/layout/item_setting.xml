@@ -22,42 +22,55 @@
             tools:src="@android:drawable/ic_menu_manage" />
     </FrameLayout>
 
-    <fr.neamar.kiss.ui.AutoMarqueeTextView
-        android:id="@+id/item_setting_prefix"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_vertical"
-        android:layout_marginEnd="4dp"
-        android:shadowColor="?attr/resultShadowColor"
-        android:shadowDx="1"
-        android:shadowDy="2"
-        android:shadowRadius="?attr/textShadowRadius"
-        android:text="@string/settings_prefix"
-        android:textColor="?android:attr/textColorSecondary"
-        android:textDirection="locale"
-        android:textSize="?attr/resultSubtitleSize"
-        tools:textSize="@dimen/result_subtitle_size"
-        tools:ignore="UnusedAttribute" />
-
-    <fr.neamar.kiss.ui.AutoMarqueeTextView
-        android:id="@+id/item_setting_name"
+    <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_vertical"
         android:layout_weight="1"
-        android:paddingEnd="2dp"
-        android:paddingRight="2dp"
-        android:paddingBottom="2dp"
-        android:shadowColor="?attr/resultShadowColor"
-        android:shadowDx="1"
-        android:shadowDy="2"
-        android:shadowRadius="?attr/textShadowRadius"
-        android:textColor="?attr/resultColor"
-        android:textDirection="locale"
-        android:textIsSelectable="false"
-        android:textSize="?attr/resultTitleSize"
-        tools:textSize="@dimen/result_title_size"
-        tools:ignore="RtlHardcoded,RtlSymmetry,UnusedAttribute"
-        tools:text="@string/stub_setting" />
+        android:orientation="vertical">
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <fr.neamar.kiss.ui.AutoMarqueeTextView
+                android:id="@+id/item_setting_prefix"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:shadowColor="?attr/resultShadowColor"
+                android:shadowDx="1"
+                android:shadowDy="2"
+                android:shadowRadius="?attr/textShadowRadius"
+                android:text="@string/settings_prefix"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textDirection="locale"
+                android:textSize="?attr/resultSubtitleSize"
+                tools:textSize="@dimen/result_subtitle_size"
+                tools:ignore="UnusedAttribute" />
+
+            <fr.neamar.kiss.ui.AutoMarqueeTextView
+                android:id="@+id/item_setting_name"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:paddingEnd="2dp"
+                android:paddingRight="2dp"
+                android:paddingBottom="2dp"
+                android:shadowColor="?attr/resultShadowColor"
+                android:shadowDx="1"
+                android:shadowDy="2"
+                android:shadowRadius="?attr/textShadowRadius"
+                android:textColor="?attr/resultColor"
+                android:textDirection="locale"
+                android:textIsSelectable="false"
+                android:textSize="?attr/resultTitleSize"
+                tools:textSize="@dimen/result_title_size"
+                tools:ignore="RtlHardcoded,RtlSymmetry,UnusedAttribute"
+                tools:text="@string/stub_setting" />
+        </LinearLayout>
+
+        <include layout="@layout/item_history_metadata" />
+    </LinearLayout>
 </LinearLayout>
