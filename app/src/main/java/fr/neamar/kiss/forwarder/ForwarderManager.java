@@ -17,6 +17,8 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.preference.UiEditLock;
+import fr.neamar.kiss.searcher.SearchHandler;
+import fr.neamar.kiss.searcher.Searcher;
 
 public class ForwarderManager extends Forwarder {
     private final Widgets widgetsForwarder;
@@ -105,24 +107,21 @@ public class ForwarderManager extends Forwarder {
         boolean uiEditLocked = UiEditLock.isLocked(mainActivity);
         boolean uiEditLockChanged = uiEditLocked != lastUiEditLocked;
         lastUiEditLocked = uiEditLocked;
+        boolean verticalCards = isVerticalCardsMode();
+        boolean square = isSquareMode();
 
-        // Restore a persisted paused-history anchor before any asynchronous usage/layout mutation
-        // can capture and later re-apply the wrong pre-return position.
-        verticalCardViewportController.onLauncherResumed();
+        if (verticalCards) {
+            // Only the selected Vertical Cards renderer owns this persisted viewport state.
+            verticalCardViewportController.onLauncherResumed();
+        }
 
         // These two listeners are explicitly unregistered in onPause and therefore must be restored.
         experienceTweaks.onResume();
         notificationForwarder.onResume();
 
         if (initialResumeComplete) {
-            // If the UI-lock preference changed while Settings was in front, only re-sync the
-            // resize controller; this updates the edit handle without rebuilding cards/history.
-            if (uiEditLockChanged) verticalCardGroupResizeController.onResume();
-
-            // Usage time is external state that changed while another app was foreground, so
-            // refresh only that metadata asynchronously without rebuilding cards/history. Its
-            // content-height mutation is protected by VerticalCardViewportController.
-            verticalCardUsageForwarder.onResume();
+            if (verticalCards && uiEditLockChanged) verticalCardGroupResizeController.onResume();
+            if (verticalCards) verticalCardUsageForwarder.onResume();
             return;
         }
 
@@ -131,27 +130,31 @@ public class ForwarderManager extends Forwarder {
         tagsMenu.onResume();
         communicationHistoryForwarder.onResume();
         historyDisplayForwarder.onResume();
-        squareUHostFullscreenController.onResume();
-        verticalCardViewportController.beforeDataSetChanged();
-        smartCardListForwarder.onResume();
-        verticalMapsCardForwarder.onResume();
-        verticalCardGroupResizeController.onResume();
-        verticalCardNotificationHistoryForwarder.onResume();
-        // The usage label must be applied after SmartCardListForwarder has rebuilt the initial
-        // Vertical Cards and after notification/launch metadata has been attached.
-        verticalCardUsageForwarder.onResume();
-        squareUStabilityController.onResume();
-        squareUEdgeBoundsController.onResume();
-        historyVisualEnhancer.onResume();
-        uNotificationHistoryLongPressForwarder.onResume();
-        verticalCardViewportController.afterDataSetChanged();
+
+        if (verticalCards) {
+            verticalCardViewportController.beforeDataSetChanged();
+            smartCardListForwarder.onResume();
+            verticalMapsCardForwarder.onResume();
+            verticalCardGroupResizeController.onResume();
+            verticalCardNotificationHistoryForwarder.onResume();
+            verticalCardUsageForwarder.onResume();
+            verticalCardViewportController.afterDataSetChanged();
+        } else if (square) {
+            squareUHostFullscreenController.onResume();
+            squareUStabilityController.onResume();
+            squareUEdgeBoundsController.onResume();
+            uNotificationHistoryLongPressForwarder.onResume();
+        }
+
+        if (isHistorySearch()) historyVisualEnhancer.onResume();
         initialResumeComplete = true;
     }
 
     public void onPause() {
-        // Capture synchronously while the exact visible history geometry still exists. This also
-        // survives Android killing the launcher process while another app is in front.
-        verticalCardViewportController.onLauncherPaused();
+        if (isVerticalCardsMode()) {
+            // Capture only when Vertical Cards actually owns the visible history viewport.
+            verticalCardViewportController.onLauncherPaused();
+        }
         experienceTweaks.onPause();
         notificationForwarder.onPause();
     }
@@ -160,8 +163,6 @@ public class ForwarderManager extends Forwarder {
 
     public boolean onOptionsItemSelected(MenuItem item) {
         int itemId = item.getItemId();
-        // Monitoring/history screens are read-only launcher tools. Keep them available even while
-        // the home interface is locked, and do not route them through widget/edit gesture logic.
         if (itemId == R.id.app_usage) {
             mainActivity.startActivity(new Intent(mainActivity, AppUsageActivity.class));
             return true;
@@ -189,36 +190,37 @@ public class ForwarderManager extends Forwarder {
 
     public void onDataSetChanged() {
         widgetsForwarder.onDataSetChanged();
-        squareUHostFullscreenController.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
 
-        // SmartCardListForwarder historically full-scrolled every rebuild. Capture the viewport
-        // immediately before that rebuild and restore it only after all card decorators are queued.
-        verticalCardViewportController.beforeDataSetChanged();
-        smartCardListForwarder.onDataSetChanged();
-        verticalMapsCardForwarder.onDataSetChanged();
-        verticalCardGroupResizeController.onDataSetChanged();
-        verticalCardNotificationHistoryForwarder.onDataSetChanged();
-        verticalCardUsageForwarder.onDataSetChanged();
-        squareUStabilityController.onDataSetChanged();
-        squareUEdgeBoundsController.onDataSetChanged();
-        historyVisualEnhancer.onDataSetChanged();
-        uNotificationHistoryLongPressForwarder.onDataSetChanged();
+        if (isVerticalCardsMode()) {
+            verticalCardViewportController.beforeDataSetChanged();
+            smartCardListForwarder.onDataSetChanged();
+            verticalMapsCardForwarder.onDataSetChanged();
+            verticalCardGroupResizeController.onDataSetChanged();
+            verticalCardNotificationHistoryForwarder.onDataSetChanged();
+            verticalCardUsageForwarder.onDataSetChanged();
+            verticalCardViewportController.afterDataSetChanged();
+        } else if (isSquareMode()) {
+            squareUHostFullscreenController.onDataSetChanged();
+            squareUStabilityController.onDataSetChanged();
+            squareUEdgeBoundsController.onDataSetChanged();
+            uNotificationHistoryLongPressForwarder.onDataSetChanged();
+        }
+
+        // Launch-stat/live-card enrichment is history decoration. Never run its database/live-data
+        // pipeline for ordinary query results, where it only competes with search and scrolling.
+        if (isHistorySearch()) historyVisualEnhancer.onDataSetChanged();
         lockedHistoryGestureBridge.onDataSetChanged();
-        verticalCardViewportController.afterDataSetChanged();
     }
 
     public void updateSearchRecords(String query) {
         String normalized = query == null ? "" : query;
         boolean sameQuery = TextUtils.equals(lastSearchQuery, normalized);
-        verticalCardViewportController.onSearchQueryChanged(
-                !TextUtils.isEmpty(normalized), !sameQuery);
+        if (isVerticalCardsMode()) {
+            verticalCardViewportController.onSearchQueryChanged(
+                    !TextUtils.isEmpty(normalized), !sameQuery);
+        }
         if (initialResumeComplete && sameQuery) {
-            // A non-refresh request for the same query has no new search state to render. In
-            // particular, Android HOME gesture redelivery calls MainActivity.onResume() again;
-            // rebuilding history there made Vertical Cards jump even though nothing changed.
-            // Real provider/favorite/install changes use MainActivity's explicit isRefresh path
-            // before reaching this method, so they remain authoritative and still rebuild.
             return;
         }
 
@@ -228,7 +230,7 @@ public class ForwarderManager extends Forwarder {
 
     /** Route the exact Android HOME intent with verified foreground/background lifecycle state. */
     public void onNewIntent(@NonNull Intent intent, boolean launcherWasForeground) {
-        if (isHomeIntent(intent)) {
+        if (isVerticalCardsMode() && isHomeIntent(intent)) {
             verticalCardViewportController.onHomeIntent(launcherWasForeground);
         }
     }
@@ -254,15 +256,36 @@ public class ForwarderManager extends Forwarder {
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
-        squareUHostFullscreenController.onConfigurationChanged();
-        verticalCardGroupResizeController.onConfigurationChanged();
-        verticalCardNotificationHistoryForwarder.onConfigurationChanged();
-        verticalCardViewportController.onConfigurationChanged();
-        verticalCardUsageForwarder.onConfigurationChanged();
-        squareUStabilityController.onConfigurationChanged();
-        squareUEdgeBoundsController.onConfigurationChanged();
-        uNotificationHistoryLongPressForwarder.onConfigurationChanged();
+        if (isVerticalCardsMode()) {
+            verticalCardGroupResizeController.onConfigurationChanged();
+            verticalCardNotificationHistoryForwarder.onConfigurationChanged();
+            verticalCardViewportController.onConfigurationChanged();
+            verticalCardUsageForwarder.onConfigurationChanged();
+        } else if (isSquareMode()) {
+            squareUHostFullscreenController.onConfigurationChanged();
+            squareUStabilityController.onConfigurationChanged();
+            squareUEdgeBoundsController.onConfigurationChanged();
+            uNotificationHistoryLongPressForwarder.onConfigurationChanged();
+        }
         lockedHistoryGestureBridge.onResume();
+    }
+
+    private String activeHistoryLayout() {
+        String layout = prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT,
+                HistoryDisplayForwarder.VERTICAL);
+        return layout == null ? HistoryDisplayForwarder.VERTICAL : layout;
+    }
+
+    private boolean isVerticalCardsMode() {
+        return HistoryDisplayForwarder.VERTICAL_CARDS.equals(activeHistoryLayout());
+    }
+
+    private boolean isSquareMode() {
+        return HistoryDisplayForwarder.SQUARE_U.equals(activeHistoryLayout());
+    }
+
+    private boolean isHistorySearch() {
+        return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
     }
 
     private static boolean isHomeIntent(@Nullable Intent intent) {
