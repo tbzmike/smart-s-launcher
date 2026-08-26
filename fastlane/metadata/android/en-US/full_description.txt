@@ -1,22 +1,22 @@
-Start programs from your new home screen by typing in a few letters.
+Smart S Launcher is a fast, search-focused Android home screen built from the open-source KISS Launcher project and extended with additional launcher, history, notification, usage, battery, and appearance features.
 
-The app adapts to how you use it, making finding what you want even faster.
-Your data never leaves your device, and you can expect to save battery life
-and speed up your device compared to complex and bloated launchers.
-KISS is just 250 KB and never connects to the Internet.
+Use the search field to quickly find and launch installed apps, shortcuts, contacts and other supported results. Smart S Launcher learns from local usage history so frequently used items can become easier to reach.
 
--------------------------
-<strong>93% of users that try KISS for a week are still active users after 3 years.</strong>
--------------------------
+Features include:
 
-GPLv3+ copylefted libre software means everyone can use, see, change and share at will, with all.
-<a href="https://github.com/Neamar/KISS">GitHub</a>.
+* Fast search-first launcher interface
+* App, shortcut and supported contact search
+* Launch/open/click history and usage information
+* Notification history with content previews when Android makes that content available
+* Extensive text, appearance and wallpaper readability controls
+* Battery monitoring and battery widgets
+* Optional accessibility-based double-tap-to-lock support
+* Local launcher preferences and history
 
-Help, customizations and screenshots.
-<a href="https://help.kisslauncher.com">Website</a>.
+Some optional features require Android permissions such as notification access, usage access, contacts, phone-related permissions, location, or Accessibility Service access. Features remain subject to the permissions and privacy controls provided by Android.
 
-This app makes use of Android Accessibility API to allow "double tap to lock" feature. No data is accessed or stored in the process.
+Smart S Launcher is free and open-source software licensed under the GNU General Public License v3.0. Its source code is available at:
+https://github.com/tbzmike/smart-s-launcher
 
-* Usable privacy
-* Speedy simplicity
-* Functional beauty
+Smart S Launcher is derived from the KISS Launcher open-source project. Original KISS Launcher source:
+https://github.com/Neamar/KISS
