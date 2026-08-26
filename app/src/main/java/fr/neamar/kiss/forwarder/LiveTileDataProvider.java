@@ -143,7 +143,7 @@ final class LiveTileDataProvider {
 
     @Nullable
     private static Drawable extractMessagingPersonArtwork(Context context, Bundle extras) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null;
         Parcelable[] bundles = extras.getParcelableArray(Notification.EXTRA_MESSAGES);
         if (bundles == null || bundles.length == 0) return null;
         try {
