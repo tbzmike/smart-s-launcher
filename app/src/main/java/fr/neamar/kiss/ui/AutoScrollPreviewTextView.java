@@ -2,15 +2,16 @@ package fr.neamar.kiss.ui;
 
 import android.content.Context;
 import android.text.Layout;
+import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.View;
 
 import androidx.appcompat.widget.AppCompatTextView;
 
 /**
- * Two-line notification preview that advances through longer text a line at a time.
- * The view keeps the complete text layout, caps its visible height to two lines, and
- * scrolls vertically only while more lines exist.
+ * Two-line preview that advances through longer text a complete line at a time.
+ * The complete text remains laid out: no caller may convert this view back to a one-line
+ * marquee or END-ellipsis it. This protects message bodies from generic history styling.
  */
 public class AutoScrollPreviewTextView extends AppCompatTextView {
     private static final int VISIBLE_LINES = 2;
@@ -19,6 +20,7 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
 
     private int firstVisibleLine;
     private boolean attached;
+    private boolean behaviorLocked;
 
     private final Runnable scrollStep = this::advancePreview;
 
@@ -38,14 +40,42 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
     }
 
     private void init() {
-        setSingleLine(false);
-        setHorizontallyScrolling(false);
-        setEllipsize(null);
+        behaviorLocked = false;
+        super.setSingleLine(false);
+        super.setMaxLines(Integer.MAX_VALUE);
+        super.setHorizontallyScrolling(false);
+        super.setEllipsize(null);
         setHorizontalFadingEdgeEnabled(false);
         setVerticalFadingEdgeEnabled(true);
         setFadingEdgeLength(dp(8));
         setFocusable(false);
         setFocusableInTouchMode(false);
+        behaviorLocked = true;
+    }
+
+    @Override
+    public void setSingleLine(boolean singleLine) {
+        if (behaviorLocked) {
+            super.setSingleLine(false);
+            super.setMaxLines(Integer.MAX_VALUE);
+            return;
+        }
+        super.setSingleLine(singleLine);
+    }
+
+    @Override
+    public void setMaxLines(int maxLines) {
+        super.setMaxLines(behaviorLocked ? Integer.MAX_VALUE : maxLines);
+    }
+
+    @Override
+    public void setEllipsize(TextUtils.TruncateAt where) {
+        super.setEllipsize(behaviorLocked ? null : where);
+    }
+
+    @Override
+    public void setHorizontallyScrolling(boolean whether) {
+        super.setHorizontallyScrolling(behaviorLocked ? false : whether);
     }
 
     @Override
@@ -53,6 +83,7 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         super.onAttachedToWindow();
         attached = true;
         SmartTextAppearance.applySearchBody(this);
+        restoreFullTextBehavior();
         post(this::restartAutoScroll);
     }
 
@@ -79,10 +110,18 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        restoreFullTextBehavior();
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
-        int cappedHeight = getCompoundPaddingTop() + getCompoundPaddingBottom()
-                + getLineHeight() * VISIBLE_LINES;
+        Layout layout = getLayout();
+        int contentHeight;
+        if (layout != null && layout.getLineCount() > 0) {
+            int visibleLineCount = Math.min(VISIBLE_LINES, layout.getLineCount());
+            contentHeight = layout.getLineBottom(visibleLineCount - 1);
+        } else {
+            contentHeight = getLineHeight() * VISIBLE_LINES;
+        }
+        int cappedHeight = getCompoundPaddingTop() + getCompoundPaddingBottom() + contentHeight;
         int desiredHeight = Math.min(getMeasuredHeight(), cappedHeight);
         int mode = View.MeasureSpec.getMode(heightMeasureSpec);
         int size = View.MeasureSpec.getSize(heightMeasureSpec);
@@ -92,8 +131,18 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         setMeasuredDimension(getMeasuredWidth(), desiredHeight);
     }
 
+    private void restoreFullTextBehavior() {
+        if (!behaviorLocked) return;
+        super.setSingleLine(false);
+        super.setMaxLines(Integer.MAX_VALUE);
+        super.setHorizontallyScrolling(false);
+        super.setEllipsize(null);
+        setHorizontalFadingEdgeEnabled(false);
+    }
+
     private void restartAutoScroll() {
         removeCallbacks(scrollStep);
+        restoreFullTextBehavior();
         firstVisibleLine = 0;
         scrollTo(0, 0);
         if (attached) postDelayed(scrollStep, STEP_DELAY_MS);
