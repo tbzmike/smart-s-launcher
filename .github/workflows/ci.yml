@@ -24,7 +24,16 @@ jobs:
           distribution: 'temurin'
           java-version: 21
       - name: Lint code
+        id: lint
+        continue-on-error: true
         run: bash ./gradlew lint --stacktrace
+      - name: Print lint report
+        if: ${{ always() }}
+        run: |
+          REPORT="app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+          if [ -f "$REPORT" ]; then
+            cat "$REPORT"
+          fi
       - name: Unit tests
         if: ${{ always() }}
         run: bash ./gradlew testDebugUnitTest --stacktrace
@@ -38,6 +47,9 @@ jobs:
             app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt
           if-no-files-found: ignore
           archive: true
+      - name: Enforce lint result
+        if: ${{ always() && steps.lint.outcome == 'failure' }}
+        run: exit 1
   apk:
     name: Generate APK
     runs-on: ubuntu-24.04
