@@ -22,6 +22,11 @@ public final class RecentLaunchTracker {
     }
 
     @Nullable
+    public static Pojo getMostRecent() {
+        return mostRecent;
+    }
+
+    @Nullable
     public static Pojo resolve(String id) {
         Pojo candidate = mostRecent;
         if (candidate == null || id == null || !id.equals(candidate.getHistoryId())) return null;
