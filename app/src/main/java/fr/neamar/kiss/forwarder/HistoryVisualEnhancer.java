@@ -10,6 +10,7 @@ import android.text.format.DateFormat;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -140,20 +141,15 @@ final class HistoryVisualEnhancer {
             Result<?> result = activity.adapter.getItem(position);
             if (result == null || result.getPojo() == null) continue;
 
+            String historyId = result.getPojo().getHistoryId();
+            LaunchStatsProvider.LaunchStats launchStats = stats.get(historyId);
+            if (launchStats == null || launchStats.lastLaunchTime <= 0) continue;
+
             TextView subtitle = findMetadataView(row);
             if (subtitle == null) continue;
 
-            String historyId = result.getPojo().getHistoryId();
-            LaunchStatsProvider.LaunchStats launchStats = stats.get(historyId);
             String current = subtitle.getText() == null ? "" : subtitle.getText().toString();
             String base = stripPreviousMetadata(current);
-
-            if (launchStats == null || launchStats.lastLaunchTime <= 0) {
-                subtitle.setText(base);
-                configureLaunchInfoMarquee(subtitle);
-                continue;
-            }
-
             StringBuilder text = new StringBuilder(base);
             if (text.length() > 0) text.append(LIST_STATS_SEPARATOR);
             else text.append("Posted ");
@@ -166,9 +162,10 @@ final class HistoryVisualEnhancer {
                     text.append(" • Used today: ")
                             .append(formatDuration(foregroundMs == null ? 0L : foregroundMs));
                 }
-                text.append(" • ").append(launchStats.launchesToday);
-                text.append(launchStats.launchesToday == 1 ? " launch today" : " launches today");
             }
+
+            text.append(" • ").append(launchStats.launchesToday);
+            text.append(launchStats.launchesToday == 1 ? " launch today" : " launches today");
 
             subtitle.setText(text.toString());
             subtitle.setVisibility(View.VISIBLE);
@@ -177,15 +174,40 @@ final class HistoryVisualEnhancer {
     }
 
     private TextView findMetadataView(View row) {
-        TextView view = row.findViewById(R.id.item_communication_meta);
-        if (view != null) return view;
-        view = row.findViewById(R.id.item_app_tag);
-        if (view != null) return view;
-        view = row.findViewById(R.id.item_shortcut_tag);
-        if (view != null) return view;
-        view = row.findViewById(R.id.item_contact_phone);
-        if (view != null) return view;
-        return row.findViewById(R.id.item_phone_text);
+        int[] preferredIds = new int[]{
+                R.id.item_communication_meta,
+                R.id.item_app_tag,
+                R.id.item_shortcut_tag,
+                R.id.item_contact_phone,
+                R.id.item_notification_text,
+                R.id.item_notification_title,
+                R.id.item_search_text,
+                R.id.item_setting_name,
+                R.id.item_phone_text
+        };
+        for (int id : preferredIds) {
+            View candidate = row.findViewById(id);
+            if (candidate instanceof TextView
+                    && !(candidate instanceof Button)
+                    && candidate.getVisibility() != View.GONE) {
+                return (TextView) candidate;
+            }
+        }
+        return findFallbackTextView(row);
+    }
+
+    private TextView findFallbackTextView(View view) {
+        if (view instanceof TextView && !(view instanceof Button)
+                && view.getVisibility() != View.GONE) {
+            return (TextView) view;
+        }
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            TextView found = findFallbackTextView(group.getChildAt(i));
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private String stripPreviousMetadata(String value) {
