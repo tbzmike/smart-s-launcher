@@ -33,6 +33,7 @@ import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.RecentLaunchTracker;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public final class CommunicationResult extends Result<CommunicationPojo> {
@@ -81,7 +82,7 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                 actions.setVisibility(View.VISIBLE);
                 configureVerifiedMarkRead(markRead, smsNotificationId);
                 open.setText("Open message");
-                open.setOnClickListener(v -> openMessage(v.getContext(), v, true));
+                open.setOnClickListener(v -> openMessageAndRecord(v.getContext(), v));
                 break;
 
             case TRUECALLER_NOTIFICATION:
@@ -97,12 +98,18 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                 actions.setVisibility(View.VISIBLE);
                 configureVerifiedMarkRead(markRead, notificationId);
                 open.setText("Open message");
-                open.setOnClickListener(v -> openMessage(v.getContext(), v, true));
+                open.setOnClickListener(v -> openMessageAndRecord(v.getContext(), v));
                 break;
         }
 
         title.setSelected(true);
         return view;
+    }
+
+    private void openMessageAndRecord(Context context, View view) {
+        if (!openMessage(context, view, true)) return;
+        RecentLaunchTracker.remember(pojo);
+        recordLaunch(context, null);
     }
 
     private void configureVerifiedMarkRead(Button markRead, String notificationId) {
