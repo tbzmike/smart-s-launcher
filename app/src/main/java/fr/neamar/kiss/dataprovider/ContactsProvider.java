@@ -3,19 +3,25 @@ package fr.neamar.kiss.dataprovider;
 import android.database.ContentObserver;
 import android.net.Uri;
 import android.provider.ContactsContract;
+import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
+import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.loader.LoadContactsPojos;
 import fr.neamar.kiss.normalizer.PhoneNormalizer;
 import fr.neamar.kiss.normalizer.StringNormalizer;
+import fr.neamar.kiss.pojo.ContactData;
 import fr.neamar.kiss.pojo.ContactsPojo;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.Log;
+import fr.neamar.kiss.utils.MimeTypeUtils;
 import fr.neamar.kiss.utils.Permission;
 import fr.neamar.kiss.utils.PhoneUtils;
 import fr.neamar.kiss.utils.fuzzy.FuzzyFactory;
@@ -24,6 +30,7 @@ import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 
 public class ContactsProvider extends Provider<ContactsPojo> {
     protected static final String TAG = ContactsProvider.class.getSimpleName();
+    private final Map<String, StringNormalizer.Result> socialAliasCache = new ConcurrentHashMap<>();
     private final ContentObserver cObserver = new ContentObserver(null) {
 
         @Override
@@ -51,6 +58,7 @@ public class ContactsProvider extends Provider<ContactsPojo> {
 
     @Override
     public void reload() {
+        socialAliasCache.clear();
         super.reload();
         this.initialize(new LoadContactsPojos(this));
     }
@@ -128,10 +136,24 @@ public class ContactsProvider extends Provider<ContactsPojo> {
                 match = pojo.updateMatchingRelevance(matchInfo, match);
             }
 
-            if (!match && queryNormalized.length() > 2 && pojo.getContactData() != null && pojo.getContactData().getNormalizedIdentifier() != null) {
+            ContactData contactData = pojo.getContactData();
+            if (!match && queryNormalized.length() > 2 && contactData != null
+                    && contactData.getNormalizedIdentifier() != null) {
                 // search for IM identifier
-                matchInfo = fuzzyScore.match(pojo.getContactData().getNormalizedIdentifier().codePoints);
+                matchInfo = fuzzyScore.match(contactData.getNormalizedIdentifier().codePoints);
                 match = pojo.updateMatchingRelevance(matchInfo, match);
+            }
+
+            // Smart S social-contact alias: allow one cached field such as "WhatsApp John" to
+            // match a query containing both the service and contact name. This is deliberately
+            // cached per Pojo so expanded social coverage does not add normalization work on every
+            // keystroke.
+            if (contactData != null && MimeTypeUtils.isSocialContactMimeType(contactData.getMimeType())) {
+                StringNormalizer.Result socialAlias = getSocialAlias(pojo, contactData);
+                if (socialAlias != null) {
+                    matchInfo = fuzzyScore.match(socialAlias.codePoints);
+                    match = pojo.updateMatchingRelevance(matchInfo, match);
+                }
             }
 
             if (match) {
@@ -143,6 +165,22 @@ public class ContactsProvider extends Provider<ContactsPojo> {
                     return;
             }
         }
+    }
+
+    @Nullable
+    private StringNormalizer.Result getSocialAlias(ContactsPojo pojo, ContactData contactData) {
+        String key = pojo.id;
+        StringNormalizer.Result cached = socialAliasCache.get(key);
+        if (cached != null) return cached;
+
+        String serviceLabel = KissApplication.getMimeTypeCache(this)
+                .getLabel(this, contactData.getMimeType());
+        if (TextUtils.isEmpty(serviceLabel) || TextUtils.isEmpty(pojo.getName())) return null;
+
+        StringNormalizer.Result normalized = StringNormalizer.normalizeWithResult(
+                serviceLabel + " " + pojo.getName(), false);
+        socialAliasCache.put(key, normalized);
+        return normalized;
     }
 
     /**
