@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.text.TextUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -54,22 +55,16 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
                 if (live != null) return live;
             }
 
-            // History must keep resolving after Android removes the live notification cache.
             NotificationHistoryRecord record = NotificationTimelineStore.findLatest(context, id);
             return record == null ? null : buildPersisted(record);
         }
 
-        // Legacy grouped history ids are still readable so existing databases upgrade cleanly.
         for (NotificationPojo pojo : getGroupedPojos(details)) {
             if (pojo.id.equals(id)) return pojo;
         }
         return null;
     }
 
-    /**
-     * Active notification search results are deliberately one-notification-per-pojo. This is also
-     * the source used by HistorySearcher to pin the live notification timeline at the bottom.
-     */
     @Override
     public List<NotificationPojo> getPojos() {
         SharedPreferences details = details();
@@ -98,6 +93,8 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
         if (groupKey == null || groupKey.isEmpty()) groupKey = packageName;
         String title = details.getString(id + "|title", "");
         String text = details.getString(id + "|text", "");
+        String expanded = NotificationListener.getExpandedNotificationText(context, id);
+        if (!TextUtils.isEmpty(expanded)) text = expanded;
         long postTime = details.getLong(id + "|post", 0L);
         return new NotificationPojo(
                 id,
@@ -163,6 +160,8 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
         String appName = getAppName(packageName);
         String title = details.getString(latestId + "|title", "");
         String text = details.getString(latestId + "|text", "");
+        String expanded = NotificationListener.getExpandedNotificationText(context, latestId);
+        if (!TextUtils.isEmpty(expanded)) text = expanded;
         return new NotificationPojo(
                 NotificationListener.getGroupId(groupKey),
                 packageName,
