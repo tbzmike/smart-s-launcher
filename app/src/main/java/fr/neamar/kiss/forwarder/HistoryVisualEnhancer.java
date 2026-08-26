@@ -148,25 +148,28 @@ final class HistoryVisualEnhancer {
             if (result == null || result.getPojo() == null) continue;
 
             LaunchStatsProvider.LaunchStats launchStats = stats.get(result.getPojo().getHistoryId());
-            if (launchStats == null || launchStats.lastLaunchTime <= 0) continue;
-
             TextView subtitle = findMetadataView(row);
             if (subtitle == null) continue;
 
-            String current = subtitle.getText() == null ? "" : subtitle.getText().toString();
-            String base = stripPreviousMetadata(current);
             StringBuilder metadata = new StringBuilder();
-
             if (result.getPojo() instanceof NotificationPojo) {
                 long postTime = ((NotificationPojo) result.getPojo()).postTime;
-                if (postTime > 0) appendMetadata(metadata, "Posted " + timeFormat.format(new java.util.Date(postTime)));
+                if (postTime > 0) {
+                    appendMetadata(metadata, "Posted "
+                            + timeFormat.format(new java.util.Date(postTime)));
+                }
             } else if (result.getPojo() instanceof CommunicationPojo) {
                 long eventTime = ((CommunicationPojo) result.getPojo()).timestamp;
-                if (eventTime > 0) appendMetadata(metadata, "Item time " + timeFormat.format(new java.util.Date(eventTime)));
+                if (eventTime > 0) {
+                    appendMetadata(metadata, "Item time "
+                            + timeFormat.format(new java.util.Date(eventTime)));
+                }
             }
 
-            appendMetadata(metadata, "Last opened "
-                    + timeFormat.format(new java.util.Date(launchStats.lastLaunchTime)));
+            if (launchStats != null && launchStats.lastLaunchTime > 0) {
+                appendMetadata(metadata, "Last opened "
+                        + timeFormat.format(new java.util.Date(launchStats.lastLaunchTime)));
+            }
 
             if (result.getPojo() instanceof AppPojo) {
                 AppPojo app = (AppPojo) result.getPojo();
@@ -177,9 +180,12 @@ final class HistoryVisualEnhancer {
                 }
             }
 
-            appendMetadata(metadata, launchStats.launchesToday
-                    + (launchStats.launchesToday == 1 ? " open today" : " opens today"));
+            int opensToday = launchStats == null ? 0 : launchStats.launchesToday;
+            appendMetadata(metadata, opensToday + (opensToday == 1 ? " open today" : " opens today"));
+            if (metadata.length() == 0) continue;
 
+            String current = subtitle.getText() == null ? "" : subtitle.getText().toString();
+            String base = stripPreviousMetadata(current);
             SpannableStringBuilder rendered = new SpannableStringBuilder(base);
             if (rendered.length() > 0) rendered.append(HISTORY_SEPARATOR);
             else rendered.append("History: ");
