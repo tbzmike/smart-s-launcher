@@ -18,7 +18,7 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.29.80 build trigger
+        // Smart S Launcher 3.29.80
         versionCode 408
         versionName "3.29.80"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
