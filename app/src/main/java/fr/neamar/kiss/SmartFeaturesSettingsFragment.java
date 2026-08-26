@@ -16,6 +16,7 @@ import androidx.preference.SeekBarPreference;
 import androidx.preference.SwitchPreference;
 
 import fr.neamar.kiss.preference.UiLivePreviewPreference;
+import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.SmartWorkspaceController;
 import fr.neamar.kiss.ui.WorkspacePaneAssignments;
 
@@ -129,6 +130,22 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         enabled.setDefaultValue(true);
         category.addPreference(enabled);
 
+        ListPreference launchStyle = new ListPreference(requireContext());
+        launchStyle.setKey(LaunchMorphTransition.PREF_LAUNCH_STYLE);
+        launchStyle.setTitle("History launch animation");
+        launchStyle.setSummary("Animation used when a history tile opens its target");
+        launchStyle.setEntries(new CharSequence[]{
+                "Flip & expand", "Backspin & expand", "Random"
+        });
+        launchStyle.setEntryValues(new CharSequence[]{
+                LaunchMorphTransition.STYLE_FLIP,
+                LaunchMorphTransition.STYLE_BACKSPIN,
+                LaunchMorphTransition.STYLE_RANDOM
+        });
+        launchStyle.setDefaultValue(LaunchMorphTransition.STYLE_FLIP);
+        launchStyle.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        category.addPreference(launchStyle);
+
         addAnimationList(category, "smart-animation-scroll", R.string.smart_animation_scroll,
                 R.array.smart_scroll_animation_entries, R.array.smart_scroll_animation_values, "classic");
         addAnimationList(category, "smart-animation-window-enter", R.string.smart_animation_window_enter,
@@ -183,6 +200,7 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
     private void updateAnimationControlsEnabled(boolean enabled) {
         PreferenceGroup root = getPreferenceScreen();
         if (root == null) return;
+        setAnimationChildEnabled(root, LaunchMorphTransition.PREF_LAUNCH_STYLE, enabled);
         setAnimationChildEnabled(root, "smart-animation-scroll", enabled);
         setAnimationChildEnabled(root, "smart-animation-window-enter", enabled);
         setAnimationChildEnabled(root, "smart-animation-window-exit", enabled);
