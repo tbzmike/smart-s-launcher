@@ -50,7 +50,6 @@ public class ContactsProvider extends Provider<ContactsPojo> {
 
         @Override
         public void onChange(boolean selfChange, @NonNull Collection<Uri> uris, int flags) {
-            //reload contacts
             Log.v(TAG, "Contacts changed, reloading provider: " + uris + ", flags: " + flags);
             reload();
         }
@@ -66,14 +65,12 @@ public class ContactsProvider extends Provider<ContactsPojo> {
     @Override
     public void onCreate() {
         super.onCreate();
-        // register content observer if we have permission
         if (Permission.checkPermission(this, Permission.PERMISSION_READ_CONTACTS)) {
             getContentResolver().registerContentObserver(ContactsContract.Contacts.CONTENT_URI, false, cObserver);
         } else {
             Permission.askPermission(Permission.PERMISSION_READ_CONTACTS, new Permission.PermissionResultListener() {
                 @Override
                 public void onGranted() {
-                    // Great! Reload the contact provider. We're done :)
                     reload();
                 }
             });
@@ -83,7 +80,6 @@ public class ContactsProvider extends Provider<ContactsPojo> {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        //deregister content observer
         getContentResolver().unregisterContentObserver(cObserver);
     }
 
@@ -99,8 +95,6 @@ public class ContactsProvider extends Provider<ContactsPojo> {
         int checked = 0;
 
         for (ContactsPojo pojo : getPojos()) {
-            // A cancelled query may have no matches at all, so addResult() is not a reliable
-            // cancellation point. Check periodically to let the newest queued query start quickly.
             if ((checked++ & 31) == 0 && searcher.isCancelled()) return;
 
             MatchInfo matchInfo;
@@ -111,15 +105,11 @@ public class ContactsProvider extends Provider<ContactsPojo> {
                 match = pojo.updateMatchingRelevance(matchInfo, match);
             }
 
-            // Match also for alternative name, see https://developer.android.com/reference/android/provider/ContactsContract.ContactNameColumns#DISPLAY_NAME_ALTERNATIVE
-            // This may result in better match but eventually some missing highlighting
             if (pojo.normalizedNameAlternative != null) {
                 matchInfo = fuzzyScore.match(pojo.normalizedNameAlternative.codePoints);
                 match = pojo.updateMatchingRelevance(matchInfo, match);
             }
 
-            // Match also for phonetic name
-            // This may result in better match but eventually some missing highlighting
             if (pojo.normalizedPhoneticName != null) {
                 matchInfo = fuzzyScore.match(pojo.normalizedPhoneticName.codePoints);
                 match = pojo.updateMatchingRelevance(matchInfo, match);
@@ -131,7 +121,6 @@ public class ContactsProvider extends Provider<ContactsPojo> {
             }
 
             if (!match && queryNormalized.length() > 2 && pojo.normalizedPhone != null) {
-                // search for the phone number
                 matchInfo = fuzzyScore.match(pojo.normalizedPhone.codePoints);
                 match = pojo.updateMatchingRelevance(matchInfo, match);
             }
@@ -139,15 +128,12 @@ public class ContactsProvider extends Provider<ContactsPojo> {
             ContactData contactData = pojo.getContactData();
             if (!match && queryNormalized.length() > 2 && contactData != null
                     && contactData.getNormalizedIdentifier() != null) {
-                // search for IM identifier
                 matchInfo = fuzzyScore.match(contactData.getNormalizedIdentifier().codePoints);
                 match = pojo.updateMatchingRelevance(matchInfo, match);
             }
 
-            // Smart S social-contact alias: allow one cached field such as "WhatsApp John" to
-            // match a query containing both the service and contact name. This is deliberately
-            // cached per Pojo so expanded social coverage does not add normalization work on every
-            // keystroke.
+            // Allow a cached combined alias such as "WhatsApp John" to match both the service and
+            // the contact name without rebuilding normalized strings on every keystroke.
             if (contactData != null && MimeTypeUtils.isSocialContactMimeType(contactData.getMimeType())) {
                 StringNormalizer.Result socialAlias = getSocialAlias(pojo, contactData);
                 if (socialAlias != null) {
@@ -175,10 +161,17 @@ public class ContactsProvider extends Provider<ContactsPojo> {
 
         String serviceLabel = KissApplication.getMimeTypeCache(this)
                 .getLabel(this, contactData.getMimeType());
-        if (TextUtils.isEmpty(serviceLabel) || TextUtils.isEmpty(pojo.getName())) return null;
+        String contactName = pojo.getName();
+        if (TextUtils.isEmpty(serviceLabel) || TextUtils.isEmpty(contactName)) return null;
 
-        StringNormalizer.Result normalized = StringNormalizer.normalizeWithResult(
-                serviceLabel + " " + pojo.getName(), false);
+        String displayName = contactName;
+        String prefix = serviceLabel + " ";
+        if (!contactName.regionMatches(true, 0, prefix, 0, prefix.length())) {
+            displayName = prefix + contactName;
+            pojo.setName(displayName);
+        }
+
+        StringNormalizer.Result normalized = StringNormalizer.normalizeWithResult(displayName, false);
         socialAliasCache.put(key, normalized);
         return normalized;
     }
