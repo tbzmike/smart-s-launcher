@@ -12,14 +12,13 @@ import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 
 /**
- * TextView that continuously scrolls overflowing single-line text while it is visible.
- *
- * Launcher rows are recycled and several rows can be visible at the same time, so relying
- * on normal focus for marquee leaves some clipped labels stationary. This view deliberately
- * reports itself selected/focused while visible and restarts marquee whenever its text or
- * available width changes. Text that fits remains stationary.
+ * Single-line text that continuously scrolls whenever its complete content does not fit.
+ * Generic row styling is not allowed to replace this behavior with END ellipsis or clipped
+ * multi-line text: labels, titles and history metadata must always remain fully readable.
  */
 public class AutoMarqueeTextView extends AppCompatTextView {
+    private boolean behaviorLocked;
+
     public AutoMarqueeTextView(Context context) {
         super(context);
         init();
@@ -36,20 +35,49 @@ public class AutoMarqueeTextView extends AppCompatTextView {
     }
 
     private void init() {
-        setSingleLine(true);
-        setMaxLines(1);
-        setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        behaviorLocked = false;
+        super.setSingleLine(true);
+        super.setMaxLines(1);
+        super.setEllipsize(TextUtils.TruncateAt.MARQUEE);
         setMarqueeRepeatLimit(-1);
-        setHorizontallyScrolling(true);
+        super.setHorizontallyScrolling(true);
+        setHorizontalFadingEdgeEnabled(true);
         setFocusable(false);
         setFocusableInTouchMode(false);
         setSelected(true);
+        behaviorLocked = true;
+    }
+
+    @Override
+    public void setSingleLine(boolean singleLine) {
+        if (behaviorLocked) {
+            super.setSingleLine(true);
+            super.setMaxLines(1);
+            return;
+        }
+        super.setSingleLine(singleLine);
+    }
+
+    @Override
+    public void setMaxLines(int maxLines) {
+        super.setMaxLines(behaviorLocked ? 1 : maxLines);
+    }
+
+    @Override
+    public void setEllipsize(TextUtils.TruncateAt where) {
+        super.setEllipsize(behaviorLocked ? TextUtils.TruncateAt.MARQUEE : where);
+    }
+
+    @Override
+    public void setHorizontallyScrolling(boolean whether) {
+        super.setHorizontallyScrolling(behaviorLocked || whether);
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         applySearchAppearanceIfNeeded();
+        restoreMarqueeBehavior();
         restartMarquee();
     }
 
@@ -80,7 +108,18 @@ public class AutoMarqueeTextView extends AppCompatTextView {
         }
     }
 
+    private void restoreMarqueeBehavior() {
+        if (!behaviorLocked) return;
+        super.setSingleLine(true);
+        super.setMaxLines(1);
+        super.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        setMarqueeRepeatLimit(-1);
+        super.setHorizontallyScrolling(true);
+        setHorizontalFadingEdgeEnabled(true);
+    }
+
     private void restartMarquee() {
+        restoreMarqueeBehavior();
         setSelected(false);
         setSelected(true);
         invalidate();
