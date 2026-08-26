@@ -2,6 +2,7 @@ package fr.neamar.kiss.adapter;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -28,6 +29,7 @@ import java.util.WeakHashMap;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.UIColors;
 import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -58,10 +60,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private static final class TextStyleState {
         final float sizePx;
         final Typeface typeface;
+        final int textColor;
 
         TextStyleState(TextView text) {
             sizePx = text.getTextSize();
             typeface = text.getTypeface();
+            textColor = text.getCurrentTextColor();
         }
     }
 
@@ -340,6 +344,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         int bodySp = safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
         Typeface labelTypeface = typefaceFor(prefs.getString("smart-list-label-font", "sans_bold"));
         Typeface bodyTypeface = typefaceFor(prefs.getString("smart-list-body-font", "sans_normal"));
+        String labelColor = prefs.getString("smart-list-label-color",
+                UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        String bodyColor = prefs.getString("smart-list-body-color",
+                UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        int labelContrast = safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
+        int bodyContrast = safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
 
         int[] labelIds = new int[]{
                 R.id.item_app_name, R.id.item_contact_name, R.id.item_setting_name,
@@ -350,8 +360,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 R.id.item_contact_nickname, R.id.item_notification_title, R.id.item_notification_text,
                 R.id.item_communication_meta, R.id.item_communication_body
         };
-        applyTextStyle(row, labelIds, labelSp, labelTypeface);
-        applyTextStyle(row, bodyIds, bodySp, bodyTypeface);
+        applyTextStyle(row, labelIds, labelSp, labelTypeface, labelColor, labelContrast);
+        applyTextStyle(row, bodyIds, bodySp, bodyTypeface, bodyColor, bodyContrast);
 
         int spacing = safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
         int bodyLines = spacing >= 56 ? 3 : spacing >= 24 ? 2 : 1;
@@ -405,6 +415,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             if (state != null) {
                 text.setTextSize(TypedValue.COMPLEX_UNIT_PX, state.sizePx);
                 text.setTypeface(state.typeface);
+                text.setTextColor(state.textColor);
             }
             if (id == R.id.item_communication_body) {
                 text.setSingleLine(false);
@@ -425,15 +436,64 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
     }
 
-    private void applyTextStyle(View row, int[] ids, int sizeSp, Typeface typeface) {
+    private void applyTextStyle(View row, int[] ids, int sizeSp, Typeface typeface,
+                                String colorValue, int contrast) {
         for (int id : ids) {
             View candidate = row.findViewById(id);
             if (!(candidate instanceof TextView) || candidate.getVisibility() == View.GONE) continue;
             TextView text = (TextView) candidate;
-            if (!baseTextStyles.containsKey(text)) baseTextStyles.put(text, new TextStyleState(text));
+            TextStyleState state = baseTextStyles.get(text);
+            if (state == null) {
+                state = new TextStyleState(text);
+                baseTextStyles.put(text, state);
+            }
             text.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
             text.setTypeface(typeface);
+            int selectedColor = resolveConfiguredTextColor(colorValue, state.textColor);
+            text.setTextColor(applyContrast(selectedColor, state.textColor, contrast));
         }
+    }
+
+    private int resolveConfiguredTextColor(String colorValue, int themeColor) {
+        if (TextUtils.isEmpty(colorValue)) return themeColor;
+        try {
+            int selected = Color.parseColor(colorValue);
+            return selected == UIColors.COLOR_SYSTEM ? themeColor : selected;
+        } catch (IllegalArgumentException ignored) {
+            return themeColor;
+        }
+    }
+
+    private int applyContrast(int color, int themeReferenceColor, int contrast) {
+        int alpha = Color.alpha(color);
+        int red = Color.red(color);
+        int green = Color.green(color);
+        int blue = Color.blue(color);
+
+        if (contrast < 100) {
+            float strength = 0.25f + (contrast / 100f) * 0.75f;
+            alpha = Math.max(0, Math.min(255, Math.round(alpha * strength)));
+            return Color.argb(alpha, red, green, blue);
+        }
+        if (contrast == 100) return color;
+
+        boolean themeUsesLightText = relativeLuminance(themeReferenceColor) >= 0.5f;
+        int target = themeUsesLightText ? 255 : 0;
+        float amount = Math.min(1f, (contrast - 100) / 100f);
+        red = blendChannel(red, target, amount);
+        green = blendChannel(green, target, amount);
+        blue = blendChannel(blue, target, amount);
+        return Color.argb(alpha, red, green, blue);
+    }
+
+    private int blendChannel(int value, int target, float amount) {
+        return Math.max(0, Math.min(255, Math.round(value + (target - value) * amount)));
+    }
+
+    private float relativeLuminance(int color) {
+        return (0.2126f * Color.red(color)
+                + 0.7152f * Color.green(color)
+                + 0.0722f * Color.blue(color)) / 255f;
     }
 
     private Typeface typefaceFor(String value) {
