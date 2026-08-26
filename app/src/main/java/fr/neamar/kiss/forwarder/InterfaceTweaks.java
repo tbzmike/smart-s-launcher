@@ -32,6 +32,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.UIColors;
 import fr.neamar.kiss.result.TagDummyResult;
+import fr.neamar.kiss.ui.SmartTextAppearance;
 import fr.neamar.kiss.utils.ViewGroupUtils;
 
 // Deals with any settings in the "User Interface" setting sub-screen
@@ -176,6 +177,10 @@ public class InterfaceTweaks extends Forwarder {
             mainActivity.searchEditText.setHint("");
         }
 
+        // Apply the Interface-wide default typography after theme-specific search styling so
+        // the global font/size/colour/shadow choice actually owns the search input as requested.
+        applyDefaultSearchTypography();
+
         if (prefs.getBoolean("large-result-list-margins", false)) {
             ViewGroup.LayoutParams params = mainActivity.listContainer.getLayoutParams();
             if (params instanceof ViewGroup.MarginLayoutParams) {
@@ -203,9 +208,26 @@ public class InterfaceTweaks extends Forwarder {
         mainActivity.kissBar.getLayoutParams().height = searchHeight;
         mainActivity.findViewById(R.id.embeddedFavoritesBar).getLayoutParams().height = searchHeight;
 
+        // Re-apply after returning from Settings so changes are visible immediately.
+        applyDefaultSearchTypography();
+
         // Large favorite bar
         if (prefs.getBoolean("large-favorites-bar", false) && isExternalFavoriteBarEnabled()) {
             mainActivity.favoritesBar.getLayoutParams().height = res.getDimensionPixelSize(R.dimen.large_favorite_height);
+        }
+    }
+
+    private void applyDefaultSearchTypography() {
+        if (mainActivity.searchEditText == null) return;
+        SmartTextAppearance.applySearchTitle(mainActivity.searchEditText);
+
+        int textColor = mainActivity.searchEditText.getCurrentTextColor();
+        int hintColor = Color.argb(170, Color.red(textColor), Color.green(textColor), Color.blue(textColor));
+        mainActivity.searchEditText.setHintTextColor(hintColor);
+
+        // Default is deliberately crisp. A shadow is only kept when the user explicitly enables it.
+        if (!prefs.getBoolean("smart-default-text-shadow", false)) {
+            mainActivity.searchEditText.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT);
         }
     }
 
