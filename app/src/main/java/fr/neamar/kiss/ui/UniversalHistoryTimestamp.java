@@ -25,9 +25,8 @@ import fr.neamar.kiss.result.Result;
 
 /**
  * Guarantees that every record rendered on the launcher history/home list has a dedicated
- * timestamp line underneath its normal content. This deliberately does not reuse
- * item_history_meta: that row is owned by HistoryVisualEnhancer and can be cleared/replaced
- * asynchronously with usage/open-count metadata.
+ * timestamp line underneath its normal content. The same row also shows the number of launcher
+ * interactions recorded for that exact history item during the current local calendar day.
  */
 public final class UniversalHistoryTimestamp {
     private static final String VIEW_TAG = "smart_s_universal_history_timestamp";
@@ -55,7 +54,7 @@ public final class UniversalHistoryTimestamp {
 
         LaunchStatsProvider.LaunchStats stats = resolveStats(pojo);
         timestampView.setVisibility(View.VISIBLE);
-        timestampView.setText(formatTimestamp(context, resolveTimestamp(pojo, stats), pojo, stats));
+        timestampView.setText(formatTimestamp(context, resolveTimestamp(pojo, stats), stats));
         SmartTextAppearance.applyHistoryMetadata(timestampView);
 
         ensureStatsLoaded(row, result, context);
@@ -93,31 +92,19 @@ public final class UniversalHistoryTimestamp {
         return FIRST_SEEN.computeIfAbsent(key, ignored -> System.currentTimeMillis());
     }
 
-    private static CharSequence formatTimestamp(Context context, long timestamp, Pojo pojo,
+    private static CharSequence formatTimestamp(Context context, long timestamp,
                                                 LaunchStatsProvider.LaunchStats stats) {
         Date date = new Date(timestamp);
         java.text.DateFormat dateFormat = DateFormat.getMediumDateFormat(context);
         java.text.DateFormat timeFormat = DateFormat.getTimeFormat(context);
-        StringBuilder text = new StringBuilder()
+        int interactionsToday = stats == null ? 0 : Math.max(0, stats.launchesToday);
+        return new StringBuilder()
                 .append(dateFormat.format(date))
                 .append("  •  ")
-                .append(timeFormat.format(date));
-
-        // Notifications and raw communication events are events rather than explicit launcher
-        // launches. Apps, shortcuts, settings, features, contacts and every other launchable
-        // history record get their real accumulated history count here.
-        if (!(pojo instanceof NotificationPojo) && !(pojo instanceof CommunicationPojo)
-                && stats != null && stats.totalLaunches > 0) {
-            text.append("  •  ")
-                    .append(stats.totalLaunches)
-                    .append(stats.totalLaunches == 1 ? " launch" : " launches");
-            if (stats.launchesToday > 0) {
-                text.append("  •  ")
-                        .append(stats.launchesToday)
-                        .append(" today");
-            }
-        }
-        return text;
+                .append(timeFormat.format(date))
+                .append("  •  ")
+                .append(interactionsToday)
+                .append(interactionsToday == 1 ? " interaction today" : " interactions today");
     }
 
     private static void ensureStatsLoaded(View row, Result<?> result, Context context) {
