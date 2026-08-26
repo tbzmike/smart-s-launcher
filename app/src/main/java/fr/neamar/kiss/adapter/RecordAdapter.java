@@ -109,10 +109,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     /**
-     * Some apps expose useful text only through the live notification extras while their compact
-     * cached title/body are empty. Resolve that richer text lazily for visible rows only and cache it
-     * per notification id; this avoids scanning Android's active-notification array for every search
-     * candidate while still replacing generic "1 notification" labels when real text exists.
+     * Prefer real notification content over generic count labels. The listener's parsed extras are
+     * tried first. If an app (for example one using custom RemoteViews) leaves those extras empty,
+     * inspect the native notification view that SettingsResult already inflated for this visible
+     * row. This costs no extra RemoteViews inflation and is cached by notification id.
      */
     private void applyBestNotificationPreview(View view, NotificationPojo notification) {
         TextView title = view.findViewById(R.id.item_notification_title);
@@ -132,7 +132,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 String expanded = NotificationListener.getExpandedNotificationText(
                         view.getContext(), notification.id);
                 preview = expanded == null ? "" : expanded.trim().replace('\n', ' ');
-                notificationPreviewCache.put(notification.id, preview);
+                if (TextUtils.isEmpty(preview)) {
+                    View nativeContainer = view.findViewById(R.id.item_notification_native_container);
+                    preview = extractNativeNotificationPreview(nativeContainer, notification.appName);
+                }
+                notificationPreviewCache.put(notification.id, preview == null ? "" : preview);
             }
         }
 
@@ -141,6 +145,48 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             title.setVisibility(View.VISIBLE);
             configureMarquee(title);
         }
+    }
+
+    private String extractNativeNotificationPreview(View root, String appName) {
+        if (root == null) return "";
+        ArrayList<String> texts = new ArrayList<>(4);
+        collectNativeText(root, appName == null ? "" : appName.trim(), texts);
+        if (texts.isEmpty()) return "";
+        StringBuilder preview = new StringBuilder();
+        for (String text : texts) {
+            if (preview.length() > 0) preview.append(" · ");
+            preview.append(text);
+            if (preview.length() >= 180 || texts.indexOf(text) >= 1) break;
+        }
+        return preview.toString();
+    }
+
+    private void collectNativeText(View view, String appName, List<String> out) {
+        if (view == null || out.size() >= 3) return;
+        if (view instanceof TextView && !(view instanceof Button)) {
+            CharSequence raw = ((TextView) view).getText();
+            String text = raw == null ? "" : raw.toString().trim().replace('\n', ' ');
+            if (!isUsefulNativePreviewText(text, appName, out)) return;
+            out.add(text);
+            return;
+        }
+        if (!(view instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount() && out.size() < 3; i++) {
+            collectNativeText(group.getChildAt(i), appName, out);
+        }
+    }
+
+    private boolean isUsefulNativePreviewText(String text, String appName, List<String> existing) {
+        if (TextUtils.isEmpty(text) || isGenericNotificationCount(text)) return false;
+        if (!TextUtils.isEmpty(appName) && text.equalsIgnoreCase(appName)) return false;
+        String lower = text.toLowerCase(java.util.Locale.ROOT);
+        if (lower.equals("mark read") || lower.equals("mark as read")
+                || lower.equals("open notification") || lower.equals("reply")) return false;
+        for (String value : existing) {
+            if (value.equalsIgnoreCase(text) || value.contains(text) || text.contains(value)) return false;
+        }
+        return true;
     }
 
     private boolean isGenericNotificationCount(String text) {
@@ -229,7 +275,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private void applyVerticalHistorySizing(View row, Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         int rowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 160);
-        int iconPercent = safePercent(prefs, "smart-list-icon-size-percent", 100, 60, 170);
+        int iconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 60, 170);
         row.setMinimumHeight(dp(context, 64) * rowPercent / 100);
         applyPrimaryIconScale(row, iconPercent);
     }
