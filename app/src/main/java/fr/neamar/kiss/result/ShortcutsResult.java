@@ -22,6 +22,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
@@ -172,13 +173,13 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
     public String resolveTargetPackageName(Context context) {
         if (!TextUtils.isEmpty(pojo.targetPackage)) return pojo.targetPackage;
 
-        if (pojo.isOreoShortcut()) {
+        if (pojo.isOreoShortcut() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ShortcutInfo shortcutInfo = getShortCut(context);
             if (shortcutInfo != null && shortcutInfo.getActivity() != null) {
                 String packageName = shortcutInfo.getActivity().getPackageName();
                 if (!TextUtils.isEmpty(packageName)) return packageName;
             }
-        } else {
+        } else if (!pojo.isOreoShortcut()) {
             try {
                 Intent intent = Intent.parseUri(pojo.intentUri, 0);
                 ComponentName componentName = PackageManagerUtils.getComponentName(context, intent);
@@ -340,6 +341,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private boolean tryExactShortcutLaunch(Context context, LauncherApps launcherApps,
                                            @Nullable Rect sourceBounds) {
         ShortcutInfo shortcutInfo = getShortCut(context);
