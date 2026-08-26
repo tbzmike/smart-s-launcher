@@ -36,9 +36,11 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationPopupDialog;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
+import fr.neamar.kiss.utils.ShortcutLaunchStore;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
@@ -73,10 +75,8 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         final ImageView appIcon = view.findViewById(R.id.item_app_icon);
 
         if (!isHideIcons(context)) {
-            // set shortcut icon
             this.setAsyncDrawable(shortcutIcon);
 
-            // Prepare
             if (isSubIconVisible(context)) {
                 appIcon.setVisibility(View.VISIBLE);
                 setAsyncDrawable(appIcon, android.R.color.transparent, false, () -> appDrawable != null, this::getAppDrawable, (drawable) -> appDrawable = drawable);
@@ -92,11 +92,6 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         return view;
     }
 
-    /**
-     * Vertical cards should represent the app behind an Ice Box shortcut, not Ice Box itself.
-     * This method is deliberately card-only so existing shortcut rendering in all other layouts
-     * remains unchanged.
-     */
     private void displaySmartCardTargetNotification(Context context, View view) {
         View row = view.findViewById(R.id.item_notification_row);
         TextView text = view.findViewById(R.id.item_notification_text);
@@ -155,8 +150,6 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 }
             });
         } else {
-            // Historical message only: keep it visible on the card, but there is no active
-            // notification action to invoke or dismiss.
             row.setOnClickListener(null);
             text.setOnClickListener(null);
             markRead.setOnClickListener(null);
@@ -172,16 +165,22 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         return cleanTitle + ": " + cleanBody;
     }
 
-    /** Resolve the real app behind a shortcut when possible. */
     @Nullable
     public String resolveTargetPackageName(Context context) {
-        // First prefer the actual component encoded by the shortcut intent/activity.
+        if (!TextUtils.isEmpty(pojo.targetPackage)) return pojo.targetPackage;
+
         if (pojo.isOreoShortcut()) {
+            String storedTarget = ShortcutLaunchStore.getTargetPackage(
+                    context, pojo.getUserHandle().getRealHandle(), pojo.packageName, pojo.getOreoId());
+            if (!TextUtils.isEmpty(storedTarget)) return storedTarget;
+
             ShortcutInfo shortcutInfo = getShortCut(context);
-            if (shortcutInfo != null && shortcutInfo.getActivity() != null) {
-                String packageName = shortcutInfo.getActivity().getPackageName();
-                if (!TextUtils.isEmpty(packageName) && !packageName.equals(pojo.packageName)) {
-                    return packageName;
+            if (shortcutInfo != null) {
+                String resolved = ShortcutUtil.resolveShortcutTargetPackage(context, shortcutInfo);
+                if (!TextUtils.isEmpty(resolved)) return resolved;
+                if (shortcutInfo.getActivity() != null) {
+                    String packageName = shortcutInfo.getActivity().getPackageName();
+                    if (!TextUtils.isEmpty(packageName)) return packageName;
                 }
             }
         } else {
@@ -190,17 +189,13 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 ComponentName componentName = PackageManagerUtils.getComponentName(context, intent);
                 if (componentName != null) {
                     String packageName = componentName.getPackageName();
-                    if (!TextUtils.isEmpty(packageName) && !packageName.equals(pojo.packageName)) {
-                        return packageName;
-                    }
+                    if (!TextUtils.isEmpty(packageName)) return packageName;
                 }
             } catch (URISyntaxException | RuntimeException e) {
                 Log.w(TAG, "Unable to resolve shortcut target package for " + pojo.getName(), e);
             }
         }
 
-        // Ice Box shortcuts may intentionally route through Ice Box itself. In that case use the
-        // visible target app label to match the app that actually owns the notifications.
         String targetLabel = cleanIceBoxLabel(pojo.getName());
         if (!targetLabel.equals(pojo.getName())) {
             for (String[] entry : SmartStateStore.getNotificationApps(context)) {
@@ -235,12 +230,10 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                     IconsHandler iconsHandler = KissApplication.getApplication(context).getIconsHandler();
 
                     if (pojo.isOreoShortcut()) {
-                        // Retrieve activity icon from oreo shortcut
                         appDrawable = getDrawableFromOreoShortcut(context);
                     }
 
                     if (appDrawable == null) {
-                        // Retrieve activity icon by intent URI
                         try {
                             Intent intent = Intent.parseUri(pojo.intentUri, 0);
                             ComponentName componentName = PackageManagerUtils.getComponentName(context, intent);
@@ -256,7 +249,6 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                     }
 
                     if (appDrawable == null) {
-                        // Retrieve app icon (no Oreo shortcut or a shortcut from an activity that was removed from an installed app)
                         appDrawable = PackageManagerUtils.getApplicationIcon(context, pojo.packageName);
                         if (appDrawable != null) {
                             appDrawable = iconsHandler.applyIconMask(context, appDrawable);
@@ -296,65 +288,95 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
     protected void doLaunch(Context context, View v) {
         launchSucceeded = false;
         if (pojo.isOreoShortcut()) {
-            // Oreo shortcuts
             doOreoLaunch(context, v);
         } else {
-            // Pre-oreo shortcuts
             try {
                 Intent intent = Intent.parseUri(pojo.intentUri, 0);
+                String packageName = intent.getPackage();
+                if (TextUtils.isEmpty(packageName) && intent.getComponent() != null) {
+                    packageName = intent.getComponent().getPackageName();
+                }
+                if (!TextUtils.isEmpty(packageName)) AppLaunchUtils.ensurePackageEnabled(context, packageName);
                 setSourceBounds(intent, v);
                 context.startActivity(intent);
                 launchSucceeded = true;
             } catch (Exception e) {
-                // Application was just removed?
                 Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
             }
         }
     }
 
     private void doOreoLaunch(Context context, View v) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             final LauncherApps launcherApps = ContextCompat.getSystemService(context, LauncherApps.class);
-            assert launcherApps != null;
+            if (launcherApps != null && launcherApps.hasShortcutHostPermission()) {
+                if (!AppLaunchUtils.isPackageEnabled(context, pojo.packageName)) {
+                    AppLaunchUtils.ensurePackageEnabled(context, pojo.packageName);
+                }
 
-            // Only the default launcher is allowed to start shortcuts
-            if (!launcherApps.hasShortcutHostPermission()) {
-                Toast.makeText(context, context.getString(R.string.shortcuts_no_host_permission), Toast.LENGTH_LONG).show();
+                ShortcutInfo shortcutInfo = getShortCut(context);
+                if (shortcutInfo != null) {
+                    try {
+                        launcherApps.startShortcut(shortcutInfo, getViewBounds(v), null);
+                        launchSucceeded = true;
+                        return;
+                    } catch (ActivityNotFoundException | IllegalStateException | SecurityException e) {
+                        Log.w(TAG, "Unable to launch ShortcutInfo for " + pojo.getName(), e);
+                    }
+                }
+
+                try {
+                    launcherApps.startShortcut(pojo.packageName, pojo.getOreoId(), getViewBounds(v), null,
+                            pojo.getUserHandle().getRealHandle());
+                    launchSucceeded = true;
+                    return;
+                } catch (ActivityNotFoundException | IllegalStateException | SecurityException e) {
+                    Log.w(TAG, "Unable to launch shortcut id " + pojo.getOreoId(), e);
+                }
+            }
+
+            if (ShortcutLaunchStore.launch(context, pojo.getUserHandle().getRealHandle(),
+                    pojo.packageName, pojo.getOreoId(), getViewBounds(v))) {
+                launchSucceeded = true;
                 return;
             }
 
-            ShortcutInfo shortcutInfo = getShortCut(context);
-            if (shortcutInfo != null) {
-                try {
-                    launcherApps.startShortcut(shortcutInfo, v.getClipBounds(), null);
-                    launchSucceeded = true;
-                    return;
-                } catch (ActivityNotFoundException | IllegalStateException e) {
-                    Log.w(TAG, "Unable to launch shortcut " + pojo.getName(), e);
-                }
+            String targetPackage = resolveTargetPackageName(context);
+            if (!TextUtils.isEmpty(targetPackage) && AppLaunchUtils.launchPackage(context, targetPackage)) {
+                launchSucceeded = true;
+                return;
+            }
+            if (AppLaunchUtils.launchPackage(context, pojo.packageName)) {
+                launchSucceeded = true;
+                return;
             }
         }
 
-        // Application removed? Invalid shortcut? Shortcut to an app on an unmounted SD card?
         Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
     }
 
     @Override
     protected boolean canAddToHistory() {
-        return launchSucceeded && !pojo.isDisabled();
+        return launchSucceeded;
     }
 
     @Nullable
     private ShortcutInfo getShortCut(Context context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            return ShortcutUtil.getShortCut(context, pojo.getUserHandle().getRealHandle(), pojo.packageName, pojo.getOreoId());
+            ShortcutInfo shortcutInfo = ShortcutUtil.getShortCut(context,
+                    pojo.getUserHandle().getRealHandle(), pojo.packageName, pojo.getOreoId());
+            if (shortcutInfo != null) {
+                String targetPackage = ShortcutUtil.resolveShortcutTargetPackage(context, shortcutInfo);
+                ShortcutLaunchStore.remember(context, shortcutInfo, targetPackage);
+            }
+            return shortcutInfo;
         } else {
             return null;
         }
     }
 
     private Drawable getDrawableFromOreoShortcut(Context context) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ShortcutInfo shortcutInfo = getShortCut(context);
             if (shortcutInfo != null && shortcutInfo.getActivity() != null) {
                 UserHandle user = new UserHandle(context, shortcutInfo.getUserHandle());
@@ -384,7 +406,6 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             return true;
         } else if (stringId == R.string.menu_shortcut_remove) {
             launchUninstall(context, pojo);
-            // Also remove item, since it will be uninstalled
             parent.removeResult(this);
             return true;
         }
@@ -401,9 +422,6 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         dataHandler.pinShortcut(pojo);
     }
 
-    /**
-     * @return true, if shortcut will not be changed by providing app anymore
-     */
     @Override
     protected boolean isAllowedAsFavorite() {
         return !this.pojo.isDynamic() || this.pojo.isPinned();
@@ -414,9 +432,6 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         return true;
     }
 
-    /**
-     * @return true, if shortcut will not be changed by providing app anymore
-     */
     @Override
     protected boolean canHaveCustomIcon(Context context, IconPack iconPack) {
         return isAllowedAsFavorite();
