@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="smartTextFontEntries" translatable="false">
+        <item>System sans</item>
+        <item>Condensed sans</item>
+        <item>Serif</item>
+        <item>Monospace</item>
+    </string-array>
+    <string-array name="smartTextFontValues" translatable="false">
+        <item>sans</item>
+        <item>condensed</item>
+        <item>serif</item>
+        <item>monospace</item>
+    </string-array>
+    <string-array name="smartTextStyleEntries" translatable="false">
+        <item>Normal</item>
+        <item>Bold</item>
+        <item>Italic</item>
+        <item>Bold italic</item>
+    </string-array>
+    <string-array name="smartTextStyleValues" translatable="false">
+        <item>normal</item>
+        <item>bold</item>
+        <item>italic</item>
+        <item>bold_italic</item>
+    </string-array>
+</resources>
