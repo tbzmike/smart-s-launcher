@@ -31,9 +31,11 @@ import fr.neamar.kiss.result.Result;
  */
 public final class UniversalHistoryTimestamp {
     private static final String VIEW_TAG = "smart_s_universal_history_timestamp";
+    private static final long STATS_REFRESH_MS = 2_000L;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final ConcurrentHashMap<String, Long> FIRST_SEEN = new ConcurrentHashMap<>();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
+    private static volatile long statsLoadedAt;
     private static volatile boolean loadInFlight;
 
     private UniversalHistoryTimestamp() {}
@@ -51,8 +53,9 @@ public final class UniversalHistoryTimestamp {
         TextView timestampView = ensureTimestampView(row, context);
         if (timestampView == null) return;
 
+        LaunchStatsProvider.LaunchStats stats = resolveStats(pojo);
         timestampView.setVisibility(View.VISIBLE);
-        timestampView.setText(formatTimestamp(context, resolveTimestamp(pojo)));
+        timestampView.setText(formatTimestamp(context, resolveTimestamp(pojo, stats), pojo, stats));
         SmartTextAppearance.applyHistoryMetadata(timestampView);
 
         ensureStatsLoaded(row, result, context);
@@ -64,7 +67,14 @@ public final class UniversalHistoryTimestamp {
         return activity.searchEditText == null || activity.searchEditText.length() == 0;
     }
 
-    private static long resolveTimestamp(Pojo pojo) {
+    private static LaunchStatsProvider.LaunchStats resolveStats(Pojo pojo) {
+        Map<String, LaunchStatsProvider.LaunchStats> snapshot = launchStats;
+        String historyId = pojo.getHistoryId();
+        if (snapshot == null || TextUtils.isEmpty(historyId)) return null;
+        return snapshot.get(historyId);
+    }
+
+    private static long resolveTimestamp(Pojo pojo, LaunchStatsProvider.LaunchStats stats) {
         if (pojo instanceof NotificationPojo) {
             long posted = ((NotificationPojo) pojo).postTime;
             if (posted > 0L) return posted;
@@ -74,36 +84,57 @@ public final class UniversalHistoryTimestamp {
             if (eventTime > 0L) return eventTime;
         }
 
-        Map<String, LaunchStatsProvider.LaunchStats> snapshot = launchStats;
-        String historyId = pojo.getHistoryId();
-        if (snapshot != null && !TextUtils.isEmpty(historyId)) {
-            LaunchStatsProvider.LaunchStats stats = snapshot.get(historyId);
-            if (stats != null && stats.lastLaunchTime > 0L) return stats.lastLaunchTime;
-        }
+        if (stats != null && stats.lastLaunchTime > 0L) return stats.lastLaunchTime;
 
+        String historyId = pojo.getHistoryId();
         String key = TextUtils.isEmpty(historyId)
                 ? pojo.getClass().getName() + '@' + System.identityHashCode(pojo)
                 : historyId;
         return FIRST_SEEN.computeIfAbsent(key, ignored -> System.currentTimeMillis());
     }
 
-    private static CharSequence formatTimestamp(Context context, long timestamp) {
+    private static CharSequence formatTimestamp(Context context, long timestamp, Pojo pojo,
+                                                LaunchStatsProvider.LaunchStats stats) {
         Date date = new Date(timestamp);
         java.text.DateFormat dateFormat = DateFormat.getMediumDateFormat(context);
         java.text.DateFormat timeFormat = DateFormat.getTimeFormat(context);
-        return dateFormat.format(date) + "  •  " + timeFormat.format(date);
+        StringBuilder text = new StringBuilder()
+                .append(dateFormat.format(date))
+                .append("  •  ")
+                .append(timeFormat.format(date));
+
+        // Notifications and raw communication events are events rather than explicit launcher
+        // launches. Apps, shortcuts, settings, features, contacts and every other launchable
+        // history record get their real accumulated history count here.
+        if (!(pojo instanceof NotificationPojo) && !(pojo instanceof CommunicationPojo)
+                && stats != null && stats.totalLaunches > 0) {
+            text.append("  •  ")
+                    .append(stats.totalLaunches)
+                    .append(stats.totalLaunches == 1 ? " launch" : " launches");
+            if (stats.launchesToday > 0) {
+                text.append("  •  ")
+                        .append(stats.launchesToday)
+                        .append(" today");
+            }
+        }
+        return text;
     }
 
     private static void ensureStatsLoaded(View row, Result<?> result, Context context) {
-        if (launchStats != null || loadInFlight) return;
+        long now = System.currentTimeMillis();
+        boolean fresh = launchStats != null && now - statsLoadedAt < STATS_REFRESH_MS;
+        if (fresh || loadInFlight) return;
         synchronized (UniversalHistoryTimestamp.class) {
-            if (launchStats != null || loadInFlight) return;
+            now = System.currentTimeMillis();
+            fresh = launchStats != null && now - statsLoadedAt < STATS_REFRESH_MS;
+            if (fresh || loadInFlight) return;
             loadInFlight = true;
         }
         Context appContext = context.getApplicationContext();
         EXECUTOR.execute(() -> {
             Map<String, LaunchStatsProvider.LaunchStats> loaded = LaunchStatsProvider.loadAll(appContext);
             launchStats = loaded;
+            statsLoadedAt = System.currentTimeMillis();
             loadInFlight = false;
             row.post(() -> {
                 if (row.isAttachedToWindow()) bind(row, result, context);
