@@ -48,6 +48,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
             addEntry("notifications", "Smart notifications & history",
                     "Timeline, notification actions, persistent history and notification search");
         } else if ("ui-holder".equals(rootKey)) {
+            addVerticalHistoryAppearancePreferences();
             addEntry("wallpaper", "Smart wallpaper & blur",
                     "Smart Focus blur, icon tracking, blur strength and performance");
             addWorkspaceEntry();
@@ -70,22 +71,11 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         preference.setTitle("Tile flip speed");
         preference.setSummary("Speed of the live tile flip before an app or shortcut opens");
         preference.setEntries(new CharSequence[]{
-                "Very slow",
-                "Slow",
-                "Slightly slow",
-                "Normal",
-                "Fast",
-                "Very fast"
+                "Very slow", "Slow", "Slightly slow", "Normal", "Fast", "Very fast"
         });
         preference.setEntryValues(new CharSequence[]{
-                "0.55",
-                "0.70",
-                "0.85",
-                "1.00",
-                "1.20",
-                "1.45"
+                "0.55", "0.70", "0.85", "1.00", "1.20", "1.45"
         });
-        // Slightly slower than the previous fixed timing so the 3D turn is clearly visible.
         preference.setDefaultValue("0.85");
         preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
         getPreferenceScreen().addPreference(preference);
@@ -99,20 +89,12 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         preference.setKey(key);
         preference.setTitle("App history layout");
         preference.setEntries(new CharSequence[]{
-                "Vertical list",
-                "Vertical cards",
-                "Horizontal icons",
-                "Horizontal cards",
-                "Horizontal app names",
-                "Square-U cards"
+                "Vertical list", "Vertical cards", "Horizontal icons", "Horizontal cards",
+                "Horizontal app names", "Square-U cards"
         });
         preference.setEntryValues(new CharSequence[]{
-                "vertical",
-                "vertical_cards",
-                "horizontal_icons",
-                "horizontal_cards",
-                "horizontal_names",
-                "square_u"
+                "vertical", "vertical_cards", "horizontal_icons", "horizontal_cards",
+                "horizontal_names", "square_u"
         });
         preference.setDefaultValue("vertical");
         preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
@@ -164,6 +146,66 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                 "Resize vertical history rows independently", 70, 160, 100);
         addSizeSlider(category, "smart-list-icon-size-percent", "Vertical list icon size",
                 "Resize only icons in the vertical history list", 60, 170, 100);
+    }
+
+    /** Controls requested specifically for the classic Vertical List history renderer. */
+    private void addVerticalHistoryAppearancePreferences() {
+        if (findPreference("smart-list-appearance-category") != null) return;
+
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("smart-list-appearance-category");
+        category.setTitle("Vertical history appearance");
+        getPreferenceScreen().addPreference(category);
+
+        addSizeSlider(category, "smart-list-label-size-sp", "App label text size",
+                "Size of app, shortcut, contact and communication titles in Vertical List history",
+                12, 28, 18);
+        addFontPreference(category, "smart-list-label-font", "App label font style",
+                "sans_bold");
+
+        addSizeSlider(category, "smart-list-body-size-sp", "Message/body text size",
+                "Size of notification previews, tags, numbers, dates and message text",
+                10, 22, 14);
+        addFontPreference(category, "smart-list-body-font", "Message/body font style",
+                "sans_normal");
+
+        addSizeSlider(category, "smart-list-icon-size-percent", "App icon size",
+                "Resize icons in Vertical List history without changing the text",
+                60, 170, 110);
+        addSizeSlider(category, "smart-list-row-spacing-dp", "Space between history items",
+                "Add breathing room between Vertical List rows to reduce clutter",
+                0, 24, 4);
+
+        Preference iconInfo = new Preference(requireContext());
+        iconInfo.setKey("smart-list-icon-selection-info");
+        iconInfo.setTitle("App icon selection");
+        iconInfo.setSummary("Collective icons use Interface → Icons → Icon pack. Individual app icons can be changed from the app's long-press Custom icon action when the selected icon pack provides alternatives.");
+        iconInfo.setSelectable(false);
+        category.addPreference(iconInfo);
+    }
+
+    private void addFontPreference(PreferenceCategory category, String key, String title,
+                                   String defaultValue) {
+        ListPreference preference = new ListPreference(requireContext());
+        preference.setKey(key);
+        preference.setTitle(title);
+        preference.setEntries(new CharSequence[]{
+                "Sans · Normal", "Sans · Bold", "Sans · Italic", "Sans · Bold italic",
+                "Condensed · Normal", "Condensed · Bold", "Serif · Normal", "Serif · Bold",
+                "Monospace · Normal", "Monospace · Bold"
+        });
+        preference.setEntryValues(new CharSequence[]{
+                "sans_normal", "sans_bold", "sans_italic", "sans_bold_italic",
+                "condensed_normal", "condensed_bold", "serif_normal", "serif_bold",
+                "monospace_normal", "monospace_bold"
+        });
+        preference.setDefaultValue(defaultValue);
+        preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        preference.setOnPreferenceChangeListener((changedPreference, newValue) -> {
+            markLayoutDirty();
+            return true;
+        });
+        category.addPreference(preference);
     }
 
     private void addSizeSlider(PreferenceCategory category, String key, String title,
