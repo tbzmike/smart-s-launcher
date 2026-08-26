@@ -4,11 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.text.TextPaint;
 import android.text.TextUtils;
-import android.text.style.ForegroundColorSpan;
-import android.text.style.MetricAffectingSpan;
-import android.text.style.RelativeSizeSpan;
 import android.util.TypedValue;
 import android.widget.TextView;
 
@@ -18,15 +14,35 @@ import fr.neamar.kiss.UIColors;
 
 /** Shared renderer for Smart S configurable result and history-metadata text. */
 public final class SmartTextAppearance {
+    private static final String DEFAULT_FAMILY = "sans";
+    private static final String DEFAULT_STYLE = "normal";
+
     private SmartTextAppearance() {
     }
 
     public static void applySearchTitle(TextView view) {
-        apply(view, "smart-search-title", 18, 10, 40, "sans_normal");
+        applyDefault(view, true);
     }
 
     public static void applySearchBody(TextView view) {
-        apply(view, "smart-search-body", 14, 8, 32, "sans_normal");
+        applyDefault(view, false);
+    }
+
+    public static void applyHistoryMetadata(TextView view) {
+        SharedPreferences prefs = prefs(view.getContext());
+        int size = readInt(prefs, "smart-history-meta-size-sp", 12, 8, 28);
+        String family = prefs.getString("smart-history-meta-font-family", DEFAULT_FAMILY);
+        String style = prefs.getString("smart-history-meta-font-style", DEFAULT_STYLE);
+        String colorValue = prefs.getString("smart-history-meta-color",
+                UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        int themeColor = view.getCurrentTextColor();
+        int selectedColor = resolveConfiguredColor(colorValue, themeColor);
+
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
+        view.setTypeface(typefaceFor(family, style));
+        view.setTextColor(selectedColor);
+        view.setAlpha(1f);
+        if (!prefs.getBoolean("smart-history-meta-shadow", false)) view.setShadowLayer(0f, 0f, 0f, 0);
     }
 
     public static int historyMetadataSizeSp(Context context) {
@@ -37,45 +53,28 @@ public final class SmartTextAppearance {
         SharedPreferences prefs = prefs(context);
         String value = prefs.getString("smart-history-meta-color",
                 UIColors.colorToString(UIColors.COLOR_SYSTEM));
-        int selected = resolveConfiguredColor(value, themeColor);
-        int contrast = readInt(prefs, "smart-history-meta-contrast", 100, 25, 200);
-        return applyContrast(selected, themeColor, contrast);
+        return resolveConfiguredColor(value, themeColor);
     }
 
-    public static RelativeSizeSpan relativeMetadataSize(Context context, TextView target) {
-        float baseSp = target.getTextSize() / target.getResources().getDisplayMetrics().scaledDensity;
-        if (baseSp <= 0f) baseSp = 14f;
-        return new RelativeSizeSpan(historyMetadataSizeSp(context) / baseSp);
-    }
-
-    public static ForegroundColorSpan metadataColorSpan(Context context, TextView target) {
-        return new ForegroundColorSpan(historyMetadataColor(context, target.getCurrentTextColor()));
-    }
-
-    public static MetricAffectingSpan metadataStyleSpan(Context context) {
-        final Typeface typeface = typefaceFor(
-                prefs(context).getString("smart-history-meta-font", "sans_normal"));
-        return new MetricAffectingSpan() {
-            @Override public void updateMeasureState(TextPaint paint) { paint.setTypeface(typeface); }
-            @Override public void updateDrawState(TextPaint paint) { paint.setTypeface(typeface); }
-        };
-    }
-
-    private static void apply(TextView view, String prefix, int fallbackSize, int minSize,
-                              int maxSize, String fallbackFont) {
+    private static void applyDefault(TextView view, boolean title) {
         SharedPreferences prefs = prefs(view.getContext());
-        int size = readInt(prefs, prefix + "-size-sp", fallbackSize, minSize, maxSize);
-        int contrast = readInt(prefs, prefix + "-contrast", 100, 25, 200);
-        String font = prefs.getString(prefix + "-font", fallbackFont);
-        String colorValue = prefs.getString(prefix + "-color",
+        int size = readInt(prefs,
+                title ? "smart-default-text-primary-size-sp" : "smart-default-text-secondary-size-sp",
+                title ? 18 : 14,
+                title ? 10 : 8,
+                title ? 40 : 32);
+        String family = prefs.getString("smart-default-text-font-family", DEFAULT_FAMILY);
+        String style = prefs.getString("smart-default-text-font-style", DEFAULT_STYLE);
+        String colorValue = prefs.getString("smart-default-text-color",
                 UIColors.colorToString(UIColors.COLOR_SYSTEM));
         int themeColor = view.getCurrentTextColor();
         int selectedColor = resolveConfiguredColor(colorValue, themeColor);
 
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
-        view.setTypeface(typefaceFor(font));
-        view.setTextColor(applyContrast(selectedColor, themeColor, contrast));
+        view.setTypeface(typefaceFor(family, style));
+        view.setTextColor(selectedColor);
         view.setAlpha(1f);
+        if (!prefs.getBoolean("smart-default-text-shadow", false)) view.setShadowLayer(0f, 0f, 0f, 0);
     }
 
     private static SharedPreferences prefs(Context context) {
@@ -106,54 +105,42 @@ public final class SmartTextAppearance {
         }
     }
 
-    private static int applyContrast(int color, int themeReferenceColor, int contrast) {
-        int alpha = Color.alpha(color);
-        int red = Color.red(color);
-        int green = Color.green(color);
-        int blue = Color.blue(color);
-        if (contrast < 100) {
-            float strength = 0.25f + (contrast / 100f) * 0.75f;
-            alpha = Math.max(0, Math.min(255, Math.round(alpha * strength)));
-            return Color.argb(alpha, red, green, blue);
-        }
-        if (contrast == 100) return color;
-        boolean lightText = relativeLuminance(themeReferenceColor) >= 0.5f;
-        int target = lightText ? 255 : 0;
-        float amount = Math.min(1f, (contrast - 100) / 100f);
-        return Color.argb(alpha,
-                blend(red, target, amount), blend(green, target, amount), blend(blue, target, amount));
-    }
-
-    private static int blend(int value, int target, float amount) {
-        return Math.max(0, Math.min(255, Math.round(value + (target - value) * amount)));
-    }
-
-    private static float relativeLuminance(int color) {
-        return (0.2126f * Color.red(color) + 0.7152f * Color.green(color)
-                + 0.0722f * Color.blue(color)) / 255f;
-    }
-
-    private static String fontFamily(String value) {
+    private static String normalizeFamily(String value) {
         if (value == null) return "sans-serif";
-        if (value.startsWith("condensed_")) return "sans-serif-condensed";
-        if (value.startsWith("serif_")) return "serif";
-        if (value.startsWith("monospace_")) return "monospace";
-        return "sans-serif";
+        switch (value) {
+            case "condensed": return "sans-serif-condensed";
+            case "serif": return "serif";
+            case "monospace": return "monospace";
+            case "sans":
+            default: return "sans-serif";
+        }
     }
 
+    public static Typeface typefaceFor(String family, String styleValue) {
+        int style = Typeface.NORMAL;
+        if (styleValue != null) {
+            switch (styleValue) {
+                case "bold": style = Typeface.BOLD; break;
+                case "italic": style = Typeface.ITALIC; break;
+                case "bold_italic": style = Typeface.BOLD_ITALIC; break;
+                default: break;
+            }
+        }
+        return Typeface.create(normalizeFamily(family), style);
+    }
+
+    /** Backward-compatible parser for existing per-view typography preferences. */
     public static Typeface typefaceFor(String value) {
         if (value == null) value = "sans_normal";
-        String family = fontFamily(value);
-        int style = Typeface.NORMAL;
-        switch (value) {
-            case "sans_bold": style = Typeface.BOLD; break;
-            case "sans_italic": style = Typeface.ITALIC; break;
-            case "sans_bold_italic": style = Typeface.BOLD_ITALIC; break;
-            case "condensed_bold": style = Typeface.BOLD; break;
-            case "serif_bold": style = Typeface.BOLD; break;
-            case "monospace_bold": style = Typeface.BOLD; break;
-            default: break;
-        }
-        return Typeface.create(family, style);
+        String family = "sans";
+        if (value.startsWith("condensed_")) family = "condensed";
+        else if (value.startsWith("serif_")) family = "serif";
+        else if (value.startsWith("monospace_")) family = "monospace";
+
+        String style = "normal";
+        if (value.endsWith("_bold_italic")) style = "bold_italic";
+        else if (value.endsWith("_bold")) style = "bold";
+        else if (value.endsWith("_italic")) style = "italic";
+        return typefaceFor(family, style);
     }
 }
