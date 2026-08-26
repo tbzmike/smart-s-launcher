@@ -10,6 +10,8 @@ import androidx.preference.PreferenceManager;
 import androidx.preference.SeekBarPreference;
 import androidx.preference.SwitchPreference;
 
+import fr.neamar.kiss.appusage.AppUsageTracker;
+import fr.neamar.kiss.battery.BatteryMonitorStarter;
 import fr.neamar.kiss.preference.ColorPreference;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.preference.UiLivePreviewPreference;
@@ -51,6 +53,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                     "Timeline, notification actions, persistent history and notification search");
         } else if ("ui-holder".equals(rootKey)) {
             addGlobalDefaultTextPreferences();
+            addHighlightAppearancePreferences();
             addDefaultSearchAppearancePreferences();
             addVerticalHistoryAppearancePreferences();
             addEntry("wallpaper", "Smart wallpaper & blur",
@@ -61,6 +64,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
             addEntry("animations", "Smart animations & transitions",
                     "Scrolling, windows, popups, notifications, switching and numeric animation speed");
         } else if ("advanced".equals(rootKey)) {
+            addBackgroundFeatureToggles();
             addEntry("frozen", "Frozen apps & app state",
                     "IceBox-safe detection, disabled app launching and background state refresh");
         }
@@ -196,6 +200,74 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         shadow.setDefaultValue(false);
         shadow.setOnPreferenceChangeListener((preference, newValue) -> { markLayoutDirty(); return true; });
         category.addPreference(shadow);
+    }
+
+    private void addHighlightAppearancePreferences() {
+        if (findPreference("smart-highlight-appearance-category") != null) return;
+
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("smart-highlight-appearance-category");
+        category.setTitle("Typed-search highlight text");
+        getPreferenceScreen().addPreference(category);
+
+        ListPreference style = new ListPreference(requireContext());
+        style.setKey("smart-highlight-style");
+        style.setTitle("Highlight text style");
+        style.setSummary("Style applied only to the letters/words that match what you type");
+        style.setEntries(new CharSequence[]{
+                "Use existing highlight style", "Normal", "Bold", "Italic", "Bold italic", "Underline"
+        });
+        style.setEntryValues(new CharSequence[]{
+                "legacy", "normal", "bold", "italic", "bold_italic", "underline"
+        });
+        style.setDefaultValue("legacy");
+        style.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        style.setOnPreferenceChangeListener((preference, newValue) -> { markLayoutDirty(); return true; });
+        category.addPreference(style);
+
+        addSizeSlider(category, "smart-highlight-size-percent", "Highlight text size",
+                "Resize only matching highlighted text. 100% keeps the normal result text size.",
+                50, 200, 100);
+        addColorPreference(category, "smart-highlight-color", "Highlight text colour",
+                "Colour used for matching text when colour highlighting is enabled");
+    }
+
+    private void addBackgroundFeatureToggles() {
+        if (findPreference("smart-background-feature-toggles") != null) return;
+
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("smart-background-feature-toggles");
+        category.setTitle("Background features — on/off");
+        getPreferenceScreen().addPreference(category);
+
+        SwitchPreference appUsage = new SwitchPreference(requireContext());
+        appUsage.setKey(AppUsageTracker.PREF_ENABLED);
+        appUsage.setTitle("App usage tracking");
+        appUsage.setSummary("Track the local 365-day app usage timeline. Off cancels its scheduled background job.");
+        appUsage.setDefaultValue(false);
+        appUsage.setOnPreferenceChangeListener((preference, newValue) -> {
+            AppUsageTracker.setEnabled(requireContext(), Boolean.TRUE.equals(newValue));
+            return true;
+        });
+        category.addPreference(appUsage);
+
+        SwitchPreference notificationHistory = new SwitchPreference(requireContext());
+        notificationHistory.setKey("enable-notification-history");
+        notificationHistory.setTitle("Notification history");
+        notificationHistory.setSummary("Allow new notifications to be added to launcher history. Live notification access remains separate.");
+        notificationHistory.setDefaultValue(false);
+        category.addPreference(notificationHistory);
+
+        SwitchPreference batteryMonitor = new SwitchPreference(requireContext());
+        batteryMonitor.setKey(BatteryMonitorStarter.PREF_ENABLED);
+        batteryMonitor.setTitle("Battery monitor");
+        batteryMonitor.setSummary("Run or stop Smart S battery sampling and its live background monitor.");
+        batteryMonitor.setDefaultValue(true);
+        batteryMonitor.setOnPreferenceChangeListener((preference, newValue) -> {
+            BatteryMonitorStarter.setEnabled(requireContext(), Boolean.TRUE.equals(newValue));
+            return true;
+        });
+        category.addPreference(batteryMonitor);
     }
 
     private void addDefaultSearchAppearancePreferences() {
