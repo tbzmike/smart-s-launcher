@@ -11,6 +11,7 @@
         style="@style/ResultItemIcon"
         android:layout_alignParentStart="true"
         android:layout_centerVertical="true"
+        android:focusable="false"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_contact"
         tools:ignore="ContentDescription,UnusedAttribute"
@@ -100,6 +101,7 @@
         android:layout_toStartOf="@+id/item_contact_action_phone"
         android:background="?attr/appSelectableItemBackground"
         android:contentDescription="@string/ui_item_contact_hint_message"
+        android:focusable="false"
         android:src="@drawable/ic_message"
         app:tint="?attr/colorPrimary"
         tools:layout_height="48dp" />
@@ -112,6 +114,7 @@
         android:layout_centerVertical="true"
         android:background="?attr/appSelectableItemBackground"
         android:contentDescription="@string/ui_item_contact_hint_call"
+        android:focusable="false"
         android:src="@drawable/ic_phone"
         app:tint="?attr/colorPrimary"
         tools:layout_height="48dp" />
