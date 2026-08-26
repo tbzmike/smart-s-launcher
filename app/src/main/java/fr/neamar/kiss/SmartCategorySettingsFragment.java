@@ -8,6 +8,7 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceManager;
 import androidx.preference.SeekBarPreference;
+import androidx.preference.SwitchPreference;
 
 import fr.neamar.kiss.preference.ColorPreference;
 import fr.neamar.kiss.preference.UiEditLock;
@@ -49,6 +50,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
             addEntry("notifications", "Smart notifications & history",
                     "Timeline, notification actions, persistent history and notification search");
         } else if ("ui-holder".equals(rootKey)) {
+            addGlobalDefaultTextPreferences();
             addDefaultSearchAppearancePreferences();
             addVerticalHistoryAppearancePreferences();
             addEntry("wallpaper", "Smart wallpaper & blur",
@@ -148,6 +150,52 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                 "Resize vertical history rows independently", 70, 220, 100);
         addSizeSlider(category, "smart-list-icon-size-percent", "Vertical list icon size",
                 "Resize only icons in the vertical history list", 50, 240, 100);
+    }
+
+    /** True launcher-wide fallback typography. These controls live in Interface, not Smart Features. */
+    private void addGlobalDefaultTextPreferences() {
+        if (findPreference("smart-global-text-category") != null) return;
+
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("smart-global-text-category");
+        category.setTitle("Default launcher text — global");
+        getPreferenceScreen().addPreference(category);
+
+        ListPreference family = new ListPreference(requireContext());
+        family.setKey("smart-default-text-font-family");
+        family.setTitle("Default font family");
+        family.setSummary("Global fallback font, including the search bar and result text");
+        family.setEntries(new CharSequence[]{"Sans", "Condensed", "Serif", "Monospace"});
+        family.setEntryValues(new CharSequence[]{"sans", "condensed", "serif", "monospace"});
+        family.setDefaultValue("sans");
+        family.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        family.setOnPreferenceChangeListener((preference, newValue) -> { markLayoutDirty(); return true; });
+        category.addPreference(family);
+
+        ListPreference style = new ListPreference(requireContext());
+        style.setKey("smart-default-text-font-style");
+        style.setTitle("Default text style");
+        style.setEntries(new CharSequence[]{"Normal", "Bold", "Italic", "Bold italic"});
+        style.setEntryValues(new CharSequence[]{"normal", "bold", "italic", "bold_italic"});
+        style.setDefaultValue("normal");
+        style.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        style.setOnPreferenceChangeListener((preference, newValue) -> { markLayoutDirty(); return true; });
+        category.addPreference(style);
+
+        addSizeSlider(category, "smart-default-text-primary-size-sp", "Default primary text size",
+                "Global title/input size, including text typed in the search bar", 10, 40, 18);
+        addSizeSlider(category, "smart-default-text-secondary-size-sp", "Default secondary text size",
+                "Global fallback size for subtitles, previews and secondary text", 8, 32, 14);
+        addColorPreference(category, "smart-default-text-color", "Default text colour",
+                "Global fallback colour, including search-bar text and result text");
+
+        SwitchPreference shadow = new SwitchPreference(requireContext());
+        shadow.setKey("smart-default-text-shadow");
+        shadow.setTitle("Default text shadow");
+        shadow.setSummary("Off removes the blurred/shadowed look from default launcher text, including the search bar");
+        shadow.setDefaultValue(false);
+        shadow.setOnPreferenceChangeListener((preference, newValue) -> { markLayoutDirty(); return true; });
+        category.addPreference(shadow);
     }
 
     private void addDefaultSearchAppearancePreferences() {
