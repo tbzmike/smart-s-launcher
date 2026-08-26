@@ -2,7 +2,9 @@ package fr.neamar.kiss.searcher;
 
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
+import android.os.UserManager;
 
+import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
@@ -23,6 +25,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
 
@@ -87,8 +90,12 @@ public class HistorySearcher extends Searcher {
         }
 
         List<Pojo> pojos = dataHandler.getHistory(activity, getMaxResultCount(), excludedPojoById);
-        pinMostRecentLaunch(activity, dataHandler, pojos, excludedPojoById);
+
+        // Active notifications stay in their chronological band, but the user's last successful
+        // launch is the strongest interaction and must be the final/bottom item in vertical history.
+        // Pin notifications first, then place the latest launch above their relevance range.
         pinActiveNotificationTimeline(activity, pojos, excludedPojoById);
+        pinMostRecentLaunch(activity, dataHandler, pojos, excludedPojoById);
 
         this.addResults(pojos);
         return null;
@@ -97,7 +104,7 @@ public class HistorySearcher extends Searcher {
     /**
      * The user's last tap is stronger than the configured long-term history ranking.
      * Keep that item at maximum relevance so the shared adapter places it at the
-     * first/focus position used by vertical, horizontal and Square-U renderers.
+     * final/focus position used by vertical, horizontal and Square-U renderers.
      */
     private void pinMostRecentLaunch(MainActivity activity, DataHandler dataHandler,
                                      List<Pojo> pojos, Set<String> excludedPojoById) {
@@ -119,25 +126,71 @@ public class HistorySearcher extends Searcher {
 
         if (recentPojo == null) {
             recentPojo = dataHandler.getItemById(mostRecentId);
-            if (recentPojo == null) return;
+        }
+        if (recentPojo == null && mostRecentId.startsWith(ShortcutPojo.SCHEME)) {
+            recentPojo = resolveRememberedShortcut(activity, dataHandler, mostRecentId);
+        }
+        if (recentPojo == null) return;
 
+        if (!pojos.contains(recentPojo)) {
             if (pojos.size() >= getMaxResultCount() && !pojos.isEmpty()) {
-                pojos.remove(pojos.size() - 1);
+                int removeIndex = indexOfLowestRelevance(pojos, recentPojo.id);
+                if (removeIndex >= 0) pojos.remove(removeIndex);
             }
             pojos.add(recentPojo);
         }
 
-        // Searcher emits low relevance first and highest relevance last. All launcher
-        // history styles focus/scroll to that final item, so MAX_VALUE guarantees the
-        // just-launched app or shortcut remains immediately accessible.
+        // Searcher emits low relevance first and highest relevance last. MAX_VALUE guarantees the
+        // latest successful launch remains at the bottom even when active notifications are present.
         recentPojo.relevance = Integer.MAX_VALUE;
     }
 
+    private int indexOfLowestRelevance(List<Pojo> pojos, String protectedId) {
+        int index = -1;
+        int relevance = Integer.MAX_VALUE;
+        for (int i = 0; i < pojos.size(); i++) {
+            Pojo candidate = pojos.get(i);
+            if (candidate == null || protectedId.equals(candidate.id)) continue;
+            if (index < 0 || candidate.relevance < relevance) {
+                index = i;
+                relevance = candidate.relevance;
+            }
+        }
+        return index;
+    }
+
     /**
-     * Active notifications form a dedicated chronological band at the bottom of history. This is
+     * LauncherApps can stop returning a dynamic shortcut after an app is frozen/disabled or after
+     * its dynamic list changes. Smart S already keeps a permanent shortcut catalog in DB; use that
+     * same catalog as a history-only fallback so a successful click does not turn into an
+     * unresolvable history id on the next Home render.
+     */
+    private Pojo resolveRememberedShortcut(MainActivity activity, DataHandler dataHandler,
+                                           String requestedId) {
+        UserManager userManager = ContextCompat.getSystemService(activity, UserManager.class);
+        if (userManager == null) return null;
+
+        for (ShortcutRecord record : DBHelper.getShortcuts(activity)) {
+            if (record == null || record.packageName == null || record.intentUri == null) continue;
+            for (android.os.UserHandle profile : userManager.getUserProfiles()) {
+                UserHandle user = new UserHandle(activity, profile);
+                if (!requestedId.equals(ShortcutUtil.generateShortcutId(user, record))) continue;
+
+                ShortcutPojo pojo = new ShortcutPojo(user, record, null,
+                        true, false, true);
+                pojo.setName(record.name);
+                pojo.setTags(dataHandler.getTagsHandler().getTags(pojo.id));
+                return pojo;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Active notifications form a dedicated chronological band near the bottom of history. This is
      * independent of Frequency/Frecency/Adaptive history ranking: an incoming notification must not
-     * disappear among old frequently-launched apps. Oldest active notification is first in the
-     * band, newest is last/closest to the search bar.
+     * disappear among old frequently-launched apps. The user's latest successful launch is pinned
+     * after this band and therefore remains the final item.
      */
     private void pinActiveNotificationTimeline(MainActivity activity, List<Pojo> pojos,
                                                Set<String> excludedPojoById) {
@@ -166,7 +219,8 @@ public class HistorySearcher extends Searcher {
         Set<String> activeIds = new HashSet<>();
         for (NotificationPojo notification : newestFirst) activeIds.add(notification.id);
 
-        // Reserve the highest relevance range exclusively for the active notification timeline.
+        // Reserve a high relevance range for the active notification timeline. MAX_VALUE itself is
+        // deliberately left free for pinMostRecentLaunch().
         int base = Integer.MAX_VALUE - newestFirst.size() - 2;
         for (Pojo pojo : pojos) {
             if (!(pojo instanceof NotificationPojo) && pojo.relevance > base) {
