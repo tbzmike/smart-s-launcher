@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.text.TextUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -93,8 +92,6 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
         if (groupKey == null || groupKey.isEmpty()) groupKey = packageName;
         String title = details.getString(id + "|title", "");
         String text = details.getString(id + "|text", "");
-        String expanded = NotificationListener.getExpandedNotificationText(context, id);
-        if (!TextUtils.isEmpty(expanded)) text = expanded;
         long postTime = details.getLong(id + "|post", 0L);
         return new NotificationPojo(
                 id,
@@ -160,8 +157,6 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
         String appName = getAppName(packageName);
         String title = details.getString(latestId + "|title", "");
         String text = details.getString(latestId + "|text", "");
-        String expanded = NotificationListener.getExpandedNotificationText(context, latestId);
-        if (!TextUtils.isEmpty(expanded)) text = expanded;
         return new NotificationPojo(
                 NotificationListener.getGroupId(groupKey),
                 packageName,
