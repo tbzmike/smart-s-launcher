@@ -35,6 +35,11 @@ public final class TileVisualStyle {
         row.setElevation(0f);
         row.setTranslationZ(0f);
 
+        // Universal rule: every item on the launcher history/home surface gets its own
+        // dedicated timestamp line. The binder also covers layouts that never declared
+        // item_history_meta, so files, shortcuts, settings and uncommon POJO types are not skipped.
+        UniversalHistoryTimestamp.bind(row, result, context);
+
         IconState iconState = ensureImmediateIcon(row, context);
         Drawable icon = iconState.drawable;
         if (icon == null) return;
