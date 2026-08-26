@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <!-- Smart S-specific strings currently use the English fallback until translations are added. -->
     <string name="smart_features_title">Smart features</string>
     <string name="smart_notifications_title">Notifications &amp; history</string>
     <string name="smart_notifications_summary">Launcher timeline, notification actions and persistent history</string>
@@ -7,7 +8,7 @@
     <string name="smart_notification_timeline">Show notifications on launcher</string>
     <string name="smart_notification_timeline_summary">Keep active notification groups visible on the Smart S home screen.</string>
     <string name="smart_notifications_when_history_hidden">Show notifications when history is hidden</string>
-    <string name="smart_notifications_when_history_hidden_summary">Active notifications remain visible even when normal KISS history is hidden.</string>
+    <string name="smart_notifications_when_history_hidden_summary">Active notifications remain visible even when normal Smart S Launcher history is hidden.</string>
     <string name="smart_native_notification_style">Use native app notification styling</string>
     <string name="smart_native_notification_style_summary">Use app-provided notification visuals inside Smart S controlled compact containers.</string>
     <string name="smart_compact_notification_popup">Compact notification popups</string>
