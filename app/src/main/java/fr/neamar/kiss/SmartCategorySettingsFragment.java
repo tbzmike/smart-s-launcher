@@ -49,6 +49,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
             addEntry("notifications", "Smart notifications & history",
                     "Timeline, notification actions, persistent history and notification search");
         } else if ("ui-holder".equals(rootKey)) {
+            addDefaultSearchAppearancePreferences();
             addVerticalHistoryAppearancePreferences();
             addEntry("wallpaper", "Smart wallpaper & blur",
                     "Smart Focus blur, icon tracking, blur strength and performance");
@@ -149,6 +150,35 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                 "Resize only icons in the vertical history list", 50, 240, 100);
     }
 
+    private void addDefaultSearchAppearancePreferences() {
+        if (findPreference("smart-search-appearance-category") != null) return;
+
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("smart-search-appearance-category");
+        category.setTitle("Search result text appearance");
+        getPreferenceScreen().addPreference(category);
+
+        addSizeSlider(category, "smart-search-title-size-sp", "Search title text size",
+                "Size of app names, feature names, shortcut names, contacts and other result titles while searching",
+                10, 40, 18);
+        addFontPreference(category, "smart-search-title-font", "Search title font style", "sans_normal");
+        addColorPreference(category, "smart-search-title-color", "Search title text color",
+                "Default title color for search results");
+        addSizeSlider(category, "smart-search-title-contrast", "Search title contrast",
+                "100 keeps the selected color unchanged. Lower values soften it; higher values strengthen it.",
+                25, 200, 100);
+
+        addSizeSlider(category, "smart-search-body-size-sp", "Search body/subtitle size",
+                "Size of tags, descriptions, numbers, dates and secondary search-result text",
+                8, 32, 14);
+        addFontPreference(category, "smart-search-body-font", "Search body font style", "sans_normal");
+        addColorPreference(category, "smart-search-body-color", "Search body text color",
+                "Default body/subtitle color for search results");
+        addSizeSlider(category, "smart-search-body-contrast", "Search body contrast",
+                "100 keeps the selected color unchanged. Lower values soften it; higher values strengthen it.",
+                25, 200, 100);
+    }
+
     /** Controls requested specifically for the classic Vertical List history renderer. */
     private void addVerticalHistoryAppearancePreferences() {
         if (findPreference("smart-list-appearance-category") != null) return;
@@ -178,6 +208,17 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                 "Choose body and notification-preview color independently of app labels");
         addSizeSlider(category, "smart-list-body-contrast", "Message/body contrast",
                 "100 keeps the selected color unchanged. Lower values soften it; higher values strengthen it against the current theme.",
+                25, 200, 100);
+
+        addSizeSlider(category, "smart-history-meta-size-sp", "History timestamp text size",
+                "Size of posted, opened, usage and count metadata shown on history items",
+                8, 28, 12);
+        addFontPreference(category, "smart-history-meta-font", "History timestamp font style",
+                "sans_normal");
+        addColorPreference(category, "smart-history-meta-color", "History timestamp text color",
+                "Color used only for history timestamps, usage duration and open counts");
+        addSizeSlider(category, "smart-history-meta-contrast", "History timestamp contrast",
+                "Adjust timestamp/metadata contrast independently of labels and body text",
                 25, 200, 100);
 
         addSizeSlider(category, "smart-list-icon-size-percent", "App icon size",
