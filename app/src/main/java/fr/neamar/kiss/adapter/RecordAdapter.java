@@ -108,12 +108,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (nativeContainer != null) nativeContainer.setVisibility(View.GONE);
     }
 
-    /**
-     * Prefer real notification content over generic count labels. The listener's parsed extras are
-     * tried first. If an app (for example one using custom RemoteViews) leaves those extras empty,
-     * inspect the native notification view that SettingsResult already inflated for this visible
-     * row. This costs no extra RemoteViews inflation and is cached by notification id.
-     */
     private void applyBestNotificationPreview(View view, NotificationPojo notification) {
         TextView title = view.findViewById(R.id.item_notification_title);
         if (title == null) return;
@@ -153,10 +147,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         collectNativeText(root, appName == null ? "" : appName.trim(), texts);
         if (texts.isEmpty()) return "";
         StringBuilder preview = new StringBuilder();
+        int added = 0;
         for (String text : texts) {
             if (preview.length() > 0) preview.append(" · ");
             preview.append(text);
-            if (preview.length() >= 180 || texts.indexOf(text) >= 1) break;
+            added++;
+            if (preview.length() >= 180 || added >= 2) break;
         }
         return preview.toString();
     }
@@ -203,12 +199,19 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             }
             result.launch(v.getContext(), v, parent);
         };
+        View.OnLongClickListener openRichNotification = v ->
+                NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo());
+
         view.setOnClickListener(openHistory);
+        view.setOnLongClickListener(openRichNotification);
         int[] ids = new int[]{R.id.item_notification_native_container, R.id.item_notification_app,
                 R.id.item_notification_title, R.id.item_notification_text};
         for (int id : ids) {
             View child = view.findViewById(id);
-            if (child != null) child.setOnClickListener(openHistory);
+            if (child != null) {
+                child.setOnClickListener(openHistory);
+                child.setOnLongClickListener(openRichNotification);
+            }
         }
     }
 
@@ -280,7 +283,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         applyPrimaryIconScale(row, iconPercent);
     }
 
-    /** Apply the typography and spacing controls only to the actual Vertical List history mode. */
     private void applyVerticalHistoryPolish(View row, Context context) {
         if (!isVerticalHistory(context)) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
