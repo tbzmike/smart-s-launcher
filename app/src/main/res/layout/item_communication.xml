@@ -86,4 +86,6 @@
             android:text="Open message"
             android:textAllCaps="false" />
     </LinearLayout>
+
+    <include layout="@layout/item_history_metadata" />
 </LinearLayout>
