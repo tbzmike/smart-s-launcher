@@ -1,0 +1,8 @@
+Smart S Launcher 3.29.83
+
+• Add a second 3D history launch animation: Backspin & expand.
+• Add History launch animation setting with Flip & expand, Backspin & expand, and Random.
+• Random chooses a launch animation independently for each launch.
+• Prevent generic history styling from truncating long message bodies.
+• Long message bodies vertically auto-scroll through their complete text.
+• App labels, titles and history metadata/timestamps continue to marquee when they overflow.
