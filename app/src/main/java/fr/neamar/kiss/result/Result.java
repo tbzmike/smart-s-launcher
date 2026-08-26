@@ -13,6 +13,7 @@ import android.os.Looper;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.util.Pair;
@@ -165,29 +166,97 @@ public abstract class Result<T extends Pojo> {
 
     protected void displayHighlighted(String text, List<Pair<Integer, Integer>> positions, TextView view, Context context) {
         SpannableString enriched = new SpannableString(text);
-        Set<String> resultHighlighting = PreferenceManager.getDefaultSharedPreferences(context)
-                .getStringSet("pref-result-highlighting", Collections.singleton("color"));
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        Set<String> resultHighlighting = prefs.getStringSet(
+                "pref-result-highlighting", Collections.singleton("color"));
 
         if (!resultHighlighting.isEmpty()) {
             int primaryColor = UIColors.getPrimaryColor(context);
+            int highlightColor = resolveHighlightColor(prefs, primaryColor);
+            int sizePercent = readIntPreference(prefs, "smart-highlight-size-percent", 100, 50, 200);
+            String customStyle = prefs.getString("smart-highlight-style", "legacy");
             int len = text.length();
+
             for (Pair<Integer, Integer> position : positions) {
-                if (position.first <= len) {
+                if (position.first > len) continue;
+                int start = position.first;
+                int end = Math.min(position.second, len);
+                if (start >= end) continue;
+
+                if (resultHighlighting.contains("color")) {
+                    enriched.setSpan(new ForegroundColorSpan(highlightColor), start, end,
+                            Spannable.SPAN_INCLUSIVE_INCLUSIVE);
+                }
+
+                if ("legacy".equals(customStyle)) {
                     for (String highlight : resultHighlighting) {
+                        if ("color".equals(highlight)) continue;
                         Object span = createSpan(highlight, primaryColor);
                         if (span != null) {
-                            enriched.setSpan(
-                                    span,
-                                    position.first,
-                                    Math.min(position.second, len),
-                                    Spannable.SPAN_INCLUSIVE_INCLUSIVE
-                            );
+                            enriched.setSpan(span, start, end, Spannable.SPAN_INCLUSIVE_INCLUSIVE);
                         }
                     }
+                } else {
+                    Object span = createConfiguredStyleSpan(customStyle);
+                    if (span != null) {
+                        enriched.setSpan(span, start, end, Spannable.SPAN_INCLUSIVE_INCLUSIVE);
+                    }
+                    if (resultHighlighting.contains("underline") && !"underline".equals(customStyle)) {
+                        enriched.setSpan(new UnderlineSpan(), start, end,
+                                Spannable.SPAN_INCLUSIVE_INCLUSIVE);
+                    }
+                }
+
+                if (sizePercent != 100) {
+                    enriched.setSpan(new RelativeSizeSpan(sizePercent / 100f), start, end,
+                            Spannable.SPAN_INCLUSIVE_INCLUSIVE);
                 }
             }
         }
         view.setText(enriched);
+    }
+
+    private int resolveHighlightColor(SharedPreferences prefs, int fallback) {
+        String value = prefs.getString("smart-highlight-color",
+                UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        if (value == null) return fallback;
+        try {
+            int parsed = Color.parseColor(value);
+            return parsed == UIColors.COLOR_SYSTEM ? fallback : parsed;
+        } catch (IllegalArgumentException ignored) {
+            return fallback;
+        }
+    }
+
+    private int readIntPreference(SharedPreferences prefs, String key, int fallback, int min, int max) {
+        int value = fallback;
+        try {
+            value = prefs.getInt(key, fallback);
+        } catch (ClassCastException e) {
+            try {
+                value = Math.round(Float.parseFloat(prefs.getString(key, Integer.toString(fallback))));
+            } catch (NumberFormatException | ClassCastException ignored) {
+                value = fallback;
+            }
+        }
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private Object createConfiguredStyleSpan(String style) {
+        switch (style) {
+            case "normal":
+                return new StyleSpan(Typeface.NORMAL);
+            case "bold":
+                return new StyleSpan(Typeface.BOLD);
+            case "italic":
+                return new StyleSpan(Typeface.ITALIC);
+            case "bold_italic":
+                return new StyleSpan(Typeface.BOLD_ITALIC);
+            case "underline":
+                return new UnderlineSpan();
+            default:
+                return null;
+        }
     }
 
     protected boolean displayHighlighted(StringNormalizer.Result normalized, String text, FuzzyScore fuzzyScore,
