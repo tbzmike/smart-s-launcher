@@ -20,7 +20,7 @@ android {
         }
         versionCode 401
         versionName "3.29.73"
-        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
         debug {
