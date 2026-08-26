@@ -30,9 +30,7 @@ import fr.neamar.kiss.utils.RecentLaunchTracker;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
 
-/**
- * Retrieve pojos from history
- */
+/** Retrieve pojos from history. */
 public class HistorySearcher extends Searcher {
     private final SharedPreferences prefs;
 
@@ -44,7 +42,8 @@ public class HistorySearcher extends Searcher {
     @Override
     protected int getMaxResultCount() {
         try {
-            return Double.valueOf(prefs.getString("number-of-display-elements", String.valueOf(DEFAULT_MAX_RESULTS))).intValue();
+            return Double.valueOf(prefs.getString("number-of-display-elements",
+                    String.valueOf(DEFAULT_MAX_RESULTS))).intValue();
         } catch (NumberFormatException e) {
             return DEFAULT_MAX_RESULTS;
         }
@@ -55,8 +54,7 @@ public class HistorySearcher extends Searcher {
         boolean excludeFavorites = prefs.getBoolean("exclude-favorites-history", false);
 
         MainActivity activity = activityWeakReference.get();
-        if (activity == null)
-            return null;
+        if (activity == null) return null;
 
         DataHandler dataHandler = KissApplication.getApplication(activity).getDataHandler();
         Set<String> excludedFromHistory = dataHandler.getExcludedFromHistory();
@@ -66,11 +64,15 @@ public class HistorySearcher extends Searcher {
             for (String id : excludedFromHistory) {
                 Pojo pojo = dataHandler.getItemById(id);
                 if (pojo instanceof AppPojo) {
-                    List<ShortcutInfo> shortcutInfos = ShortcutUtil.getShortcuts(activity, ((AppPojo) pojo).packageName);
+                    List<ShortcutInfo> shortcutInfos = ShortcutUtil.getShortcuts(
+                            activity, ((AppPojo) pojo).packageName);
                     for (ShortcutInfo shortcutInfo : shortcutInfos) {
-                        ShortcutRecord shortcutRecord = ShortcutUtil.createShortcutRecord(activity, shortcutInfo, !shortcutInfo.isPinned());
+                        ShortcutRecord shortcutRecord = ShortcutUtil.createShortcutRecord(
+                                activity, shortcutInfo, !shortcutInfo.isPinned());
                         if (shortcutRecord != null) {
-                            excludedPojoById.add(ShortcutUtil.generateShortcutId(new UserHandle(activity, shortcutInfo.getUserHandle()), shortcutRecord));
+                            excludedPojoById.add(ShortcutUtil.generateShortcutId(
+                                    new UserHandle(activity, shortcutInfo.getUserHandle()),
+                                    shortcutRecord));
                         }
                     }
                 }
@@ -91,46 +93,58 @@ public class HistorySearcher extends Searcher {
         return null;
     }
 
-    /** Keep the most recently selected launcher result at the final/bottom history position. */
+    /** Keep the exact most recently selected launcher result at the final history position. */
     private void pinMostRecentLaunch(MainActivity activity, DataHandler dataHandler,
                                      List<Pojo> pojos, Set<String> excludedPojoById) {
         if (getMaxResultCount() <= 0) return;
 
-        List<ValuedHistoryRecord> mostRecent = DBHelper.getHistory(activity, 1, HistoryMode.RECENCY);
-        if (mostRecent.isEmpty()) return;
+        Pojo recentPojo = RecentLaunchTracker.getMostRecent();
+        String mostRecentId = recentPojo == null ? null : recentPojo.getHistoryId();
 
-        String mostRecentId = mostRecent.get(0).record;
-        if (mostRecentId == null || excludedPojoById.contains(mostRecentId)) return;
+        // The exact object selected in this launcher process is authoritative. Dynamic shortcuts
+        // can disappear from LauncherApps immediately after launch even though the launch succeeded.
+        // Only fall back to the persistent history DB when there is no process-local selection.
+        if (recentPojo == null) {
+            List<ValuedHistoryRecord> mostRecent = DBHelper.getHistory(activity, 1, HistoryMode.RECENCY);
+            if (mostRecent.isEmpty()) return;
+            mostRecentId = mostRecent.get(0).record;
+            if (mostRecentId == null) return;
 
-        Pojo recentPojo = null;
-        for (Pojo pojo : pojos) {
-            if (mostRecentId.equals(pojo.id)) {
-                recentPojo = pojo;
-                break;
+            for (Pojo pojo : pojos) {
+                if (mostRecentId.equals(pojo.getHistoryId())) {
+                    recentPojo = pojo;
+                    break;
+                }
+            }
+
+            if (recentPojo == null) recentPojo = dataHandler.getItemById(mostRecentId);
+            if (recentPojo == null) recentPojo = RecentLaunchTracker.resolve(mostRecentId);
+            if (recentPojo == null && mostRecentId.startsWith(ShortcutPojo.SCHEME)) {
+                recentPojo = resolveRememberedShortcut(activity, dataHandler, mostRecentId);
             }
         }
 
-        if (recentPojo == null) recentPojo = dataHandler.getItemById(mostRecentId);
-        if (recentPojo == null) recentPojo = RecentLaunchTracker.resolve(mostRecentId);
-        if (recentPojo == null && mostRecentId.startsWith(ShortcutPojo.SCHEME)) {
-            recentPojo = resolveRememberedShortcut(activity, dataHandler, mostRecentId);
-        }
-        if (recentPojo == null) return;
+        if (recentPojo == null || mostRecentId == null) return;
+        if (excludedPojoById.contains(mostRecentId) || excludedPojoById.contains(recentPojo.id)) return;
 
-        if (!containsId(pojos, recentPojo.id)) {
-            if (pojos.size() >= getMaxResultCount() && !pojos.isEmpty()) {
-                int removeIndex = indexOfLowestRelevance(pojos, recentPojo.id);
-                if (removeIndex >= 0) pojos.remove(removeIndex);
-            }
-            pojos.add(recentPojo);
+        int existingIndex = indexOfHistoryId(pojos, mostRecentId);
+        if (existingIndex >= 0) {
+            recentPojo = pojos.remove(existingIndex);
+        } else if (pojos.size() >= getMaxResultCount() && !pojos.isEmpty()) {
+            int removeIndex = indexOfLowestRelevance(pojos, recentPojo.id);
+            if (removeIndex >= 0) pojos.remove(removeIndex);
         }
 
         recentPojo.relevance = Integer.MAX_VALUE;
+        pojos.add(recentPojo);
     }
 
-    private boolean containsId(List<Pojo> pojos, String id) {
-        for (Pojo pojo : pojos) if (pojo != null && id.equals(pojo.id)) return true;
-        return false;
+    private int indexOfHistoryId(List<Pojo> pojos, String historyId) {
+        for (int i = 0; i < pojos.size(); i++) {
+            Pojo pojo = pojos.get(i);
+            if (pojo != null && historyId.equals(pojo.getHistoryId())) return i;
+        }
+        return -1;
     }
 
     private int indexOfLowestRelevance(List<Pojo> pojos, String protectedId) {
@@ -149,7 +163,7 @@ public class HistorySearcher extends Searcher {
 
     /** Rebuild an exact remembered shortcut when LauncherApps temporarily stops exposing it. */
     private Pojo resolveRememberedShortcut(MainActivity activity, DataHandler dataHandler,
-                                           String requestedId) {
+                                            String requestedId) {
         UserManager userManager = ContextCompat.getSystemService(activity, UserManager.class);
         if (userManager == null) return null;
 
