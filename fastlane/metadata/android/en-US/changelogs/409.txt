@@ -1,0 +1,6 @@
+Smart S Launcher 3.29.81
+
+• Notification history previews now consistently show available notification content, including short and emoji-only notifications.
+• History items consistently show launch/open/click counts.
+• Added a text-colour inverter control for improving readability against difficult wallpapers.
+• Includes stability and build-verification fixes.
