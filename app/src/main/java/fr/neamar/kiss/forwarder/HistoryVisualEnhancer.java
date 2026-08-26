@@ -5,14 +5,11 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.os.AsyncTask;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -49,9 +46,6 @@ final class HistoryVisualEnhancer {
     private static final int TAG_LIVE_BACKGROUND = 0x534D4201;
     private static final int TAG_LIVE_TEXT = 0x534D4202;
     private static final int TAG_LIVE_PROGRESS = 0x534D4203;
-    private static final String HISTORY_SEPARATOR = " • History: ";
-    private static final String LEGACY_POSTED_SEPARATOR = " • Posted ";
-    private static final String LEGACY_LAST_SEPARATOR = " • Last ";
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
@@ -109,6 +103,11 @@ final class HistoryVisualEnhancer {
             row.setBackgroundColor(Color.TRANSPARENT);
             row.setElevation(0f);
             row.setTranslationZ(0f);
+            TextView metadata = findMetadataView(row);
+            if (metadata != null) {
+                metadata.setText("");
+                metadata.setVisibility(View.GONE);
+            }
         }
 
         synchronized (this) {
@@ -147,10 +146,10 @@ final class HistoryVisualEnhancer {
             Result<?> result = activity.adapter.getItem(position);
             if (result == null || result.getPojo() == null) continue;
 
-            LaunchStatsProvider.LaunchStats launchStats = stats.get(result.getPojo().getHistoryId());
-            TextView subtitle = findMetadataView(row);
-            if (subtitle == null) continue;
+            TextView metadataView = findMetadataView(row);
+            if (metadataView == null) continue;
 
+            LaunchStatsProvider.LaunchStats launchStats = stats.get(result.getPojo().getHistoryId());
             StringBuilder metadata = new StringBuilder();
             if (result.getPojo() instanceof NotificationPojo) {
                 long postTime = ((NotificationPojo) result.getPojo()).postTime;
@@ -182,28 +181,17 @@ final class HistoryVisualEnhancer {
 
             int opensToday = launchStats == null ? 0 : launchStats.launchesToday;
             appendMetadata(metadata, opensToday + (opensToday == 1 ? " open today" : " opens today"));
-            if (metadata.length() == 0) continue;
 
-            String current = subtitle.getText() == null ? "" : subtitle.getText().toString();
-            String base = stripPreviousMetadata(current);
-            SpannableStringBuilder rendered = new SpannableStringBuilder(base);
-            if (rendered.length() > 0) rendered.append(HISTORY_SEPARATOR);
-            else rendered.append("History: ");
-            int metadataStart = rendered.length();
-            rendered.append(metadata);
-            int metadataEnd = rendered.length();
-            if (metadataEnd > metadataStart) {
-                rendered.setSpan(SmartTextAppearance.relativeMetadataSize(activity, subtitle),
-                        metadataStart, metadataEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                rendered.setSpan(SmartTextAppearance.metadataColorSpan(activity, subtitle),
-                        metadataStart, metadataEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                rendered.setSpan(SmartTextAppearance.metadataStyleSpan(activity),
-                        metadataStart, metadataEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if (metadata.length() == 0) {
+                metadataView.setText("");
+                metadataView.setVisibility(View.GONE);
+                continue;
             }
 
-            subtitle.setText(rendered);
-            subtitle.setVisibility(View.VISIBLE);
-            configureLaunchInfoMarquee(subtitle);
+            metadataView.setText(metadata);
+            metadataView.setVisibility(View.VISIBLE);
+            SmartTextAppearance.applyHistoryMetadata(metadataView);
+            configureLaunchInfoMarquee(metadataView);
         }
     }
 
@@ -214,50 +202,8 @@ final class HistoryVisualEnhancer {
     }
 
     private TextView findMetadataView(View row) {
-        int[] preferredIds = new int[]{
-                R.id.item_communication_meta,
-                R.id.item_app_tag,
-                R.id.item_shortcut_tag,
-                R.id.item_contact_phone,
-                R.id.item_notification_text,
-                R.id.item_notification_title,
-                R.id.item_search_text,
-                R.id.item_setting_name,
-                R.id.item_phone_text
-        };
-        for (int id : preferredIds) {
-            View candidate = row.findViewById(id);
-            if (candidate instanceof TextView
-                    && !(candidate instanceof Button)
-                    && candidate.getVisibility() != View.GONE) {
-                return (TextView) candidate;
-            }
-        }
-        return findFallbackTextView(row);
-    }
-
-    private TextView findFallbackTextView(View view) {
-        if (view instanceof TextView && !(view instanceof Button)
-                && view.getVisibility() != View.GONE) {
-            return (TextView) view;
-        }
-        if (!(view instanceof ViewGroup)) return null;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            TextView found = findFallbackTextView(group.getChildAt(i));
-            if (found != null) return found;
-        }
-        return null;
-    }
-
-    private String stripPreviousMetadata(String value) {
-        int separator = -1;
-        String[] markers = new String[]{HISTORY_SEPARATOR, LEGACY_POSTED_SEPARATOR, LEGACY_LAST_SEPARATOR};
-        for (String marker : markers) {
-            int found = value.indexOf(marker);
-            if (found >= 0 && (separator < 0 || found < separator)) separator = found;
-        }
-        return separator >= 0 ? value.substring(0, separator) : value;
+        View candidate = row.findViewById(R.id.item_history_meta);
+        return candidate instanceof TextView ? (TextView) candidate : null;
     }
 
     private String formatDuration(long durationMs) {
