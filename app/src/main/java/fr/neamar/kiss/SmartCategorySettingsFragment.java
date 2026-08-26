@@ -15,6 +15,7 @@ import fr.neamar.kiss.battery.BatteryMonitorStarter;
 import fr.neamar.kiss.preference.ColorPreference;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.preference.UiLivePreviewPreference;
+import fr.neamar.kiss.ui.SmartTextAppearance;
 
 /**
  * Adds Smart S configuration entries to the relevant existing KISS settings category.
@@ -164,6 +165,14 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         category.setKey("smart-global-text-category");
         category.setTitle("Default launcher text — global");
         getPreferenceScreen().addPreference(category);
+
+        SwitchPreference inverter = new SwitchPreference(requireContext());
+        inverter.setKey(SmartTextAppearance.PREF_TEXT_COLOR_INVERTER);
+        inverter.setTitle("Text colour inverter");
+        inverter.setSummary("Invert rendered text for wallpaper readability: dark colours become white and light colours become black. Stored colour choices are not changed.");
+        inverter.setDefaultValue(false);
+        inverter.setOnPreferenceChangeListener((preference, newValue) -> { markLayoutDirty(); return true; });
+        category.addPreference(inverter);
 
         ListPreference family = new ListPreference(requireContext());
         family.setKey("smart-default-text-font-family");
