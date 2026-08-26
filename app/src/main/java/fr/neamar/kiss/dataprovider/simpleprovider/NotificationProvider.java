@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.text.TextUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -54,22 +55,16 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
                 if (live != null) return live;
             }
 
-            // History must keep resolving after Android removes the live notification cache.
             NotificationHistoryRecord record = NotificationTimelineStore.findLatest(context, id);
             return record == null ? null : buildPersisted(record);
         }
 
-        // Legacy grouped history ids are still readable so existing databases upgrade cleanly.
         for (NotificationPojo pojo : getGroupedPojos(details)) {
             if (pojo.id.equals(id)) return pojo;
         }
         return null;
     }
 
-    /**
-     * Active notification search results are deliberately one-notification-per-pojo. This is also
-     * the source used by HistorySearcher to pin the live notification timeline at the bottom.
-     */
     @Override
     public List<NotificationPojo> getPojos() {
         SharedPreferences details = details();
@@ -96,8 +91,22 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
         if (packageName == null || packageName.isEmpty()) return null;
         String groupKey = details.getString(id + "|group", packageName);
         if (groupKey == null || groupKey.isEmpty()) groupKey = packageName;
-        String title = details.getString(id + "|title", "");
-        String text = details.getString(id + "|text", "");
+        String title = clean(details.getString(id + "|title", ""));
+        String text = clean(details.getString(id + "|text", ""));
+
+        if (TextUtils.isEmpty(text) && NotificationListener.isNotificationActive(context, id)) {
+            String expanded = clean(NotificationListener.getExpandedNotificationText(context, id));
+            if (!TextUtils.isEmpty(expanded)) text = expanded;
+        }
+
+        if (TextUtils.isEmpty(title) && !TextUtils.isEmpty(text)) {
+            int split = text.indexOf('\n');
+            if (split > 0 && split <= 80) {
+                title = text.substring(0, split).trim();
+                text = text.substring(split + 1).trim();
+            }
+        }
+
         long postTime = details.getLong(id + "|post", 0L);
         return new NotificationPojo(
                 id,
@@ -105,8 +114,8 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
                 getAppName(packageName),
                 groupKey,
                 1,
-                title == null ? "" : title,
-                text == null ? "" : text,
+                title,
+                text,
                 postTime);
     }
 
@@ -119,8 +128,8 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
                 appName,
                 record.packageName,
                 1,
-                record.title == null ? "" : record.title,
-                record.text == null ? "" : record.text,
+                clean(record.title),
+                clean(record.text),
                 record.postTime);
     }
 
@@ -161,17 +170,24 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
         String packageName = details.getString(latestId + "|package", "");
         if (packageName == null || packageName.isEmpty()) return null;
         String appName = getAppName(packageName);
-        String title = details.getString(latestId + "|title", "");
-        String text = details.getString(latestId + "|text", "");
+        String title = clean(details.getString(latestId + "|title", ""));
+        String text = clean(details.getString(latestId + "|text", ""));
+        if (TextUtils.isEmpty(text) && NotificationListener.isNotificationActive(context, latestId)) {
+            text = clean(NotificationListener.getExpandedNotificationText(context, latestId));
+        }
         return new NotificationPojo(
                 NotificationListener.getGroupId(groupKey),
                 packageName,
                 appName,
                 groupKey,
                 ids.size(),
-                title == null ? "" : title,
-                text == null ? "" : text,
+                title,
+                text,
                 latestTime);
+    }
+
+    private static String clean(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private String getAppName(String packageName) {
