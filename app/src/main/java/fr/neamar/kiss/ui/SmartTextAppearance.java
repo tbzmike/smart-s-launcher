@@ -4,11 +4,11 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.MetricAffectingSpan;
 import android.text.style.RelativeSizeSpan;
-import android.text.style.StyleSpan;
-import android.text.style.TypefaceSpan;
 import android.util.TypedValue;
 import android.widget.TextView;
 
@@ -52,13 +52,13 @@ public final class SmartTextAppearance {
         return new ForegroundColorSpan(historyMetadataColor(context, target.getCurrentTextColor()));
     }
 
-    public static TypefaceSpan metadataTypefaceSpan(Context context) {
-        return new TypefaceSpan(fontFamily(prefs(context).getString("smart-history-meta-font", "sans_normal")));
-    }
-
-    public static StyleSpan metadataStyleSpan(Context context) {
-        Typeface typeface = typefaceFor(prefs(context).getString("smart-history-meta-font", "sans_normal"));
-        return new StyleSpan(typeface == null ? Typeface.NORMAL : typeface.getStyle());
+    public static MetricAffectingSpan metadataStyleSpan(Context context) {
+        final Typeface typeface = typefaceFor(
+                prefs(context).getString("smart-history-meta-font", "sans_normal"));
+        return new MetricAffectingSpan() {
+            @Override public void updateMeasureState(TextPaint paint) { paint.setTypeface(typeface); }
+            @Override public void updateDrawState(TextPaint paint) { paint.setTypeface(typeface); }
+        };
     }
 
     private static void apply(TextView view, String prefix, int fallbackSize, int minSize,
