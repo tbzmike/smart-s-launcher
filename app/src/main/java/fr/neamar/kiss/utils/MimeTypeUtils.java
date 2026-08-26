@@ -40,6 +40,7 @@ public class MimeTypeUtils {
             ContactsContract.CommonDataKinds.Website.CONTENT_ITEM_TYPE
     ));
     private static final String TAG = MimeTypeUtils.class.getSimpleName();
+    private static final String PREF_AUTO_INDEX_SOCIAL_CONTACTS = "smart-auto-index-social-contacts";
 
     private MimeTypeUtils() {
     }
@@ -95,6 +96,18 @@ public class MimeTypeUtils {
     }
 
     /**
+     * Third-party contact actions are custom Contacts-provider rows that resolve to an installed
+     * app. They are the Android-supported way for messaging/social apps to expose contact actions.
+     * Keep ordinary phone/e-mail rows governed by the user's existing contact-type selection.
+     */
+    public static boolean isSocialContactMimeType(String mimeType) {
+        if (mimeType == null) return false;
+        if (ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE.equals(mimeType)) return false;
+        if (ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE.equals(mimeType)) return false;
+        return !UNSUPPORTED_MIME_TYPES.contains(mimeType);
+    }
+
+    /**
      * @param context
      * @return a set of all mime types that should be shown
      */
@@ -104,13 +117,23 @@ public class MimeTypeUtils {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         Set<String> selectedMimeTypes = prefs.getStringSet("selected-contact-mime-types", getDefaultMimeTypes());
         Set<String> supportedMimeTypes = getSupportedMimeTypes(context);
+        Set<String> activeMimeTypes = new HashSet<>(supportedMimeTypes);
+        activeMimeTypes.retainAll(selectedMimeTypes);
 
-        supportedMimeTypes.retainAll(selectedMimeTypes);
+        // Smart S social-contact coverage: retain every supported custom contact action exposed by
+        // an installed app, even when the legacy selected-contact-mime-types preference predates
+        // that app. This does not invent contacts; only Android Contacts rows with a registered
+        // handler are added. The switch is intentionally default-on for existing installations.
+        if (prefs.getBoolean(PREF_AUTO_INDEX_SOCIAL_CONTACTS, true)) {
+            for (String mimeType : supportedMimeTypes) {
+                if (isSocialContactMimeType(mimeType)) activeMimeTypes.add(mimeType);
+            }
+        }
 
         long end = System.currentTimeMillis();
-        Log.i(TAG, (end - start) + " milliseconds to load " + supportedMimeTypes.size() + " active mime types");
+        Log.i(TAG, (end - start) + " milliseconds to load " + activeMimeTypes.size() + " active mime types");
 
-        return supportedMimeTypes;
+        return activeMimeTypes;
     }
 
     /**
