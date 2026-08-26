@@ -21,10 +21,12 @@ public final class LaunchStatsProvider {
     public static final class LaunchStats {
         public final long lastLaunchTime;
         public final int launchesToday;
+        public final int totalLaunches;
 
-        LaunchStats(long lastLaunchTime, int launchesToday) {
+        LaunchStats(long lastLaunchTime, int launchesToday, int totalLaunches) {
             this.lastLaunchTime = lastLaunchTime;
             this.launchesToday = launchesToday;
+            this.totalLaunches = totalLaunches;
         }
     }
 
@@ -40,11 +42,12 @@ public final class LaunchStatsProvider {
         HashMap<String, LaunchStats> stats = new HashMap<>();
         SQLiteDatabase db = new DB(context.getApplicationContext()).getReadableDatabase();
         String sql = "SELECT record, MAX(timeStamp), "
-                + "SUM(CASE WHEN timeStamp >= ? THEN 1 ELSE 0 END) "
+                + "SUM(CASE WHEN timeStamp >= ? THEN 1 ELSE 0 END), COUNT(*) "
                 + "FROM history GROUP BY record";
         try (Cursor cursor = db.rawQuery(sql, new String[]{Long.toString(startOfToday)})) {
             while (cursor.moveToNext()) {
-                stats.put(cursor.getString(0), new LaunchStats(cursor.getLong(1), cursor.getInt(2)));
+                stats.put(cursor.getString(0), new LaunchStats(
+                        cursor.getLong(1), cursor.getInt(2), cursor.getInt(3)));
             }
         }
         return stats;
