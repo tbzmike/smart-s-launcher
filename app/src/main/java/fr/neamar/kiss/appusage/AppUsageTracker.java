@@ -35,6 +35,9 @@ public final class AppUsageTracker {
 
     public static void setEnabled(@NonNull Context context, boolean enabled) {
         Context appContext = context.getApplicationContext();
+        PreferenceManager.getDefaultSharedPreferences(appContext).edit()
+                .putBoolean(PREF_ENABLED, enabled)
+                .apply();
         if (enabled) {
             ensureScheduled(appContext);
             syncAsync(appContext);
