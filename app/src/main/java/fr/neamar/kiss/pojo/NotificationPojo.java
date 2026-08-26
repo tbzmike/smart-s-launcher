@@ -35,6 +35,9 @@ public final class NotificationPojo extends SettingPojo {
     public String getPreview() {
         String title = latestTitle.trim();
         String text = latestText.trim();
+        if (title.isEmpty() && text.isEmpty()) {
+            return appName.trim().isEmpty() ? "Notification" : appName.trim() + " notification";
+        }
         if (title.isEmpty()) return text;
         if (text.isEmpty() || title.equals(text)) return title;
         if (title.contains(text)) return title;
