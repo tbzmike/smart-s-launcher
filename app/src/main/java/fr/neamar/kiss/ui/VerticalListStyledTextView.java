@@ -72,14 +72,14 @@ public class VerticalListStyledTextView extends AutoMarqueeTextView {
     }
 
     private int readInt(SharedPreferences prefs, String key, int fallback, int min, int max) {
-        Object raw = prefs.getAll().get(key);
         int value = fallback;
-        if (raw instanceof Number) {
-            value = Math.round(((Number) raw).floatValue());
-        } else if (raw instanceof String) {
+        try {
+            value = prefs.getInt(key, fallback);
+        } catch (ClassCastException e) {
             try {
-                value = Math.round(Float.parseFloat((String) raw));
-            } catch (NumberFormatException ignored) {
+                value = Math.round(Float.parseFloat(
+                        prefs.getString(key, Integer.toString(fallback))));
+            } catch (NumberFormatException | ClassCastException ignored) {
                 value = fallback;
             }
         }
