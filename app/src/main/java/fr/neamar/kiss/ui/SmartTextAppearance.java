@@ -14,6 +14,7 @@ import fr.neamar.kiss.UIColors;
 
 /** Shared renderer for Smart S configurable result and history-metadata text. */
 public final class SmartTextAppearance {
+    public static final String PREF_TEXT_COLOR_INVERTER = "smart-text-color-inverter";
     private static final String DEFAULT_FAMILY = "sans";
     private static final String DEFAULT_STYLE = "normal";
 
@@ -36,7 +37,8 @@ public final class SmartTextAppearance {
         String colorValue = prefs.getString("smart-history-meta-color",
                 UIColors.colorToString(UIColors.COLOR_SYSTEM));
         int themeColor = view.getCurrentTextColor();
-        int selectedColor = resolveConfiguredColor(colorValue, themeColor);
+        int selectedColor = applyTextColorInverter(view.getContext(),
+                resolveConfiguredColor(colorValue, themeColor));
 
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
         view.setTypeface(typefaceFor(family, style));
@@ -53,7 +55,7 @@ public final class SmartTextAppearance {
         SharedPreferences prefs = prefs(context);
         String value = prefs.getString("smart-history-meta-color",
                 UIColors.colorToString(UIColors.COLOR_SYSTEM));
-        return resolveConfiguredColor(value, themeColor);
+        return applyTextColorInverter(context, resolveConfiguredColor(value, themeColor));
     }
 
     private static void applyDefault(TextView view, boolean title) {
@@ -68,13 +70,34 @@ public final class SmartTextAppearance {
         String colorValue = prefs.getString("smart-default-text-color",
                 UIColors.colorToString(UIColors.COLOR_SYSTEM));
         int themeColor = view.getCurrentTextColor();
-        int selectedColor = resolveConfiguredColor(colorValue, themeColor);
+        int selectedColor = applyTextColorInverter(view.getContext(),
+                resolveConfiguredColor(colorValue, themeColor));
 
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
         view.setTypeface(typefaceFor(family, style));
         view.setTextColor(selectedColor);
         view.setAlpha(1f);
         if (!prefs.getBoolean("smart-default-text-shadow", false)) view.setShadowLayer(0f, 0f, 0f, 0);
+    }
+
+    /**
+     * Render-time only inversion. Stored color preferences are never modified, so disabling the
+     * switch immediately restores the user's configured colors. Dark colors become white and
+     * light colors become black while preserving the configured alpha channel.
+     */
+    public static int applyTextColorInverter(Context context, int color) {
+        if (!prefs(context).getBoolean(PREF_TEXT_COLOR_INVERTER, false)) return color;
+        int alpha = Color.alpha(color);
+        double r = linear(Color.red(color) / 255.0);
+        double g = linear(Color.green(color) / 255.0);
+        double b = linear(Color.blue(color) / 255.0);
+        double luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        int target = luminance <= 0.179 ? 255 : 0;
+        return Color.argb(alpha, target, target, target);
+    }
+
+    private static double linear(double channel) {
+        return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
     }
 
     private static SharedPreferences prefs(Context context) {
