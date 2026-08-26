@@ -10,9 +10,9 @@ class RecentLaunchTrackerTest {
 
     @Test
     void olderSelectionRemainsResolvableAfterNewerSelection() {
-        Pojo first = new Pojo("shortcut://first");
+        Pojo first = new Pojo("shortcut://first") { };
         first.setName("First shortcut");
-        Pojo second = new Pojo("app://second");
+        Pojo second = new Pojo("app://second") { };
         second.setName("Second app");
 
         RecentLaunchTracker.remember(first);
