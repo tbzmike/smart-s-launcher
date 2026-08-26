@@ -44,7 +44,7 @@
         </LinearLayout>
     </LinearLayout>
 
-    <fr.neamar.kiss.ui.VerticalListStyledTextView
+    <fr.neamar.kiss.ui.AutoScrollPreviewTextView
         android:id="@+id/item_communication_body"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
