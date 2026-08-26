@@ -54,16 +54,22 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
                 if (live != null) return live;
             }
 
+            // History must keep resolving after Android removes the live notification cache.
             NotificationHistoryRecord record = NotificationTimelineStore.findLatest(context, id);
             return record == null ? null : buildPersisted(record);
         }
 
+        // Legacy grouped history ids are still readable so existing databases upgrade cleanly.
         for (NotificationPojo pojo : getGroupedPojos(details)) {
             if (pojo.id.equals(id)) return pojo;
         }
         return null;
     }
 
+    /**
+     * Active notification search results are deliberately one-notification-per-pojo. This is also
+     * the source used by HistorySearcher to pin the live notification timeline at the bottom.
+     */
     @Override
     public List<NotificationPojo> getPojos() {
         SharedPreferences details = details();
