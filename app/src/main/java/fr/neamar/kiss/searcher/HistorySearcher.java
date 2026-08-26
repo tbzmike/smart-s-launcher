@@ -86,11 +86,51 @@ public class HistorySearcher extends Searcher {
         }
 
         List<Pojo> pojos = dataHandler.getHistory(activity, getMaxResultCount(), excludedPojoById);
+        restoreMissingHistoryEntries(activity, dataHandler, pojos, excludedPojoById);
         pinActiveNotificationTimeline(activity, pojos, excludedPojoById);
         pinMostRecentLaunch(activity, dataHandler, pojos, excludedPojoById);
 
         this.addResults(pojos);
         return null;
+    }
+
+    /**
+     * DataHandler intentionally skips history ids that no currently connected provider can resolve.
+     * Dynamic shortcuts can legitimately enter that state after they have been launched, even though
+     * their persistent history row is still valid. Rehydrate every missing entry in the current
+     * history window, not only the newest one, so a shortcut moves upward naturally as newer items
+     * arrive instead of disappearing from the timeline.
+     */
+    private void restoreMissingHistoryEntries(MainActivity activity, DataHandler dataHandler,
+                                              List<Pojo> pojos, Set<String> excludedPojoById) {
+        int max = getMaxResultCount();
+        if (max <= 0 || pojos.size() >= max) return;
+
+        HistoryMode historyMode = dataHandler.getHistoryMode();
+        int extendedLimit = max + excludedPojoById.size();
+        List<ValuedHistoryRecord> historyRecords = DBHelper.getHistory(
+                activity, extendedLimit, historyMode);
+        int historySize = historyRecords.size();
+
+        for (int i = 0; i < historySize && pojos.size() < max; i++) {
+            String historyId = historyRecords.get(i).record;
+            if (historyId == null || excludedPojoById.contains(historyId)
+                    || indexOfHistoryId(pojos, historyId) >= 0) {
+                continue;
+            }
+
+            Pojo recovered = RecentLaunchTracker.resolve(historyId);
+            if (recovered == null) recovered = dataHandler.getItemById(historyId);
+            if (recovered == null && historyId.startsWith(ShortcutPojo.SCHEME)) {
+                recovered = resolveRememberedShortcut(activity, dataHandler, historyId);
+            }
+            if (recovered == null || excludedPojoById.contains(recovered.id)) continue;
+
+            recovered.relevance = historyMode == HistoryMode.ALPHABETICALLY
+                    ? 0
+                    : historySize - i;
+            pojos.add(recovered);
+        }
     }
 
     /** Keep the exact most recently selected launcher result at the final history position. */
