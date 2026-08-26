@@ -10,18 +10,38 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.ui.LockedNotificationHistoryDialog;
+import fr.neamar.kiss.ui.NotificationPopupDialog;
 
 /** Resolves notification history to the real target application, never a wrapper by accident. */
 public final class NotificationHistoryResolver {
     private NotificationHistoryResolver() {}
 
     public static boolean showForPojo(Context context, Pojo pojo) {
+        if (context == null || pojo == null) return false;
+
+        // A live notification has richer platform-owned content than the persisted text history.
+        // Route it to Smart S's native expanded viewer so BigPicture, MessagingStyle images and
+        // custom expanded RemoteViews remain visible. Once Android removes the live notification,
+        // fall through to the persisted history dialog instead.
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            boolean liveIndividual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
+                    && NotificationListener.isNotificationActive(context, notification.id);
+            boolean liveGroup = !NotificationListener.getGroupNotifications(
+                    context, notification.groupKey).isEmpty();
+            if (liveIndividual || liveGroup) {
+                NotificationPopupDialog.showGroup(context, notification.groupKey);
+                return true;
+            }
+        }
+
         String packageName = resolvePackage(context, pojo);
         return packageName != null && LockedNotificationHistoryDialog.showLatest(context, packageName);
     }
