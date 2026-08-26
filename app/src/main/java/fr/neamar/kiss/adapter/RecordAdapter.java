@@ -324,8 +324,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     private void applyVerticalHistorySizing(View row, Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        int rowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 160);
-        int iconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 60, 170);
+        int rowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
+        int iconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
         if (!baseRowMinimumHeight.containsKey(row)) {
             baseRowMinimumHeight.put(row, row.getMinimumHeight());
         }
@@ -336,8 +336,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private void applyVerticalHistoryPolish(View row, Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
 
-        int labelSp = safePercent(prefs, "smart-list-label-size-sp", 18, 12, 28);
-        int bodySp = safePercent(prefs, "smart-list-body-size-sp", 14, 10, 22);
+        int labelSp = safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
+        int bodySp = safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
         Typeface labelTypeface = typefaceFor(prefs.getString("smart-list-label-font", "sans_bold"));
         Typeface bodyTypeface = typefaceFor(prefs.getString("smart-list-body-font", "sans_normal"));
 
@@ -353,13 +353,34 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         applyTextStyle(row, labelIds, labelSp, labelTypeface);
         applyTextStyle(row, bodyIds, bodySp, bodyTypeface);
 
-        int spacing = safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 24);
+        int spacing = safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
+        int bodyLines = spacing >= 56 ? 3 : spacing >= 24 ? 2 : 1;
+        configureVerticalHistoryBodyLines(row, bodyIds, bodyLines);
+
         int[] base = baseRowPadding.get(row);
         if (base == null) {
             base = new int[]{row.getPaddingLeft(), row.getPaddingTop(), row.getPaddingRight(), row.getPaddingBottom()};
             baseRowPadding.put(row, base);
         }
         row.setPadding(base[0], base[1], base[2], base[3] + dp(context, spacing));
+    }
+
+    private void configureVerticalHistoryBodyLines(View row, int[] ids, int lines) {
+        for (int id : ids) {
+            View candidate = row.findViewById(id);
+            if (!(candidate instanceof TextView) || candidate.getVisibility() == View.GONE) continue;
+            TextView text = (TextView) candidate;
+            if (lines <= 1 && id != R.id.item_communication_body) {
+                configureMarquee(text);
+                continue;
+            }
+            text.setSingleLine(false);
+            text.setMaxLines(Math.max(2, lines));
+            text.setHorizontallyScrolling(false);
+            text.setEllipsize(TextUtils.TruncateAt.END);
+            text.setHorizontalFadingEdgeEnabled(false);
+            text.setSelected(false);
+        }
     }
 
     private void restoreVerticalHistoryAppearance(View row) {
@@ -381,9 +402,20 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             if (!(candidate instanceof TextView)) continue;
             TextView text = (TextView) candidate;
             TextStyleState state = baseTextStyles.get(text);
-            if (state == null) continue;
-            text.setTextSize(TypedValue.COMPLEX_UNIT_PX, state.sizePx);
-            text.setTypeface(state.typeface);
+            if (state != null) {
+                text.setTextSize(TypedValue.COMPLEX_UNIT_PX, state.sizePx);
+                text.setTypeface(state.typeface);
+            }
+            if (id == R.id.item_communication_body) {
+                text.setSingleLine(false);
+                text.setMaxLines(Integer.MAX_VALUE);
+                text.setHorizontallyScrolling(false);
+                text.setEllipsize(null);
+                text.setHorizontalFadingEdgeEnabled(false);
+                text.setSelected(false);
+            } else if (!TextUtils.isEmpty(text.getText())) {
+                configureMarquee(text);
+            }
         }
     }
 
