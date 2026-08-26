@@ -64,6 +64,7 @@ final class MapLiveTileProvider {
     static void requestFreshLocation(MainActivity activity, Runnable onChanged) {
         if (activity == null) return;
         if (!hasLocationPermission(activity)) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
             if (PERMISSION_PROMPTED.compareAndSet(false, true)) {
                 try {
                     activity.requestPermissions(new String[]{
