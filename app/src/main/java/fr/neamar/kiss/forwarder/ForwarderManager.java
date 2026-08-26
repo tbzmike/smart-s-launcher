@@ -95,7 +95,6 @@ public class ForwarderManager extends Forwarder {
         verticalCardUsageForwarder.onCreate();
         squareUStabilityController.onCreate();
         squareUEdgeBoundsController.onCreate();
-        historyVisualEnhancer.onCreate();
         uNotificationHistoryLongPressForwarder.onCreate();
         lockedHistoryGestureBridge.onCreate();
     }
