@@ -53,17 +53,36 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyFactory;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class RecordAdapter extends BaseAdapter implements SectionIndexer {
+    private static final String TAG = RecordAdapter.class.getSimpleName();
+
+    private static final class TextStyleState {
+        final float sizePx;
+        final Typeface typeface;
+
+        TextStyleState(TextView text) {
+            sizePx = text.getTextSize();
+            typeface = text.getTypeface();
+        }
+    }
+
     private final QueryInterface parent;
     private FuzzyScore fuzzyScore;
     private final List<Result<?>> results;
     private final HashMap<String, Integer> alphaIndexer = new HashMap<>();
     private final HashMap<String, String> notificationPreviewCache = new HashMap<>();
     private final WeakHashMap<View, int[]> baseRowPadding = new WeakHashMap<>();
+    private final WeakHashMap<View, Integer> baseRowMinimumHeight = new WeakHashMap<>();
+    private final WeakHashMap<View, int[]> baseIconBounds = new WeakHashMap<>();
+    private final WeakHashMap<TextView, TextStyleState> baseTextStyles = new WeakHashMap<>();
     private String[] sections = new String[0];
     private String lastRenderedQuery = null;
-    private static final String TAG = RecordAdapter.class.getSimpleName();
 
-    public RecordAdapter(QueryInterface parent, List<Result<?>> results) { this.parent = parent; this.results = results; this.fuzzyScore = null; }
+    public RecordAdapter(QueryInterface parent, List<Result<?>> results) {
+        this.parent = parent;
+        this.results = results;
+        this.fuzzyScore = null;
+    }
+
     @Override public int getViewTypeCount() { return 8; }
     @Override public int getItemViewType(int position) { Result<?> result = getItem(position); return result instanceof CommunicationResult ? 7 : Result.getItemViewType(result); }
     @Override public boolean hasStableIds() { return true; }
@@ -82,9 +101,14 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         configureOverflowText(view);
         if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
         if (parent instanceof AbsListView) {
-            TileVisualStyle.apply(view, result, parent.getContext());
-            applyVerticalHistorySizing(view, parent.getContext());
-            applyVerticalHistoryPolish(view, parent.getContext());
+            Context context = parent.getContext();
+            TileVisualStyle.apply(view, result, context);
+            if (isVerticalHistory(context)) {
+                applyVerticalHistorySizing(view, context);
+                applyVerticalHistoryPolish(view, context);
+            } else {
+                restoreVerticalHistoryAppearance(view);
+            }
         }
         return view;
     }
@@ -114,7 +138,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
         CharSequence current = title.getText();
         String currentText = current == null ? "" : current.toString().trim();
-        if (!currentText.isEmpty() && !isGenericNotificationCount(currentText)) return;
+        if (!currentText.isEmpty() && !isGenericNotificationCount(currentText)) {
+            collapseDuplicateNotificationContent(view, title);
+            return;
+        }
 
         String preview = notification.getPreview();
         if (TextUtils.isEmpty(preview)
@@ -138,7 +165,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             title.setText(preview);
             title.setVisibility(View.VISIBLE);
             configureMarquee(title);
+            collapseDuplicateNotificationContent(view, title);
         }
+    }
+
+    private void collapseDuplicateNotificationContent(View view, TextView primaryPreview) {
+        if (!isVerticalHistory(view.getContext())) return;
+        TextView secondary = view.findViewById(R.id.item_notification_text);
+        if (secondary != null && secondary != primaryPreview) secondary.setVisibility(View.GONE);
+        View nativeContainer = view.findViewById(R.id.item_notification_native_container);
+        if (nativeContainer != null) nativeContainer.setVisibility(View.GONE);
     }
 
     private String extractNativeNotificationPreview(View root, String appName) {
@@ -259,18 +295,29 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (!(raw instanceof LinearLayout.LayoutParams)) return;
         LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
         if (parent.getOrientation() == LinearLayout.VERTICAL) {
-            if (lp.width == ViewGroup.LayoutParams.WRAP_CONTENT) { lp.width = ViewGroup.LayoutParams.MATCH_PARENT; text.setLayoutParams(lp); }
+            if (lp.width == ViewGroup.LayoutParams.WRAP_CONTENT) {
+                lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                text.setLayoutParams(lp);
+            }
             return;
         }
-        if (lp.width == ViewGroup.LayoutParams.WRAP_CONTENT && isLastTextLabel(parent, text)) { lp.width = 0; lp.weight = Math.max(1f, lp.weight); text.setLayoutParams(lp); }
+        if (lp.width == ViewGroup.LayoutParams.WRAP_CONTENT && isLastTextLabel(parent, text)) {
+            lp.width = 0;
+            lp.weight = Math.max(1f, lp.weight);
+            text.setLayoutParams(lp);
+        }
     }
 
     private boolean isLastTextLabel(LinearLayout parent, TextView current) {
         boolean foundCurrent = false;
         for (int i = 0; i < parent.getChildCount(); i++) {
             View child = parent.getChildAt(i);
-            if (child == current) { foundCurrent = true; continue; }
-            if (foundCurrent && child instanceof TextView && !(child instanceof Button) && child.getVisibility() != View.GONE) return false;
+            if (child == current) {
+                foundCurrent = true;
+                continue;
+            }
+            if (foundCurrent && child instanceof TextView && !(child instanceof Button)
+                    && child.getVisibility() != View.GONE) return false;
         }
         return true;
     }
@@ -279,12 +326,14 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         int rowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 160);
         int iconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 60, 170);
+        if (!baseRowMinimumHeight.containsKey(row)) {
+            baseRowMinimumHeight.put(row, row.getMinimumHeight());
+        }
         row.setMinimumHeight(dp(context, 64) * rowPercent / 100);
-        applyPrimaryIconScale(row, iconPercent);
+        applyPrimaryIconSize(row, iconPercent);
     }
 
     private void applyVerticalHistoryPolish(View row, Context context) {
-        if (!isVerticalHistory(context)) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
 
         int labelSp = safePercent(prefs, "smart-list-label-size-sp", 18, 12, 28);
@@ -310,8 +359,32 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             base = new int[]{row.getPaddingLeft(), row.getPaddingTop(), row.getPaddingRight(), row.getPaddingBottom()};
             baseRowPadding.put(row, base);
         }
-        int half = dp(context, spacing) / 2;
-        row.setPadding(base[0], base[1] + half, base[2], base[3] + half);
+        row.setPadding(base[0], base[1], base[2], base[3] + dp(context, spacing));
+    }
+
+    private void restoreVerticalHistoryAppearance(View row) {
+        int[] padding = baseRowPadding.get(row);
+        if (padding != null) row.setPadding(padding[0], padding[1], padding[2], padding[3]);
+        Integer minimumHeight = baseRowMinimumHeight.get(row);
+        if (minimumHeight != null) row.setMinimumHeight(minimumHeight);
+        restorePrimaryIconSize(row);
+
+        int[] ids = new int[]{
+                R.id.item_app_name, R.id.item_contact_name, R.id.item_setting_name,
+                R.id.item_notification_app, R.id.item_communication_title, R.id.item_phone_text,
+                R.id.item_app_tag, R.id.item_shortcut_tag, R.id.item_contact_phone,
+                R.id.item_contact_nickname, R.id.item_notification_title, R.id.item_notification_text,
+                R.id.item_communication_meta, R.id.item_communication_body
+        };
+        for (int id : ids) {
+            View candidate = row.findViewById(id);
+            if (!(candidate instanceof TextView)) continue;
+            TextView text = (TextView) candidate;
+            TextStyleState state = baseTextStyles.get(text);
+            if (state == null) continue;
+            text.setTextSize(TypedValue.COMPLEX_UNIT_PX, state.sizePx);
+            text.setTypeface(state.typeface);
+        }
     }
 
     private boolean isVerticalHistory(Context context) {
@@ -325,6 +398,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             View candidate = row.findViewById(id);
             if (!(candidate instanceof TextView) || candidate.getVisibility() == View.GONE) continue;
             TextView text = (TextView) candidate;
+            if (!baseTextStyles.containsKey(text)) baseTextStyles.put(text, new TextStyleState(text));
             text.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
             text.setTypeface(typeface);
         }
@@ -350,27 +424,77 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         return Typeface.create(family, style);
     }
 
-    private void applyPrimaryIconScale(View row, int percent) {
-        ImageView icon = findPrimaryIcon(row); if (icon == null) return;
-        float scale = percent / 100f; icon.setScaleX(scale); icon.setScaleY(scale);
+    private void applyPrimaryIconSize(View row, int percent) {
+        ImageView icon = findPrimaryIcon(row);
+        if (icon == null) return;
+        View target = findIconResizeTarget(icon);
+        ViewGroup.LayoutParams lp = target.getLayoutParams();
+        if (lp == null || lp.width <= 0 || lp.height <= 0) return;
+
+        int[] base = baseIconBounds.get(target);
+        if (base == null) {
+            base = new int[]{lp.width, lp.height};
+            baseIconBounds.put(target, base);
+        }
+        lp.width = Math.max(1, Math.round(base[0] * percent / 100f));
+        lp.height = Math.max(1, Math.round(base[1] * percent / 100f));
+        target.setLayoutParams(lp);
+        icon.setScaleX(1f);
+        icon.setScaleY(1f);
         if (icon.getId() == R.id.item_setting_icon) icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         else if (icon.getScaleType() == ImageView.ScaleType.FIT_XY) icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
     }
 
+    private void restorePrimaryIconSize(View row) {
+        ImageView icon = findPrimaryIcon(row);
+        if (icon == null) return;
+        View target = findIconResizeTarget(icon);
+        int[] base = baseIconBounds.get(target);
+        ViewGroup.LayoutParams lp = target.getLayoutParams();
+        if (base == null || lp == null) return;
+        lp.width = base[0];
+        lp.height = base[1];
+        target.setLayoutParams(lp);
+        icon.setScaleX(1f);
+        icon.setScaleY(1f);
+    }
+
+    private View findIconResizeTarget(ImageView icon) {
+        if (icon.getParent() instanceof View) {
+            View parent = (View) icon.getParent();
+            ViewGroup.LayoutParams lp = parent.getLayoutParams();
+            if (lp != null && lp.width > 0 && lp.height > 0) return parent;
+        }
+        return icon;
+    }
+
     private ImageView findPrimaryIcon(View row) {
-        int[] ids = new int[]{R.id.item_setting_icon, R.id.item_shortcut_icon, R.id.item_contact_icon, R.id.item_app_icon, R.id.item_phone_icon, R.id.item_search_icon, R.id.item_notification_icon};
-        for (int id : ids) { View candidate = row.findViewById(id); if (candidate instanceof ImageView && candidate.getVisibility() != View.GONE) return (ImageView) candidate; }
+        int[] ids = new int[]{R.id.item_setting_icon, R.id.item_shortcut_icon, R.id.item_contact_icon,
+                R.id.item_app_icon, R.id.item_phone_icon, R.id.item_search_icon, R.id.item_notification_icon};
+        for (int id : ids) {
+            View candidate = row.findViewById(id);
+            if (candidate instanceof ImageView && candidate.getVisibility() != View.GONE) return (ImageView) candidate;
+        }
         return null;
     }
 
     private int safePercent(SharedPreferences prefs, String key, int fallback, int min, int max) {
-        Object raw = prefs.getAll().get(key); int value = fallback;
+        Object raw = prefs.getAll().get(key);
+        int value = fallback;
         if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
-        else if (raw instanceof String) { try { value = Math.round(Float.parseFloat((String) raw)); } catch (NumberFormatException ignored) { value = fallback; } }
+        else if (raw instanceof String) {
+            try {
+                value = Math.round(Float.parseFloat((String) raw));
+            } catch (NumberFormatException ignored) {
+                value = fallback;
+            }
+        }
         return Math.max(min, Math.min(max, value));
     }
 
-    private int dp(Context context, int value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
+    private int dp(Context context, int value) {
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
+    }
 
     public boolean showNotificationHistoryIfAvailable(final int pos, View v) {
         if (pos < 0 || pos >= getCount() || v == null) return false;
@@ -379,11 +503,15 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     public void onLongClick(final int pos, View v) {
         if (pos < 0 || pos >= getCount()) return;
-        Result<?> result = getItem(pos); Context context = v.getContext();
+        Result<?> result = getItem(pos);
+        Context context = v.getContext();
         if (showNotificationHistoryIfAvailable(pos, v)) return;
         if (UiEditLock.isLocked(context)) return;
         ListPopup menu = result.getPopupMenu(context, this, v);
-        if (menu.getAdapter().getCount() > 0) { parent.registerPopup(menu); menu.show(v); }
+        if (menu.getAdapter().getCount() > 0) {
+            parent.registerPopup(menu);
+            menu.show(v);
+        }
     }
 
     public void onClick(final int position, View v) {
@@ -406,10 +534,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 if (started) return;
             }
             result.launch(v.getContext(), v, parent);
-        } catch (IndexOutOfBoundsException e) { Log.w(TAG, "Unable to click", e); }
+        } catch (IndexOutOfBoundsException e) {
+            Log.w(TAG, "Unable to click", e);
+        }
     }
 
-    public void removeResult(Result<?> result) { parent.beforeListChange(); results.remove(result); notifyDataSetChanged(); parent.temporarilyDisableTranscriptMode(); parent.afterListChange(); }
+    public void removeResult(Result<?> result) {
+        parent.beforeListChange();
+        results.remove(result);
+        notifyDataSetChanged();
+        parent.temporarilyDisableTranscriptMode();
+        parent.afterListChange();
+    }
 
     public void updateWithPojos(@NonNull Context context, @NonNull List<Pojo> pojos, boolean isRefresh, String query) {
         Map<Pojo, Result<?>> existingResults = new HashMap<>(Math.max(16, results.size() * 2));
@@ -491,13 +627,27 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     public void updateTranscriptMode(int transcriptMode) { parent.updateTranscriptMode(transcriptMode); }
-    public void clear() { parent.beforeListChange(); this.results.clear(); notificationPreviewCache.clear(); lastRenderedQuery = null; notifyDataSetChanged(); parent.afterListChange(); }
+
+    public void clear() {
+        parent.beforeListChange();
+        this.results.clear();
+        notificationPreviewCache.clear();
+        lastRenderedQuery = null;
+        notifyDataSetChanged();
+        parent.afterListChange();
+    }
 
     public void buildSections() {
-        alphaIndexer.clear(); int size = results.size();
-        for (int i = 0; i < size; i++) { String s = getItem(i).getSection(); if (!alphaIndexer.containsKey(s)) alphaIndexer.put(s, i); }
-        List<Map.Entry<String, Integer>> entries = new ArrayList<>(alphaIndexer.entrySet()); Collections.sort(entries, Map.Entry.comparingByValue());
-        sections = new String[entries.size()]; for (int i = 0; i < entries.size(); i++) sections[i] = entries.get(i).getKey();
+        alphaIndexer.clear();
+        int size = results.size();
+        for (int i = 0; i < size; i++) {
+            String s = getItem(i).getSection();
+            if (!alphaIndexer.containsKey(s)) alphaIndexer.put(s, i);
+        }
+        List<Map.Entry<String, Integer>> entries = new ArrayList<>(alphaIndexer.entrySet());
+        Collections.sort(entries, Map.Entry.comparingByValue());
+        sections = new String[entries.size()];
+        for (int i = 0; i < entries.size(); i++) sections[i] = entries.get(i).getKey();
     }
 
     @Override public Object[] getSections() { return sections; }
