@@ -9,6 +9,7 @@ import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceManager;
 import androidx.preference.SeekBarPreference;
 
+import fr.neamar.kiss.preference.ColorPreference;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.preference.UiLivePreviewPreference;
 
@@ -162,12 +163,22 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                 10, 40, 18);
         addFontPreference(category, "smart-list-label-font", "App label font style",
                 "sans_bold");
+        addColorPreference(category, "smart-list-label-color", "App label text color",
+                "Choose the label color independently of message/body text");
+        addSizeSlider(category, "smart-list-label-contrast", "App label contrast",
+                "100 keeps the selected color unchanged. Lower values soften it; higher values strengthen it against the current theme.",
+                25, 200, 100);
 
         addSizeSlider(category, "smart-list-body-size-sp", "Message/body text size",
                 "Size of notification previews, tags, numbers, dates and message text",
                 8, 32, 14);
         addFontPreference(category, "smart-list-body-font", "Message/body font style",
                 "sans_normal");
+        addColorPreference(category, "smart-list-body-color", "Message/body text color",
+                "Choose body and notification-preview color independently of app labels");
+        addSizeSlider(category, "smart-list-body-contrast", "Message/body contrast",
+                "100 keeps the selected color unchanged. Lower values soften it; higher values strengthen it against the current theme.",
+                25, 200, 100);
 
         addSizeSlider(category, "smart-list-icon-size-percent", "App icon size",
                 "Resize icons in Vertical List history without changing the text",
@@ -182,6 +193,20 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         iconInfo.setSummary("Collective icons use Interface → Icons → Icon pack. Individual app icons can be changed from the app's long-press Custom icon action when the selected icon pack provides alternatives.");
         iconInfo.setSelectable(false);
         category.addPreference(iconInfo);
+    }
+
+    private void addColorPreference(PreferenceCategory category, String key, String title,
+                                    String summary) {
+        ColorPreference preference = new ColorPreference(requireContext());
+        preference.setKey(key);
+        preference.setTitle(title);
+        preference.setSummary(summary);
+        preference.setDefaultValue(UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        preference.setOnPreferenceChangeListener((changedPreference, newValue) -> {
+            markLayoutDirty();
+            return true;
+        });
+        category.addPreference(preference);
     }
 
     private void addFontPreference(PreferenceCategory category, String key, String title,
