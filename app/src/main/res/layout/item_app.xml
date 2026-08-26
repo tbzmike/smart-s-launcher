@@ -70,7 +70,7 @@
             android:orientation="horizontal"
             android:visibility="gone">
 
-            <fr.neamar.kiss.ui.AutoMarqueeTextView
+            <fr.neamar.kiss.ui.AutoScrollPreviewTextView
                 android:id="@+id/item_notification_text"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -94,5 +94,7 @@
                 android:textAllCaps="false"
                 android:textSize="12sp" />
         </LinearLayout>
+
+        <include layout="@layout/item_history_metadata" />
     </LinearLayout>
 </LinearLayout>
