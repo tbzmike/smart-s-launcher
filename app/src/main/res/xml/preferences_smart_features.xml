@@ -9,6 +9,84 @@
         app:title="Lock launcher UI"
         app:summary="When locked, appearance, animation, wallpaper and layout editing are disabled" />
 
+    <PreferenceCategory
+        app:title="Default text appearance"
+        app:dependency="smart-ui-locked">
+        <ListPreference
+            app:defaultValue="sans"
+            app:entries="@array/smartTextFontEntries"
+            app:entryValues="@array/smartTextFontValues"
+            app:key="smart-default-text-font-family"
+            app:title="Default font"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="normal"
+            app:entries="@array/smartTextStyleEntries"
+            app:entryValues="@array/smartTextStyleValues"
+            app:key="smart-default-text-font-style"
+            app:title="Default font style"
+            app:useSimpleSummaryProvider="true" />
+        <SeekBarPreference
+            app:defaultValue="18"
+            app:key="smart-default-text-primary-size-sp"
+            app:max="40"
+            app:min="10"
+            app:showSeekBarValue="true"
+            app:title="Primary text size" />
+        <SeekBarPreference
+            app:defaultValue="14"
+            app:key="smart-default-text-secondary-size-sp"
+            app:max="32"
+            app:min="8"
+            app:showSeekBarValue="true"
+            app:title="Secondary text size" />
+        <fr.neamar.kiss.preference.ColorPreference
+            app:defaultValue="#00FFFFFF"
+            app:dialogTitle="@string/color_picker_default_title"
+            app:key="smart-default-text-color"
+            app:title="Default text colour" />
+        <SwitchPreference
+            app:defaultValue="false"
+            app:key="smart-default-text-shadow"
+            app:summary="Off keeps search and result text crisp instead of applying the theme shadow"
+            app:title="Text shadow" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        app:title="History timestamp appearance"
+        app:dependency="smart-ui-locked">
+        <ListPreference
+            app:defaultValue="sans"
+            app:entries="@array/smartTextFontEntries"
+            app:entryValues="@array/smartTextFontValues"
+            app:key="smart-history-meta-font-family"
+            app:title="Timestamp font"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
+            app:defaultValue="normal"
+            app:entries="@array/smartTextStyleEntries"
+            app:entryValues="@array/smartTextStyleValues"
+            app:key="smart-history-meta-font-style"
+            app:title="Timestamp font style"
+            app:useSimpleSummaryProvider="true" />
+        <SeekBarPreference
+            app:defaultValue="12"
+            app:key="smart-history-meta-size-sp"
+            app:max="28"
+            app:min="8"
+            app:showSeekBarValue="true"
+            app:title="Timestamp text size" />
+        <fr.neamar.kiss.preference.ColorPreference
+            app:defaultValue="#00FFFFFF"
+            app:dialogTitle="@string/color_picker_default_title"
+            app:key="smart-history-meta-color"
+            app:title="Timestamp text colour" />
+        <SwitchPreference
+            app:defaultValue="false"
+            app:key="smart-history-meta-shadow"
+            app:title="Timestamp text shadow" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/smart_notifications_title">
         <SwitchPreference
             app:defaultValue="true"
