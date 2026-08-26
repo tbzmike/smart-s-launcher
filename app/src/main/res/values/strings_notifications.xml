@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <!-- Smart S-specific strings currently use the English fallback until translations are added. -->
     <string name="notification_mark_read">Mark read</string>
     <string name="notification_dismissed">Read</string>
     <string name="notification_dismiss_failed">Unable to dismiss notification</string>
