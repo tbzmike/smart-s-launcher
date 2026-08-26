@@ -92,6 +92,18 @@
         tools:ignore="RtlSymmetry,UnusedAttribute"
         tools:text="@string/stub_contact_nickname" />
 
+    <fr.neamar.kiss.ui.AutoMarqueeTextView
+        android:id="@+id/item_history_meta"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/item_contact_phone"
+        android:layout_alignStart="@id/item_contact_name"
+        android:layout_toStartOf="@+id/item_contact_action_message"
+        android:layout_marginTop="2dp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
     <ImageButton
         android:id="@+id/item_contact_action_message"
         android:layout_width="48dp"
