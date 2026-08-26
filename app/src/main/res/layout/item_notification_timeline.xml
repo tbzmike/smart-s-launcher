@@ -43,13 +43,16 @@
             android:clipChildren="true"
             android:visibility="gone" />
 
-        <fr.neamar.kiss.ui.AutoMarqueeTextView
+        <fr.neamar.kiss.ui.AutoScrollPreviewTextView
             android:id="@+id/item_notification_text"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
             android:textColor="?android:attr/textColorSecondary"
             android:textSize="?attr/resultSubtitleSize"
             tools:text="Fallback notification preview." />
+
+        <include layout="@layout/item_history_metadata" />
     </LinearLayout>
 
     <Button
