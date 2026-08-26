@@ -57,6 +57,7 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
     private final PriorityQueue<Pojo> processedPojos;
     private long start;
     private SearchDoneCallback searchDoneCallback;
+    private boolean managingLoader;
 
     /**
      * Set to true when we are simply refreshing current results (scroll will not be reset)
@@ -120,7 +121,10 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         super.onPreExecute();
         start = System.currentTimeMillis();
 
-        displayActivityLoader();
+        MainActivity activity = activityWeakReference.get();
+        managingLoader = activity != null
+                && !KissApplication.getApplication(activity).getDataHandler().isAllProvidersLoaded();
+        if (managingLoader) displayActivityLoader();
     }
 
     protected void displayActivityLoader() {
@@ -167,7 +171,7 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
 
         searchDone(false);
 
-        hideActivityLoader(activity);
+        if (managingLoader) hideActivityLoader(activity);
 
         long time = System.currentTimeMillis() - start;
         Log.d(TAG, "Time to run query `" + query + "` on " + getClass().getSimpleName() + " to completion: " + time + "ms (isRefresh=" + isRefresh + ")");
@@ -187,7 +191,7 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         if (activity == null)
             return;
 
-        hideActivityLoader(activity);
+        if (managingLoader) hideActivityLoader(activity);
     }
 
     public void setSearchDoneCallback(SearchDoneCallback searchDoneCallback) {
