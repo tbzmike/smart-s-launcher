@@ -104,7 +104,7 @@ public class HistorySearcher extends Searcher {
     private void restoreMissingHistoryEntries(MainActivity activity, DataHandler dataHandler,
                                               List<Pojo> pojos, Set<String> excludedPojoById) {
         int max = getMaxResultCount();
-        if (max <= 0 || pojos.size() >= max) return;
+        if (max <= 0) return;
 
         HistoryMode historyMode = dataHandler.getHistoryMode();
         int extendedLimit = max + excludedPojoById.size();
@@ -112,7 +112,7 @@ public class HistorySearcher extends Searcher {
                 activity, extendedLimit, historyMode);
         int historySize = historyRecords.size();
 
-        for (int i = 0; i < historySize && pojos.size() < max; i++) {
+        for (int i = 0; i < historySize; i++) {
             String historyId = historyRecords.get(i).record;
             if (historyId == null || excludedPojoById.contains(historyId)
                     || indexOfHistoryId(pojos, historyId) >= 0) {
@@ -126,9 +126,20 @@ public class HistorySearcher extends Searcher {
             }
             if (recovered == null || excludedPojoById.contains(recovered.id)) continue;
 
-            recovered.relevance = historyMode == HistoryMode.ALPHABETICALLY
+            int recoveredRelevance = historyMode == HistoryMode.ALPHABETICALLY
                     ? 0
                     : historySize - i;
+            recovered.relevance = recoveredRelevance;
+
+            if (pojos.size() >= max && !pojos.isEmpty()) {
+                int removeIndex = indexOfLowestRelevance(pojos, recovered.id);
+                if (removeIndex < 0) continue;
+                if (historyMode != HistoryMode.ALPHABETICALLY
+                        && pojos.get(removeIndex).relevance > recoveredRelevance) {
+                    continue;
+                }
+                pojos.remove(removeIndex);
+            }
             pojos.add(recovered);
         }
     }
