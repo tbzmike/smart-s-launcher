@@ -28,24 +28,23 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
-            <fr.neamar.kiss.ui.AutoMarqueeTextView
+            <fr.neamar.kiss.ui.VerticalListStyledTextView
                 android:id="@+id/item_communication_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textColor="?attr/resultColor"
                 android:textSize="?attr/resultTitleSize" />
 
-            <fr.neamar.kiss.ui.AutoMarqueeTextView
+            <fr.neamar.kiss.ui.VerticalListStyledTextView
                 android:id="@+id/item_communication_meta"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:alpha="0.78"
                 android:textColor="?attr/resultColor"
                 android:textSize="14sp" />
         </LinearLayout>
     </LinearLayout>
 
-    <TextView
+    <fr.neamar.kiss.ui.VerticalListStyledTextView
         android:id="@+id/item_communication_body"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
