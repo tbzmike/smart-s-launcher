@@ -306,7 +306,11 @@ public class HistorySearcher extends Searcher {
         DataHandler dataHandler = KissApplication.getApplication(activity).getDataHandler();
         if (dataHandler.getHistoryMode() != HistoryMode.ALPHABETICALLY) {
             for (Pojo pojo : pojos) {
-                if (pojo.isDisabled() && pojo.relevance != Integer.MAX_VALUE) {
+                // Shortcuts must retain their true history relevance even when their publisher or
+                // target app is temporarily disabled. Otherwise an older shortcut jumps hundreds
+                // of relevance points instead of simply moving upward as newer launches arrive.
+                if (pojo.isDisabled() && !(pojo instanceof ShortcutPojo)
+                        && pojo.relevance != Integer.MAX_VALUE) {
                     pojo.relevance -= 200;
                 }
             }
