@@ -32,7 +32,19 @@ public final class NotificationPojo extends SettingPojo {
         setName(searchable.trim(), true);
     }
 
+    public String getPreview() {
+        String title = latestTitle.trim();
+        String text = latestText.trim();
+        if (title.isEmpty()) return text;
+        if (text.isEmpty() || title.equals(text)) return title;
+        if (title.contains(text)) return title;
+        if (text.contains(title)) return text;
+        return title + ": " + text;
+    }
+
     public String getSummary() {
+        String preview = getPreview();
+        if (!preview.isEmpty()) return preview;
         return notificationCount == 1 ? "1 notification" : notificationCount + " notifications";
     }
 }
