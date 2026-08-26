@@ -121,16 +121,14 @@ public class SettingsResult extends Result<SettingPojo> {
             nativeContainer.removeAllViews();
             nativeContainer.addView(nativeView);
             nativeContainer.setVisibility(View.VISIBLE);
-            text.setVisibility(View.GONE);
         } else {
-            String preview = notification.latestTitle;
-            if (!notification.latestText.isEmpty()) {
-                preview = preview.isEmpty() ? notification.latestText : preview + ": " + notification.latestText;
-            }
-            text.setText(preview);
-            text.setVisibility(preview.isEmpty() ? View.GONE : View.VISIBLE);
             nativeContainer.setVisibility(View.GONE);
         }
+
+        String preview = notification.getPreview();
+        if (preview.isEmpty()) preview = notification.getSummary();
+        text.setText(preview);
+        text.setVisibility(View.VISIBLE);
 
         if (!isHideIcons(context)) setAsyncDrawable(icon);
         else icon.setImageDrawable(null);
