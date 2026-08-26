@@ -1,6 +1,7 @@
 package fr.neamar.kiss.ui;
 
 import android.content.Context;
+import android.graphics.Rect;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 
@@ -11,7 +12,12 @@ import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 
 /**
- * TextView that scrolls overflowing single-line text while the launcher window is active.
+ * TextView that continuously scrolls overflowing single-line text while it is visible.
+ *
+ * Launcher rows are recycled and several rows can be visible at the same time, so relying
+ * on normal focus for marquee leaves some clipped labels stationary. This view deliberately
+ * reports itself selected/focused while visible and restarts marquee whenever its text or
+ * available width changes. Text that fits remains stationary.
  */
 public class AutoMarqueeTextView extends AppCompatTextView {
     public AutoMarqueeTextView(Context context) {
@@ -37,12 +43,26 @@ public class AutoMarqueeTextView extends AppCompatTextView {
         setHorizontallyScrolling(true);
         setFocusable(false);
         setFocusableInTouchMode(false);
+        setSelected(true);
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         applySearchAppearanceIfNeeded();
+        restartMarquee();
+    }
+
+    @Override
+    protected void onTextChanged(CharSequence text, int start, int lengthBefore, int lengthAfter) {
+        super.onTextChanged(text, start, lengthBefore, lengthAfter);
+        if (isAttachedToWindow()) post(this::restartMarquee);
+    }
+
+    @Override
+    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        if (isAttachedToWindow() && width != oldWidth) post(this::restartMarquee);
     }
 
     private void applySearchAppearanceIfNeeded() {
@@ -60,14 +80,31 @@ public class AutoMarqueeTextView extends AppCompatTextView {
         }
     }
 
+    private void restartMarquee() {
+        setSelected(false);
+        setSelected(true);
+        invalidate();
+    }
+
     @Override
     public boolean isFocused() {
         return isShown() && hasWindowFocus();
     }
 
     @Override
+    public boolean isSelected() {
+        return isShown() || super.isSelected();
+    }
+
+    @Override
+    protected void onFocusChanged(boolean focused, int direction, Rect previouslyFocusedRect) {
+        super.onFocusChanged(focused, direction, previouslyFocusedRect);
+        if (isShown()) restartMarquee();
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
-        if (hasWindowFocus) invalidate();
+        if (hasWindowFocus) restartMarquee();
     }
 }
