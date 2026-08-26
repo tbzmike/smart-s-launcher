@@ -8,6 +8,7 @@ import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.RelativeSizeSpan;
 import android.text.style.StyleSpan;
+import android.text.style.TypefaceSpan;
 import android.util.TypedValue;
 import android.widget.TextView;
 
@@ -41,10 +42,6 @@ public final class SmartTextAppearance {
         return applyContrast(selected, themeColor, contrast);
     }
 
-    public static Typeface historyMetadataTypeface(Context context) {
-        return typefaceFor(prefs(context).getString("smart-history-meta-font", "sans_normal"));
-    }
-
     public static RelativeSizeSpan relativeMetadataSize(Context context, TextView target) {
         float baseSp = target.getTextSize() / target.getResources().getDisplayMetrics().scaledDensity;
         if (baseSp <= 0f) baseSp = 14f;
@@ -55,8 +52,12 @@ public final class SmartTextAppearance {
         return new ForegroundColorSpan(historyMetadataColor(context, target.getCurrentTextColor()));
     }
 
+    public static TypefaceSpan metadataTypefaceSpan(Context context) {
+        return new TypefaceSpan(fontFamily(prefs(context).getString("smart-history-meta-font", "sans_normal")));
+    }
+
     public static StyleSpan metadataStyleSpan(Context context) {
-        Typeface typeface = historyMetadataTypeface(context);
+        Typeface typeface = typefaceFor(prefs(context).getString("smart-history-meta-font", "sans_normal"));
         return new StyleSpan(typeface == null ? Typeface.NORMAL : typeface.getStyle());
     }
 
@@ -132,21 +133,25 @@ public final class SmartTextAppearance {
                 + 0.0722f * Color.blue(color)) / 255f;
     }
 
+    private static String fontFamily(String value) {
+        if (value == null) return "sans-serif";
+        if (value.startsWith("condensed_")) return "sans-serif-condensed";
+        if (value.startsWith("serif_")) return "serif";
+        if (value.startsWith("monospace_")) return "monospace";
+        return "sans-serif";
+    }
+
     public static Typeface typefaceFor(String value) {
         if (value == null) value = "sans_normal";
-        String family = "sans-serif";
+        String family = fontFamily(value);
         int style = Typeface.NORMAL;
         switch (value) {
             case "sans_bold": style = Typeface.BOLD; break;
             case "sans_italic": style = Typeface.ITALIC; break;
             case "sans_bold_italic": style = Typeface.BOLD_ITALIC; break;
-            case "condensed_normal": family = "sans-serif-condensed"; break;
-            case "condensed_bold": family = "sans-serif-condensed"; style = Typeface.BOLD; break;
-            case "serif_normal": family = "serif"; break;
-            case "serif_bold": family = "serif"; style = Typeface.BOLD; break;
-            case "monospace_normal": family = "monospace"; break;
-            case "monospace_bold": family = "monospace"; style = Typeface.BOLD; break;
-            case "sans_normal":
+            case "condensed_bold": style = Typeface.BOLD; break;
+            case "serif_bold": style = Typeface.BOLD; break;
+            case "monospace_bold": style = Typeface.BOLD; break;
             default: break;
         }
         return Typeface.create(family, style);
