@@ -5,6 +5,8 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.os.AsyncTask;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.view.Gravity;
@@ -29,9 +31,12 @@ import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.CommunicationPojo;
+import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.result.ShortcutsResult;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
+import fr.neamar.kiss.ui.SmartTextAppearance;
 import fr.neamar.kiss.utils.Log;
 
 /**
@@ -44,8 +49,9 @@ final class HistoryVisualEnhancer {
     private static final int TAG_LIVE_BACKGROUND = 0x534D4201;
     private static final int TAG_LIVE_TEXT = 0x534D4202;
     private static final int TAG_LIVE_PROGRESS = 0x534D4203;
-    private static final String LIST_STATS_SEPARATOR = " • Posted ";
-    private static final String LEGACY_LIST_STATS_SEPARATOR = " • Last ";
+    private static final String HISTORY_SEPARATOR = " • History: ";
+    private static final String LEGACY_POSTED_SEPARATOR = " • Posted ";
+    private static final String LEGACY_LAST_SEPARATOR = " • Last ";
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
@@ -141,8 +147,7 @@ final class HistoryVisualEnhancer {
             Result<?> result = activity.adapter.getItem(position);
             if (result == null || result.getPojo() == null) continue;
 
-            String historyId = result.getPojo().getHistoryId();
-            LaunchStatsProvider.LaunchStats launchStats = stats.get(historyId);
+            LaunchStatsProvider.LaunchStats launchStats = stats.get(result.getPojo().getHistoryId());
             if (launchStats == null || launchStats.lastLaunchTime <= 0) continue;
 
             TextView subtitle = findMetadataView(row);
@@ -150,27 +155,56 @@ final class HistoryVisualEnhancer {
 
             String current = subtitle.getText() == null ? "" : subtitle.getText().toString();
             String base = stripPreviousMetadata(current);
-            StringBuilder text = new StringBuilder(base);
-            if (text.length() > 0) text.append(LIST_STATS_SEPARATOR);
-            else text.append("Posted ");
-            text.append(timeFormat.format(new java.util.Date(launchStats.lastLaunchTime)));
+            StringBuilder metadata = new StringBuilder();
+
+            if (result.getPojo() instanceof NotificationPojo) {
+                long postTime = ((NotificationPojo) result.getPojo()).postTime;
+                if (postTime > 0) appendMetadata(metadata, "Posted " + timeFormat.format(new java.util.Date(postTime)));
+            } else if (result.getPojo() instanceof CommunicationPojo) {
+                long eventTime = ((CommunicationPojo) result.getPojo()).timestamp;
+                if (eventTime > 0) appendMetadata(metadata, "Item time " + timeFormat.format(new java.util.Date(eventTime)));
+            }
+
+            appendMetadata(metadata, "Last opened "
+                    + timeFormat.format(new java.util.Date(launchStats.lastLaunchTime)));
 
             if (result.getPojo() instanceof AppPojo) {
                 AppPojo app = (AppPojo) result.getPojo();
                 if (usage != null && usage.available) {
                     Long foregroundMs = usage.foregroundMsByPackage.get(app.packageName);
-                    text.append(" • Used today: ")
-                            .append(formatDuration(foregroundMs == null ? 0L : foregroundMs));
+                    appendMetadata(metadata, "Used today "
+                            + formatDuration(foregroundMs == null ? 0L : foregroundMs));
                 }
             }
 
-            text.append(" • ").append(launchStats.launchesToday);
-            text.append(launchStats.launchesToday == 1 ? " launch today" : " launches today");
+            appendMetadata(metadata, launchStats.launchesToday
+                    + (launchStats.launchesToday == 1 ? " open today" : " opens today"));
 
-            subtitle.setText(text.toString());
+            SpannableStringBuilder rendered = new SpannableStringBuilder(base);
+            if (rendered.length() > 0) rendered.append(HISTORY_SEPARATOR);
+            else rendered.append("History: ");
+            int metadataStart = rendered.length();
+            rendered.append(metadata);
+            int metadataEnd = rendered.length();
+            if (metadataEnd > metadataStart) {
+                rendered.setSpan(SmartTextAppearance.relativeMetadataSize(activity, subtitle),
+                        metadataStart, metadataEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                rendered.setSpan(SmartTextAppearance.metadataColorSpan(activity, subtitle),
+                        metadataStart, metadataEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                rendered.setSpan(SmartTextAppearance.metadataStyleSpan(activity),
+                        metadataStart, metadataEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+
+            subtitle.setText(rendered);
             subtitle.setVisibility(View.VISIBLE);
             configureLaunchInfoMarquee(subtitle);
         }
+    }
+
+    private void appendMetadata(StringBuilder builder, String value) {
+        if (TextUtils.isEmpty(value)) return;
+        if (builder.length() > 0) builder.append(" • ");
+        builder.append(value);
     }
 
     private TextView findMetadataView(View row) {
@@ -211,12 +245,12 @@ final class HistoryVisualEnhancer {
     }
 
     private String stripPreviousMetadata(String value) {
-        int posted = value.indexOf(LIST_STATS_SEPARATOR);
-        int legacy = value.indexOf(LEGACY_LIST_STATS_SEPARATOR);
-        int separator;
-        if (posted < 0) separator = legacy;
-        else if (legacy < 0) separator = posted;
-        else separator = Math.min(posted, legacy);
+        int separator = -1;
+        String[] markers = new String[]{HISTORY_SEPARATOR, LEGACY_POSTED_SEPARATOR, LEGACY_LAST_SEPARATOR};
+        for (String marker : markers) {
+            int found = value.indexOf(marker);
+            if (found >= 0 && (separator < 0 || found < separator)) separator = found;
+        }
         return separator >= 0 ? value.substring(0, separator) : value;
     }
 
@@ -228,11 +262,6 @@ final class HistoryVisualEnhancer {
         return minutes + "m";
     }
 
-    /**
-     * Keep the full metadata available instead of truncating it. Android's marquee only moves when
-     * the text is wider than its row, and it automatically stops drawing when the launcher window
-     * is no longer visible/focused.
-     */
     private void configureLaunchInfoMarquee(TextView subtitle) {
         subtitle.setSingleLine(true);
         subtitle.setMaxLines(1);
