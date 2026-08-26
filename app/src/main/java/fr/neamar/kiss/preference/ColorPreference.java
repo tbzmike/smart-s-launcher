@@ -16,9 +16,13 @@ public class ColorPreference extends DialogPreference {
     @ColorInt
     private int selectedColor = UIColors.COLOR_DEFAULT;
 
+    public ColorPreference(Context context) {
+        super(context);
+        this.setDialogLayoutResource(R.layout.pref_color);
+    }
+
     public ColorPreference(Context context, AttributeSet attrs) {
         super(context, attrs);
-
         this.setDialogLayoutResource(R.layout.pref_color);
     }
 
