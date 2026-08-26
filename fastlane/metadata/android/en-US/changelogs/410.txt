@@ -1,0 +1,5 @@
+Smart S Launcher 3.29.82
+
+• Ensure overflowing single-line launcher text automatically scrolls continuously so hidden text can be read in full.
+• Restart marquee when recycled row text or available width changes.
+• Preserve the existing multi-line auto-scrolling notification previews and F-Droid qualification fixes from 3.29.81.
