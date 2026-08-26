@@ -143,9 +143,9 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                 "Resize only icons in horizontal history views", 60, 170, 100);
 
         addSizeSlider(category, "smart-list-row-size-percent", "Vertical list row size",
-                "Resize vertical history rows independently", 70, 160, 100);
+                "Resize vertical history rows independently", 70, 220, 100);
         addSizeSlider(category, "smart-list-icon-size-percent", "Vertical list icon size",
-                "Resize only icons in the vertical history list", 60, 170, 100);
+                "Resize only icons in the vertical history list", 50, 240, 100);
     }
 
     /** Controls requested specifically for the classic Vertical List history renderer. */
@@ -159,22 +159,22 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
 
         addSizeSlider(category, "smart-list-label-size-sp", "App label text size",
                 "Size of app, shortcut, contact and communication titles in Vertical List history",
-                12, 28, 18);
+                10, 40, 18);
         addFontPreference(category, "smart-list-label-font", "App label font style",
                 "sans_bold");
 
         addSizeSlider(category, "smart-list-body-size-sp", "Message/body text size",
                 "Size of notification previews, tags, numbers, dates and message text",
-                10, 22, 14);
+                8, 32, 14);
         addFontPreference(category, "smart-list-body-font", "Message/body font style",
                 "sans_normal");
 
         addSizeSlider(category, "smart-list-icon-size-percent", "App icon size",
                 "Resize icons in Vertical List history without changing the text",
-                60, 170, 110);
+                50, 240, 110);
         addSizeSlider(category, "smart-list-row-spacing-dp", "Space between history items",
-                "Add breathing room between Vertical List rows to reduce clutter",
-                0, 24, 4);
+                "Add real breathing room between rows. At 24dp body text can use 2 lines; at 56dp or more it can use 3 lines.",
+                0, 96, 4);
 
         Preference iconInfo = new Preference(requireContext());
         iconInfo.setKey("smart-list-icon-selection-info");
