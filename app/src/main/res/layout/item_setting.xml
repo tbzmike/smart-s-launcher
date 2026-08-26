@@ -22,7 +22,7 @@
             tools:src="@android:drawable/ic_menu_manage" />
     </FrameLayout>
 
-    <TextView
+    <fr.neamar.kiss.ui.AutoMarqueeTextView
         android:id="@+id/item_setting_prefix"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
