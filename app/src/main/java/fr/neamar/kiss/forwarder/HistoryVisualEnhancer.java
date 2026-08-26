@@ -24,6 +24,7 @@ import java.util.Set;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -42,7 +43,8 @@ final class HistoryVisualEnhancer {
     private static final int TAG_LIVE_BACKGROUND = 0x534D4201;
     private static final int TAG_LIVE_TEXT = 0x534D4202;
     private static final int TAG_LIVE_PROGRESS = 0x534D4203;
-    private static final String LIST_STATS_SEPARATOR = " • Last ";
+    private static final String LIST_STATS_SEPARATOR = " • Posted ";
+    private static final String LEGACY_LIST_STATS_SEPARATOR = " • Last ";
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
@@ -89,8 +91,8 @@ final class HistoryVisualEnhancer {
     }
 
     /**
-     * Native list mode deliberately stays transparent. Launch statistics are loaded in one
-     * grouped background query and then applied only to currently visible rows.
+     * Native list mode deliberately stays transparent. History statistics and the cached UsageStats
+     * snapshot are loaded together off the UI thread, then applied only to currently visible rows.
      */
     private void refreshListPresentation() {
         if (activity.list == null || activity.adapter == null) return;
@@ -109,16 +111,19 @@ final class HistoryVisualEnhancer {
         AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
             Map<String, LaunchStatsProvider.LaunchStats> stats =
                     LaunchStatsProvider.loadAll(activity.getApplicationContext());
+            AppUsageTodayStore.Snapshot usage =
+                    AppUsageTodayStore.getToday(activity.getApplicationContext());
             activity.runOnUiThread(() -> {
                 synchronized (HistoryVisualEnhancer.this) {
                     statsLoadInFlight = false;
                 }
-                applyStatsToVisibleRows(stats);
+                applyStatsToVisibleRows(stats, usage);
             });
         });
     }
 
-    private void applyStatsToVisibleRows(Map<String, LaunchStatsProvider.LaunchStats> stats) {
+    private void applyStatsToVisibleRows(Map<String, LaunchStatsProvider.LaunchStats> stats,
+                                         AppUsageTodayStore.Snapshot usage) {
         if (activity.list == null || activity.adapter == null) return;
         int first = activity.list.getFirstVisiblePosition();
         java.text.DateFormat timeFormat = DateFormat.getTimeFormat(activity);
@@ -133,16 +138,15 @@ final class HistoryVisualEnhancer {
             row.setTranslationZ(0f);
 
             Result<?> result = activity.adapter.getItem(position);
-            if (!(result.getPojo() instanceof AppPojo)) continue;
+            if (result == null || result.getPojo() == null) continue;
 
-            TextView subtitle = row.findViewById(R.id.item_app_tag);
+            TextView subtitle = findMetadataView(row);
             if (subtitle == null) continue;
 
             String historyId = result.getPojo().getHistoryId();
             LaunchStatsProvider.LaunchStats launchStats = stats.get(historyId);
             String current = subtitle.getText() == null ? "" : subtitle.getText().toString();
-            int separator = current.indexOf(LIST_STATS_SEPARATOR);
-            String base = separator >= 0 ? current.substring(0, separator) : current;
+            String base = stripPreviousMetadata(current);
 
             if (launchStats == null || launchStats.lastLaunchTime <= 0) {
                 subtitle.setText(base);
@@ -152,20 +156,60 @@ final class HistoryVisualEnhancer {
 
             StringBuilder text = new StringBuilder(base);
             if (text.length() > 0) text.append(LIST_STATS_SEPARATOR);
-            else text.append("Last ");
+            else text.append("Posted ");
             text.append(timeFormat.format(new java.util.Date(launchStats.lastLaunchTime)));
-            text.append(" • ").append(launchStats.launchesToday);
-            text.append(launchStats.launchesToday == 1 ? " launch today" : " launches today");
+
+            if (result.getPojo() instanceof AppPojo) {
+                AppPojo app = (AppPojo) result.getPojo();
+                if (usage != null && usage.available) {
+                    Long foregroundMs = usage.foregroundMsByPackage.get(app.packageName);
+                    text.append(" • Used today: ")
+                            .append(formatDuration(foregroundMs == null ? 0L : foregroundMs));
+                }
+                text.append(" • ").append(launchStats.launchesToday);
+                text.append(launchStats.launchesToday == 1 ? " launch today" : " launches today");
+            }
+
             subtitle.setText(text.toString());
             subtitle.setVisibility(View.VISIBLE);
             configureLaunchInfoMarquee(subtitle);
         }
     }
 
+    private TextView findMetadataView(View row) {
+        TextView view = row.findViewById(R.id.item_communication_meta);
+        if (view != null) return view;
+        view = row.findViewById(R.id.item_app_tag);
+        if (view != null) return view;
+        view = row.findViewById(R.id.item_shortcut_tag);
+        if (view != null) return view;
+        view = row.findViewById(R.id.item_contact_phone);
+        if (view != null) return view;
+        return row.findViewById(R.id.item_phone_text);
+    }
+
+    private String stripPreviousMetadata(String value) {
+        int posted = value.indexOf(LIST_STATS_SEPARATOR);
+        int legacy = value.indexOf(LEGACY_LIST_STATS_SEPARATOR);
+        int separator;
+        if (posted < 0) separator = legacy;
+        else if (legacy < 0) separator = posted;
+        else separator = Math.min(posted, legacy);
+        return separator >= 0 ? value.substring(0, separator) : value;
+    }
+
+    private String formatDuration(long durationMs) {
+        long totalMinutes = Math.max(0L, durationMs) / 60_000L;
+        long hours = totalMinutes / 60L;
+        long minutes = totalMinutes % 60L;
+        if (hours > 0L) return hours + "h " + minutes + "m";
+        return minutes + "m";
+    }
+
     /**
-     * Keep the full launch metadata available instead of truncating it. Android's marquee only
-     * moves when the text is wider than its row, and it automatically stops drawing when the
-     * launcher window is no longer visible/focused.
+     * Keep the full metadata available instead of truncating it. Android's marquee only moves when
+     * the text is wider than its row, and it automatically stops drawing when the launcher window
+     * is no longer visible/focused.
      */
     private void configureLaunchInfoMarquee(TextView subtitle) {
         subtitle.setSingleLine(true);
@@ -197,8 +241,6 @@ final class HistoryVisualEnhancer {
                     MapLiveTileProvider.requestFreshLocation(activity, this::refreshSoon);
                     loadLiveAppData(tile, app.packageName, square);
                 } else {
-                    // Do not scan Android's entire active-notification array for every tile. Only
-                    // apps already known to have notification content can provide live card data.
                     String latest = NotificationListener.getLatestMessage(activity, app.getPackageKey());
                     if (!TextUtils.isEmpty(latest)) {
                         loadLiveAppData(tile, app.packageName, square);
@@ -211,8 +253,6 @@ final class HistoryVisualEnhancer {
     }
 
     private void applyDepth(FrameLayout tile, boolean square) {
-        // HistoryDisplayForwarder already builds an app-icon-derived gradient for the card.
-        // Preserve that identity instead of overwriting every tile with a generic grey surface.
         tile.setElevation(dp(square ? 10 : 7));
         tile.setTranslationZ(dp(square ? 2 : 1));
         tile.setClipToOutline(true);
@@ -353,7 +393,6 @@ final class HistoryVisualEnhancer {
             icon.setElevation(dp(8));
             icon.setTranslationZ(dp(2));
         }
-        // Labels are deliberately kept above live artwork as well.
         for (int i = 0; i < tile.getChildCount(); i++) {
             View child = tile.getChildAt(i);
             if (child instanceof TextView && child.getTag() == null) child.bringToFront();
