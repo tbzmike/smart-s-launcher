@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:android="http://schemas.android.com/apk/res/android"
     app:title="Smart features">
 
     <SwitchPreference
@@ -29,14 +30,14 @@
         <SeekBarPreference
             app:defaultValue="18"
             app:key="smart-default-text-primary-size-sp"
-            app:max="40"
+            android:max="40"
             app:min="10"
             app:showSeekBarValue="true"
             app:title="Primary text size" />
         <SeekBarPreference
             app:defaultValue="14"
             app:key="smart-default-text-secondary-size-sp"
-            app:max="32"
+            android:max="32"
             app:min="8"
             app:showSeekBarValue="true"
             app:title="Secondary text size" />
@@ -72,7 +73,7 @@
         <SeekBarPreference
             app:defaultValue="12"
             app:key="smart-history-meta-size-sp"
-            app:max="28"
+            android:max="28"
             app:min="8"
             app:showSeekBarValue="true"
             app:title="Timestamp text size" />
