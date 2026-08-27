@@ -47,4 +47,19 @@ jobs:
         run: fdroid lint
 
       - name: Build with the F-Droid stack
-        run: fdroid build --test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build unsigned
+          fdroid build --verbose 2>&1 | tee /tmp/fdroid-build.log
+          if grep -Eq '[1-9][0-9]* build(s)? failed|Build for app .* failed|Could not build app' /tmp/fdroid-build.log; then
+            echo 'F-Droid reported a failed build.' >&2
+            exit 1
+          fi
+          APK_COUNT=$(find unsigned -maxdepth 1 -type f -name 'com.tbzmike.smartslauncher_411.apk' | wc -l)
+          if [ "$APK_COUNT" -ne 1 ]; then
+            echo 'Expected F-Droid unsigned APK was not produced.' >&2
+            find unsigned -maxdepth 1 -type f -print || true
+            exit 1
+          fi
+          test -f unsigned/com.tbzmike.smartslauncher_411_src.tar.gz
