@@ -191,6 +191,21 @@
                 <data android:scheme="package" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".social.SocialContactPackageReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <action android:name="android.intent.action.PACKAGE_REPLACED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
 
         <receiver android:name=".broadcast.LocaleChangedReceiver" android:enabled="true" android:exported="true">
             <intent-filter><action android:name="android.intent.action.LOCALE_CHANGED" /></intent-filter>
@@ -209,6 +224,15 @@
         <service android:name=".dataprovider.AppProvider" />
         <service android:name=".dataprovider.ContactsProvider" />
         <service android:name=".dataprovider.ShortcutsProvider" />
+
+        <service
+            android:name=".social.SocialContactIndexService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local indexing of Android-exposed social contacts and conversation shortcuts" />
+        </service>
 
         <service
             android:name=".battery.BatteryMonitorService"

@@ -20,6 +20,7 @@ import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.pojo.ContactData;
 import fr.neamar.kiss.pojo.ContactsPojo;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.social.SocialContactIndexService;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.MimeTypeUtils;
 import fr.neamar.kiss.utils.Permission;
@@ -31,6 +32,7 @@ import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 public class ContactsProvider extends Provider<ContactsPojo> {
     protected static final String TAG = ContactsProvider.class.getSimpleName();
     private final Map<String, StringNormalizer.Result> socialAliasCache = new ConcurrentHashMap<>();
+    private boolean contactObserverRegistered;
     private final ContentObserver cObserver = new ContentObserver(null) {
 
         @Override
@@ -66,21 +68,33 @@ public class ContactsProvider extends Provider<ContactsPojo> {
     public void onCreate() {
         super.onCreate();
         if (Permission.checkPermission(this, Permission.PERMISSION_READ_CONTACTS)) {
-            getContentResolver().registerContentObserver(ContactsContract.Contacts.CONTENT_URI, false, cObserver);
+            registerContactObserver();
+            SocialContactIndexService.maybePrompt(this);
         } else {
             Permission.askPermission(Permission.PERMISSION_READ_CONTACTS, new Permission.PermissionResultListener() {
                 @Override
                 public void onGranted() {
+                    registerContactObserver();
                     reload();
+                    SocialContactIndexService.maybePrompt(ContactsProvider.this);
                 }
             });
         }
     }
 
+    private void registerContactObserver() {
+        if (contactObserverRegistered) return;
+        getContentResolver().registerContentObserver(ContactsContract.Contacts.CONTENT_URI, false, cObserver);
+        contactObserverRegistered = true;
+    }
+
     @Override
     public void onDestroy() {
         super.onDestroy();
-        getContentResolver().unregisterContentObserver(cObserver);
+        if (contactObserverRegistered) {
+            getContentResolver().unregisterContentObserver(cObserver);
+            contactObserverRegistered = false;
+        }
     }
 
     @Override

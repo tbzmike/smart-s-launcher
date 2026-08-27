@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="social_index_channel_name">Social contact indexing</string>
+    <string name="social_index_channel_description">Background indexing progress for contacts and conversations exposed by social apps</string>
+    <string name="social_index_prompt_title">Index social contacts?</string>
+    <plurals name="social_index_prompt_body">
+        <item quantity="one">%1$d social or messaging app has not been indexed yet. Index its Android-exposed contacts and conversations in the background?</item>
+        <item quantity="other">%1$d social or messaging apps have not been indexed yet. Index their Android-exposed contacts and conversations in the background?</item>
+    </plurals>
+    <string name="social_index_action">Index in background</string>
+    <string name="social_index_progress_title">Indexing social contacts</string>
+    <string name="social_index_starting">Preparing social contact index…</string>
+    <string name="social_index_current_app">Indexing %1$s</string>
+    <string name="social_index_complete_title">Social contact indexing finished</string>
+    <string name="social_index_complete">Indexed %1$d exposed contacts and %2$d conversation shortcuts.</string>
+    <string name="social_index_none_found">No installed social or messaging apps expose contacts or conversations to Android.</string>
+    <string name="social_index_failed">Social contact indexing could not be completed.</string>
+</resources>
