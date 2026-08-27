@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Distinct Smart S identity: deep-blue disc with a flowing white S. -->
+    <path
+        android:fillColor="#2457D6"
+        android:pathData="M54,4 A50,50 0,1 1,53.99,4 Z" />
+
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="10"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M75,31 C68,22 56,19 45,22 C35,25 29,32 31,40 C33,48 42,51 55,53 C69,55 77,60 77,69 C77,79 67,87 54,88 C43,89 33,85 27,77" />
+
+    <path
+        android:fillColor="#8FD3FF"
+        android:pathData="M78,22 A7,7 0,1 1,77.99,22 Z" />
+</vector>
