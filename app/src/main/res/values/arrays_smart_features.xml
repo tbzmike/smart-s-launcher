@@ -34,6 +34,10 @@
         <item>Zoom</item>
         <item>Tilt</item>
         <item>Cascade</item>
+        <item>3D Flip</item>
+        <item>Helix</item>
+        <item>Fan</item>
+        <item>Bounce</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_scroll_animation_values">
@@ -46,6 +50,10 @@
         <item>zoom</item>
         <item>tilt</item>
         <item>cascade</item>
+        <item>flip</item>
+        <item>helix</item>
+        <item>fan</item>
+        <item>bounce</item>
         <item>none</item>
     </string-array>
 
@@ -59,6 +67,11 @@
         <item>Zoom</item>
         <item>Spring</item>
         <item>Rotate</item>
+        <item>3D Flip</item>
+        <item>Whirl</item>
+        <item>Orbit</item>
+        <item>Elastic</item>
+        <item>Bounce</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_enter_animation_values">
@@ -71,6 +84,11 @@
         <item>zoom</item>
         <item>spring</item>
         <item>rotate</item>
+        <item>flip</item>
+        <item>whirl</item>
+        <item>orbit</item>
+        <item>elastic</item>
+        <item>bounce</item>
         <item>none</item>
     </string-array>
 
@@ -83,6 +101,11 @@
         <item>Shrink</item>
         <item>Zoom</item>
         <item>Rotate</item>
+        <item>3D Flip</item>
+        <item>Whirl</item>
+        <item>Orbit</item>
+        <item>Elastic</item>
+        <item>Bounce</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_exit_animation_values">
@@ -94,6 +117,11 @@
         <item>shrink</item>
         <item>zoom</item>
         <item>rotate</item>
+        <item>flip</item>
+        <item>whirl</item>
+        <item>orbit</item>
+        <item>elastic</item>
+        <item>bounce</item>
         <item>none</item>
     </string-array>
 
@@ -107,6 +135,11 @@
         <item>Zoom</item>
         <item>Spring</item>
         <item>Rotate</item>
+        <item>3D Flip</item>
+        <item>Whirl</item>
+        <item>Orbit</item>
+        <item>Elastic</item>
+        <item>Bounce</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_popup_animation_values">
@@ -119,6 +152,11 @@
         <item>zoom</item>
         <item>spring</item>
         <item>rotate</item>
+        <item>flip</item>
+        <item>whirl</item>
+        <item>orbit</item>
+        <item>elastic</item>
+        <item>bounce</item>
         <item>none</item>
     </string-array>
 
@@ -127,6 +165,10 @@
         <item>Slide</item>
         <item>Depth</item>
         <item>Zoom</item>
+        <item>3D Flip</item>
+        <item>Whirl</item>
+        <item>Orbit</item>
+        <item>Spring</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_switch_animation_values">
@@ -134,6 +176,10 @@
         <item>slide</item>
         <item>depth</item>
         <item>zoom</item>
+        <item>flip</item>
+        <item>whirl</item>
+        <item>orbit</item>
+        <item>spring</item>
         <item>none</item>
     </string-array>
 
