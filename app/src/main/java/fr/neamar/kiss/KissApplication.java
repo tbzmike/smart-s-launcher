@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase;
 
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
+import fr.neamar.kiss.ui.GlobalTextStyler;
 import fr.neamar.kiss.utils.IconPackCache;
 import fr.neamar.kiss.utils.Log;
 
@@ -24,6 +25,8 @@ public class KissApplication extends Application {
     private volatile IconsHandler iconsPackHandler;
     private final IconPackCache mIconPackCache = new IconPackCache();
     private final MimeTypeCache mimeTypeCache = new MimeTypeCache();
+    @SuppressWarnings("FieldCanBeLocal")
+    private GlobalTextStyler globalTextStyler;
 
     public static KissApplication getApplication(Context context) {
         if (context instanceof KissApplication) {
@@ -112,5 +115,6 @@ public class KissApplication extends Application {
         super.onCreate();
         DBHelper.initDatabase(this);
         InterfaceTweaks.setDefaultNightMode(this);
+        globalTextStyler = GlobalTextStyler.install(this);
     }
 }
