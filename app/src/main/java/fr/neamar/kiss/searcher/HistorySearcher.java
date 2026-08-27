@@ -88,7 +88,7 @@ public class HistorySearcher extends Searcher {
         List<Pojo> pojos = dataHandler.getHistory(activity, getMaxResultCount(), excludedPojoById);
         restoreMissingHistoryEntries(activity, dataHandler, pojos, excludedPojoById);
         pinActiveNotificationTimeline(activity, pojos, excludedPojoById);
-        pinMostRecentLaunch(activity, dataHandler, pojos, excludedPojoById);
+        pinMostRecentPersistedLaunch(activity, dataHandler, pojos, excludedPojoById);
 
         this.addResults(pojos);
         return null;
@@ -144,48 +144,43 @@ public class HistorySearcher extends Searcher {
         }
     }
 
-    /** Keep the exact most recently selected launcher result at the final history position. */
-    private void pinMostRecentLaunch(MainActivity activity, DataHandler dataHandler,
-                                     List<Pojo> pojos, Set<String> excludedPojoById) {
-        if (getMaxResultCount() <= 0) return;
+    /**
+     * Keep the newest successfully persisted history item at the final history position.
+     * The database is authoritative for recency. RecentLaunchTracker is used only to recover
+     * the selected object when a provider temporarily cannot resolve the persisted history id.
+     */
+    private void pinMostRecentPersistedLaunch(MainActivity activity, DataHandler dataHandler,
+                                              List<Pojo> pojos, Set<String> excludedPojoById) {
+        int max = getMaxResultCount();
+        if (max <= 0) return;
 
-        Pojo recentPojo = RecentLaunchTracker.getMostRecent();
-        String mostRecentId = recentPojo == null ? null : recentPojo.getHistoryId();
+        List<ValuedHistoryRecord> mostRecent = DBHelper.getHistory(activity, 1, HistoryMode.RECENCY);
+        if (mostRecent.isEmpty()) return;
 
-        // The exact object selected in this launcher process is authoritative. Dynamic shortcuts
-        // can disappear from LauncherApps immediately after launch even though the launch succeeded.
-        // Only fall back to the persistent history DB when there is no process-local selection.
-        if (recentPojo == null) {
-            List<ValuedHistoryRecord> mostRecent = DBHelper.getHistory(activity, 1, HistoryMode.RECENCY);
-            if (mostRecent.isEmpty()) return;
-            mostRecentId = mostRecent.get(0).record;
-            if (mostRecentId == null) return;
+        String mostRecentId = mostRecent.get(0).record;
+        if (mostRecentId == null || excludedPojoById.contains(mostRecentId)) return;
 
-            for (Pojo pojo : pojos) {
-                if (mostRecentId.equals(pojo.getHistoryId())) {
-                    recentPojo = pojo;
-                    break;
-                }
-            }
-
-            if (recentPojo == null) recentPojo = dataHandler.getItemById(mostRecentId);
-            if (recentPojo == null) recentPojo = RecentLaunchTracker.resolve(mostRecentId);
-            if (recentPojo == null && mostRecentId.startsWith(ShortcutPojo.SCHEME)) {
-                recentPojo = resolveRememberedShortcut(activity, dataHandler, mostRecentId);
-            }
-        }
-
-        if (recentPojo == null || mostRecentId == null) return;
-        if (excludedPojoById.contains(mostRecentId) || excludedPojoById.contains(recentPojo.id)) return;
-
+        Pojo recentPojo = null;
         int existingIndex = indexOfHistoryId(pojos, mostRecentId);
         if (existingIndex >= 0) {
             recentPojo = pojos.remove(existingIndex);
-        } else if (pojos.size() >= getMaxResultCount() && !pojos.isEmpty()) {
+        }
+
+        if (recentPojo == null) recentPojo = dataHandler.getItemById(mostRecentId);
+        if (recentPojo == null) recentPojo = RecentLaunchTracker.resolve(mostRecentId);
+        if (recentPojo == null && mostRecentId.startsWith(ShortcutPojo.SCHEME)) {
+            recentPojo = resolveRememberedShortcut(activity, dataHandler, mostRecentId);
+        }
+        if (recentPojo == null || excludedPojoById.contains(recentPojo.id)) return;
+
+        if (existingIndex < 0 && pojos.size() >= max && !pojos.isEmpty()) {
             int removeIndex = indexOfLowestRelevance(pojos, recentPojo.id);
             if (removeIndex >= 0) pojos.remove(removeIndex);
         }
 
+        // RelevanceComparator emits lower relevance first, so MAX_VALUE guarantees the newest
+        // persisted launch is the final/bottom row. Once another item is persisted, normal DB
+        // relevance moves this item upward one position at a time.
         recentPojo.relevance = Integer.MAX_VALUE;
         pojos.add(recentPojo);
     }
@@ -236,7 +231,7 @@ public class HistorySearcher extends Searcher {
 
     /**
      * Active notifications form a dedicated chronological band near the bottom of history. The
-     * user's latest successful launch is pinned after this band and therefore remains the final item.
+     * newest persisted user launch is pinned after this band and therefore remains the final item.
      */
     private void pinActiveNotificationTimeline(MainActivity activity, List<Pojo> pojos,
                                                Set<String> excludedPojoById) {
