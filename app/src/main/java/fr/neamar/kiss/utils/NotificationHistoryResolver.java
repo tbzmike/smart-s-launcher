@@ -16,8 +16,8 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
-import fr.neamar.kiss.ui.LockedNotificationHistoryDialog;
 import fr.neamar.kiss.ui.NotificationPopupDialog;
+import fr.neamar.kiss.ui.RichNotificationHistoryDialog;
 
 /** Resolves notification history to the real target application, never a wrapper by accident. */
 public final class NotificationHistoryResolver {
@@ -26,10 +26,14 @@ public final class NotificationHistoryResolver {
     public static boolean showForPojo(Context context, Pojo pojo) {
         if (context == null || pojo == null) return false;
 
-        // A live notification has richer platform-owned content than the persisted text history.
-        // Route it to Smart S's native expanded viewer so BigPicture, MessagingStyle images and
-        // custom expanded RemoteViews remain visible. Once Android removes the live notification,
-        // fall through to the persisted history dialog instead.
+        // History is authoritative when it exists: this keeps tap and long-press on the same
+        // swipeable rich dialog, including album art, notification pictures and saved media.
+        String packageName = resolvePackage(context, pojo);
+        if (packageName != null && RichNotificationHistoryDialog.showLatest(context, packageName)) {
+            return true;
+        }
+
+        // A live notification can still be opened when no persisted record exists yet.
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;
             boolean liveIndividual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
@@ -41,9 +45,7 @@ public final class NotificationHistoryResolver {
                 return true;
             }
         }
-
-        String packageName = resolvePackage(context, pojo);
-        return packageName != null && LockedNotificationHistoryDialog.showLatest(context, packageName);
+        return false;
     }
 
     public static String resolvePackage(Context context, Pojo pojo) {
