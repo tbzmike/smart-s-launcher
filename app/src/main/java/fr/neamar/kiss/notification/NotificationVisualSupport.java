@@ -34,11 +34,7 @@ import java.util.concurrent.Executors;
 
 import fr.neamar.kiss.utils.Log;
 
-/**
- * Persists visual content that Android exposes through a notification so history dialogs can keep
- * showing the same image after the originating notification has disappeared. Content URIs from
- * MessagingStyle are retained only as best-effort launch targets; access is re-validated on tap.
- */
+/** Persists notification-owned visual content for the history dialog. */
 public final class NotificationVisualSupport {
     private static final String TAG = NotificationVisualSupport.class.getSimpleName();
     private static final String PREFS = "notification-visual-history";
@@ -51,16 +47,16 @@ public final class NotificationVisualSupport {
         public final Drawable image;
         public final String mediaUri;
         public final String mediaMime;
+        public final boolean media;
 
-        Snapshot(Drawable image, String mediaUri, String mediaMime) {
+        Snapshot(Drawable image, String mediaUri, String mediaMime, boolean media) {
             this.image = image;
             this.mediaUri = mediaUri;
             this.mediaMime = mediaMime;
+            this.media = media;
         }
 
-        public boolean hasImage() {
-            return image != null;
-        }
+        public boolean hasImage() { return image != null; }
 
         public boolean hasPlayableVideo() {
             return !TextUtils.isEmpty(mediaUri) && mediaMime != null
@@ -84,10 +80,12 @@ public final class NotificationVisualSupport {
         Drawable visual = extractVisual(context, notification, reference);
         File file = visual == null ? null : visualFile(context, notificationId);
         boolean wroteImage = file != null && writeBitmap(file, drawableToBitmap(visual));
+        boolean media = isMediaNotification(notification);
 
         android.content.SharedPreferences.Editor edit = context
                 .getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putLong(notificationId + "|seen", System.currentTimeMillis());
+                .putLong(notificationId + "|seen", System.currentTimeMillis())
+                .putBoolean(notificationId + "|media", media);
         if (wroteImage) edit.putString(notificationId + "|image", file.getAbsolutePath());
         if (reference != null && reference.uri != null) {
             edit.putString(notificationId + "|media_uri", reference.uri.toString());
@@ -109,8 +107,9 @@ public final class NotificationVisualSupport {
         }
         String uri = prefs.getString(notificationId + "|media_uri", null);
         String mime = prefs.getString(notificationId + "|media_mime", null);
-        if (image == null && TextUtils.isEmpty(uri)) return null;
-        return new Snapshot(image, uri, mime);
+        boolean media = prefs.getBoolean(notificationId + "|media", false);
+        if (image == null && TextUtils.isEmpty(uri) && !media) return null;
+        return new Snapshot(image, uri, mime, media);
     }
 
     public static boolean openMedia(Context context, Snapshot snapshot) {
@@ -130,6 +129,21 @@ public final class NotificationVisualSupport {
         }
     }
 
+    private static boolean isMediaNotification(Notification notification) {
+        if (notification == null) return false;
+        if (Notification.CATEGORY_TRANSPORT.equals(notification.category)) return true;
+        Bundle extras = notification.extras;
+        if (extras != null && extras.get(Notification.EXTRA_MEDIA_SESSION) != null) return true;
+        Notification.Action[] actions = notification.actions;
+        if (actions != null) {
+            for (Notification.Action action : actions) {
+                if (action != null && MediaControlClassifier.classify(action.title)
+                        != MediaControlClassifier.Kind.OTHER) return true;
+            }
+        }
+        return false;
+    }
+
     @Nullable
     private static Drawable extractVisual(Context context, Notification notification,
                                           @Nullable MediaReference reference) {
@@ -143,7 +157,7 @@ public final class NotificationVisualSupport {
                     if (bitmap != null) return new BitmapDrawable(context.getResources(), bitmap);
                 }
             } catch (RuntimeException e) {
-                Log.w(TAG, "Unable to read media artwork while persisting notification visual", e);
+                Log.w(TAG, "Unable to read media artwork", e);
             }
         }
 
@@ -164,11 +178,8 @@ public final class NotificationVisualSupport {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && notification.getLargeIcon() != null) {
-            try {
-                return notification.getLargeIcon().loadDrawable(context);
-            } catch (RuntimeException ignored) {
-                // No visual is preferable to crashing notification capture.
-            }
+            try { return notification.getLargeIcon().loadDrawable(context); }
+            catch (RuntimeException ignored) { }
         }
         return null;
     }
@@ -196,11 +207,8 @@ public final class NotificationVisualSupport {
         if (extras == null) return null;
         Object token = extras.getParcelable(Notification.EXTRA_MEDIA_SESSION);
         if (!(token instanceof MediaSession.Token)) return null;
-        try {
-            return new MediaController(context, (MediaSession.Token) token);
-        } catch (RuntimeException e) {
-            return null;
-        }
+        try { return new MediaController(context, (MediaSession.Token) token); }
+        catch (RuntimeException e) { return null; }
     }
 
     @Nullable
@@ -216,11 +224,8 @@ public final class NotificationVisualSupport {
     private static Drawable drawableFromValue(Context context, Object value) {
         if (value instanceof Bitmap) return new BitmapDrawable(context.getResources(), (Bitmap) value);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && value instanceof Icon) {
-            try {
-                return ((Icon) value).loadDrawable(context);
-            } catch (RuntimeException ignored) {
-                return null;
-            }
+            try { return ((Icon) value).loadDrawable(context); }
+            catch (RuntimeException ignored) { return null; }
         }
         return value instanceof Drawable ? (Drawable) value : null;
     }
@@ -231,7 +236,7 @@ public final class NotificationVisualSupport {
             if (input == null) return null;
             Bitmap bitmap = BitmapFactory.decodeStream(input);
             return bitmap == null ? null : new BitmapDrawable(context.getResources(), bitmap);
-        } catch (IOException | SecurityException | RuntimeException e) {
+        } catch (IOException | RuntimeException e) {
             Log.w(TAG, "Unable to copy notification image URI", e);
             return null;
         }
@@ -249,9 +254,9 @@ public final class NotificationVisualSupport {
         }
         int width = Math.max(1, drawable.getIntrinsicWidth() > 0 ? drawable.getIntrinsicWidth() : MAX_EDGE);
         int height = Math.max(1, drawable.getIntrinsicHeight() > 0 ? drawable.getIntrinsicHeight() : MAX_EDGE);
-        float scale = Math.min(1f, MAX_EDGE / (float) Math.max(width, height));
-        width = Math.max(1, Math.round(width * scale));
-        height = Math.max(1, Math.round(height * scale));
+        float factor = Math.min(1f, MAX_EDGE / (float) Math.max(width, height));
+        width = Math.max(1, Math.round(width * factor));
+        height = Math.max(1, Math.round(height * factor));
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         drawable.setBounds(0, 0, width, height);
@@ -305,10 +310,6 @@ public final class NotificationVisualSupport {
     private static final class MediaReference {
         final Uri uri;
         final String mime;
-
-        MediaReference(Uri uri, String mime) {
-            this.uri = uri;
-            this.mime = mime;
-        }
+        MediaReference(Uri uri, String mime) { this.uri = uri; this.mime = mime; }
     }
 }
