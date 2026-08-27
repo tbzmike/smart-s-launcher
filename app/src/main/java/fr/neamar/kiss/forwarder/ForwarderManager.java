@@ -43,6 +43,7 @@ public class ForwarderManager extends Forwarder {
     private final HistoryVisualEnhancer historyVisualEnhancer;
     private final UNotificationHistoryLongPressForwarder uNotificationHistoryLongPressForwarder;
     private final CommunicationHistoryForwarder communicationHistoryForwarder;
+    private final WidgetPeelController widgetPeelController;
     private boolean initialResumeComplete;
     private boolean lastUiEditLocked;
     private String lastSearchQuery;
@@ -74,6 +75,7 @@ public class ForwarderManager extends Forwarder {
         this.historyVisualEnhancer = new HistoryVisualEnhancer(mainActivity, historyDisplayForwarder);
         this.uNotificationHistoryLongPressForwarder = new UNotificationHistoryLongPressForwarder(mainActivity, historyDisplayForwarder);
         this.communicationHistoryForwarder = new CommunicationHistoryForwarder(mainActivity);
+        this.widgetPeelController = new WidgetPeelController(mainActivity);
     }
 
     public void onCreate() {
@@ -81,6 +83,7 @@ public class ForwarderManager extends Forwarder {
         lastUiEditLocked = UiEditLock.isLocked(mainActivity);
         favoritesForwarder.onCreate();
         widgetsForwarder.onCreate();
+        widgetPeelController.onCreate();
         interfaceTweaks.onCreate();
         experienceTweaks.onCreate();
         shortcutsForwarder.onCreate();
@@ -180,6 +183,11 @@ public class ForwarderManager extends Forwarder {
             if (itemId == R.id.add_widget || itemId == R.id.wallpaper) { UiEditLock.allowEdit(mainActivity); return true; }
             return widgetsForwarder.onOptionsItemSelected(item);
         }
+        if (itemId == R.id.wallpaper) {
+            mainActivity.hideKeyboard();
+            WallpaperChooser.show(mainActivity);
+            return true;
+        }
         return widgetsForwarder.onOptionsItemSelected(item);
     }
 
@@ -189,6 +197,7 @@ public class ForwarderManager extends Forwarder {
 
     public void onDataSetChanged() {
         widgetsForwarder.onDataSetChanged();
+        widgetPeelController.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
 
         if (isVerticalCardsMode()) {
@@ -239,6 +248,7 @@ public class ForwarderManager extends Forwarder {
     public boolean onMenuButtonClicked(View menuButton) { return tagsMenu.onMenuButtonClicked(menuButton); }
 
     public void onDestroy() {
+        widgetPeelController.onDestroy();
         verticalCardViewportController.onDestroy();
         verticalCardUsageForwarder.onDestroy();
         uNotificationHistoryLongPressForwarder.onDestroy();
@@ -253,6 +263,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
+        widgetPeelController.onConfigurationChanged();
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
         if (isVerticalCardsMode()) {
