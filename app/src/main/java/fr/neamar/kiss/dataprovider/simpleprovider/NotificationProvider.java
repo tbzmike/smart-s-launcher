@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.text.TextUtils;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -16,13 +17,18 @@ import java.util.Set;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.NotificationTimelineStore;
+import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
 public final class NotificationProvider extends SimpleProvider<NotificationPojo> {
+    /** Keep per-keystroke history search bounded while still returning far more candidates than UI. */
+    private static final int HISTORY_QUERY_LIMIT = 160;
+
     private final Context context;
 
     public NotificationProvider(Context context) {
@@ -32,9 +38,38 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
     @Override
     public void requestResults(String query, Searcher searcher) {
         if (query == null || query.trim().isEmpty()) return;
+
+        SharedPreferences details = details();
+        Map<String, Long> activePostTimes = new HashMap<>();
         for (NotificationPojo pojo : getPojos()) {
+            activePostTimes.put(pojo.id, pojo.postTime);
             MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
             if (pojo.updateMatchingRelevance(matchInfo, false) && !searcher.addResult(pojo)) return;
+        }
+
+        // Notification history is stored in SQLite already. Query it directly instead of loading the
+        // whole timeline into memory on every typed character. Each matching persisted row becomes
+        // a unique launcher result that opens Smart S's existing Notification history destination.
+        List<NotificationHistoryRecord> history = SmartStateStore.queryNotifications(
+                context, null, Collections.singletonList(query.trim()), HISTORY_QUERY_LIMIT);
+        for (NotificationHistoryRecord record : history) {
+            if (record == null || record.dbId <= 0L) continue;
+
+            // The current live notification is already represented above. Only suppress the exact
+            // persisted copy of that same post; older rows reusing the notification ID stay searchable.
+            Long activePost = activePostTimes.get(record.notificationId);
+            if (activePost != null && activePost == record.postTime) continue;
+
+            NotificationHistorySearchPojo pojo = new NotificationHistorySearchPojo(
+                    context.getPackageName(), record);
+            MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
+            if (!pojo.updateMatchingRelevance(matchInfo, false)) {
+                // SQLite LIKE already proved this row contains the literal query. SmartMatcher can
+                // occasionally reject punctuation-heavy notification bodies, so preserve that exact
+                // database match with a conservative local relevance rather than dropping it.
+                pojo.relevance = 1;
+            }
+            if (!searcher.addResult(pojo)) return;
         }
     }
 
