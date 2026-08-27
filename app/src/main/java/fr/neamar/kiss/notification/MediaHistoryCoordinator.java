@@ -19,8 +19,8 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.utils.Log;
 
 /**
- * Keeps active transport notifications represented by their individual persistent timeline ID.
- * Work is performed off the UI thread because album-art normalization may require bitmap I/O.
+ * Keeps notification visuals captured for history and active transport notifications represented
+ * by their individual persistent timeline ID. Bitmap work stays off the launcher UI thread.
  */
 public final class MediaHistoryCoordinator implements Application.ActivityLifecycleCallbacks {
     private static final String TAG = MediaHistoryCoordinator.class.getSimpleName();
@@ -49,18 +49,24 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
         try {
             active = listener.getActiveNotifications();
         } catch (RuntimeException e) {
-            Log.w(TAG, "Unable to inspect active media notifications", e);
+            Log.w(TAG, "Unable to inspect active notifications", e);
             return;
         }
         if (active == null || active.length == 0) return;
 
         boolean historyChanged = false;
         for (StatusBarNotification sbn : active) {
+            if (sbn == null || sbn.getNotification() == null) continue;
+
+            // Capture pictures, MessagingStyle attachments and playable media references for every
+            // notification, not only transport notifications. The helper owns its background I/O.
+            String timelineId = NotificationListener.getTimelineId(sbn);
+            NotificationVisualSupport.captureAsync(context, timelineId, sbn);
+
             if (!isMediaNotification(sbn)) continue;
             MediaNotificationSupport.capture(context, sbn);
             if (addToHistory) {
-                KissApplication.getApplication(context).getDataHandler()
-                        .addToHistory(NotificationListener.getTimelineId(sbn));
+                KissApplication.getApplication(context).getDataHandler().addToHistory(timelineId);
                 historyChanged = true;
             }
         }
