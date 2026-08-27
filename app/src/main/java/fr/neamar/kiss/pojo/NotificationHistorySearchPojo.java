@@ -17,9 +17,12 @@ public final class NotificationHistorySearchPojo extends SettingPojo {
     public final String sourcePackageName;
     public final String sourceNotificationId;
     public final long postTime;
+    public final boolean permanent;
+    public final String searchQuery;
 
     public NotificationHistorySearchPojo(@NonNull String launcherPackageName,
-                                         @NonNull NotificationHistoryRecord record) {
+                                         @NonNull NotificationHistoryRecord record,
+                                         @NonNull String searchQuery) {
         super(SEARCH_SCHEME + record.dbId,
                 NotificationHistoryActivity.class.getName(),
                 launcherPackageName,
@@ -28,6 +31,8 @@ public final class NotificationHistorySearchPojo extends SettingPojo {
         sourcePackageName = safe(record.packageName);
         sourceNotificationId = safe(record.notificationId);
         postTime = record.postTime;
+        permanent = record.permanent;
+        this.searchQuery = searchQuery.trim();
         setName(buildDisplayName(record), true);
     }
 
