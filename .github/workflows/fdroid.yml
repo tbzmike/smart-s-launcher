@@ -51,6 +51,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build unsigned
+
+          # fdroidserver 2.4.5 currently calculates SOURCE_DATE_EPOCH before
+          # creating its package checkout. Seed the expected checkout path so
+          # the F-Droid build can proceed; this exists only in the CI workspace.
+          git clone --no-checkout https://github.com/tbzmike/smart-s-launcher.git \
+            build/com.tbzmike.smartslauncher
+          git -C build/com.tbzmike.smartslauncher checkout \
+            0ba5b9290d4b093ee04cf1b423652444d99b4486
+
           fdroid build --verbose 2>&1 | tee /tmp/fdroid-build.log
           if grep -Eq '[1-9][0-9]* build(s)? failed|Build for app .* failed|Could not build app' /tmp/fdroid-build.log; then
             echo 'F-Droid reported a failed build.' >&2
