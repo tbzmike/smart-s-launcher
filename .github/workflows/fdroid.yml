@@ -30,6 +30,14 @@ jobs:
           python -m pip install fdroidserver
           fdroid --version
 
+      - name: Load official F-Droid category registry
+        run: |
+          mkdir -p config
+          curl --fail --location --silent --show-error \
+            https://gitlab.com/fdroid/fdroiddata/-/raw/master/config/categories.yml \
+            --output config/categories.yml
+          grep -q '^Launcher:' config/categories.yml
+
       - name: Lint F-Droid metadata
         run: fdroid lint
 
