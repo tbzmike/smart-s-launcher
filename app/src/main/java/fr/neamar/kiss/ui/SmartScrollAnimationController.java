@@ -77,6 +77,51 @@ final class SmartScrollAnimationController {
                     child.setTranslationX(abs * dp(26));
                     child.setAlpha(1f - abs * 0.22f);
                     break;
+                case "flip":
+                    child.setRotationY(distance * -34f);
+                    child.setScaleX(1f - abs * 0.08f);
+                    child.setAlpha(1f - abs * 0.18f);
+                    break;
+                case "whirl":
+                    child.setRotation(distance * 14f);
+                    child.setScaleX(1f - abs * 0.10f);
+                    child.setScaleY(1f - abs * 0.10f);
+                    child.setTranslationX((float) Math.sin(distance * Math.PI) * dp(20));
+                    break;
+                case "orbit":
+                    child.setTranslationX(distance * dp(34));
+                    child.setTranslationY(abs * dp(8));
+                    child.setRotationY(distance * -26f);
+                    child.setScaleX(1f - abs * 0.08f);
+                    child.setScaleY(1f - abs * 0.05f);
+                    break;
+                case "elastic":
+                    child.setScaleX(1f - abs * 0.18f);
+                    child.setScaleY(1f + abs * 0.08f);
+                    child.setTranslationY(distance * dp(12));
+                    break;
+                case "bounce":
+                    child.setTranslationY((float) Math.sin(abs * Math.PI) * dp(16));
+                    child.setScaleX(1f - abs * 0.06f);
+                    child.setScaleY(1f - abs * 0.10f);
+                    break;
+                case "helix":
+                    child.setTranslationX((float) Math.sin(distance * Math.PI) * dp(42));
+                    child.setRotationY(distance * -42f);
+                    child.setRotation(distance * 6f);
+                    child.setScaleX(1f - abs * 0.12f);
+                    child.setScaleY(1f - abs * 0.08f);
+                    child.setAlpha(1f - abs * 0.16f);
+                    break;
+                case "fan":
+                    child.setPivotX(distance < 0f ? 0f : child.getWidth());
+                    child.setPivotY(child.getHeight());
+                    child.setRotation(distance * 12f);
+                    child.setTranslationX(distance * dp(18));
+                    child.setScaleX(1f - abs * 0.07f);
+                    child.setScaleY(1f - abs * 0.07f);
+                    child.setAlpha(1f - abs * 0.14f);
+                    break;
                 default:
                     SmartAnimationEngine.reset(child);
                     break;
