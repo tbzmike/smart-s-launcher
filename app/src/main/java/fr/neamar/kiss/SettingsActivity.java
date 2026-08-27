@@ -14,9 +14,11 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SearchView;
 import androidx.appcompat.widget.Toolbar;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
@@ -29,6 +31,7 @@ import fr.neamar.kiss.appusage.AppUsageTracker;
 import fr.neamar.kiss.forwarder.ExperienceTweaks;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
 import fr.neamar.kiss.preference.UiEditLock;
+import fr.neamar.kiss.ui.SettingsSearchIndex;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.SystemUiVisibilityHelper;
 
@@ -37,6 +40,7 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
     public static final String ARG_SHOW_FRAGMENT = "show_fragment";
     private static final int MENU_APP_USAGE_TIMELINE = 0x535501;
     private static final int MENU_APP_USAGE_TOGGLE = 0x535502;
+    private static final int MENU_SETTINGS_SEARCH = 0x535503;
 
     private static final List<String> SETTINGS_REQUIRING_RESTART = Arrays.asList("primary-color", "transparent-search", "transparent-favorites",
             "pref-rounded-list", "pref-rounded-bars", "pref-swap-kiss-button-with-menu", "pref-hide-circle", "history-hide",
@@ -47,8 +51,11 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
     private static final List<String> SETTINGS_REQUIRING_RESTART_FOR_SETTINGS_ACTIVITY = Arrays.asList("theme", "force-portrait", "night-mode", null);
 
     private boolean requireFullRestart = false;
+    private boolean suppressSearchCallback = false;
     private SharedPreferences prefs;
     private SystemUiVisibilityHelper systemUiVisibilityHelper;
+    private SearchView settingsSearchView;
+    private MenuItem settingsSearchItem;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,9 +68,6 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         setContentView(R.layout.activity_toolbar_content);
 
         Toolbar toolbar = findViewById(R.id.main_toolbar);
-        // Keep the overflow popup readable regardless of the active launcher/day-night theme.
-        // The popup itself uses an explicit high-contrast theme instead of inheriting a
-        // translucent/light background with light text from the launcher theme.
         toolbar.setPopupTheme(R.style.SettingsPopupTheme);
         setSupportActionBar(toolbar);
 
@@ -95,6 +99,38 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         MenuItem unlock = menu.findItem(R.id.unlock_ui);
         if (unlock != null) unlock.setVisible(UiEditLock.isLocked(this));
 
+        settingsSearchItem = menu.add(Menu.NONE, MENU_SETTINGS_SEARCH, Menu.NONE, "Search settings");
+        settingsSearchItem.setIcon(android.R.drawable.ic_menu_search);
+        settingsSearchItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS | MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW);
+        settingsSearchView = new SearchView(this);
+        settingsSearchView.setQueryHint("Find any setting…");
+        settingsSearchView.setMaxWidth(Integer.MAX_VALUE);
+        settingsSearchView.setIconifiedByDefault(false);
+        settingsSearchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+            @Override public boolean onQueryTextSubmit(String query) {
+                settingsSearchView.clearFocus();
+                return true;
+            }
+
+            @Override public boolean onQueryTextChange(String newText) {
+                if (suppressSearchCallback) return true;
+                String query = newText == null ? "" : newText.trim();
+                if (query.isEmpty()) exitSettingsSearch();
+                else showSettingsSearch(query);
+                return true;
+            }
+        });
+        settingsSearchItem.setActionView(settingsSearchView);
+        settingsSearchItem.setOnActionExpandListener(new MenuItem.OnActionExpandListener() {
+            @Override public boolean onMenuItemActionExpand(MenuItem item) { return true; }
+            @Override public boolean onMenuItemActionCollapse(MenuItem item) {
+                exitSettingsSearch();
+                return true;
+            }
+        });
+        settingsSearchItem.expandActionView();
+        settingsSearchView.clearFocus();
+
         MenuItem appUsageTimeline = menu.add(Menu.NONE, MENU_APP_USAGE_TIMELINE, Menu.NONE,
                 "App usage timeline");
         appUsageTimeline.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
@@ -105,6 +141,99 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         appUsageToggle.setChecked(AppUsageTracker.isEnabled(this));
         appUsageToggle.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         return true;
+    }
+
+    private void showSettingsSearch(@NonNull String query) {
+        Fragment current = getSupportFragmentManager().findFragmentByTag(ARG_SHOW_FRAGMENT);
+        if (current instanceof SettingsSearchFragment) {
+            ((SettingsSearchFragment) current).setQuery(query);
+            return;
+        }
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.content_container, SettingsSearchFragment.newInstance(query), ARG_SHOW_FRAGMENT)
+                .commit();
+        setTitle("Search settings");
+    }
+
+    private void exitSettingsSearch() {
+        Fragment current = getSupportFragmentManager().findFragmentByTag(ARG_SHOW_FRAGMENT);
+        if (!(current instanceof SettingsSearchFragment)) return;
+        getSupportFragmentManager().beginTransaction()
+                .replace(R.id.content_container, new SettingsFragment(), ARG_SHOW_FRAGMENT)
+                .commit();
+        setTitle(R.string.activity_setting);
+    }
+
+    public void openSettingsSearchResult(@NonNull SettingsSearchIndex.Entry entry) {
+        clearSearchWithoutNavigation();
+        switch (entry.destination) {
+            case BATTERY_MONITOR:
+                startActivity(new Intent(this, BatteryMonitorActivity.class));
+                return;
+            case INDEXING_SETTINGS:
+                startActivity(new Intent(this, IndexingSettingsActivity.class));
+                return;
+            case APP_USAGE:
+                startActivity(new Intent(this, AppUsageActivity.class));
+                return;
+            case SMART_SECTION: {
+                SmartFeaturesSettingsFragment fragment = new SmartFeaturesSettingsFragment();
+                Bundle args = new Bundle();
+                args.putString(SmartFeaturesSettingsFragment.ARG_SECTION, entry.section);
+                fragment.setArguments(args);
+                replaceFromSearch(fragment, "settings-search-smart-" + entry.section, null);
+                return;
+            }
+            case SMART_FEATURES: {
+                SmartFeaturesSettingsFragment fragment = new SmartFeaturesSettingsFragment();
+                replaceFromSearch(fragment, "settings-search-smart", entry.key);
+                return;
+            }
+            case STANDARD:
+            default:
+                openStandardSearchResult(entry);
+        }
+    }
+
+    private void openStandardSearchResult(SettingsSearchIndex.Entry entry) {
+        String rootKey = entry.opensScreen ? entry.key : entry.rootKey;
+        String targetKey = entry.opensScreen ? null : entry.key;
+        SettingsFragment fragment = isSmartCategory(rootKey)
+                ? new SmartCategorySettingsFragment()
+                : new SettingsFragment();
+        if (!TextUtils.isEmpty(rootKey)) {
+            Bundle args = new Bundle();
+            args.putString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT, rootKey);
+            fragment.setArguments(args);
+        }
+        replaceFromSearch(fragment, "settings-search-" + (entry.key == null ? "root" : entry.key), targetKey);
+    }
+
+    private void replaceFromSearch(@NonNull Fragment fragment, @NonNull String backStackName,
+                                   String targetKey) {
+        FragmentTransaction transaction = getSupportFragmentManager().beginTransaction()
+                .replace(R.id.content_container, fragment, ARG_SHOW_FRAGMENT)
+                .addToBackStack(backStackName);
+        transaction.runOnCommit(() -> {
+            if (targetKey == null || !(fragment instanceof PreferenceFragmentCompat)) return;
+            PreferenceFragmentCompat preferenceFragment = (PreferenceFragmentCompat) fragment;
+            preferenceFragment.getListView().post(() -> {
+                try {
+                    preferenceFragment.scrollToPreference(targetKey);
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "Unable to scroll to searched setting: " + targetKey);
+                }
+            });
+        });
+        transaction.commit();
+    }
+
+    private void clearSearchWithoutNavigation() {
+        if (settingsSearchView == null) return;
+        suppressSearchCallback = true;
+        settingsSearchView.setQuery("", false);
+        settingsSearchView.clearFocus();
+        suppressSearchCallback = false;
     }
 
     @Override
