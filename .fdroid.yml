@@ -1,5 +1,3 @@
-Categories:
-  - System
 License: GPL-3.0-only
 SourceCode: https://github.com/tbzmike/smart-s-launcher
 IssueTracker: https://github.com/tbzmike/smart-s-launcher/issues
@@ -10,7 +8,7 @@ Repo: https://github.com/tbzmike/smart-s-launcher.git
 Builds:
   - versionName: 3.29.83
     versionCode: 411
-    commit: 7f2d49fe31a22f95703a69f33a0c622a8d978f10
+    commit: 0ba5b9290d4b093ee04cf1b423652444d99b4486
     subdir: app
     gradle:
       - yes
