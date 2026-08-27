@@ -35,6 +35,7 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         SharedPreferences.OnSharedPreferenceChangeListener {
 
     public static final String PREF_GLOBAL_TEXT_COLOR = "smart-global-text-color";
+    public static final String PREF_GLOBAL_TEXT_WEIGHT_ENABLED = "smart-global-text-weight-enabled";
     public static final String PREF_GLOBAL_TEXT_WEIGHT = "smart-global-text-weight";
     public static final int DEFAULT_WEIGHT = 400;
     private static final long APPLY_DEBOUNCE_MS = 24L;
@@ -57,6 +58,7 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if (!PREF_GLOBAL_TEXT_COLOR.equals(key)
+                && !PREF_GLOBAL_TEXT_WEIGHT_ENABLED.equals(key)
                 && !PREF_GLOBAL_TEXT_WEIGHT.equals(key)
                 && !SmartTextAppearance.PREF_TEXT_COLOR_INVERTER.equals(key)) return;
         for (Activity activity : activityBindings.keySet()) scheduleApply(activity);
@@ -138,6 +140,9 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
             if (!TextUtils.isEmpty(view.getHint())) view.setHintTextColor(rendered);
             view.setLinkTextColor(rendered);
         }
+
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(view.getContext());
+        if (!preferences.getBoolean(PREF_GLOBAL_TEXT_WEIGHT_ENABLED, false)) return;
 
         int weight = configuredWeight(view.getContext());
         Typeface current = view.getTypeface();
