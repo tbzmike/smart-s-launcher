@@ -1,14 +1,21 @@
 package fr.neamar.kiss.ui;
 
 import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
+import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceScreen;
 
-/** Keeps the settings home predictable without changing any persisted preference keys. */
+import fr.neamar.kiss.R;
+
+/** Keeps settings predictable without changing any persisted preference keys. */
 public final class SettingsOrganizer {
     private SettingsOrganizer() { }
 
     public static void organize(PreferenceScreen screen, String rootKey) {
-        if (screen == null || rootKey != null) return;
+        if (screen == null) return;
+        applyCategoryLayouts(screen);
+
+        if (rootKey != null) return;
 
         order(screen, "ui-holder", 10,
                 "Appearance & interface",
@@ -35,6 +42,18 @@ public final class SettingsOrganizer {
                 "System & advanced",
                 "Permissions, background features, launcher role and advanced search controls");
         order(screen, "rate-app", 1000, null, null);
+    }
+
+    private static void applyCategoryLayouts(PreferenceGroup group) {
+        for (int i = 0; i < group.getPreferenceCount(); i++) {
+            Preference preference = group.getPreference(i);
+            if (preference instanceof PreferenceCategory) {
+                preference.setLayoutResource(R.layout.preference_category_xp);
+            }
+            if (preference instanceof PreferenceGroup) {
+                applyCategoryLayouts((PreferenceGroup) preference);
+            }
+        }
     }
 
     private static void order(PreferenceScreen screen, String key, int order,
