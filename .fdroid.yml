@@ -10,7 +10,7 @@ Repo: https://github.com/tbzmike/smart-s-launcher.git
 Builds:
   - versionName: 3.29.83
     versionCode: 411
-    commit: d8dfe29a845ab8f3f425a1bce4c0ab7b0a689e47
+    commit: 7f2d49fe31a22f95703a69f33a0c622a8d978f10
     subdir: app
     gradle:
       - yes
