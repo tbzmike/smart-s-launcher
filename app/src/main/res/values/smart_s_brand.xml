@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fork identity must remain Smart S Launcher in every locale. -->
+    <string name="smart_s_launcher_name" translatable="false">Smart S Launcher</string>
+    <string name="smart_s_settings_name" translatable="false">Smart S Launcher settings</string>
+</resources>
