@@ -14,8 +14,6 @@ Builds:
     subdir: app
     gradle:
       - yes
-    scandelete:
-      - app/debug.keystore
 
 AutoUpdateMode: None
 UpdateCheckMode: None
