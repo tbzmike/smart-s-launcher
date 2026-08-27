@@ -34,14 +34,16 @@ public final class BatteryMonitorService extends Service {
     private static final int LIVE_ID = 8450;
     private static final int ALERT_ID = 8451;
 
-    // History persistence stays conservative, while live status is refreshed much more often.
-    private static final long SAMPLE_CHARGING_MS = 60_000L;
-    private static final long SAMPLE_SCREEN_ON_MS = 60_000L;
-    private static final long SAMPLE_SCREEN_OFF_MS = 3L * 60_000L;
-    private static final long SAMPLE_LOW_SCREEN_OFF_MS = 60_000L;
-    private static final long LIVE_ACTIVE_REFRESH_MS = 2_000L;
-    private static final long LIVE_IDLE_REFRESH_MS = 15_000L;
-    private static final long WIDGET_REFRESH_MIN_MS = 15_000L;
+    // Event-first telemetry: preserve useful history and alerts without continuously polling.
+    private static final long SAMPLE_CHARGING_MS = 2L * 60_000L;
+    private static final long SAMPLE_SCREEN_ON_MS = 5L * 60_000L;
+    private static final long SAMPLE_SCREEN_OFF_MS = 15L * 60_000L;
+    private static final long SAMPLE_LOW_SCREEN_OFF_MS = 5L * 60_000L;
+    private static final long LIVE_ACTIVE_REFRESH_MS = 30_000L;
+    private static final long LIVE_IDLE_REFRESH_MS = 3L * 60_000L;
+    private static final long WIDGET_REFRESH_MIN_MS = 60_000L;
+    private static final long EVENT_DEBOUNCE_MS = 1_000L;
+    private static final long MIN_HISTORY_WRITE_MS = 2L * 60_000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private BatteryHistoryStore store;
@@ -53,6 +55,10 @@ public final class BatteryMonitorService extends Service {
     private BatteryRateCalculator.ScreenRates cachedRates;
     private boolean cachedRatesCharging;
     private boolean cachedRatesScreenOn;
+    private long lastHistoryWriteMs;
+    private int lastHistoryPercent = -1;
+    private boolean lastHistoryCharging;
+    private int lastHistoryStatus = Integer.MIN_VALUE;
 
     private final Runnable sampler = new Runnable() {
         @Override public void run() {
@@ -73,8 +79,7 @@ public final class BatteryMonitorService extends Service {
     private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
-            // Every registered action changes live battery data or the screen-state rate bucket.
-            // Persist and publish it immediately instead of waiting for the periodic sampler.
+            // ACTION_BATTERY_CHANGED may arrive in bursts. Coalesce those broadcasts into one read/write.
             scheduleSampleNow(true);
         }
     };
@@ -145,7 +150,7 @@ public final class BatteryMonitorService extends Service {
     private void scheduleSampleNow(boolean forceWidgets) {
         forceNextWidgetRefresh |= forceWidgets;
         handler.removeCallbacks(sampler);
-        handler.post(sampler);
+        handler.postDelayed(sampler, EVENT_DEBOUNCE_MS);
     }
 
     private boolean isScreenOn() {
@@ -164,12 +169,26 @@ public final class BatteryMonitorService extends Service {
         return s.isCharging() || isScreenOn() ? LIVE_ACTIVE_REFRESH_MS : LIVE_IDLE_REFRESH_MS;
     }
 
+    private boolean shouldPersist(BatterySnapshot s, long now) {
+        boolean stateChanged = s.percent() != lastHistoryPercent
+                || s.isCharging() != lastHistoryCharging
+                || s.status != lastHistoryStatus;
+        return stateChanged || now - lastHistoryWriteMs >= MIN_HISTORY_WRITE_MS;
+    }
+
     private BatterySnapshot sampleNow(boolean forceWidgets) {
         BatterySnapshot s = BatteryMonitorEngine.read(this);
-        store.add(s);
-        cachedRates = calculateRates(s);
-        cachedRatesCharging = s.isCharging();
-        cachedRatesScreenOn = isScreenOn();
+        long now = System.currentTimeMillis();
+        if (shouldPersist(s, now)) {
+            store.add(s);
+            lastHistoryWriteMs = now;
+            lastHistoryPercent = s.percent();
+            lastHistoryCharging = s.isCharging();
+            lastHistoryStatus = s.status;
+            cachedRates = calculateRates(s);
+            cachedRatesCharging = s.isCharging();
+            cachedRatesScreenOn = isScreenOn();
+        }
         NotificationManager nm = notificationManager();
         if (nm != null) nm.notify(LIVE_ID, buildLiveNotification(s));
         maybeRefreshWidgets(s, forceWidgets);
