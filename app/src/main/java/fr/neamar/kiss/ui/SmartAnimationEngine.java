@@ -131,8 +131,11 @@ public final class SmartAnimationEngine {
                 .translationX(0f)
                 .translationY(0f)
                 .rotation(0f)
+                .rotationX(0f)
+                .rotationY(0f)
                 .setDuration(duration(view.getContext()))
-                .setInterpolator("spring".equals(style)
+                .setInterpolator(("spring".equals(style) || "elastic".equals(style)
+                        || "bounce".equals(style))
                         ? new OvershootInterpolator(0.9f)
                         : new DecelerateInterpolator())
                 .start();
@@ -175,6 +178,36 @@ public final class SmartAnimationEngine {
                 view.setScaleX(0.9f);
                 view.setScaleY(0.9f);
                 view.setRotation(5f);
+                break;
+            case "flip":
+                view.setAlpha(0f);
+                view.setScaleX(0.88f);
+                view.setRotationY(26f);
+                break;
+            case "whirl":
+                view.setAlpha(0f);
+                view.setScaleX(0.78f);
+                view.setScaleY(0.78f);
+                view.setRotation(-16f);
+                break;
+            case "orbit":
+                view.setAlpha(0f);
+                view.setScaleX(0.84f);
+                view.setScaleY(0.84f);
+                view.setTranslationX(dp(view, 38));
+                view.setRotationY(-20f);
+                break;
+            case "elastic":
+                view.setAlpha(0f);
+                view.setScaleX(0.62f);
+                view.setScaleY(1.16f);
+                view.setTranslationY(dp(view, 24));
+                break;
+            case "bounce":
+                view.setAlpha(0f);
+                view.setScaleX(1.12f);
+                view.setScaleY(0.72f);
+                view.setTranslationY(dp(view, 36));
                 break;
             case "scale":
             default:
@@ -243,6 +276,21 @@ public final class SmartAnimationEngine {
             case "rotate":
                 animator.alpha(0f).scaleX(0.92f).scaleY(0.92f).rotation(-5f);
                 break;
+            case "flip":
+                animator.alpha(0f).scaleX(0.88f).rotationY(-26f);
+                break;
+            case "whirl":
+                animator.alpha(0f).scaleX(0.72f).scaleY(0.72f).rotation(18f);
+                break;
+            case "orbit":
+                animator.alpha(0f).translationX(dp(view, 38)).rotationY(20f).scaleX(0.86f);
+                break;
+            case "elastic":
+                animator.alpha(0f).scaleX(1.18f).scaleY(0.62f);
+                break;
+            case "bounce":
+                animator.alpha(0f).translationY(dp(view, 30)).scaleX(0.86f).scaleY(1.12f);
+                break;
             case "shrink":
             default:
                 animator.alpha(0f).scaleX(0.93f).scaleY(0.93f);
@@ -266,6 +314,15 @@ public final class SmartAnimationEngine {
                 outgoing.animate().alpha(0f).scaleX(0.96f).scaleY(0.96f).setDuration(duration / 2).start();
             } else if ("zoom".equals(style)) {
                 outgoing.animate().alpha(0f).scaleX(1.08f).scaleY(1.08f).setDuration(duration / 2).start();
+            } else if ("flip".equals(style)) {
+                outgoing.animate().alpha(0f).rotationY(-22f).scaleX(0.92f).setDuration(duration / 2).start();
+            } else if ("whirl".equals(style)) {
+                outgoing.animate().alpha(0f).rotation(-12f).scaleX(0.88f).scaleY(0.88f).setDuration(duration / 2).start();
+            } else if ("orbit".equals(style)) {
+                outgoing.animate().alpha(0f).translationX(-dp(outgoing, 32)).rotationY(18f)
+                        .scaleX(0.92f).setDuration(duration / 2).start();
+            } else if ("spring".equals(style)) {
+                outgoing.animate().alpha(0f).scaleX(0.86f).scaleY(1.08f).setDuration(duration / 2).start();
             } else {
                 outgoing.animate().alpha(0f).setDuration(duration / 2).start();
             }
@@ -281,9 +338,26 @@ public final class SmartAnimationEngine {
         } else if ("zoom".equals(style)) {
             incoming.setScaleX(0.9f);
             incoming.setScaleY(0.9f);
+        } else if ("flip".equals(style)) {
+            incoming.setRotationY(24f);
+            incoming.setScaleX(0.9f);
+        } else if ("whirl".equals(style)) {
+            incoming.setRotation(14f);
+            incoming.setScaleX(0.82f);
+            incoming.setScaleY(0.82f);
+        } else if ("orbit".equals(style)) {
+            incoming.setTranslationX(dp(incoming, 36));
+            incoming.setRotationY(-20f);
+            incoming.setScaleX(0.9f);
+        } else if ("spring".equals(style)) {
+            incoming.setScaleX(0.76f);
+            incoming.setScaleY(1.08f);
         }
-        incoming.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f).setDuration(duration)
-                .setInterpolator(new DecelerateInterpolator()).start();
+        incoming.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f)
+                .rotation(0f).rotationY(0f).setDuration(duration)
+                .setInterpolator("spring".equals(style)
+                        ? new OvershootInterpolator(0.75f)
+                        : new DecelerateInterpolator()).start();
     }
 
     public static void animateListMove(View child, int delta, boolean isNew) {
@@ -313,6 +387,23 @@ public final class SmartAnimationEngine {
                     child.setScaleY(0.78f);
                     child.setTranslationY(Math.min(44f, Math.max(-44f, delta)));
                     break;
+                case "flip":
+                    child.setScaleX(0.9f);
+                    child.setRotationY(delta >= 0 ? 20f : -20f);
+                    break;
+                case "whirl":
+                    child.setScaleX(0.84f);
+                    child.setScaleY(0.84f);
+                    child.setRotation(delta >= 0 ? 9f : -9f);
+                    break;
+                case "orbit":
+                    child.setTranslationX(dp(child, delta >= 0 ? 38 : -38));
+                    child.setRotationY(delta >= 0 ? -20f : 20f);
+                    break;
+                case "spring":
+                    child.setScaleX(0.74f);
+                    child.setScaleY(1.1f);
+                    break;
                 case "crossfade":
                 default:
                     child.setScaleX(0.95f);
@@ -327,8 +418,10 @@ public final class SmartAnimationEngine {
                     .scaleY(1f)
                     .translationX(0f)
                     .translationY(0f)
+                    .rotation(0f)
+                    .rotationY(0f)
                     .setDuration(duration)
-                    .setInterpolator("depth".equals(style)
+                    .setInterpolator(("depth".equals(style) || "spring".equals(style))
                             ? new OvershootInterpolator(0.65f)
                             : new DecelerateInterpolator())
                     .start();
@@ -342,12 +435,7 @@ public final class SmartAnimationEngine {
         }
     }
 
-    /**
-     * Entrance animation for the vertical tile/card list. It intentionally uses the user's
-     * Smart Scroll Animation preference (Classic/Focus/Depth/Wave/Slide/Stack/Zoom/Tilt/Cascade)
-     * because these cards are list content, not a window switch. The stagger makes the effect
-     * visible after the card hierarchy has actually been laid out.
-     */
+    /** Entrance animation for tile/card lists, controlled by the global scroll-animation setting. */
     public static void animateTileListItem(View child, int index) {
         if (child == null) return;
         child.animate().cancel();
@@ -395,6 +483,25 @@ public final class SmartAnimationEngine {
                 child.setScaleX(0.94f);
                 child.setScaleY(0.94f);
                 break;
+            case "flip":
+                child.setRotationX((index & 1) == 0 ? 24f : -24f);
+                child.setScaleY(0.82f);
+                break;
+            case "helix":
+                child.setTranslationX(dp(child, (index & 1) == 0 ? 54 : -54));
+                child.setRotationY((index & 1) == 0 ? 30f : -30f);
+                child.setScaleX(0.82f);
+                break;
+            case "fan":
+                child.setTranslationX(dp(child, (index & 1) == 0 ? 46 : -46));
+                child.setRotation((index & 1) == 0 ? 10f : -10f);
+                child.setScaleX(0.9f);
+                break;
+            case "bounce":
+                child.setTranslationY(dp(child, 46));
+                child.setScaleX(1.12f);
+                child.setScaleY(0.72f);
+                break;
             case "classic":
             default:
                 child.setTranslationY(dp(child, 34));
@@ -416,7 +523,8 @@ public final class SmartAnimationEngine {
                 .rotationY(0f)
                 .setStartDelay(delay)
                 .setDuration(duration)
-                .setInterpolator(("depth".equals(style) || "stack".equals(style))
+                .setInterpolator(("depth".equals(style) || "stack".equals(style)
+                        || "bounce".equals(style))
                         ? new OvershootInterpolator(0.7f)
                         : new DecelerateInterpolator())
                 .start();
