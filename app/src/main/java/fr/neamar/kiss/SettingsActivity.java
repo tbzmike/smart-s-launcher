@@ -18,7 +18,6 @@ import androidx.appcompat.widget.SearchView;
 import androidx.appcompat.widget.Toolbar;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
-import androidx.fragment.app.FragmentTransaction;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
@@ -211,21 +210,21 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
 
     private void replaceFromSearch(@NonNull Fragment fragment, @NonNull String backStackName,
                                    String targetKey) {
-        FragmentTransaction transaction = getSupportFragmentManager().beginTransaction()
+        getSupportFragmentManager().beginTransaction()
                 .replace(R.id.content_container, fragment, ARG_SHOW_FRAGMENT)
-                .addToBackStack(backStackName);
-        transaction.runOnCommit(() -> {
-            if (targetKey == null || !(fragment instanceof PreferenceFragmentCompat)) return;
-            PreferenceFragmentCompat preferenceFragment = (PreferenceFragmentCompat) fragment;
-            preferenceFragment.getListView().post(() -> {
-                try {
-                    preferenceFragment.scrollToPreference(targetKey);
-                } catch (RuntimeException e) {
-                    Log.w(TAG, "Unable to scroll to searched setting: " + targetKey);
-                }
-            });
-        });
-        transaction.commit();
+                .addToBackStack(backStackName)
+                .commit();
+        getSupportFragmentManager().executePendingTransactions();
+
+        if (targetKey == null || !(fragment instanceof PreferenceFragmentCompat)) return;
+        PreferenceFragmentCompat preferenceFragment = (PreferenceFragmentCompat) fragment;
+        preferenceFragment.getListView().postDelayed(() -> {
+            try {
+                preferenceFragment.scrollToPreference(targetKey);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Unable to scroll to searched setting: " + targetKey);
+            }
+        }, 80L);
     }
 
     private void clearSearchWithoutNavigation() {
