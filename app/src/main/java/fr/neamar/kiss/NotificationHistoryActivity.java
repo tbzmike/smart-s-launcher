@@ -1,5 +1,6 @@
 package fr.neamar.kiss;
 
+import android.app.AlertDialog;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -11,8 +12,11 @@ import android.text.Editable;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.TextWatcher;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -24,6 +28,7 @@ import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -48,6 +53,10 @@ import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.SemanticHints;
 
 public class NotificationHistoryActivity extends AppCompatActivity {
+    public static final String EXTRA_HISTORY_DB_ID = "notification-history-db-id";
+    public static final String EXTRA_SEARCH_QUERY = "notification-history-search-query";
+    public static final String EXTRA_PERMANENT = "notification-history-permanent";
+
     private LinearLayout tabs;
     private EditText search;
     private ListView list;
@@ -56,15 +65,28 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     private String selectedPackage;
     private boolean selectedPermanent;
     private int lastFirstVisible = -1;
+    private long targetDbId = -1L;
+    private String targetQuery = "";
+    private boolean suppressSearchRefresh;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setTitle("Notification history");
+        targetDbId = getIntent().getLongExtra(EXTRA_HISTORY_DB_ID, -1L);
+        targetQuery = safe(getIntent().getStringExtra(EXTRA_SEARCH_QUERY));
+        selectedPermanent = getIntent().getBooleanExtra(EXTRA_PERMANENT, false);
         configureWallpaperBackground();
         buildUi();
+        if (!targetQuery.isEmpty()) {
+            suppressSearchRefresh = true;
+            search.setText(targetQuery);
+            search.setSelection(search.length());
+            suppressSearchRefresh = false;
+        }
         rebuildTabs();
         refresh();
+        focusTarget();
         if (rootView != null) {
             rootView.post(() -> SmartAnimationEngine.animateWindowSwitch(null, rootView));
         }
@@ -74,7 +96,10 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         if (tabs != null) rebuildTabs();
-        if (list != null) refresh();
+        if (list != null) {
+            refresh();
+            focusTarget();
+        }
     }
 
     private void configureWallpaperBackground() {
@@ -108,7 +133,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Saved notifications · permanent notifications are separated · tap an app icon to open the app · tap a message to open its notification");
+        subtitle.setText("Saved notifications · permanent notifications are separated · tap an app icon to open the app · tap notification text to inspect the exact saved message");
         subtitle.setTextSize(13);
         root.addView(subtitle, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -128,7 +153,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         list.setDividerHeight(1);
         list.setCacheColorHint(Color.TRANSPARENT);
         list.setAdapter(new HistoryAdapter());
-        list.setOnItemClickListener((parent, view, position, id) -> openNotificationTarget(records.get(position)));
+        list.setOnItemClickListener((parent, view, position, id) -> showRecordDetail(records.get(position), getSearchQuery()));
         list.setOnScrollListener(new AbsListView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(AbsListView view, int scrollState) { }
@@ -157,7 +182,13 @@ public class NotificationHistoryActivity extends AppCompatActivity {
 
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { refresh(); }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (!suppressSearchRefresh) {
+                    targetDbId = -1L;
+                    targetQuery = "";
+                    refresh();
+                }
+            }
             @Override public void afterTextChanged(Editable s) {}
         });
         setContentView(root);
@@ -180,6 +211,8 @@ public class NotificationHistoryActivity extends AppCompatActivity {
                 || (selectedPackage != null && selectedPackage.equals(packageName)));
         button.setAlpha(selected ? 1f : 0.78f);
         button.setOnClickListener(v -> {
+            targetDbId = -1L;
+            targetQuery = "";
             selectedPackage = packageName;
             selectedPermanent = permanent;
             if (permanent) search.setHint("Search permanent notifications");
@@ -208,6 +241,21 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         }
     }
 
+    private void focusTarget() {
+        if (targetDbId <= 0L || list == null) return;
+        for (int i = 0; i < records.size(); i++) {
+            if (records.get(i).dbId == targetDbId) {
+                final int position = i;
+                list.post(() -> {
+                    list.setSelection(Math.max(0, position - 1));
+                    View child = list.getChildAt(position - list.getFirstVisiblePosition());
+                    if (child != null) SmartAnimationEngine.animateTileListItem(child, 0);
+                });
+                return;
+            }
+        }
+    }
+
     private void animateVisibleRows() {
         if (list == null || !SmartAnimationEngine.isEnabled(this)) return;
         int count = list.getChildCount();
@@ -227,15 +275,63 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         }
     }
 
-    private void openNotificationTarget(NotificationHistoryRecord record) {
-        if (!AppLaunchUtils.ensurePackageEnabled(this, record.packageName)) {
-            Toast.makeText(this, "Unable to enable " + record.appName, Toast.LENGTH_SHORT).show();
-            return;
+    private void showRecordDetail(NotificationHistoryRecord record, String query) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(16);
+        content.setPadding(pad, pad, pad, pad);
+
+        TextView app = new TextView(this);
+        app.setText(highlightLiteral(safe(record.appName), query));
+        app.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        app.setTextSize(18);
+        content.addView(app);
+
+        String combined = safe(record.title);
+        if (!safe(record.text).isEmpty()) combined = combined.isEmpty() ? safe(record.text) : combined + "\n\n" + safe(record.text);
+        if (combined.isEmpty()) combined = "Notification";
+
+        TextView message = new TextView(this);
+        message.setText(highlightLiteral(combined, query));
+        message.setTextSize(16);
+        message.setTextIsSelectable(true);
+        message.setPadding(0, dp(10), 0, dp(10));
+        content.addView(message, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView time = new TextView(this);
+        time.setText(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(record.postTime));
+        time.setTextSize(12);
+        content.addView(time);
+
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setGravity(Gravity.END);
+
+        Button openApp = new Button(this);
+        openApp.setText("Open app");
+        openApp.setOnClickListener(v -> openApp(record));
+        buttons.addView(openApp);
+
+        if (record.notificationId != null && NotificationListener.isNotificationActive(this, record.notificationId)) {
+            Button openNotification = new Button(this);
+            openNotification.setText("Open notification");
+            openNotification.setOnClickListener(v -> {
+                if (!NotificationListener.openNotification(this, record.notificationId)) {
+                    Toast.makeText(this, "Unable to open this notification", Toast.LENGTH_SHORT).show();
+                }
+            });
+            buttons.addView(openNotification);
         }
-        if (NotificationListener.openNotification(this, record.notificationId)) return;
-        if (!AppLaunchUtils.launchPackage(this, record.packageName)) {
-            Toast.makeText(this, "Unable to open " + record.appName, Toast.LENGTH_SHORT).show();
-        }
+        content.addView(buttons);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(content);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Saved notification")
+                .setView(scroll)
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        dialog.setOnShowListener(ignored -> SmartAnimationEngine.animateDialogIn(dialog));
+        dialog.show();
     }
 
     private CharSequence highlightLiteral(String value, String query) {
@@ -250,11 +346,17 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             int start = haystack.indexOf(needle, from);
             if (start < 0) break;
             int end = start + needle.length();
+            highlighted.setSpan(new BackgroundColorSpan(Color.rgb(255, 235, 59)), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            highlighted.setSpan(new ForegroundColorSpan(Color.BLACK), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             highlighted.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             highlighted.setSpan(new UnderlineSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
             from = end;
         }
         return highlighted;
+    }
+
+    private static String safe(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -265,13 +367,14 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         @Override public long getItemId(int position) { return records.get(position).dbId; }
 
         @Override
-        public android.view.View getView(int position, android.view.View convertView, ViewGroup parent) {
+        public View getView(int position, View convertView, ViewGroup parent) {
             NotificationHistoryRecord record = getItem(position);
             String query = getSearchQuery();
             LinearLayout row = new LinearLayout(NotificationHistoryActivity.this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             int pad = dp(10);
             row.setPadding(0, pad, 0, pad);
+            if (record.dbId == targetDbId) row.setBackgroundColor(Color.argb(105, 255, 193, 7));
 
             ImageView icon = new ImageView(NotificationHistoryActivity.this);
             int size = dp(42);
@@ -290,7 +393,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             text.setOrientation(LinearLayout.VERTICAL);
             text.setPadding(pad, 0, 0, 0);
             text.setClickable(true);
-            text.setOnClickListener(v -> openNotificationTarget(record));
+            text.setOnClickListener(v -> showRecordDetail(record, query));
 
             TextView app = new TextView(NotificationHistoryActivity.this);
             app.setText(highlightLiteral(record.appName, query));
