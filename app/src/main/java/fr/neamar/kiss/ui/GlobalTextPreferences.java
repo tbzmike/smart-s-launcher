@@ -3,6 +3,7 @@ package fr.neamar.kiss.ui;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.SeekBarPreference;
+import androidx.preference.SwitchPreference;
 
 import fr.neamar.kiss.UIColors;
 import fr.neamar.kiss.preference.ColorPreference;
@@ -25,18 +26,28 @@ final class GlobalTextPreferences {
             category.addPreference(color);
         }
 
+        if (fragment.findPreference(GlobalTextStyler.PREF_GLOBAL_TEXT_WEIGHT_ENABLED) == null) {
+            SwitchPreference enabled = new SwitchPreference(fragment.requireContext());
+            enabled.setKey(GlobalTextStyler.PREF_GLOBAL_TEXT_WEIGHT_ENABLED);
+            enabled.setTitle("Use global text boldness");
+            enabled.setSummary("Off keeps each screen's existing bold/normal styling. On applies the weight below everywhere.");
+            enabled.setDefaultValue(false);
+            enabled.setOrder(-1999);
+            category.addPreference(enabled);
+        }
+
         if (fragment.findPreference(GlobalTextStyler.PREF_GLOBAL_TEXT_WEIGHT) == null) {
             SeekBarPreference weight = new SeekBarPreference(fragment.requireContext());
             weight.setKey(GlobalTextStyler.PREF_GLOBAL_TEXT_WEIGHT);
             weight.setTitle("Global text boldness");
-            weight.setSummary("100 = thin, 400 = normal, 700 = bold, 900 = black. Applies launcher-wide while preserving italic text.");
+            weight.setSummary("100 = thin, 400 = normal, 700 = bold, 900 = heavy. Applies launcher-wide while preserving italic text.");
             weight.setMin(100);
             weight.setMax(900);
             weight.setSeekBarIncrement(50);
             weight.setShowSeekBarValue(true);
             weight.setUpdatesContinuously(true);
             weight.setDefaultValue(GlobalTextStyler.DEFAULT_WEIGHT);
-            weight.setOrder(-1999);
+            weight.setOrder(-1998);
             category.addPreference(weight);
         }
     }
