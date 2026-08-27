@@ -23,6 +23,7 @@ import androidx.fragment.app.DialogFragment;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentManager;
+import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
 import java.util.Map;
@@ -30,28 +31,20 @@ import java.util.WeakHashMap;
 
 import fr.neamar.kiss.UIColors;
 
-/**
- * Applies the user-selected launcher-wide text colour and font weight after individual screens
- * render their own local styles. This deliberately operates at the window tree level so settings,
- * history, search, widgets/cards and dynamically-created labels all receive the same override.
- */
 public final class GlobalTextStyler implements Application.ActivityLifecycleCallbacks,
         SharedPreferences.OnSharedPreferenceChangeListener {
 
     public static final String PREF_GLOBAL_TEXT_COLOR = "smart-global-text-color";
     public static final String PREF_GLOBAL_TEXT_WEIGHT = "smart-global-text-weight";
     public static final int DEFAULT_WEIGHT = 400;
-
     private static final long APPLY_DEBOUNCE_MS = 24L;
 
-    private final Application application;
     private final SharedPreferences prefs;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Map<Activity, WindowBinding> activityBindings = new WeakHashMap<>();
 
     private GlobalTextStyler(Application application) {
-        this.application = application;
-        this.prefs = PreferenceManager.getDefaultSharedPreferences(application);
+        prefs = PreferenceManager.getDefaultSharedPreferences(application);
     }
 
     public static GlobalTextStyler install(Application application) {
@@ -65,12 +58,8 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if (!PREF_GLOBAL_TEXT_COLOR.equals(key)
                 && !PREF_GLOBAL_TEXT_WEIGHT.equals(key)
-                && !SmartTextAppearance.PREF_TEXT_COLOR_INVERTER.equals(key)) {
-            return;
-        }
-        for (Activity activity : activityBindings.keySet()) {
-            scheduleApply(activity);
-        }
+                && !SmartTextAppearance.PREF_TEXT_COLOR_INVERTER.equals(key)) return;
+        for (Activity activity : activityBindings.keySet()) scheduleApply(activity);
     }
 
     @Override
@@ -82,16 +71,8 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         }
     }
 
-    @Override
-    public void onActivityStarted(@NonNull Activity activity) {
-        scheduleApply(activity);
-    }
-
-    @Override
-    public void onActivityResumed(@NonNull Activity activity) {
-        scheduleApply(activity);
-    }
-
+    @Override public void onActivityStarted(@NonNull Activity activity) { scheduleApply(activity); }
+    @Override public void onActivityResumed(@NonNull Activity activity) { scheduleApply(activity); }
     @Override public void onActivityPaused(@NonNull Activity activity) { }
     @Override public void onActivityStopped(@NonNull Activity activity) { }
     @Override public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) { }
@@ -106,9 +87,12 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
             new FragmentManager.FragmentLifecycleCallbacks() {
                 @Override
                 public void onFragmentResumed(@NonNull FragmentManager fm, @NonNull Fragment fragment) {
-                    if (!(fragment instanceof DialogFragment)) return;
-                    Dialog dialog = ((DialogFragment) fragment).getDialog();
-                    applyDialog(dialog);
+                    if (fragment instanceof PreferenceFragmentCompat) {
+                        GlobalTextPreferences.install((PreferenceFragmentCompat) fragment);
+                    }
+                    if (fragment instanceof DialogFragment) {
+                        applyDialog(((DialogFragment) fragment).getDialog());
+                    }
                 }
             };
 
@@ -131,7 +115,6 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         if (binding != null) binding.schedule();
     }
 
-    /** Apply the global override to a standalone dialog window when one is surfaced. */
     public void applyDialog(@Nullable Dialog dialog) {
         if (dialog == null || dialog.getWindow() == null) return;
         View root = dialog.getWindow().getDecorView();
@@ -144,9 +127,7 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         if (view instanceof TextView) applyToTextView((TextView) view);
         if (!(view instanceof ViewGroup)) return;
         ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            applyToTree(group.getChildAt(i));
-        }
+        for (int i = 0; i < group.getChildCount(); i++) applyToTree(group.getChildAt(i));
     }
 
     private void applyToTextView(TextView view) {
@@ -161,49 +142,39 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         int weight = configuredWeight(view.getContext());
         Typeface current = view.getTypeface();
         boolean italic = current != null && (current.getStyle() & Typeface.ITALIC) != 0;
-        Typeface weighted;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            Typeface base = current == null ? Typeface.DEFAULT : current;
-            weighted = Typeface.create(base, weight, italic);
-        } else {
-            int style = weight >= 600
-                    ? (italic ? Typeface.BOLD_ITALIC : Typeface.BOLD)
-                    : (italic ? Typeface.ITALIC : Typeface.NORMAL);
-            weighted = Typeface.create(current == null ? Typeface.DEFAULT : current, style);
+            if (current != null && current.getWeight() == weight && current.isItalic() == italic) return;
+            view.setTypeface(Typeface.create(current == null ? Typeface.DEFAULT : current, weight, italic));
+            return;
         }
-        if (weighted != null && weighted != current) view.setTypeface(weighted);
+        int desiredStyle = weight >= 600
+                ? (italic ? Typeface.BOLD_ITALIC : Typeface.BOLD)
+                : (italic ? Typeface.ITALIC : Typeface.NORMAL);
+        if (current != null && current.getStyle() == desiredStyle) return;
+        view.setTypeface(Typeface.create(current == null ? Typeface.DEFAULT : current, desiredStyle));
     }
 
     private int configuredColor(Context context) {
         String raw = PreferenceManager.getDefaultSharedPreferences(context).getString(
                 PREF_GLOBAL_TEXT_COLOR, UIColors.colorToString(UIColors.COLOR_SYSTEM));
         if (TextUtils.isEmpty(raw)) return UIColors.COLOR_SYSTEM;
-        try {
-            return Color.parseColor(raw);
-        } catch (IllegalArgumentException ignored) {
-            return UIColors.COLOR_SYSTEM;
-        }
+        try { return Color.parseColor(raw); }
+        catch (IllegalArgumentException ignored) { return UIColors.COLOR_SYSTEM; }
     }
 
     public static int configuredWeight(Context context) {
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
         int value;
-        try {
-            value = preferences.getInt(PREF_GLOBAL_TEXT_WEIGHT, DEFAULT_WEIGHT);
-        } catch (ClassCastException e) {
-            try {
-                value = Integer.parseInt(preferences.getString(
-                        PREF_GLOBAL_TEXT_WEIGHT, Integer.toString(DEFAULT_WEIGHT)));
-            } catch (NumberFormatException | ClassCastException ignored) {
-                value = DEFAULT_WEIGHT;
-            }
+        try { value = preferences.getInt(PREF_GLOBAL_TEXT_WEIGHT, DEFAULT_WEIGHT); }
+        catch (ClassCastException e) {
+            try { value = Integer.parseInt(preferences.getString(
+                    PREF_GLOBAL_TEXT_WEIGHT, Integer.toString(DEFAULT_WEIGHT))); }
+            catch (NumberFormatException | ClassCastException ignored) { value = DEFAULT_WEIGHT; }
         }
         return clampWeight(value);
     }
 
-    static int clampWeight(int value) {
-        return Math.max(100, Math.min(900, value));
-    }
+    static int clampWeight(int value) { return Math.max(100, Math.min(900, value)); }
 
     private final class WindowBinding {
         private final Activity activity;
