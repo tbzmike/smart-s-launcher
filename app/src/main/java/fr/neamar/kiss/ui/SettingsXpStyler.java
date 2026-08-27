@@ -3,13 +3,13 @@ package fr.neamar.kiss.ui;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.Rect;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.widget.Toolbar;
-import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -35,7 +35,6 @@ public final class SettingsXpStyler {
             GradientDrawable gradient = new GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
                     new int[]{XP_BLUE, XP_BLUE_DARK});
-            gradient.setCornerRadius(0f);
             toolbar.setBackground(gradient);
             toolbar.setTitleTextColor(Color.WHITE);
             toolbar.setSubtitleTextColor(Color.WHITE);
@@ -52,6 +51,16 @@ public final class SettingsXpStyler {
         list.setPadding(dp(list, 8), dp(list, 8), dp(list, 8), dp(list, 18));
         list.setClipToPadding(false);
         list.setItemAnimator(null);
+        if (list.getItemDecorationCount() == 0) {
+            list.addItemDecoration(new RecyclerView.ItemDecoration() {
+                @Override
+                public void getItemOffsets(@NonNull Rect outRect, @NonNull View view,
+                                           @NonNull RecyclerView parent,
+                                           @NonNull RecyclerView.State state) {
+                    outRect.bottom = dp(view, 5);
+                }
+            });
+        }
         list.addOnChildAttachStateChangeListener(new RecyclerView.OnChildAttachStateChangeListener() {
             @Override public void onChildViewAttachedToWindow(@NonNull View view) {
                 stylePreferenceRow(view);
@@ -65,18 +74,20 @@ public final class SettingsXpStyler {
 
     private static void stylePreferenceRow(View row) {
         if (row == null) return;
-        boolean isCategory = row.getTag() instanceof PreferenceCategory;
+        boolean isCategory = row.findViewById(R.id.xp_category_marker) != null;
 
         GradientDrawable background = new GradientDrawable();
         background.setColor(isCategory ? XP_BLUE : XP_ROW);
         background.setCornerRadius(dp(row, isCategory ? 4 : 6));
-        background.setStroke(dp(row, isCategory ? 0 : 1), isCategory ? XP_BLUE : XP_BORDER);
+        if (!isCategory) background.setStroke(dp(row, 1), XP_BORDER);
         row.setBackground(background);
         row.setElevation(dp(row, isCategory ? 1 : 2));
-        row.setPadding(Math.max(row.getPaddingLeft(), dp(row, 12)),
-                Math.max(row.getPaddingTop(), dp(row, 10)),
-                Math.max(row.getPaddingRight(), dp(row, 12)),
-                Math.max(row.getPaddingBottom(), dp(row, 10)));
+        if (!isCategory) {
+            row.setPadding(Math.max(row.getPaddingLeft(), dp(row, 12)),
+                    Math.max(row.getPaddingTop(), dp(row, 10)),
+                    Math.max(row.getPaddingRight(), dp(row, 12)),
+                    Math.max(row.getPaddingBottom(), dp(row, 10)));
+        }
 
         styleTextTree(row, isCategory);
     }
@@ -87,13 +98,15 @@ public final class SettingsXpStyler {
             if (category) {
                 text.setTextColor(Color.WHITE);
                 text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-                text.setTextSize(Math.max(16f, text.getTextSize() / text.getResources().getDisplayMetrics().scaledDensity));
+                text.setTextSize(Math.max(16f,
+                        text.getTextSize() / text.getResources().getDisplayMetrics().scaledDensity));
             } else {
                 int id = text.getId();
                 if (id == android.R.id.title) {
                     text.setTextColor(XP_TEXT);
                     text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-                    text.setTextSize(Math.max(16f, text.getTextSize() / text.getResources().getDisplayMetrics().scaledDensity));
+                    text.setTextSize(Math.max(16f,
+                            text.getTextSize() / text.getResources().getDisplayMetrics().scaledDensity));
                 } else if (id == android.R.id.summary) {
                     text.setTextColor(XP_SUMMARY);
                     text.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
