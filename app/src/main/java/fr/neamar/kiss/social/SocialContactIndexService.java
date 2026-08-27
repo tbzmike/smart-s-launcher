@@ -23,7 +23,6 @@ import android.provider.ContactsContract;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
-import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -212,6 +211,18 @@ public class SocialContactIndexService extends Service {
             int completed = 0;
             for (String packageName : packages) {
                 String label = candidates.get(packageName);
+                state.edit()
+                        .putString(packageName + "|status", STATUS_INDEXING)
+                        .putString(packageName + "|label", label == null ? packageName : label)
+                        .apply();
+
+                if (nm != null && canPostNotifications(this)) {
+                    nm.notify(PROGRESS_NOTIFICATION_ID,
+                            buildProgressNotification(completed, packages.size(),
+                                    getString(R.string.social_index_current_app,
+                                            label == null ? packageName : label), true));
+                }
+
                 int contactCount = contactsByPackage.getOrDefault(packageName, Collections.emptySet()).size();
                 int shortcutCount = countConversationShortcuts(packageName);
                 totalContacts += contactCount;
@@ -313,15 +324,10 @@ public class SocialContactIndexService extends Service {
             if (shortcuts == null) return 0;
             int count = 0;
             for (android.content.pm.ShortcutInfo shortcut : shortcuts) {
-                if (shortcut == null || !shortcut.isEnabled()) continue;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    android.app.Person[] persons = shortcut.getPersons();
-                    if ((persons != null && persons.length > 0) || shortcut.isLongLived()) count++;
-                } else {
-                    // Before Android 10 there is no Person metadata. A visible app shortcut is the
-                    // only launcher-supported conversation/contact surface available to us.
-                    count++;
-                }
+                // Smart S' ShortcutsProvider indexes these same Android-published shortcut surfaces.
+                // For a package already classified as social/communications, count every enabled
+                // published shortcut rather than relying on hidden/non-SDK conversation metadata.
+                if (shortcut != null && shortcut.isEnabled()) count++;
             }
             return count;
         } catch (SecurityException | IllegalStateException e) {
