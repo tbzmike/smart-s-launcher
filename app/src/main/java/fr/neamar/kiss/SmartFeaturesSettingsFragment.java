@@ -135,11 +135,15 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
         launchStyle.setTitle("History launch animation");
         launchStyle.setSummary("Animation used when a history tile opens its target");
         launchStyle.setEntries(new CharSequence[]{
-                "Flip & expand", "Backspin & expand", "Random"
+                "Flip & expand", "Backspin & expand", "Orbit & expand",
+                "Twist & expand", "Pulse & expand", "Random"
         });
         launchStyle.setEntryValues(new CharSequence[]{
                 LaunchMorphTransition.STYLE_FLIP,
                 LaunchMorphTransition.STYLE_BACKSPIN,
+                LaunchMorphTransition.STYLE_ORBIT,
+                LaunchMorphTransition.STYLE_TWIST,
+                LaunchMorphTransition.STYLE_PULSE,
                 LaunchMorphTransition.STYLE_RANDOM
         });
         launchStyle.setDefaultValue(LaunchMorphTransition.STYLE_FLIP);
