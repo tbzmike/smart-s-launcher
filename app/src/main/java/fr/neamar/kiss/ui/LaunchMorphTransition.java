@@ -16,6 +16,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 
@@ -27,6 +28,9 @@ public final class LaunchMorphTransition {
     public static final String PREF_LAUNCH_STYLE = "smart-history-launch-animation";
     public static final String STYLE_FLIP = "flip";
     public static final String STYLE_BACKSPIN = "backspin";
+    public static final String STYLE_ORBIT = "orbit";
+    public static final String STYLE_TWIST = "twist";
+    public static final String STYLE_PULSE = "pulse";
     public static final String STYLE_RANDOM = "random";
 
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
@@ -129,14 +133,33 @@ public final class LaunchMorphTransition {
         };
 
         String style = resolveLaunchStyle(context);
-        if (STYLE_BACKSPIN.equals(style)) {
-            startBackspin(host, overlay, face, source, sourceAlpha, snapshot,
-                    startX, startY, startWidth, startHeight,
-                    flipHalf, backHold, expandDuration, launchOnce);
-        } else {
-            startFlip(host, overlay, face, source, sourceAlpha, snapshot,
-                    startX, startY, startWidth, startHeight,
-                    flipHalf, backHold, expandDuration, launchOnce);
+        switch (style) {
+            case STYLE_BACKSPIN:
+                startBackspin(host, overlay, face, source, sourceAlpha, snapshot,
+                        startX, startY, startWidth, startHeight,
+                        flipHalf, backHold, expandDuration, launchOnce);
+                break;
+            case STYLE_ORBIT:
+                startCreative(host, overlay, face, source, sourceAlpha, snapshot,
+                        startX, startY, startWidth, startHeight, expandDuration, launchOnce,
+                        STYLE_ORBIT, Math.max(280L, flipHalf * 2));
+                break;
+            case STYLE_TWIST:
+                startCreative(host, overlay, face, source, sourceAlpha, snapshot,
+                        startX, startY, startWidth, startHeight, expandDuration, launchOnce,
+                        STYLE_TWIST, Math.max(300L, flipHalf * 2));
+                break;
+            case STYLE_PULSE:
+                startCreative(host, overlay, face, source, sourceAlpha, snapshot,
+                        startX, startY, startWidth, startHeight, expandDuration, launchOnce,
+                        STYLE_PULSE, Math.max(260L, flipHalf * 2));
+                break;
+            case STYLE_FLIP:
+            default:
+                startFlip(host, overlay, face, source, sourceAlpha, snapshot,
+                        startX, startY, startWidth, startHeight,
+                        flipHalf, backHold, expandDuration, launchOnce);
+                break;
         }
         return true;
     }
@@ -144,9 +167,19 @@ public final class LaunchMorphTransition {
     static String resolveLaunchStyle(Context context) {
         String configured = SmartAnimationEngine.getStyle(context, PREF_LAUNCH_STYLE, STYLE_FLIP);
         if (STYLE_RANDOM.equals(configured)) {
-            return ThreadLocalRandom.current().nextBoolean() ? STYLE_FLIP : STYLE_BACKSPIN;
+            switch (ThreadLocalRandom.current().nextInt(5)) {
+                case 1: return STYLE_BACKSPIN;
+                case 2: return STYLE_ORBIT;
+                case 3: return STYLE_TWIST;
+                case 4: return STYLE_PULSE;
+                default: return STYLE_FLIP;
+            }
         }
-        return STYLE_BACKSPIN.equals(configured) ? STYLE_BACKSPIN : STYLE_FLIP;
+        if (STYLE_BACKSPIN.equals(configured) || STYLE_ORBIT.equals(configured)
+                || STYLE_TWIST.equals(configured) || STYLE_PULSE.equals(configured)) {
+            return configured;
+        }
+        return STYLE_FLIP;
     }
 
     private static void startFlip(ViewGroup host, FrameLayout overlay, ImageView face,
@@ -210,10 +243,6 @@ public final class LaunchMorphTransition {
         flipFront.start();
     }
 
-    /**
-     * New secondary animation: the tile begins upside down on its rear plane, spins forward through
-     * a complete 3D turn, rights itself, then expands to fill the screen before launch.
-     */
     private static void startBackspin(ViewGroup host, FrameLayout overlay, ImageView face,
                                       View source, float sourceAlpha, Bitmap snapshot,
                                       float startX, float startY, int startWidth, int startHeight,
@@ -246,10 +275,7 @@ public final class LaunchMorphTransition {
                     finishAborted(source, sourceAlpha, snapshot, launchOnce);
                     return;
                 }
-                overlay.setRotationX(0f);
-                overlay.setRotation(0f);
-                overlay.setBackground(null);
-                face.clearColorFilter();
+                resetCreativeSurface(overlay, face);
                 overlay.postDelayed(() -> startExpansion(host, overlay, source,
                         sourceAlpha, snapshot, face, startX, startY, startWidth,
                         startHeight, expandDuration, launchOnce), backHold);
@@ -262,6 +288,75 @@ public final class LaunchMorphTransition {
             }
         });
         spin.start();
+    }
+
+    private static void startCreative(ViewGroup host, FrameLayout overlay, ImageView face,
+                                      View source, float sourceAlpha, Bitmap snapshot,
+                                      float startX, float startY, int startWidth, int startHeight,
+                                      long expandDuration, Runnable launchOnce,
+                                      String style, long duration) {
+        overlay.setPivotX(startWidth / 2f);
+        overlay.setPivotY(startHeight / 2f);
+        AnimatorSet set = new AnimatorSet();
+        if (STYLE_ORBIT.equals(style)) {
+            set.playTogether(
+                    ObjectAnimator.ofFloat(overlay, View.ROTATION_Y, 0f, 300f, 360f),
+                    ObjectAnimator.ofFloat(overlay, View.ROTATION, 0f, -12f, 0f),
+                    ObjectAnimator.ofFloat(overlay, View.TRANSLATION_Y, 0f, -startHeight * 0.30f, 0f),
+                    ObjectAnimator.ofFloat(overlay, View.SCALE_X, 1f, 0.72f, 1f),
+                    ObjectAnimator.ofFloat(overlay, View.SCALE_Y, 1f, 0.72f, 1f)
+            );
+        } else if (STYLE_TWIST.equals(style)) {
+            set.playTogether(
+                    ObjectAnimator.ofFloat(overlay, View.ROTATION, 0f, 360f),
+                    ObjectAnimator.ofFloat(overlay, View.ROTATION_X, 0f, 180f, 360f),
+                    ObjectAnimator.ofFloat(overlay, View.SCALE_X, 1f, 0.68f, 1f),
+                    ObjectAnimator.ofFloat(overlay, View.SCALE_Y, 1f, 0.90f, 1f),
+                    ObjectAnimator.ofFloat(face, View.ALPHA, 1f, 0.72f, 1f)
+            );
+        } else {
+            set.playTogether(
+                    ObjectAnimator.ofFloat(overlay, View.SCALE_X, 1f, 0.62f, 1.14f, 1f),
+                    ObjectAnimator.ofFloat(overlay, View.SCALE_Y, 1f, 0.62f, 1.14f, 1f),
+                    ObjectAnimator.ofFloat(overlay, View.ROTATION_Y, 0f, 18f, -12f, 0f),
+                    ObjectAnimator.ofFloat(face, View.ALPHA, 1f, 0.78f, 1f)
+            );
+            set.setInterpolator(new OvershootInterpolator(0.65f));
+        }
+        if (!STYLE_PULSE.equals(style)) set.setInterpolator(new AccelerateDecelerateInterpolator());
+        set.setDuration(duration);
+        set.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (overlay.getParent() == null) {
+                    finishAborted(source, sourceAlpha, snapshot, launchOnce);
+                    return;
+                }
+                resetCreativeSurface(overlay, face);
+                startExpansion(host, overlay, source, sourceAlpha, snapshot, face,
+                        startX, startY, startWidth, startHeight, expandDuration, launchOnce);
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                launchOnce.run();
+                cleanup(host, overlay, source, sourceAlpha, snapshot);
+            }
+        });
+        set.start();
+    }
+
+    private static void resetCreativeSurface(FrameLayout overlay, ImageView face) {
+        overlay.setRotation(0f);
+        overlay.setRotationX(0f);
+        overlay.setRotationY(0f);
+        overlay.setTranslationX(0f);
+        overlay.setTranslationY(0f);
+        overlay.setScaleX(1f);
+        overlay.setScaleY(1f);
+        overlay.setBackground(null);
+        face.clearColorFilter();
+        face.setAlpha(1f);
     }
 
     private static GradientDrawable createBackSurface(int width, int height) {
