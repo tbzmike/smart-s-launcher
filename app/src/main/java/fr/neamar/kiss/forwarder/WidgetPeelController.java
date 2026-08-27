@@ -16,10 +16,12 @@ import java.util.Set;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.searcher.SearchHandler;
+import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 
 /**
- * Gives widgets a paper-like corner lift only when visible search-result rows physically approach
+ * Gives widgets a paper-like corner lift only when visible query-result rows physically approach
  * or overlap them. Keyboard visibility is deliberately not an input: all motion is derived from
  * real screen-space geometry.
  */
@@ -32,7 +34,6 @@ final class WidgetPeelController {
     private final Map<View, PeelState> states = new IdentityHashMap<>();
     private final Rect scratchWidgetRect = new Rect();
     private final Rect scratchResultRect = new Rect();
-    private final Rect scratchHorizontal = new Rect();
 
     private View root;
     private ViewGroup widgetArea;
@@ -105,7 +106,8 @@ final class WidgetPeelController {
         liveTargets.addAll(targets);
         restoreDetachedTargets(liveTargets);
 
-        boolean resultsVisible = resultLayout.getVisibility() == View.VISIBLE
+        boolean queryResultsVisible = SearchHandler.getInstance().getLastSearchType() == Searcher.Type.QUERY
+                && resultLayout.getVisibility() == View.VISIBLE
                 && activity.list != null
                 && activity.list.getVisibility() == View.VISIBLE
                 && activity.list.getChildCount() > 0;
@@ -125,7 +127,7 @@ final class WidgetPeelController {
                 widgetRect = new Rect(scratchWidgetRect);
             }
 
-            Pressure pressure = resultsVisible ? pressureFor(widgetRect) : Pressure.NONE;
+            Pressure pressure = queryResultsVisible ? pressureFor(widgetRect) : Pressure.NONE;
             if (pressure.amount <= 0f) {
                 restoreAndForget(target);
                 continue;
