@@ -219,7 +219,7 @@ public class ForwarderManager extends Forwarder {
             verticalCardViewportController.onSearchQueryChanged(
                     !TextUtils.isEmpty(normalized), !sameQuery);
         }
-        if (initialResumeComplete && sameQuery) {
+        if (HistoryRefreshPolicy.shouldSkip(initialResumeComplete, sameQuery, isHistorySearch())) {
             return;
         }
 
