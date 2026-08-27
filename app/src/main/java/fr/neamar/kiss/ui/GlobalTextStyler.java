@@ -29,6 +29,7 @@ import androidx.preference.PreferenceManager;
 import java.util.Map;
 import java.util.WeakHashMap;
 
+import fr.neamar.kiss.SettingsActivity;
 import fr.neamar.kiss.UIColors;
 
 public final class GlobalTextStyler implements Application.ActivityLifecycleCallbacks,
@@ -67,6 +68,10 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
     @Override
     public void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
         bindActivity(activity);
+        if (activity instanceof SettingsActivity) {
+            activity.getWindow().getDecorView().post(() ->
+                    SettingsXpStyler.styleActivity(activity.getWindow().getDecorView()));
+        }
         if (activity instanceof FragmentActivity) {
             ((FragmentActivity) activity).getSupportFragmentManager()
                     .registerFragmentLifecycleCallbacks(fragmentCallbacks, true);
@@ -74,7 +79,15 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
     }
 
     @Override public void onActivityStarted(@NonNull Activity activity) { scheduleApply(activity); }
-    @Override public void onActivityResumed(@NonNull Activity activity) { scheduleApply(activity); }
+
+    @Override
+    public void onActivityResumed(@NonNull Activity activity) {
+        if (activity instanceof SettingsActivity) {
+            SettingsXpStyler.styleActivity(activity.getWindow().getDecorView());
+        }
+        scheduleApply(activity);
+    }
+
     @Override public void onActivityPaused(@NonNull Activity activity) { }
     @Override public void onActivityStopped(@NonNull Activity activity) { }
     @Override public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) { }
@@ -90,7 +103,15 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
                 @Override
                 public void onFragmentResumed(@NonNull FragmentManager fm, @NonNull Fragment fragment) {
                     if (fragment instanceof PreferenceFragmentCompat) {
-                        GlobalTextPreferences.install((PreferenceFragmentCompat) fragment);
+                        PreferenceFragmentCompat preferenceFragment = (PreferenceFragmentCompat) fragment;
+                        GlobalTextPreferences.install(preferenceFragment);
+                        String rootKey = null;
+                        Bundle args = fragment.getArguments();
+                        if (args != null) {
+                            rootKey = args.getString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT);
+                        }
+                        SettingsOrganizer.organize(preferenceFragment.getPreferenceScreen(), rootKey);
+                        SettingsXpStyler.styleFragment(preferenceFragment);
                     }
                     if (fragment instanceof DialogFragment) {
                         applyDialog(((DialogFragment) fragment).getDialog());
