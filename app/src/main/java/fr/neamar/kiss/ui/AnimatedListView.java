@@ -43,7 +43,6 @@ public class AnimatedListView extends BlockableListView {
         cancelPendingChangeAnimation();
         mItemMap.clear();
 
-        // store positions before the update
         int firstVisiblePosition = this.getFirstVisiblePosition();
         int nCount = Math.min(this.getChildCount(), getAdapter().getCount() - firstVisiblePosition);
         for (int i = 0; i < nCount; i += 1) {
@@ -56,27 +55,18 @@ public class AnimatedListView extends BlockableListView {
     }
 
     public void animateChange() {
-        if (mItemMap.isEmpty())
-            return;
+        if (mItemMap.isEmpty()) return;
 
-        // Only one pre-draw animation may own a list update. Search can replace results more than
-        // once before the next frame; stacking listeners here made the same child receive several
-        // conflicting translations/scales and produced the visible vertical-card jump.
         cancelPendingChangeAnimation();
 
         final ViewTreeObserver observer = this.getViewTreeObserver();
-        if (!observer.isAlive())
-            return;
-
-        int animationDuration = getContext().getResources().getInteger(android.R.integer.config_shortAnimTime);
+        if (!observer.isAlive()) return;
 
         pendingAnimationObserver = observer;
         pendingAnimationListener = new ViewTreeObserver.OnPreDrawListener() {
             @Override
             public boolean onPreDraw() {
-                if (observer.isAlive()) {
-                    observer.removeOnPreDrawListener(this);
-                }
+                if (observer.isAlive()) observer.removeOnPreDrawListener(this);
                 if (pendingAnimationListener == this) {
                     pendingAnimationListener = null;
                     pendingAnimationObserver = null;
@@ -89,29 +79,19 @@ public class AnimatedListView extends BlockableListView {
                     int position = firstVisiblePosition + i;
                     long itemId = getAdapter().getItemId(position);
                     View child = listView.getChildAt(i);
-                    int delta = 0;
                     ItemInfo itemInfo = mItemMap.get(itemId);
+                    int delta;
+                    boolean isNew = itemInfo == null;
 
-                    if (itemInfo != null) {
-                        int topBeforeLayout = itemInfo.top;
-                        int topAfterLayout = child.getTop();
-                        delta = topBeforeLayout - topAfterLayout;
+                    if (!isNew) {
+                        delta = itemInfo.top - child.getTop();
+                    } else if (i == 0) {
+                        delta = -child.getHeight() - listView.getDividerHeight();
                     } else {
-                        if (i == 0) {
-                            delta = -child.getHeight() - listView.getDividerHeight();
-                        } else {
-                            child.setScaleY(0.f);
-                            child.animate()
-                                    .setDuration(animationDuration)
-                                    .scaleY(1.f);
-                        }
+                        delta = child.getHeight() + listView.getDividerHeight();
                     }
-                    if (delta != 0) {
-                        child.setTranslationY(delta);
-                        child.animate()
-                                .setDuration(animationDuration)
-                                .translationY(0);
-                    }
+
+                    SmartAnimationEngine.animateListMove(child, delta, isNew);
                 }
 
                 return false;
