@@ -6,6 +6,8 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.text.TextUtils;
 
+import androidx.preference.PreferenceManager;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -47,11 +49,19 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
             if (pojo.updateMatchingRelevance(matchInfo, false) && !searcher.addResult(pojo)) return;
         }
 
+        // Keep live notification search independent from persisted history search. The existing Smart
+        // Features switch now controls whether saved notification rows take part in launcher search.
+        if (!PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean("smart-notification-history-search", true)) {
+            return;
+        }
+
         // Notification history is stored in SQLite already. Query it directly instead of loading the
         // whole timeline into memory on every typed character. Each matching persisted row becomes
-        // a unique launcher result that opens Smart S's existing Notification history destination.
+        // a unique launcher result that deep-links back to that exact row and query.
+        String trimmedQuery = query.trim();
         List<NotificationHistoryRecord> history = SmartStateStore.queryNotifications(
-                context, null, Collections.singletonList(query.trim()), HISTORY_QUERY_LIMIT);
+                context, null, Collections.singletonList(trimmedQuery), HISTORY_QUERY_LIMIT);
         for (NotificationHistoryRecord record : history) {
             if (record == null || record.dbId <= 0L) continue;
 
@@ -61,7 +71,7 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
             if (activePost != null && activePost == record.postTime) continue;
 
             NotificationHistorySearchPojo pojo = new NotificationHistorySearchPojo(
-                    context.getPackageName(), record);
+                    context.getPackageName(), record, trimmedQuery);
             MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
             if (!pojo.updateMatchingRelevance(matchInfo, false)) {
                 // SQLite LIKE already proved this row contains the literal query. SmartMatcher can
