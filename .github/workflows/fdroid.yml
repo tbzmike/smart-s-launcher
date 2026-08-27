@@ -30,13 +30,18 @@ jobs:
           python -m pip install fdroidserver
           fdroid --version
 
-      - name: Load official F-Droid category registry
+      - name: Validate official F-Droid category
         run: |
-          mkdir -p config
           curl --fail --location --silent --show-error \
             https://gitlab.com/fdroid/fdroiddata/-/raw/master/config/categories.yml \
-            --output config/categories.yml
-          grep -q '^Launcher:' config/categories.yml
+            --output /tmp/fdroid-categories.yml
+          grep -q '^Launcher:' /tmp/fdroid-categories.yml
+          mkdir -p config
+          cat > config/categories.yml <<'EOF'
+          Launcher:
+            name: Launcher
+            description: Home screen replacements and desktop environment apps
+          EOF
 
       - name: Lint F-Droid metadata
         run: fdroid lint
