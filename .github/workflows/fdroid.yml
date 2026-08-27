@@ -27,10 +27,18 @@ jobs:
           cache: pip
 
       - name: Install F-Droid server tools
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install fdroidserver
           fdroid --version
+          git clone --depth 1 https://gitlab.com/fdroid/gradlew-fdroid.git /tmp/gradlew-fdroid
+          chmod +x /tmp/gradlew-fdroid/gradlew-fdroid
+          test -x /tmp/gradlew-fdroid/gradlew-fdroid
+          cat > config.yml <<'EOF'
+          gradle: /tmp/gradlew-fdroid/gradlew-fdroid
+          EOF
 
       - name: Validate official F-Droid category
         run: |
