@@ -1,30 +1,62 @@
-KISS
-======
-An Android launcher not spending time and memory on stuff you'd rather do.
+# Smart S Launcher
 
-[Copylefted](https://en.wikipedia.org/wiki/Copyleft) libre software, licensed [GPLv3+](https://github.com/Neamar/KISS/blob/master/LICENSE):
+Smart S Launcher is a fast, highly configurable Android launcher focused on search, history, notifications, shortcuts, app usage context, flexible layouts, and launcher-owned animations.
 
-Use, see, [change](CONTRIBUTING.md) and share at will; with all.
+The application ID is `com.tbzmike.smartslauncher`.
 
-From _your_ background, type the first letters of apps, contact names, or settings—and click.  
-Results clicked more often are promoted.
+## Current release candidate
 
-_Browsing for apps is and should be secondary_.
+- Version: **3.29.83**
+- Version code: **411**
+- Minimum Android version: **Android 5.0 (API 21)**
+- Target/compile SDK: **36**
 
-[<img src="https://img.shields.io/f-droid/v/fr.neamar.kiss.svg?logo=f-droid&label=F-Droid&style=flat-square"
-      alt="F-Droid Release"/>](https://f-droid.org/packages/fr.neamar.kiss)
-[<img src="https://img.shields.io/endpoint?color=blue&logo=google-play&style=flat-square&url=https%3A%2F%2Fplay.cuzi.workers.dev%2Fplay%3Fi%3Dfr.neamar.kiss%26l%3DGoogle%2520Play%26m%3D%24version"
-      alt="Playstore Release"/>](https://play.google.com/store/apps/details?id=fr.neamar.kiss)
-[<img src="https://img.shields.io/github/v/release/Neamar/KISS.svg?logo=github&label=GitHub&style=flat-square"
-      alt="GitHub Release"/>](https://github.com/Neamar/KISS/releases)
-[<img src="https://hosted.weblate.org/widget/kiss/svg-badge.svg"
-      alt="Translation status"/>](https://hosted.weblate.org/engage/kiss/)
+## Free and open-source software
 
-Join the [beta program](https://play.google.com/apps/testing/fr.neamar.kiss/) to test the latest version.
+Smart S Launcher is distributed under the **GNU General Public License version 3 (GPL-3.0)**. See [`LICENSE`](LICENSE).
 
-Join the [Hosted Weblate](https://hosted.weblate.org/engage/kiss/) translation platform to help translate the app.
+Smart S Launcher is derived from the open-source [KISS Launcher](https://github.com/Neamar/KISS). The original KISS project and its contributors retain attribution for the upstream work. Smart S Launcher has its own application ID, branding, features, release history, and source repository.
 
-Public Telegram chat: https://t.me/joinchat/_eDeAIQJU1FlNjM0
+## Build from source
 
-| ![Less interface](https://raw.githubusercontent.com/Neamar/KISS/master/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png) | ![Search anything](https://raw.githubusercontent.com/Neamar/KISS/master/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png) | ![Customize everything](https://raw.githubusercontent.com/Neamar/KISS/master/fastlane/metadata/android/en-US/images/phoneScreenshots/3.png) | ![Settings](https://raw.githubusercontent.com/Neamar/KISS/master/fastlane/metadata/android/en-US/images/phoneScreenshots/4.png) |
-|:-------------------------------------------------------------------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------------------------------:|
+Requirements are defined by the Gradle project. A normal release build can be produced with:
+
+```bash
+./gradlew assembleRelease
+```
+
+Debug builds can be produced with:
+
+```bash
+./gradlew assembleDebug
+```
+
+The repository CI also runs Android lint and unit tests for release validation.
+
+## F-Droid
+
+The repository includes a root [`.fdroid.yml`](.fdroid.yml) build recipe so the project can be tested with the F-Droid build stack directly from source. F-Droid builds are independent of the normal Smart S Launcher update workflow.
+
+The current F-Droid recipe is pinned to the verified Smart S Launcher **3.29.83 / versionCode 411** source commit. The committed debug keystore is used only by local/CI debug builds and is removed from the temporary F-Droid source scan through `scandelete`; it is not used by the release build.
+
+Upstream metadata for store presentation is maintained under:
+
+```text
+fastlane/metadata/android/
+```
+
+## Source and issues
+
+Source repository: https://github.com/tbzmike/smart-s-launcher
+
+Issue tracker: https://github.com/tbzmike/smart-s-launcher/issues
+
+## Updating Smart S Launcher
+
+Normal feature and bug-fix development can continue as usual. Each release should:
+
+1. increment `versionCode` and `versionName`;
+2. add the matching Fastlane changelog;
+3. pass lint and unit tests;
+4. pass debug/release APK generation;
+5. update the F-Droid build block to point to the exact verified release commit before submission.
