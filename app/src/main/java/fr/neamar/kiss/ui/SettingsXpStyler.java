@@ -96,7 +96,7 @@ public final class SettingsXpStyler {
         window.setBackgroundDrawable(new XpBevelDrawable(XP_PANEL, false));
         decor.setBackgroundColor(Color.TRANSPARENT);
 
-        TextView title = decor.findViewById(android.R.id.alertTitle);
+        TextView title = decor.findViewById(androidx.appcompat.R.id.alertTitle);
         if (title != null) {
             title.setTextColor(Color.WHITE);
             title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -211,7 +211,7 @@ public final class SettingsXpStyler {
             int light = sunken ? XP_BORDER_DARK : XP_CONTROL_INNER;
             int dark = sunken ? XP_CONTROL_INNER : XP_BORDER_DARK;
             int deep = sunken ? XP_CONTROL_INNER : XP_BORDER_DEEP;
-            paint.setStrokeWidth(Math.max(1f, getDensityScale(canvas)));
+            paint.setStrokeWidth(1f);
 
             paint.setColor(light);
             canvas.drawLine(b.left, b.top, b.right - 1, b.top, paint);
@@ -226,10 +226,6 @@ public final class SettingsXpStyler {
                 canvas.drawLine(b.left + 1, b.bottom - 2, b.right - 2, b.bottom - 2, paint);
                 canvas.drawLine(b.right - 2, b.top + 1, b.right - 2, b.bottom - 2, paint);
             }
-        }
-
-        private float getDensityScale(Canvas canvas) {
-            return 1f;
         }
 
         @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
