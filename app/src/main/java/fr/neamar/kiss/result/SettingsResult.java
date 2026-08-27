@@ -31,10 +31,12 @@ import java.util.Set;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
+import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
@@ -203,6 +205,23 @@ public class SettingsResult extends Result<SettingPojo> {
         }
         if (pojo instanceof DisabledAppPojo) {
             enableAndLaunch(context, (DisabledAppPojo) pojo);
+            return;
+        }
+        if (pojo instanceof NotificationHistorySearchPojo) {
+            NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;
+            Intent intent = new Intent(context, NotificationHistoryActivity.class);
+            intent.putExtra(NotificationHistoryActivity.EXTRA_HISTORY_DB_ID, history.historyDbId);
+            intent.putExtra(NotificationHistoryActivity.EXTRA_SEARCH_QUERY, history.searchQuery);
+            intent.putExtra(NotificationHistoryActivity.EXTRA_PERMANENT, history.permanent);
+            setSourceBounds(intent, v);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                context.startActivity(intent);
+                launchSucceeded = true;
+            } catch (ActivityNotFoundException | SecurityException e) {
+                Log.w(TAG, "Unable to open notification history search result", e);
+                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
+            }
             return;
         }
 
