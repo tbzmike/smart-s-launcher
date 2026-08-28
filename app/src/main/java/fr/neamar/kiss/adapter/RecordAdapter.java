@@ -639,6 +639,31 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         parent.afterListChange();
     }
 
+    /** Move the selected warm history object to the newest position without reloading its icon. */
+    public void promoteMostRecentHistoryResult() {
+        if (SearchHandler.getInstance().getLastSearchType() != Searcher.Type.HISTORY
+                || results.size() < 2) return;
+        Pojo recent = RecentLaunchTracker.getMostRecent();
+        if (recent == null || recent.getHistoryId() == null) return;
+
+        int position = -1;
+        for (int i = 0; i < results.size(); i++) {
+            Pojo candidate = results.get(i).getPojo();
+            if (candidate != null && recent.getHistoryId().equals(candidate.getHistoryId())) {
+                position = i;
+                break;
+            }
+        }
+        if (!HistoryRecencyPolicy.shouldMoveToNewest(position, results.size())) return;
+
+        parent.beforeListChange();
+        Result<?> selected = results.remove(position);
+        results.add(selected);
+        notifyDataSetChanged();
+        parent.temporarilyDisableTranscriptMode();
+        parent.afterListChange();
+    }
+
     public void updateWithPojos(@NonNull Context context, @NonNull List<Pojo> pojos, boolean isRefresh, String query) {
         Map<Pojo, Result<?>> existingResults = new HashMap<>(Math.max(16, results.size() * 2));
         for (Result<?> result : results) existingResults.put(result.getPojo(), result);

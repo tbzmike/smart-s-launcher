@@ -926,6 +926,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             hideKeyboard();
         } else if (isViewingAllApps()) {
             displayKissBar(false);
+        } else {
+            // History is chronological from older to newer. Move the selected warm object—not a
+            // rebuilt row—to the bottom so the latest app, shortcut or feature is always last.
+            adapter.promoteMostRecentHistoryResult();
         }
     }
 
