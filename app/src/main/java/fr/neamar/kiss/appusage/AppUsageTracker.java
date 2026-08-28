@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 /** Opt-in controller for the local app-usage timeline. */
 public final class AppUsageTracker {
     public static final String PREF_ENABLED = "enable-app-usage-tracking";
+    private static final String PREF_DEFAULT_REPAIRED = "app-usage-default-repaired-v33001";
     private static final int JOB_ID = 0x53535547; // "SSUG"
     private static final long PERIOD_MS = 6L * 60L * 60L * 1000L;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
@@ -30,13 +31,30 @@ public final class AppUsageTracker {
 
     public static boolean isEnabled(@NonNull Context context) {
         return PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean(PREF_ENABLED, false);
+                .getBoolean(PREF_ENABLED, true);
+    }
+
+    /**
+     * Repair the one release where introducing the background-feature switch could persist the
+     * previously implicit tracker default as OFF. This runs once; every later user choice wins.
+     */
+    public static void repairPerformanceRegression(@NonNull Context context) {
+        Context appContext = context.getApplicationContext();
+        android.content.SharedPreferences prefs =
+                PreferenceManager.getDefaultSharedPreferences(appContext);
+        if (prefs.getBoolean(PREF_DEFAULT_REPAIRED, false)) return;
+        boolean enabled = prefs.getBoolean(PREF_ENABLED, false);
+        if (AppUsageEnablementPolicy.shouldRestoreDefault(false, enabled)) enabled = true;
+        prefs.edit().putBoolean(PREF_ENABLED, enabled)
+                .putBoolean(PREF_DEFAULT_REPAIRED, true).apply();
+        if (enabled) ensureScheduled(appContext);
     }
 
     public static void setEnabled(@NonNull Context context, boolean enabled) {
         Context appContext = context.getApplicationContext();
         PreferenceManager.getDefaultSharedPreferences(appContext).edit()
                 .putBoolean(PREF_ENABLED, enabled)
+                .putBoolean(PREF_DEFAULT_REPAIRED, true)
                 .apply();
         if (enabled) {
             ensureScheduled(appContext);

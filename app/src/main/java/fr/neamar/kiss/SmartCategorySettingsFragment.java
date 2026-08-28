@@ -253,7 +253,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         appUsage.setKey(AppUsageTracker.PREF_ENABLED);
         appUsage.setTitle("App usage tracking");
         appUsage.setSummary("Track the local 365-day app usage timeline. Off cancels its scheduled background job.");
-        appUsage.setDefaultValue(false);
+        appUsage.setDefaultValue(true);
         appUsage.setOnPreferenceChangeListener((preference, newValue) -> {
             AppUsageTracker.setEnabled(requireContext(), Boolean.TRUE.equals(newValue));
             return true;

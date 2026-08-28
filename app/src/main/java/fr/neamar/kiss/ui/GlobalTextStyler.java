@@ -41,6 +41,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 import fr.neamar.kiss.SettingsActivity;
+import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.UIColors;
 
 public final class GlobalTextStyler implements Application.ActivityLifecycleCallbacks,
@@ -232,6 +233,9 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
             };
 
     private void bindActivity(Activity activity) {
+        // Only the Home surface consumes launcher-wide text overrides. Avoid installing a global
+        // layout listener on data-heavy tool screens whose own palettes and typography are fixed.
+        if (!(activity instanceof MainActivity)) return;
         if (activityBindings.containsKey(activity)) return;
         View root = activity.getWindow() == null ? null : activity.getWindow().getDecorView();
         if (root == null) return;
@@ -253,7 +257,7 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
     public void applyDialog(@Nullable Dialog dialog) {
         if (dialog == null || dialog.getWindow() == null) return;
         View root = dialog.getWindow().getDecorView();
-        if (root == null) return;
+        if (root == null || !isLauncherContext(root.getContext())) return;
         applyToTree(root);
         // Dialog content can be attached after show(). One additional layout pass is enough; an
         // anonymous permanent listener used to retain the dialog and rescan its tree forever.
@@ -275,6 +279,10 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
     }
 
     private void applyToTextView(TextView view) {
+        // Dedicated tools such as Battery Monitor, App Usage and Notification History own fixed
+        // contrast-safe palettes. The launcher text preference must not repaint those dark screens.
+        if (!isLauncherContext(view.getContext())) return;
+
         // Settings deliberately owns a fixed XP palette. Applying a launcher-wide colour here
         // can make labels disappear against the grey control-panel background.
         if (!isSettingsContext(view.getContext())) {
@@ -309,6 +317,19 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         Context current = context;
         for (int i = 0; i < 12 && current != null; i++) {
             if (current instanceof SettingsActivity) return true;
+            if (!(current instanceof ContextWrapper)) break;
+            Context next = ((ContextWrapper) current).getBaseContext();
+            if (next == current) break;
+            current = next;
+        }
+        return false;
+    }
+
+    private static boolean isLauncherContext(Context context) {
+        Context current = context;
+        for (int i = 0; i < 12 && current != null; i++) {
+            if (current instanceof MainActivity) return true;
+            if (current instanceof Activity) return false;
             if (!(current instanceof ContextWrapper)) break;
             Context next = ((ContextWrapper) current).getBaseContext();
             if (next == current) break;

@@ -6,6 +6,7 @@ import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 
 import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.appusage.AppUsageTracker;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
 import fr.neamar.kiss.notification.MediaHistoryCoordinator;
 import fr.neamar.kiss.social.SocialContactIndexService;
@@ -124,6 +125,7 @@ public class KissApplication extends Application {
         super.onCreate();
         DBHelper.initDatabase(this);
         InterfaceTweaks.setDefaultNightMode(this);
+        AppUsageTracker.repairPerformanceRegression(this);
         globalTextStyler = GlobalTextStyler.install(this);
         MediaHistoryCoordinator.install(this);
         SocialContactIndexService.maybePrompt(this);
