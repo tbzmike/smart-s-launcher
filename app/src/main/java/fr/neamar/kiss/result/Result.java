@@ -68,7 +68,6 @@ import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.utils.ClipboardUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
-import fr.neamar.kiss.utils.RecentLaunchTracker;
 import fr.neamar.kiss.utils.Utilities;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
@@ -471,7 +470,6 @@ public abstract class Result<T extends Pojo> {
     protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {
         // Save in history
         if (canAddToHistory()) {
-            RecentLaunchTracker.remember(pojo);
             KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());
         }
         // Record the launch after some period,

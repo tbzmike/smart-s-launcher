@@ -233,6 +233,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private void configureNotificationTileClick(View view, Result<?> result) {
         View.OnClickListener openHistory = v -> {
             RecentLaunchTracker.remember(result.getPojo());
+            promoteHistoryResult(result);
             if (NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo())) {
                 recordExplicitSelection(v.getContext(), result.getPojo());
                 return;
@@ -610,6 +611,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         try {
             final Result<?> result = getItem(position);
             RecentLaunchTracker.remember(result.getPojo());
+            promoteHistoryResult(result);
             if (result.getPojo() instanceof NotificationPojo
                     && NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo())) {
                 recordExplicitSelection(v.getContext(), result.getPojo());
@@ -639,28 +641,23 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         parent.afterListChange();
     }
 
-    /** Move the selected warm history object to the newest position without reloading its icon. */
-    public void promoteMostRecentHistoryResult() {
+    /**
+     * Move the exact row the user clicked to the final/newest history position immediately.
+     * This is click-driven rather than lifecycle-driven so a later Home restoration cannot
+     * lose the identity of the selected row.
+     */
+    private void promoteHistoryResult(Result<?> selected) {
         if (SearchHandler.getInstance().getLastSearchType() != Searcher.Type.HISTORY
-                || results.size() < 2) return;
-        Pojo recent = RecentLaunchTracker.getMostRecent();
-        if (recent == null || recent.getHistoryId() == null) return;
+                || selected == null || results.size() < 2) return;
 
-        int position = -1;
-        for (int i = 0; i < results.size(); i++) {
-            Pojo candidate = results.get(i).getPojo();
-            if (candidate != null && recent.getHistoryId().equals(candidate.getHistoryId())) {
-                position = i;
-                break;
-            }
-        }
+        int position = results.indexOf(selected);
         if (!HistoryRecencyPolicy.shouldMoveToNewest(position, results.size())) return;
 
         parent.beforeListChange();
-        Result<?> selected = results.remove(position);
-        results.add(selected);
+        HistoryRecencyPolicy.moveSelectedToNewest(results, position);
         notifyDataSetChanged();
-        parent.temporarilyDisableTranscriptMode();
+        // Leave transcript mode enabled: this deliberate recency change should reveal the
+        // selected item at the final/bottom position rather than preserving the old viewport.
         parent.afterListChange();
     }
 
