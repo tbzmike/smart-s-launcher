@@ -118,7 +118,12 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         }
     }
 
-    @Override public void onActivityStarted(@NonNull Activity activity) { scheduleApply(activity); }
+    @Override
+    public void onActivityStarted(@NonNull Activity activity) {
+        WindowBinding binding = activityBindings.get(activity);
+        if (binding != null) binding.attach();
+        scheduleApply(activity);
+    }
 
     @Override
     public void onActivityResumed(@NonNull Activity activity) {
@@ -136,7 +141,11 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         if (current == activity) resumedActivity.clear();
     }
 
-    @Override public void onActivityStopped(@NonNull Activity activity) { }
+    @Override
+    public void onActivityStopped(@NonNull Activity activity) {
+        WindowBinding binding = activityBindings.get(activity);
+        if (binding != null) binding.detach();
+    }
     @Override public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) { }
 
     @Override
@@ -246,7 +255,16 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         View root = dialog.getWindow().getDecorView();
         if (root == null) return;
         applyToTree(root);
-        root.getViewTreeObserver().addOnGlobalLayoutListener(() -> applyToTree(root));
+        // Dialog content can be attached after show(). One additional layout pass is enough; an
+        // anonymous permanent listener used to retain the dialog and rescan its tree forever.
+        root.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                applyToTree(root);
+                ViewTreeObserver observer = root.getViewTreeObserver();
+                if (observer.isAlive()) observer.removeOnGlobalLayoutListener(this);
+            }
+        });
     }
 
     private void applyToTree(View view) {
@@ -326,6 +344,7 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         private final View root;
         private boolean pending;
         private final ViewTreeObserver.OnGlobalLayoutListener listener = this::schedule;
+        private boolean attached;
 
         WindowBinding(Activity activity, View root) {
             this.activity = activity;
@@ -333,7 +352,9 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         }
 
         void attach() {
+            if (attached) return;
             root.getViewTreeObserver().addOnGlobalLayoutListener(listener);
+            attached = true;
             schedule();
         }
 
@@ -347,9 +368,10 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         }
 
         void detach() {
-            if (root.getViewTreeObserver().isAlive()) {
-                root.getViewTreeObserver().removeOnGlobalLayoutListener(listener);
-            }
+            if (!attached) return;
+            ViewTreeObserver observer = root.getViewTreeObserver();
+            if (observer.isAlive()) observer.removeOnGlobalLayoutListener(listener);
+            attached = false;
         }
     }
 }

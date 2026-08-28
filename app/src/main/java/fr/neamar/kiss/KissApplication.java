@@ -95,21 +95,28 @@ public class KissApplication extends Application {
         return getApplication(ctx).mimeTypeCache;
     }
 
-    /**
-     * Release memory when the UI becomes hidden or when system resources become low.
-     *
-     * @param level the memory-related event that was raised.
-     */
+    /** Release rebuildable caches only when Android is under severe memory pressure. */
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
 
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
-            // this is called every time the screen is off
+        // TRIM_MEMORY_UI_HIDDEN is delivered during every normal app launch from Home. Clearing
+        // here made every return cold: SQLite pages and decoded icon-pack state had to be rebuilt.
+        // Retain the launcher's working set while backgrounded and cooperate only when Android is
+        // already reclaiming process memory aggressively.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
             SQLiteDatabase.releaseMemory();
             mIconPackCache.clearCache(this);
             mimeTypeCache.clearCache();
         }
+    }
+
+    @Override
+    public void onLowMemory() {
+        super.onLowMemory();
+        SQLiteDatabase.releaseMemory();
+        mIconPackCache.clearCache(this);
+        mimeTypeCache.clearCache();
     }
 
     @Override

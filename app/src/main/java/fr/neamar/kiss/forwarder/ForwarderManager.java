@@ -248,6 +248,7 @@ public class ForwarderManager extends Forwarder {
     public boolean onMenuButtonClicked(View menuButton) { return tagsMenu.onMenuButtonClicked(menuButton); }
 
     public void onDestroy() {
+        liveWallpaperForwarder.onDestroy();
         widgetPeelController.onDestroy();
         verticalCardViewportController.onDestroy();
         verticalCardUsageForwarder.onDestroy();

@@ -28,6 +28,7 @@ class LiveWallpaper extends Forwarder implements SharedPreferences.OnSharedPrefe
     private float mWallpaperOffset;
     private LiveWallpaper.Anim mAnimation;
     private VelocityTracker mVelocityTracker;
+    private boolean preferenceListenerRegistered;
 
     LiveWallpaper(MainActivity mainActivity) {
         super(mainActivity);
@@ -53,7 +54,22 @@ class LiveWallpaper extends Forwarder implements SharedPreferences.OnSharedPrefe
         // Smart Blur used to exist only as preferences. Keep the renderer here, beside
         // the wallpaper lifecycle, so list/tile redraws never recompute the blur.
         prefs.registerOnSharedPreferenceChangeListener(this);
+        preferenceListenerRegistered = true;
         applySmartBlur();
+    }
+
+    void onDestroy() {
+        if (preferenceListenerRegistered) {
+            prefs.unregisterOnSharedPreferenceChangeListener(this);
+            preferenceListenerRegistered = false;
+        }
+        if (mAnimation != null) mAnimation.cancel();
+        if (mVelocityTracker != null) {
+            mVelocityTracker.recycle();
+            mVelocityTracker = null;
+        }
+        mContentView = null;
+        mWindowToken = null;
     }
 
     @Override

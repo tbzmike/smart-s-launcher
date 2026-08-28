@@ -15,6 +15,7 @@ public class ExtendedRecyclerView extends RecyclerView implements ViewTreeObserv
     private int mFixedNumColumns = -1;
 
     private int mOrigSpanCount = -1;
+    private boolean layoutListenerAttached;
 
     public ExtendedRecyclerView(Context context) {
         super(context);
@@ -41,7 +42,28 @@ public class ExtendedRecyclerView extends RecyclerView implements ViewTreeObserv
                 mFixedColumnWidth = array.getDimensionPixelSize(0, -1);
             }
         }
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        attachLayoutListener();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        ViewTreeObserver observer = getViewTreeObserver();
+        if (layoutListenerAttached && observer.isAlive()) {
+            observer.removeOnGlobalLayoutListener(this);
+        }
+        layoutListenerAttached = false;
+        super.onDetachedFromWindow();
+    }
+
+    private void attachLayoutListener() {
+        if (layoutListenerAttached) return;
         getViewTreeObserver().addOnGlobalLayoutListener(this);
+        layoutListenerAttached = true;
     }
 
     @Override
