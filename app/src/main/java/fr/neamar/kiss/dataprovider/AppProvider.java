@@ -147,7 +147,7 @@ public class AppProvider extends Provider<AppPojo> {
                         // Disabled state is rendered as an ImageView filter; the underlying app icon
                         // did not change, so clearing the entire icon cache here only forces needless
                         // disk decoding and visible icon pop-in.
-                        sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                        sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
                     }
                 } finally {
                     reconcileRunning.set(false);

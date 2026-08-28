@@ -257,7 +257,7 @@ public class SocialContactIndexService extends Service {
             KissApplication app = KissApplication.getApplication(this);
             app.getDataHandler().reloadContactsProvider();
             app.getDataHandler().reloadShortcuts();
-            sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+            sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
 
             finishIndex(nm, getString(R.string.social_index_complete, totalContacts, totalShortcuts));
         } catch (RuntimeException e) {

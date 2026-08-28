@@ -164,7 +164,7 @@ public class SettingsResult extends Result<SettingPojo> {
             if (marked) {
                 markRead.setEnabled(false);
                 view.setVisibility(View.GONE);
-                context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
             } else {
                 Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
             }
@@ -311,7 +311,7 @@ public class SettingsResult extends Result<SettingPojo> {
                 Button markAll = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
                 markAll.setOnClickListener(v -> {
                     if (NotificationListener.markAllRead(context, notification.groupKey)) {
-                        context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                        context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
                         SmartAnimationEngine.dismissDialog(dialog);
                     } else {
                         Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
@@ -373,7 +373,7 @@ public class SettingsResult extends Result<SettingPojo> {
             if (!NotificationListener.markNotificationRead(context, item.id)) {
                 Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
             } else {
-                context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
                 SmartAnimationEngine.dismissDialog(dialog);
                 if (parentGroupDialog != null && parentGroupDialog.isShowing()) {
                     SmartAnimationEngine.dismissDialog(parentGroupDialog);

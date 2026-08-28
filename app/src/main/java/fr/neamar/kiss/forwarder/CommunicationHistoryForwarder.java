@@ -57,7 +57,7 @@ final class CommunicationHistoryForwarder extends Forwarder {
             // a one-time enrichment migration changed its display data, or the user is currently
             // searching and therefore needs the freshly rebuilt communication index immediately.
             if (recentHistoryChanged || oneTimeEnrichmentChanged || communicationSearchVisible) {
-                mainActivity.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                mainActivity.sendBroadcast(MainActivity.internalBroadcast(mainActivity, MainActivity.LOAD_OVER));
             }
         });
     }

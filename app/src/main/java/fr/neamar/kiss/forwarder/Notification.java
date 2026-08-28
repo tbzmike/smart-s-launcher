@@ -172,7 +172,7 @@ class Notification extends Forwarder {
             }
         }
         // Returning Home with the same active notifications must not rebuild history.
-        if (changed) mainActivity.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        if (changed) mainActivity.sendBroadcast(MainActivity.internalBroadcast(mainActivity, MainActivity.LOAD_OVER));
     }
 
     /** Catch notifications that arrived while the launcher Activity was paused. */
@@ -219,7 +219,7 @@ class Notification extends Forwarder {
             changed = true;
         }
         if (newestPost > 0L) NotificationTimelineState.setLastPersistedScan(mainActivity, newestPost);
-        if (changed) mainActivity.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        if (changed) mainActivity.sendBroadcast(MainActivity.internalBroadcast(mainActivity, MainActivity.LOAD_OVER));
     }
 
     private void updateDots(ViewGroup vg, int childCount, String packageKey) {

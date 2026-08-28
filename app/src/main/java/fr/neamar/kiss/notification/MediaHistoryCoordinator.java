@@ -105,7 +105,7 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
         SEEDED_MEDIA_HISTORY.removeIf(id -> !activeIds.contains(id));
 
         if (historyChanged) {
-            context.sendBroadcast(new android.content.Intent(MainActivity.LOAD_OVER));
+            context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
         }
     }
 

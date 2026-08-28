@@ -95,7 +95,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         //  to bind to services)
         this.context = context.getApplicationContext();
 
-        Intent startLoad = new Intent(MainActivity.START_LOAD);
+        Intent startLoad = MainActivity.internalBroadcast(this.context, MainActivity.START_LOAD);
         this.context.sendBroadcast(startLoad);
 
         // Monitor changes for profiles
@@ -142,7 +142,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         this.providers.put("tags", tagsEntry);
 
         // Some basic providers already loaded! We need to fire the LOAD_OVER event.
-        Intent loadOver = new Intent(MainActivity.LOAD_OVER);
+        Intent loadOver = MainActivity.internalBroadcast(this.context, MainActivity.LOAD_OVER);
         this.context.sendBroadcast(loadOver);
     }
 
@@ -299,7 +299,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         }
 
         // Providers changed! We need to fire the LOAD_OVER event.
-        Intent loadOver = new Intent(MainActivity.LOAD_OVER);
+        Intent loadOver = MainActivity.internalBroadcast(this.context, MainActivity.LOAD_OVER);
         this.context.sendBroadcast(loadOver);
     }
 
@@ -1012,7 +1012,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
     }
 
     public void refreshFavorites() {
-        Intent startLoad = new Intent(MainActivity.REFRESH_FAVORITES);
+        Intent startLoad = MainActivity.internalBroadcast(this.context, MainActivity.REFRESH_FAVORITES);
         context.sendBroadcast(startLoad);
     }
 

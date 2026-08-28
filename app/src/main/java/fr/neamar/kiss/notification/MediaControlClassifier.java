@@ -12,14 +12,17 @@ public final class MediaControlClassifier {
         if (title == null) return Kind.OTHER;
         String value = title.toString().trim().toLowerCase(Locale.ROOT);
         if (value.isEmpty()) return Kind.OTHER;
-        if (containsAny(value, "previous", "prev", "back", "rewind")) return Kind.PREVIOUS;
-        if (containsAny(value, "next", "skip forward")) return Kind.NEXT;
-        if (containsAny(value, "play", "pause", "resume")) return Kind.PLAY_PAUSE;
+        if (containsKeyword(value, "previous", "prev", "back", "rewind")) return Kind.PREVIOUS;
+        if (containsKeyword(value, "next", "skip forward")) return Kind.NEXT;
+        if (containsKeyword(value, "play", "pause", "resume")) return Kind.PLAY_PAUSE;
         return Kind.OTHER;
     }
 
-    private static boolean containsAny(String value, String... needles) {
-        for (String needle : needles) if (value.contains(needle)) return true;
+    private static boolean containsKeyword(String value, String... keywords) {
+        String padded = " " + value.replaceAll("[^\\p{L}\\p{N}]+", " ").trim() + " ";
+        for (String keyword : keywords) {
+            if (padded.contains(" " + keyword + " ")) return true;
+        }
         return false;
     }
 }

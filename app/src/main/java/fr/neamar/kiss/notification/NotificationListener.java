@@ -92,7 +92,7 @@ public class NotificationListener extends NotificationListenerService {
         if (instance == this) {
             instance = null;
             publishUnverifiedActiveState();
-            sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+            sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         }
         super.onDestroy();
     }
@@ -100,7 +100,7 @@ public class NotificationListener extends NotificationListenerService {
     @Override public void onListenerConnected() {
         super.onListenerConnected();
         if (refreshAllNotifications(true)) {
-            sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+            sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         }
     }
 
@@ -160,7 +160,7 @@ public class NotificationListener extends NotificationListenerService {
         prefs.edit().clear().apply();
         details.edit().clear().apply();
         publishUnverifiedActiveState();
-        sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         super.onListenerDisconnected();
     }
 
@@ -169,7 +169,7 @@ public class NotificationListener extends NotificationListenerService {
         Set<String> before = getVerifiedActiveNotificationIds();
         if (refreshAllNotifications(false)
                 && !before.equals(getVerifiedActiveNotificationIds())) {
-            sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+            sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         }
     }
 
@@ -197,7 +197,7 @@ public class NotificationListener extends NotificationListenerService {
         if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
             KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(packageKey));
         }
-        sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
     }
 
     private void persistHistory(StatusBarNotification sbn, String id) {
@@ -283,7 +283,7 @@ public class NotificationListener extends NotificationListenerService {
             }
         }
         edit.apply();
-        sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
     }
 
     public Set<String> getCurrentNotificationsForPackage(String packageKey) {
@@ -322,7 +322,7 @@ public class NotificationListener extends NotificationListenerService {
                 Set<String> before = getVerifiedActiveNotificationIds();
                 if (listener.refreshAllNotifications(false)
                         && !before.equals(getVerifiedActiveNotificationIds())) {
-                    listener.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                    listener.sendBroadcast(MainActivity.internalBroadcast(listener, MainActivity.LOAD_OVER));
                 }
             } finally {
                 RECONCILE_RUNNING.set(false);

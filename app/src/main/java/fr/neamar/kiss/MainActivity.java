@@ -242,9 +242,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         };
         getOnBackPressedDispatcher().addCallback(onBackPressedCallback);
 
-        ContextCompat.registerReceiver(this, mReceiver, intentFilterLoad, ContextCompat.RECEIVER_EXPORTED);
-        ContextCompat.registerReceiver(this, mReceiver, intentFilterLoadOver, ContextCompat.RECEIVER_EXPORTED);
-        ContextCompat.registerReceiver(this, mReceiver, intentFilterRefresh, ContextCompat.RECEIVER_EXPORTED);
+        ContextCompat.registerReceiver(this, mReceiver, intentFilterLoad, ContextCompat.RECEIVER_NOT_EXPORTED);
+        ContextCompat.registerReceiver(this, mReceiver, intentFilterLoadOver, ContextCompat.RECEIVER_NOT_EXPORTED);
+        ContextCompat.registerReceiver(this, mReceiver, intentFilterRefresh, ContextCompat.RECEIVER_NOT_EXPORTED);
 
         /*
          * Set the view and store all useful components
@@ -381,6 +381,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
          * Defer everything else to the forwarders
          */
         forwarderManager.onCreate();
+    }
+
+    /** Restrict launcher lifecycle/data broadcasts to this application package. */
+    public static Intent internalBroadcast(@NonNull Context context, @NonNull String action) {
+        return new Intent(action).setPackage(context.getPackageName());
     }
 
     @Override

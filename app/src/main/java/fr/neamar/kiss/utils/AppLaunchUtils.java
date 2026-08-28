@@ -86,7 +86,7 @@ public final class AppLaunchUtils {
 
     private static void notifyLauncherStateChanged(Context context) {
         KissApplication.getApplication(context).getDataHandler().reloadApps();
-        context.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+        context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
     }
 
     /** Enable a frozen current-user package without launching it. */
