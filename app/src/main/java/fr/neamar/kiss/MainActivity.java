@@ -223,8 +223,6 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
                         displayLoader(false);
 
-                        // Run GC once to free all the garbage accumulated during provider initialization
-                        System.gc();
                     }
                     // New provider might mean new favorites
                     onFavoriteChange();
@@ -440,9 +438,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             onFavoriteChange();
         }
 
-        // Persistent notification details are only a rendering cache. Verify them synchronously
-        // against Android's panel before HistorySearcher can pin any supposedly active rows.
-        NotificationListener.reconcileActiveNotifications();
+        // Persistent notification details are only a rendering cache. Reconcile them against
+        // Android's panel without delaying the first Home frame; a changed active set requests a
+        // normal refresh when the background verification completes.
+        NotificationListener.reconcileActiveNotificationsAsync();
 
         // We need to update the history in case an external event created new items
         // (for instance, installed a new app, got a phone call or simply clicked on a favorite)

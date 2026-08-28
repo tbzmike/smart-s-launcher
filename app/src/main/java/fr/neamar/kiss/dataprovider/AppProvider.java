@@ -212,7 +212,9 @@ public class AppProvider extends Provider<AppPojo> {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         List<String> semanticHints = SemanticHints.expand(query);
 
+        int checked = 0;
         for (AppPojo pojo : getPojos()) {
+            if ((checked++ & 31) == 0 && searcher.isCancelled()) return;
             if (pojo.isExcluded() && !prefs.getBoolean("enable-excluded-apps", false)) continue;
             if (excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
 

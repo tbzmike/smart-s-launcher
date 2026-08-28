@@ -54,6 +54,17 @@ public final class SemanticEmbeddingScorer {
 
     public static float score(String query, Pojo pojo, int dimensions) {
         if (query == null || query.trim().isEmpty() || pojo == null) return 0f;
+        return scorePrepared(prepareQuery(query, dimensions), pojo);
+    }
+
+    /** Prepare the immutable query side once for a complete search generation. */
+    public static float[] prepareQuery(String query, int dimensions) {
+        return embed(query, dimensions);
+    }
+
+    /** Score a candidate without rebuilding the query vector for every indexed record. */
+    public static float scorePrepared(float[] preparedQuery, Pojo pojo) {
+        if (preparedQuery == null || preparedQuery.length == 0 || pojo == null) return 0f;
         StringBuilder candidate = new StringBuilder();
         if (pojo.getName() != null) candidate.append(pojo.getName()).append(' ');
         if (pojo instanceof PojoWithTags) {
@@ -63,7 +74,7 @@ public final class SemanticEmbeddingScorer {
         if (pojo instanceof AppPojo) {
             candidate.append(((AppPojo) pojo).packageName);
         }
-        return cosine(embed(query, dimensions), embed(candidate.toString(), dimensions));
+        return cosine(preparedQuery, embed(candidate.toString(), preparedQuery.length));
     }
 
     private static float[] embed(String text, int dimensions) {

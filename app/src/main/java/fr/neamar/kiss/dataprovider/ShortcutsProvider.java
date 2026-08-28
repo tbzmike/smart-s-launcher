@@ -68,7 +68,9 @@ public class ShortcutsProvider extends Provider<ShortcutPojo> {
     @Override
     public void requestResults(String query, Searcher searcher) {
         Set<String> excludedFavoriteIds = KissApplication.getApplication(this).getDataHandler().getExcludedFavorites();
+        int checked = 0;
         for (ShortcutPojo pojo : getPojos()) {
+            if ((checked++ & 31) == 0 && searcher.isCancelled()) return;
             if (excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
             MatchInfo matchInfo = SmartMatcher.match(this, query, pojo.normalizedName, pojo.getName());
             boolean match = pojo.updateMatchingRelevance(matchInfo, false);

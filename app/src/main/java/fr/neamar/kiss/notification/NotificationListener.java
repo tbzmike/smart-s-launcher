@@ -31,6 +31,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
@@ -63,6 +66,8 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private static volatile NotificationListener instance;
+    private static final ExecutorService RECONCILE_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final AtomicBoolean RECONCILE_RUNNING = new AtomicBoolean(false);
     /**
      * Process-local platform verification. Persistent preferences are only a rendering cache and
      * can outlive a missed removal callback or a killed listener process, so they must never be
@@ -298,6 +303,31 @@ public class NotificationListener extends NotificationListenerService {
             return false;
         }
         return listener.refreshAllNotifications(false);
+    }
+
+    /**
+     * Verify the platform notification snapshot without blocking Launcher Home's resume path.
+     * Multiple resumes are coalesced, and Home is refreshed only when the verified active set
+     * actually changed while it was away.
+     */
+    public static void reconcileActiveNotificationsAsync() {
+        NotificationListener listener = instance;
+        if (listener == null) {
+            publishUnverifiedActiveState();
+            return;
+        }
+        if (!RECONCILE_RUNNING.compareAndSet(false, true)) return;
+        RECONCILE_EXECUTOR.execute(() -> {
+            try {
+                Set<String> before = getVerifiedActiveNotificationIds();
+                if (listener.refreshAllNotifications(false)
+                        && !before.equals(getVerifiedActiveNotificationIds())) {
+                    listener.sendBroadcast(new Intent(MainActivity.LOAD_OVER));
+                }
+            } finally {
+                RECONCILE_RUNNING.set(false);
+            }
+        });
     }
 
     public static Set<String> getVerifiedActiveNotificationIds() {

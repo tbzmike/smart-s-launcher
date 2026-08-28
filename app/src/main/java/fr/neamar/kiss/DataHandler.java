@@ -336,7 +336,6 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
      * @param searcher the searcher currently running
      */
     public void requestAllRecords(Searcher searcher) {
-        List<Pojo> collectedPojos = new ArrayList<>();
         for (ProviderEntry entry : this.providers.values()) {
             if (searcher.isCancelled())
                 break;
@@ -344,11 +343,9 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
                 continue;
 
             List<? extends Pojo> pojos = entry.provider.getPojos();
-            if (pojos != null) {
-                collectedPojos.addAll(pojos);
-            }
+            if (pojos != null) searcher.addResults(pojos);
+            if (searcher.isCancelled()) return;
         }
-        searcher.addResults(collectedPojos);
     }
 
     /**

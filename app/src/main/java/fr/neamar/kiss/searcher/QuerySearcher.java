@@ -46,6 +46,7 @@ public class QuerySearcher extends Searcher {
     private float semanticThreshold;
     private float semanticWeight;
     private int semanticDimensions;
+    private float[] preparedSemanticQuery;
 
     public QuerySearcher(MainActivity activity, String query, boolean isRefresh) {
         super(activity, query, isRefresh);
@@ -71,7 +72,7 @@ public class QuerySearcher extends Searcher {
             List<Pojo> semanticMatches = new ArrayList<>();
             for (Pojo pojo : pojos) {
                 if (pojo == null || lexicalIds.contains(pojo.id)) continue;
-                float score = SemanticEmbeddingScorer.score(query, pojo, semanticDimensions);
+                float score = SemanticEmbeddingScorer.scorePrepared(preparedSemanticQuery, pojo);
                 if (score < semanticThreshold) continue;
 
                 if (semanticRerank) {
@@ -96,7 +97,7 @@ public class QuerySearcher extends Searcher {
                 if (historyValue != null && !pojo.isDisabled()) {
                     originalRelevance += 25 * historyValue;
                 }
-                float semanticScore = SemanticEmbeddingScorer.score(query, pojo, semanticDimensions);
+                float semanticScore = SemanticEmbeddingScorer.scorePrepared(preparedSemanticQuery, pojo);
                 pojo.relevance = hybridRelevance(pojo, originalRelevance, semanticScore, true);
             } else if (pojo instanceof SearchPojo) {
                 // SearchPojo relevance is deliberately authored by SearchProvider. Preserve explicit
@@ -148,6 +149,7 @@ public class QuerySearcher extends Searcher {
         if (!semanticEnabled) return;
 
         semanticDimensions = parseIntPreference("semantic-embedding-dimensions", 128, 32, 512);
+        preparedSemanticQuery = SemanticEmbeddingScorer.prepareQuery(query, semanticDimensions);
         semanticThreshold = parseFloatPreference("semantic-threshold", 0.26f, 0.05f, 0.95f);
         semanticRerank = prefs.getBoolean(PREF_SEMANTIC_RERANK, true);
         semanticWeight = parseFloatPreference(PREF_SEMANTIC_WEIGHT, 0.58f, 0.20f, 0.85f);
