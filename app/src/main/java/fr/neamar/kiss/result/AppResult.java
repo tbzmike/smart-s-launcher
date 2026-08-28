@@ -41,6 +41,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationPopupDialog;
+import fr.neamar.kiss.utils.AppIconMemoryCache;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
@@ -78,6 +79,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
         ImageView appIcon = view.findViewById(R.id.item_app_icon);
         if (!isHideIcons(context)) {
+            restoreWarmIcon(context);
             this.setAsyncDrawable(appIcon);
             applyFrozenIconFilter(appIcon);
         } else {
@@ -93,6 +95,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
     @Override
     public void inflateFavorite(@NonNull Context context, @NonNull View favoriteView) {
         refreshLiveDisabledState(context);
+        restoreWarmIcon(context);
         super.inflateFavorite(context, favoriteView);
         ImageView favoriteIcon = favoriteView.findViewById(R.id.favorite);
         applyFrozenIconFilter(favoriteIcon);
@@ -283,8 +286,18 @@ public class AppResult extends ResultWithTags<AppPojo> {
         context.startActivity(intent);
     }
 
+    private void restoreWarmIcon(Context context) {
+        if (icon != null) return;
+        icon = AppIconMemoryCache.get(context, pojo.getComponentName());
+    }
+
     @Override boolean isDrawableCached() { return icon != null; }
-    @Override void setDrawableCache(Drawable drawable) { icon = drawable; }
+
+    @Override
+    void setDrawableCache(Drawable drawable) {
+        icon = drawable;
+        if (drawable == null) AppIconMemoryCache.invalidate(pojo.getComponentName());
+    }
 
     @Override
     public Drawable getDrawable(Context context) {
@@ -292,8 +305,12 @@ public class AppResult extends ResultWithTags<AppPojo> {
         if (icon == null) {
             synchronized (this) {
                 if (icon == null) {
+                    icon = AppIconMemoryCache.get(context, pojo.getComponentName());
+                }
+                if (icon == null) {
                     IconsHandler iconsHandler = KissApplication.getApplication(context).getIconsHandler();
                     icon = iconsHandler.getDrawableIconForPackage(getClassName(), pojo.userHandle);
+                    AppIconMemoryCache.put(context, pojo.getComponentName(), icon);
                 }
             }
         }
