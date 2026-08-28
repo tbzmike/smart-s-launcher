@@ -251,12 +251,12 @@ jobs:
       - name: Run lint, unit tests, and build both APK variants
         run: ./gradlew lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
 
-      - name: Commit verified 3.30.04 and remove one-shot verifier
+      - name: Commit verified 3.30.04 source only
         run: |
           git config user.name 'tbzmike'
           git config user.email '40115947+tbzmike@users.noreply.github.com'
-          git rm .github/workflows/one-shot-history-direct-reorder-3.30.04.yml
-          git add app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java app/src/main/java/fr/neamar/kiss/adapter/HistoryRecencyPolicy.java app/src/main/java/fr/neamar/kiss/result/Result.java app/src/main/java/fr/neamar/kiss/MainActivity.java app/src/test/java/fr/neamar/kiss/adapter/HistoryRecencyPolicyTest.java app/build.gradle .github/workflows/build.yml
+          git restore .github/workflows/build.yml
+          git add app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java app/src/main/java/fr/neamar/kiss/adapter/HistoryRecencyPolicy.java app/src/main/java/fr/neamar/kiss/result/Result.java app/src/main/java/fr/neamar/kiss/MainActivity.java app/src/test/java/fr/neamar/kiss/adapter/HistoryRecencyPolicyTest.java app/build.gradle
           git diff --cached --check
           git commit -m 'Move clicked history row directly to bottom in 3.30.04'
           git push origin HEAD:build/3.30.04
