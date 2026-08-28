@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -36,23 +36,18 @@ jobs:
 
           import_line = 'import fr.neamar.kiss.utils.RecentLaunchTracker;\n'
           import_anchor = 'import fr.neamar.kiss.utils.Log;\n'
-          old = '''        if (canAddToHistory()) {
-              KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());
-          }'''
-          new = '''        if (canAddToHistory()) {
-              RecentLaunchTracker.remember(pojo);
-              KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());
-          }'''
+          history_write = '            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());'
+          replacement = '            RecentLaunchTracker.remember(pojo);\n' + history_write
 
           if import_line in source:
               raise SystemExit('RecentLaunchTracker import unexpectedly already present')
           if source.count(import_anchor) != 1:
               raise SystemExit('Expected exactly one import anchor')
-          if source.count(old) != 1:
-              raise SystemExit('Expected exactly one history recording block')
+          if source.count(history_write) != 1:
+              raise SystemExit('Expected exactly one history write statement')
 
           source = source.replace(import_anchor, import_anchor + import_line, 1)
-          source = source.replace(old, new, 1)
+          source = source.replace(history_write, replacement, 1)
           path.write_text(source)
           PY
 
@@ -63,7 +58,11 @@ jobs:
           source = Path('app/src/main/java/fr/neamar/kiss/result/Result.java').read_text()
           assert source.count('import fr.neamar.kiss.utils.RecentLaunchTracker;') == 1
           assert source.count('RecentLaunchTracker.remember(pojo);') == 1
-          assert source.index('RecentLaunchTracker.remember(pojo);') < source.index('getDataHandler().addToHistory(pojo.getHistoryId())')
+          remember = source.index('RecentLaunchTracker.remember(pojo);')
+          history = source.index('getDataHandler().addToHistory(pojo.getHistoryId())')
+          assert remember < history
+          window = source[max(0, remember - 120):history + 100]
+          assert 'if (canAddToHistory())' in window
           PY
           git diff --check
           git diff -- app/src/main/java/fr/neamar/kiss/result/Result.java
