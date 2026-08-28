@@ -24,7 +24,9 @@ import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import fr.neamar.kiss.KissApplication;
@@ -41,6 +43,7 @@ import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.PackageManagerUtils;
+import fr.neamar.kiss.utils.RecentLaunchTracker;
 import fr.neamar.kiss.utils.UserHandle;
 
 public class Favorites extends Forwarder {
@@ -63,7 +66,30 @@ public class Favorites extends Forwarder {
             if (fromPosition == toPosition) return false;
             Result<?> result = results.remove(fromPosition); results.add(toPosition, result); notifyItemMoved(fromPosition, toPosition); return true;
         }
-        public void setFavorites(List<Result<?>> results) { this.results.clear(); this.results.addAll(results); notifyDataSetChanged(); }
+        public void setFavorites(List<Result<?>> incoming) {
+            Map<String, Result<?>> warmById = new HashMap<>(Math.max(4, results.size() * 2));
+            for (Result<?> result : results) warmById.put(result.getFavoriteId(), result);
+
+            List<Result<?>> merged = new ArrayList<>(incoming.size());
+            for (Result<?> candidate : incoming) {
+                Result<?> warm = warmById.get(candidate.getFavoriteId());
+                if (warm != null && warm.getClass() == candidate.getClass()
+                        && warm.getPojo() == candidate.getPojo()) merged.add(warm);
+                else merged.add(candidate);
+            }
+
+            if (sameOrder(merged)) return;
+            results.clear();
+            results.addAll(merged);
+            notifyDataSetChanged();
+        }
+        private boolean sameOrder(List<Result<?>> incoming) {
+            if (incoming.size() != results.size()) return false;
+            for (int i = 0; i < results.size(); i++) {
+                if (incoming.get(i) != results.get(i)) return false;
+            }
+            return true;
+        }
         public void updateFavoritePositions(Context context) {
             List<Pair<String, Integer>> positions = new ArrayList<>();
             for (int i = 0; i < getItemCount(); i++) positions.add(new Pair<>(getItem(i).getFavoriteId(), i));
@@ -148,6 +174,7 @@ public class Favorites extends Forwarder {
 
     private void onClick(View v, Result<?> result) {
         Pojo pojo = result.getPojo();
+        RecentLaunchTracker.remember(pojo);
         boolean morphLaunch = pojo instanceof AppPojo
                 || pojo instanceof ShortcutPojo
                 || pojo instanceof DisabledAppPojo;

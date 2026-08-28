@@ -440,7 +440,6 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
         if (KissApplication.getApplication(this).getDataHandler().isAllProvidersLoaded()) {
             displayLoader(false);
-            onFavoriteChange();
         }
 
         // Persistent notification details are only a rendering cache. Reconcile them against
@@ -927,6 +926,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             hideKeyboard();
         } else if (isViewingAllApps()) {
             displayKissBar(false);
+        } else {
+            // The history database was already updated at launch time. Move only that warm Result
+            // object in memory so Home can return without rebuilding every row and icon.
+            adapter.promoteMostRecentHistoryResult();
         }
     }
 

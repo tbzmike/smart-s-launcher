@@ -7,8 +7,8 @@ import org.junit.jupiter.api.Test;
 
 class HistoryRefreshPolicyTest {
     @Test
-    void unchangedHistoryQueryMustRefreshAfterResume() {
-        assertThat(HistoryRefreshPolicy.shouldSkip(true, true, true), is(false));
+    void unchangedHistoryQueryIsKeptWarmAfterResume() {
+        assertThat(HistoryRefreshPolicy.shouldSkip(true, true, true), is(true));
     }
 
     @Test
