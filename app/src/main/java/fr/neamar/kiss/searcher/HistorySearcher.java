@@ -85,13 +85,38 @@ public class HistorySearcher extends Searcher {
             }
         }
 
-        List<Pojo> pojos = dataHandler.getHistory(activity, getMaxResultCount(), excludedPojoById);
+        List<Pojo> pojos = getStrictRecencyHistory(activity, dataHandler, excludedPojoById);
         restoreMissingHistoryEntries(activity, dataHandler, pojos, excludedPojoById);
         pinActiveNotificationTimeline(activity, pojos, excludedPojoById);
         pinMostRecentPersistedLaunch(activity, dataHandler, pojos, excludedPojoById);
 
         this.addResults(pojos);
         return null;
+    }
+
+    /** Resolve the visible History list from the database's strict newest-first RECENCY chain. */
+    private List<Pojo> getStrictRecencyHistory(MainActivity activity, DataHandler dataHandler,
+                                               Set<String> excludedPojoById) {
+        int max = getMaxResultCount();
+        if (max <= 0) return new ArrayList<>();
+
+        int extendedLimit = max + excludedPojoById.size();
+        List<ValuedHistoryRecord> records = DBHelper.getHistory(
+                activity, extendedLimit, HistoryRecencyOrder.MODE);
+        List<Pojo> history = new ArrayList<>(Math.min(max, records.size()));
+        int recordCount = records.size();
+
+        for (int i = 0; i < recordCount && history.size() < max; i++) {
+            String historyId = records.get(i).record;
+            if (historyId == null || excludedPojoById.contains(historyId)) continue;
+
+            Pojo pojo = dataHandler.getItemById(historyId);
+            if (pojo == null || excludedPojoById.contains(pojo.id)) continue;
+
+            pojo.relevance = HistoryRecencyOrder.relevanceForNewestFirstIndex(recordCount, i);
+            history.add(pojo);
+        }
+        return history;
     }
 
     /**
@@ -106,7 +131,7 @@ public class HistorySearcher extends Searcher {
         int max = getMaxResultCount();
         if (max <= 0) return;
 
-        HistoryMode historyMode = dataHandler.getHistoryMode();
+        HistoryMode historyMode = HistoryRecencyOrder.MODE;
         int extendedLimit = max + excludedPojoById.size();
         List<ValuedHistoryRecord> historyRecords = DBHelper.getHistory(
                 activity, extendedLimit, historyMode);
