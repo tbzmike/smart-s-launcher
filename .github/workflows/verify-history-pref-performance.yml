@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch-test-commit:
-    if: github.event.head_commit.message == 'Run History preference performance verifier'
+    if: github.event.head_commit.message == 'Retry History preference performance verifier'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -25,45 +25,7 @@ jobs:
           cache: gradle
       - name: Patch verified History preference hot path
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java')
-          s = p.read_text()
-          old = '''    private int safePrefInt(String key, int fallback, int min, int max) {
-        Object raw = prefs.getAll().get(key);
-        int value = fallback;
-        if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
-        else if (raw instanceof String) {
-            try { value = Math.round(Float.parseFloat((String) raw)); }
-            catch (NumberFormatException ignored) { value = fallback; }
-        }
-        return Math.max(min, Math.min(max, value));
-    }
-'''
-          new = '''    private Object readPreferenceValue(String key) {
-        if (!prefs.contains(key)) return null;
-        try { return prefs.getString(key, null); } catch (ClassCastException ignored) { }
-        try { return prefs.getInt(key, 0); } catch (ClassCastException ignored) { }
-        try { return prefs.getFloat(key, 0f); } catch (ClassCastException ignored) { }
-        try { return prefs.getLong(key, 0L); } catch (ClassCastException ignored) { }
-        return null;
-    }
-
-    private int safePrefInt(String key, int fallback, int min, int max) {
-        Object raw = readPreferenceValue(key);
-        int value = fallback;
-        if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
-        else if (raw instanceof String) {
-            try { value = Math.round(Float.parseFloat((String) raw)); }
-            catch (NumberFormatException ignored) { value = fallback; }
-        }
-        return Math.max(min, Math.min(max, value));
-    }
-'''
-          if s.count(old) != 1:
-              raise SystemExit(f'Expected exactly one safePrefInt block, found {s.count(old)}')
-          p.write_text(s.replace(old, new, 1))
-          PY
+          python3 -c 'from pathlib import Path; p=Path("app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java"); s=p.read_text(); old="    private int safePrefInt(String key, int fallback, int min, int max) {\n        Object raw = prefs.getAll().get(key);\n        int value = fallback;\n        if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());\n        else if (raw instanceof String) {\n            try { value = Math.round(Float.parseFloat((String) raw)); }\n            catch (NumberFormatException ignored) { value = fallback; }\n        }\n        return Math.max(min, Math.min(max, value));\n    }\n"; new="    private Object readPreferenceValue(String key) {\n        if (!prefs.contains(key)) return null;\n        try { return prefs.getString(key, null); } catch (ClassCastException ignored) { }\n        try { return prefs.getInt(key, 0); } catch (ClassCastException ignored) { }\n        try { return prefs.getFloat(key, 0f); } catch (ClassCastException ignored) { }\n        try { return prefs.getLong(key, 0L); } catch (ClassCastException ignored) { }\n        return null;\n    }\n\n    private int safePrefInt(String key, int fallback, int min, int max) {\n        Object raw = readPreferenceValue(key);\n        int value = fallback;\n        if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());\n        else if (raw instanceof String) {\n            try { value = Math.round(Float.parseFloat((String) raw)); }\n            catch (NumberFormatException ignored) { value = fallback; }\n        }\n        return Math.max(min, Math.min(max, value));\n    }\n"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,new,1))'
       - name: Verify intended source delta
         run: |
           grep -q 'Object raw = readPreferenceValue(key);' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
@@ -71,7 +33,6 @@ jobs:
           grep -q 'versionCode 435' app/build.gradle
           grep -q 'versionName "3.30.07"' app/build.gradle
           git diff --check
-          git diff -- app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
       - name: Full verification
         run: ./gradlew lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
       - name: Verify built APK version
