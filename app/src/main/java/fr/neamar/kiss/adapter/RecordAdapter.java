@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.WeakHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -36,8 +37,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private FuzzyScore fuzzyScore;
     private final List<Result<?>> results;
     private final HashMap<String, Integer> alphaIndexer = new HashMap<>();
+    private final WeakHashMap<ImageView, int[]> originalIconSizes = new WeakHashMap<>();
     private String[] sections = new String[0];
     private static final String TAG = RecordAdapter.class.getSimpleName();
+
+    private boolean sizingConfigLoaded;
+    private int rowSizePercent = 100;
+    private int iconSizePercent = 100;
+    private int rowBaseHeightPx;
+    private int iconThresholdPx;
+    private int iconMinimumPx;
 
     public RecordAdapter(QueryInterface parent, List<Result<?>> results) {
         this.parent = parent;
@@ -74,25 +83,47 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void applyVerticalHistorySizing(View row, Context context) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        int rowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 160);
-        int iconPercent = safePercent(prefs, "smart-list-icon-size-percent", 100, 60, 170);
-        row.setMinimumHeight(dp(context, 64) * rowPercent / 100);
-        resizeSignificantImages(row, context, iconPercent);
+        ensureSizingConfig(context);
+        int minimumHeight = rowBaseHeightPx * rowSizePercent / 100;
+        if (row.getMinimumHeight() != minimumHeight) {
+            row.setMinimumHeight(minimumHeight);
+        }
+        resizeSignificantImages(row, iconSizePercent);
     }
 
-    private void resizeSignificantImages(View view, Context context, int percent) {
+    private void ensureSizingConfig(Context context) {
+        if (sizingConfigLoaded) return;
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        Map<String, ?> values = prefs.getAll();
+        rowSizePercent = safePercent(values.get("smart-list-row-size-percent"), 100, 70, 160);
+        iconSizePercent = safePercent(values.get("smart-list-icon-size-percent"), 100, 60, 170);
+        rowBaseHeightPx = dp(context, 64);
+        iconThresholdPx = dp(context, 28);
+        iconMinimumPx = dp(context, 24);
+        sizingConfigLoaded = true;
+    }
+
+    private void resizeSignificantImages(View view, int percent) {
         if (view instanceof ImageView) {
-            ViewGroup.LayoutParams lp = view.getLayoutParams();
+            ImageView image = (ImageView) view;
+            ViewGroup.LayoutParams lp = image.getLayoutParams();
             if (lp != null) {
-                int threshold = dp(context, 28);
-                int currentMax = Math.max(lp.width, lp.height);
-                if (currentMax >= threshold) {
-                    int base = Math.max(threshold, currentMax);
-                    int target = Math.max(dp(context, 24), base * percent / 100);
-                    lp.width = target;
-                    lp.height = target;
-                    view.setLayoutParams(lp);
+                int[] baseSize = originalIconSizes.get(image);
+                if (baseSize == null) {
+                    baseSize = new int[] {lp.width, lp.height};
+                    originalIconSizes.put(image, baseSize);
+                }
+
+                int baseMax = Math.max(baseSize[0], baseSize[1]);
+                if (baseMax >= iconThresholdPx) {
+                    int targetWidth = scaledDimension(baseSize[0], percent);
+                    int targetHeight = scaledDimension(baseSize[1], percent);
+                    if (lp.width != targetWidth || lp.height != targetHeight) {
+                        lp.width = targetWidth;
+                        lp.height = targetHeight;
+                        image.setLayoutParams(lp);
+                    }
                 }
             }
             return;
@@ -100,12 +131,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (!(view instanceof ViewGroup)) return;
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
-            resizeSignificantImages(group.getChildAt(i), context, percent);
+            resizeSignificantImages(group.getChildAt(i), percent);
         }
     }
 
-    private int safePercent(SharedPreferences prefs, String key, int fallback, int min, int max) {
-        Object raw = prefs.getAll().get(key);
+    private int scaledDimension(int base, int percent) {
+        if (base <= 0) return base;
+        return Math.max(iconMinimumPx, base * percent / 100);
+    }
+
+    private int safePercent(Object raw, int fallback, int min, int max) {
         int value = fallback;
         if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
         else if (raw instanceof String) {
