@@ -706,8 +706,17 @@ final class HistoryDisplayForwarder extends Forwarder {
         return Color.WHITE;
     }
 
+    private Object readPreferenceValue(String key) {
+        if (!prefs.contains(key)) return null;
+        try { return prefs.getString(key, null); } catch (ClassCastException ignored) { }
+        try { return prefs.getInt(key, 0); } catch (ClassCastException ignored) { }
+        try { return prefs.getFloat(key, 0f); } catch (ClassCastException ignored) { }
+        try { return prefs.getLong(key, 0L); } catch (ClassCastException ignored) { }
+        return null;
+    }
+
     private int safePrefInt(String key, int fallback, int min, int max) {
-        Object raw = prefs.getAll().get(key);
+        Object raw = readPreferenceValue(key);
         int value = fallback;
         if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
         else if (raw instanceof String) {
