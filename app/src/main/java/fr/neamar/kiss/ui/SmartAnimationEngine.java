@@ -20,8 +20,20 @@ import androidx.preference.PreferenceManager;
 public final class SmartAnimationEngine {
     private SmartAnimationEngine() {}
 
+    private static volatile SharedPreferences cachedPrefs;
+
     private static SharedPreferences prefs(Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context);
+        SharedPreferences local = cachedPrefs;
+        if (local == null) {
+            synchronized (SmartAnimationEngine.class) {
+                local = cachedPrefs;
+                if (local == null) {
+                    local = PreferenceManager.getDefaultSharedPreferences(context.getApplicationContext());
+                    cachedPrefs = local;
+                }
+            }
+        }
+        return local;
     }
 
     public static boolean isEnabled(Context context) {
@@ -29,8 +41,12 @@ public final class SmartAnimationEngine {
     }
 
     public static String getStyle(Context context, String key, String fallback) {
-        Object value = prefs(context).getAll().get(key);
-        return value instanceof String ? (String) value : fallback;
+        SharedPreferences preferences = prefs(context);
+        try {
+            return preferences.getString(key, fallback);
+        } catch (ClassCastException ignored) {
+            return fallback;
+        }
     }
 
     public static long duration(Context context) {
@@ -43,13 +59,31 @@ public final class SmartAnimationEngine {
     }
 
     private static float readSpeedMultiplier(SharedPreferences preferences) {
-        Object percentValue = preferences.getAll().get("smart-animation-speed-percent");
-        Float percent = parseNumber(percentValue);
+        Float percent = readNumber(preferences, "smart-animation-speed-percent");
         if (percent != null) return percent / 100f;
 
-        Object legacyValue = preferences.getAll().get("smart-animation-speed");
-        Float legacy = parseNumber(legacyValue);
+        Float legacy = readNumber(preferences, "smart-animation-speed");
         return legacy == null ? 1f : legacy;
+    }
+
+    private static Float readNumber(SharedPreferences preferences, String key) {
+        if (!preferences.contains(key)) return null;
+
+        try {
+            return (float) preferences.getInt(key, 0);
+        } catch (ClassCastException ignored) {
+            // Try the other preference value types without allocating a complete preferences map.
+        }
+        try {
+            return preferences.getFloat(key, 0f);
+        } catch (ClassCastException ignored) {
+            // Fall through to String for legacy/list-backed preferences.
+        }
+        try {
+            return parseNumber(preferences.getString(key, null));
+        } catch (ClassCastException ignored) {
+            return null;
+        }
     }
 
     private static Float parseNumber(Object value) {
