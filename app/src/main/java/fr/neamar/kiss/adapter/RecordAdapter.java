@@ -571,8 +571,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         return null;
     }
 
+    /** Read one preference without allocating the complete SharedPreferences map on every row bind. */
+    private Object readPreferenceValue(SharedPreferences prefs, String key) {
+        if (!prefs.contains(key)) return null;
+        try { return prefs.getString(key, null); } catch (ClassCastException ignored) { }
+        try { return prefs.getInt(key, 0); } catch (ClassCastException ignored) { }
+        try { return prefs.getFloat(key, 0f); } catch (ClassCastException ignored) { }
+        try { return prefs.getLong(key, 0L); } catch (ClassCastException ignored) { }
+        return null;
+    }
+
     private int safePercent(SharedPreferences prefs, String key, int fallback, int min, int max) {
-        Object raw = prefs.getAll().get(key);
+        Object raw = readPreferenceValue(prefs, key);
         int value = fallback;
         if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
         else if (raw instanceof String) {

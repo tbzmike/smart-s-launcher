@@ -20,8 +20,20 @@ import androidx.preference.PreferenceManager;
 public final class SmartAnimationEngine {
     private SmartAnimationEngine() {}
 
+    private static volatile SharedPreferences cachedPreferences;
+
     private static SharedPreferences prefs(Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context);
+        SharedPreferences local = cachedPreferences;
+        if (local == null) {
+            synchronized (SmartAnimationEngine.class) {
+                local = cachedPreferences;
+                if (local == null) {
+                    local = PreferenceManager.getDefaultSharedPreferences(context.getApplicationContext());
+                    cachedPreferences = local;
+                }
+            }
+        }
+        return local;
     }
 
     public static boolean isEnabled(Context context) {
@@ -29,7 +41,7 @@ public final class SmartAnimationEngine {
     }
 
     public static String getStyle(Context context, String key, String fallback) {
-        Object value = prefs(context).getAll().get(key);
+        Object value = readPreferenceValue(prefs(context), key);
         return value instanceof String ? (String) value : fallback;
     }
 
@@ -42,13 +54,22 @@ public final class SmartAnimationEngine {
     }
 
     private static float readSpeedMultiplier(SharedPreferences preferences) {
-        Object percentValue = preferences.getAll().get("smart-animation-speed-percent");
+        Object percentValue = readPreferenceValue(preferences, "smart-animation-speed-percent");
         Float percent = parseNumber(percentValue);
         if (percent != null) return percent / 100f;
 
-        Object legacyValue = preferences.getAll().get("smart-animation-speed");
+        Object legacyValue = readPreferenceValue(preferences, "smart-animation-speed");
         Float legacy = parseNumber(legacyValue);
         return legacy == null ? 1f : legacy;
+    }
+
+    private static Object readPreferenceValue(SharedPreferences preferences, String key) {
+        if (!preferences.contains(key)) return null;
+        try { return preferences.getString(key, null); } catch (ClassCastException ignored) { }
+        try { return preferences.getInt(key, 0); } catch (ClassCastException ignored) { }
+        try { return preferences.getFloat(key, 0f); } catch (ClassCastException ignored) { }
+        try { return preferences.getLong(key, 0L); } catch (ClassCastException ignored) { }
+        return null;
     }
 
     private static Float parseNumber(Object value) {
