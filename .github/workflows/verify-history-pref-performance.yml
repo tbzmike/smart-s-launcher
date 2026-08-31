@@ -1,0 +1,92 @@
+name: Verify History preference performance fix
+
+on:
+  push:
+    branches:
+      - build/3.30.07
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    if: github.event.head_commit.message == 'Run History preference performance verifier'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.07
+          fetch-depth: 0
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+          cache: gradle
+      - name: Patch verified History preference hot path
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java')
+          s = p.read_text()
+          old = '''    private int safePrefInt(String key, int fallback, int min, int max) {
+        Object raw = prefs.getAll().get(key);
+        int value = fallback;
+        if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
+        else if (raw instanceof String) {
+            try { value = Math.round(Float.parseFloat((String) raw)); }
+            catch (NumberFormatException ignored) { value = fallback; }
+        }
+        return Math.max(min, Math.min(max, value));
+    }
+'''
+          new = '''    private Object readPreferenceValue(String key) {
+        if (!prefs.contains(key)) return null;
+        try { return prefs.getString(key, null); } catch (ClassCastException ignored) { }
+        try { return prefs.getInt(key, 0); } catch (ClassCastException ignored) { }
+        try { return prefs.getFloat(key, 0f); } catch (ClassCastException ignored) { }
+        try { return prefs.getLong(key, 0L); } catch (ClassCastException ignored) { }
+        return null;
+    }
+
+    private int safePrefInt(String key, int fallback, int min, int max) {
+        Object raw = readPreferenceValue(key);
+        int value = fallback;
+        if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
+        else if (raw instanceof String) {
+            try { value = Math.round(Float.parseFloat((String) raw)); }
+            catch (NumberFormatException ignored) { value = fallback; }
+        }
+        return Math.max(min, Math.min(max, value));
+    }
+'''
+          if s.count(old) != 1:
+              raise SystemExit(f'Expected exactly one safePrefInt block, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Verify intended source delta
+        run: |
+          grep -q 'Object raw = readPreferenceValue(key);' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          ! grep -q 'Object raw = prefs.getAll().get(key);' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -q 'versionCode 435' app/build.gradle
+          grep -q 'versionName "3.30.07"' app/build.gradle
+          git diff --check
+          git diff -- app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+      - name: Full verification
+        run: ./gradlew lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+      - name: Verify built APK version
+        run: |
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          "$AAPT" dump badging "$APK" | tee /tmp/apk-badging.txt
+          grep -q "versionCode='435'" /tmp/apk-badging.txt
+          grep -q "versionName='3.30.07'" /tmp/apk-badging.txt
+      - name: Commit only after verification
+        run: |
+          git config user.name 'tbzmike'
+          git config user.email '40115947+tbzmike@users.noreply.github.com'
+          git add app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          git rm .github/workflows/verify-history-pref-performance.yml
+          git diff --cached --check
+          git commit -m 'Reduce History preference allocation overhead'
+          git push origin HEAD:build/3.30.07
