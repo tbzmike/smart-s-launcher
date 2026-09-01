@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.13
-        versionCode 441
-        versionName "3.30.13"
+        // Smart S Launcher 3.30.14
+        versionCode 442
+        versionName "3.30.14"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -78,25 +78,21 @@ dependencies {
     implementation 'androidx.preference:preference:1.2.1'
     implementation "androidx.recyclerview:recyclerview:1.4.0"
     implementation 'androidx.core:core:1.17.0'
-    implementation 'androidx.activity:activity:1.11.0'
-    implementation 'androidx.fragment:fragment:1.8.9'
-    testImplementation 'org.junit.jupiter:junit-jupiter:6.0.3'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    testImplementation 'org.hamcrest:hamcrest-library:3.0'
-    errorprone('com.google.errorprone:error_prone_core:2.49.0')
-    runtimeOnly('com.google.errorprone:error_prone_annotations:2.49.0')
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.errorprone {
-        disableWarningsInGeneratedCode = true
-        disable('MissingOverride')
-        disable('MissingSummary')
-        disable('EmptyBlockTag')
-        disable('EmptyCatch')
-    }
-}
-
-tasks.withType(Test).configureEach {
-    useJUnitPlatform()
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime:2.9.4'
+    implementation 'androidx.lifecycle:lifecycle-process:2.9.4'
+    implementation 'androidx.lifecycle:lifecycle-service:2.9.4'
+    implementation 'com.google.android.material:material:1.13.0'
+    implementation 'androidx.media3:media3-session:1.8.0'
+    implementation 'androidx.media3:media3-common:1.8.0'
+    implementation 'androidx.media3:media3-ui:1.8.0'
+    implementation 'androidx.media3:media3-exoplayer:1.8.0'
+    implementation 'com.google.code.gson:gson:2.13.2'
+    implementation 'com.github.bumptech.glide:glide:5.0.5'
+    annotationProcessor 'com.github.bumptech.glide:compiler:5.0.5'
+    implementation 'androidx.room:room-runtime:2.8.4'
+    annotationProcessor 'androidx.room:room-compiler:2.8.4'
+    implementation 'androidx.work:work-runtime:2.10.5'
+    implementation 'androidx.documentfile:documentfile:1.1.0'
+    testImplementation 'junit:junit:4.13.2'
 }
