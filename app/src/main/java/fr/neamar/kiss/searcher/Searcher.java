@@ -82,6 +82,29 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         return DEFAULT_MAX_RESULTS;
     }
 
+    /** Publish a preview list without adding it to the final provider result queue. */
+    protected final void publishPreviewResults(List<? extends Pojo> previewPojos) {
+        if (isCancelled() || previewPojos == null || previewPojos.isEmpty()) return;
+        MainActivity activity = activityWeakReference.get();
+        if (activity == null) return;
+
+        int maxResults = Math.max(0, getMaxResultCount());
+        int from = Math.max(0, previewPojos.size() - maxResults);
+        List<Pojo> snapshot = new ArrayList<>(previewPojos.size() - from);
+        for (int i = from; i < previewPojos.size(); i++) {
+            Pojo pojo = previewPojos.get(i);
+            if (pojo != null) snapshot.add(pojo);
+        }
+        if (snapshot.isEmpty()) return;
+
+        activity.runOnUiThread(() -> {
+            if (isCancelled()) return;
+            MainActivity currentActivity = activityWeakReference.get();
+            if (currentActivity == null) return;
+            currentActivity.adapter.updateWithPojos(currentActivity, snapshot, true, query);
+        });
+    }
+
     /** Publish a stable snapshot without ending the active search. */
     protected final void publishCurrentResults() {
         if (isCancelled()) return;

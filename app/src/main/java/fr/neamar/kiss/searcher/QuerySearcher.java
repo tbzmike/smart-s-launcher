@@ -40,6 +40,8 @@ public class QuerySearcher extends Searcher {
     private HashMap<String, Integer> knownIds;
     private final SharedPreferences prefs;
     private final Set<String> lexicalIds = new HashSet<>();
+    private final List<Pojo> historySeed;
+    private final List<Pojo> historyMatches = new ArrayList<>();
     private boolean semanticPass;
     private boolean semanticEnabled;
     private boolean semanticRerank;
@@ -48,9 +50,11 @@ public class QuerySearcher extends Searcher {
     private int semanticDimensions;
     private float[] preparedSemanticQuery;
 
-    public QuerySearcher(MainActivity activity, String query, boolean isRefresh) {
+    public QuerySearcher(MainActivity activity, String query, boolean isRefresh,
+                         List<Pojo> historySeed) {
         super(activity, query, isRefresh);
         prefs = PreferenceManager.getDefaultSharedPreferences(activity);
+        this.historySeed = historySeed == null ? new ArrayList<>() : new ArrayList<>(historySeed);
     }
 
     @Override
@@ -127,12 +131,18 @@ public class QuerySearcher extends Searcher {
         MainActivity activity = activityWeakReference.get();
         if (activity == null) return null;
 
+        // First stage: search the already-rendered history rows in memory. This happens before
+        // any DB query, provider scan, fuzzy scorer or embedding work.
+        prepareHistoryPreview(activity);
+        if (isCancelled()) return null;
+
         List<ValuedHistoryRecord> lastIdsForQuery = DBHelper.getPreviousResultsForQuery(activity, query);
         knownIds = new HashMap<>();
         for (ValuedHistoryRecord id : lastIdsForQuery) knownIds.put(id.record, id.value);
 
         configureSemanticSearch();
         KissApplication.getApplication(activity).getDataHandler().requestResults(query, this);
+        mergeMissingHistoryMatches();
 
         // Do not hold useful lexical matches behind the full semantic-record scan. The same
         // Searcher remains active, so the deeper pass can still improve the final ranking and is
@@ -147,6 +157,56 @@ public class QuerySearcher extends Searcher {
             semanticPass = false;
         }
         return null;
+    }
+
+    private void prepareHistoryPreview(MainActivity activity) {
+        historyMatches.clear();
+        String normalizedQuery = normalize(query);
+        if (normalizedQuery.isEmpty() || historySeed.isEmpty()) return;
+
+        Set<String> excludedFavoriteIds = KissApplication.getApplication(activity)
+                .getDataHandler().getExcludedFavorites();
+        boolean detectFrozen = prefs.getBoolean("smart-detect-frozen-apps", true);
+        boolean keepFrozenSearchable = prefs.getBoolean("smart-keep-frozen-searchable", true);
+        boolean enableExcludedApps = prefs.getBoolean("enable-excluded-apps", false);
+
+        int checked = 0;
+        for (Pojo pojo : historySeed) {
+            if ((checked++ & 31) == 0 && isCancelled()) return;
+            if (pojo == null || excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
+            if (pojo instanceof AppPojo) {
+                AppPojo app = (AppPojo) pojo;
+                if (app.isExcluded() && !enableExcludedApps) continue;
+                if (app.isDisabled() && (!detectFrozen || !keepFrozenSearchable)) continue;
+            }
+
+            String name = normalize(pojo.getName());
+            String candidate = candidateText(pojo);
+            boolean obvious = name.startsWith(normalizedQuery)
+                    || containsTokenPrefix(name, normalizedQuery);
+            if (!obvious && normalizedQuery.length() >= 2) {
+                obvious = candidate.contains(normalizedQuery);
+            }
+            if (obvious) historyMatches.add(pojo);
+        }
+
+        if (!historyMatches.isEmpty() && !isCancelled()) publishPreviewResults(historyMatches);
+    }
+
+    /** Keep history-only matches in the final set without duplicating provider matches. */
+    private void mergeMissingHistoryMatches() {
+        if (historyMatches.isEmpty() || isCancelled()) return;
+        List<Pojo> missing = new ArrayList<>();
+        int count = historyMatches.size();
+        for (int i = 0; i < count; i++) {
+            Pojo pojo = historyMatches.get(i);
+            if (pojo == null || lexicalIds.contains(pojo.id)) continue;
+            pojo.relevance = 180 + Math.round(80f * (i + 1) / Math.max(1, count));
+            if (pojo.isDisabled()) pojo.relevance -= 200;
+            lexicalIds.add(pojo.id);
+            missing.add(pojo);
+        }
+        if (!missing.isEmpty()) super.addResults(missing);
     }
 
     private void configureSemanticSearch() {

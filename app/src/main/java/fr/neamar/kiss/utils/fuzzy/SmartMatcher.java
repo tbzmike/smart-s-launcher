@@ -57,7 +57,8 @@ public final class SmartMatcher {
             this.query = query;
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-            this.typoToleranceEnabled = prefs.getBoolean("enable-typo-tolerance", true);
+            this.typoToleranceEnabled = FuzzyFactory.isFuzzyEnabled(context)
+                    && prefs.getBoolean("enable-typo-tolerance", true);
 
             List<String> expandedQueries = SmartSearch.expandQueries(context, query);
             this.variants = new ArrayList<>(expandedQueries.size());

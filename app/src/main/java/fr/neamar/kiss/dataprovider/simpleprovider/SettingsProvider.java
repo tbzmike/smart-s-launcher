@@ -25,6 +25,7 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.utils.fuzzy.FuzzyFactory;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
@@ -173,7 +174,7 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
                 if (hidden.contains(pojo.id)) continue;
                 MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
                 boolean match = pojo.updateMatchingRelevance(matchInfo, false);
-                if (!match) {
+                if (!match && FuzzyFactory.isFuzzyEnabled(context)) {
                     matchInfo = fr.neamar.kiss.utils.fuzzy.TypoTolerance.match(context, query, settingName);
                     match = pojo.updateMatchingRelevance(matchInfo, match);
                 }

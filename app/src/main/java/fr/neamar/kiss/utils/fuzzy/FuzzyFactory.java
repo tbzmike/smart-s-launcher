@@ -7,6 +7,7 @@ import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
 
 public class FuzzyFactory {
+    public static final String PREF_ENABLE_FUZZY_SEARCH = "enable-fuzzy-search";
 
     public static FuzzyScore createFuzzyScore(@NonNull Context context, int[] pattern) {
         return createFuzzyScore(context, pattern, false);
@@ -14,11 +15,19 @@ public class FuzzyFactory {
 
     public static FuzzyScore createFuzzyScore(@NonNull Context context, int[] pattern, boolean detailedMatchIndices) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        if (!prefs.getBoolean(PREF_ENABLE_FUZZY_SEARCH, false)) {
+            return new LiteralScore(pattern, detailedMatchIndices);
+        }
         if (prefs.getBoolean("use-fuzzy-score-v1", false)) {
             return new FuzzyScoreV1(pattern, detailedMatchIndices);
         } else {
             return new FuzzyScoreV2(pattern, detailedMatchIndices);
         }
+    }
+
+    public static boolean isFuzzyEnabled(@NonNull Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(PREF_ENABLE_FUZZY_SEARCH, false);
     }
 
 }

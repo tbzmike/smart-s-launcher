@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -251,7 +252,9 @@ public class AppProvider extends Provider<AppPojo>
     @Override
     public void requestResults(String query, Searcher searcher) {
         Set<String> excludedFavoriteIds = KissApplication.getApplication(this).getDataHandler().getExcludedFavorites();
-        List<String> semanticHints = SemanticHints.expand(query);
+        List<String> semanticHints = prefs.getBoolean("semantic-search-enabled", false)
+                ? SemanticHints.expand(query)
+                : Collections.emptyList();
 
         int checked = 0;
         for (AppPojo pojo : getPojos()) {

@@ -5,7 +5,12 @@ import android.os.Looper;
 
 import androidx.annotation.NonNull;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
 public class SearchHandler {
@@ -39,6 +44,9 @@ public class SearchHandler {
     /** Running search task. */
     private Searcher runningSearch;
 
+    /** Last successfully rendered history rows, reused as the zero-DB first query stage. */
+    private List<Pojo> historyQuerySeed = Collections.emptyList();
+
     /**
      * Create search task and execute. Rapid query typing is debounced by one display-frame-sized
      * interval so obsolete searches do not repeatedly rebuild complex history/card views without
@@ -67,8 +75,12 @@ public class SearchHandler {
         // SmartMatcher caches only immutable preparation for this one search generation. Starting
         // a new operation invalidates it so repeated identical text still observes changed prefs.
         SmartMatcher.beginSearch();
+        final Searcher.Type startedType = type;
         runningSearch = createSearcher(type, activity, query, isRefresh);
         runningSearch.setSearchDoneCallback((searcher, isCancelled) -> {
+            if (!isCancelled && startedType == Searcher.Type.HISTORY && activity.adapter != null) {
+                historyQuerySeed = activity.adapter.snapshotPojos();
+            }
             if (runningSearch == searcher) resetRunningSearch();
         });
         runningSearch.executeOnExecutor(Searcher.SEARCH_THREAD);
@@ -113,7 +125,8 @@ public class SearchHandler {
             case APPLICATION:
                 return new ApplicationsSearcher(activity, isRefresh);
             case QUERY:
-                return new QuerySearcher(activity, query, isRefresh);
+                return new QuerySearcher(activity, query, isRefresh,
+                        new ArrayList<>(historyQuerySeed));
             case NULL:
                 return new NullSearcher(activity);
             case HISTORY:

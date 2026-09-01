@@ -596,6 +596,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
+    /** Snapshot the already-loaded rows for a cheap history-first query stage. */
+    @NonNull
+    public List<Pojo> snapshotPojos() {
+        List<Pojo> snapshot = new ArrayList<>(results.size());
+        for (Result<?> result : results) {
+            if (result != null && result.getPojo() != null) snapshot.add(result.getPojo());
+        }
+        return snapshot;
+    }
+
     public boolean showNotificationHistoryIfAvailable(final int pos, View v) {
         if (pos < 0 || pos >= getCount() || v == null) return false;
         return NotificationHistoryResolver.showForPojo(v.getContext(), getItem(pos).getPojo());
