@@ -143,9 +143,6 @@ public class ExportSettingsPreference {
             progress.step();
             progress.complete();
 
-            Toast.makeText(context,
-                    destination == null ? R.string.export_settings_done : 0,
-                    Toast.LENGTH_SHORT);
             if (destination == null) {
                 Toast.makeText(context, R.string.export_settings_done, Toast.LENGTH_SHORT).show();
             } else {
@@ -154,9 +151,7 @@ public class ExportSettingsPreference {
         } catch (JSONException | IOException | SecurityException e) {
             if (progress != null) progress.fail();
             Log.e(TAG, "Unable to back up settings", e);
-            Toast.makeText(context,
-                    destination == null ? R.string.export_settings_error : R.string.export_settings_error,
-                    Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, R.string.export_settings_error, Toast.LENGTH_SHORT).show();
         } finally {
             defaultValues.edit().clear().apply();
         }
