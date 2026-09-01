@@ -412,9 +412,9 @@ public class SettingsResult extends Result<SettingPojo> {
                 Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (!NotificationListener.openNotification(context, item.id)
-                    && !AppLaunchUtils.launchPackage(context, group.packageName)) {
-                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
+            if (!NotificationListener.openNotification(context, item.id)) {
+                Toast.makeText(context, "Unable to open this exact notification",
+                        Toast.LENGTH_SHORT).show();
             }
         });
 

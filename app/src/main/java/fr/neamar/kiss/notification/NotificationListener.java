@@ -27,6 +27,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -68,6 +69,9 @@ public class NotificationListener extends NotificationListenerService {
     private static volatile NotificationListener instance;
     private static final ExecutorService RECONCILE_EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicBoolean RECONCILE_RUNNING = new AtomicBoolean(false);
+    private static final int RETAINED_CONTENT_INTENT_LIMIT = 256;
+    private static final LinkedHashMap<String, PendingIntent> RETAINED_CONTENT_INTENTS =
+            new LinkedHashMap<>(32, 0.75f, true);
     /**
      * Process-local platform verification. Persistent preferences are only a rendering cache and
      * can outlive a missed removal callback or a killed listener process, so they must never be
@@ -203,6 +207,7 @@ public class NotificationListener extends NotificationListenerService {
     private void persistHistory(StatusBarNotification sbn, String id) {
         Notification n = sbn.getNotification();
         if (n == null) return;
+        rememberContentIntent(id, n.contentIntent);
         CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
         CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
         if (text == null || text.length() == 0) text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
@@ -229,6 +234,8 @@ public class NotificationListener extends NotificationListenerService {
 
     private void storeNotificationDetail(SharedPreferences.Editor editor, String id, String packageKey, StatusBarNotification sbn) {
         Notification n = sbn.getNotification();
+        if (n == null) return;
+        rememberContentIntent(id, n.contentIntent);
         CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
         CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
         if (text == null || text.length() == 0) text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
@@ -543,6 +550,18 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     public static boolean openNotification(Context context, String notificationId) {
+        if (notificationId == null || notificationId.isEmpty()) return false;
+
+        // Keep the exact PendingIntent supplied by the posting app. Android removes the
+        // StatusBarNotification when the notification leaves the panel, but the PendingIntent can
+        // remain valid. Retaining it lets recent saved history reopen the same conversation/action
+        // instead of silently degrading to the app's launcher activity.
+        PendingIntent retained = getRetainedContentIntent(notificationId);
+        if (retained != null) {
+            if (sendContentIntent(context, retained)) return true;
+            forgetRetainedContentIntent(notificationId, retained);
+        }
+
         SharedPreferences details = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
         String key = details.getString(notificationId + "|key", null);
         String packageName = details.getString(notificationId + "|package", null);
@@ -554,17 +573,51 @@ public class NotificationListener extends NotificationListenerService {
         if (sbn == null || sbn.getNotification() == null) return false;
         PendingIntent contentIntent = sbn.getNotification().contentIntent;
         if (contentIntent == null) return false;
+        rememberContentIntent(notificationId, contentIntent);
+        if (sendContentIntent(context, contentIntent)) return true;
+        forgetRetainedContentIntent(notificationId, contentIntent);
+        return false;
+    }
+
+    public static boolean hasRetainedContentIntent(String notificationId) {
+        if (notificationId == null || notificationId.isEmpty()) return false;
+        synchronized (RETAINED_CONTENT_INTENTS) {
+            return RETAINED_CONTENT_INTENTS.containsKey(notificationId);
+        }
+    }
+
+    private static void rememberContentIntent(String notificationId, PendingIntent contentIntent) {
+        if (notificationId == null || notificationId.isEmpty() || contentIntent == null) return;
+        synchronized (RETAINED_CONTENT_INTENTS) {
+            RETAINED_CONTENT_INTENTS.put(notificationId, contentIntent);
+            while (RETAINED_CONTENT_INTENTS.size() > RETAINED_CONTENT_INTENT_LIMIT) {
+                String eldest = RETAINED_CONTENT_INTENTS.keySet().iterator().next();
+                RETAINED_CONTENT_INTENTS.remove(eldest);
+            }
+        }
+    }
+
+    private static PendingIntent getRetainedContentIntent(String notificationId) {
+        synchronized (RETAINED_CONTENT_INTENTS) {
+            return RETAINED_CONTENT_INTENTS.get(notificationId);
+        }
+    }
+
+    private static void forgetRetainedContentIntent(String notificationId, PendingIntent expected) {
+        synchronized (RETAINED_CONTENT_INTENTS) {
+            PendingIntent current = RETAINED_CONTENT_INTENTS.get(notificationId);
+            if (current == expected) RETAINED_CONTENT_INTENTS.remove(notificationId);
+        }
+    }
+
+    private static boolean sendContentIntent(Context context, PendingIntent contentIntent) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 ActivityOptions options = ActivityOptions.makeBasic();
                 if (Build.VERSION.SDK_INT >= 36) {
-                    // Android 16: grant only while Smart S Launcher is visibly handling this
-                    // explicit user click. This is the platform-recommended restricted mode.
                     options.setPendingIntentBackgroundActivityStartMode(
                             ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE);
                 } else {
-                    // Android 14-15 equivalent; the narrower ALLOW_IF_VISIBLE mode does not
-                    // exist until API 36.
                     options.setPendingIntentBackgroundActivityStartMode(
                             ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
                 }

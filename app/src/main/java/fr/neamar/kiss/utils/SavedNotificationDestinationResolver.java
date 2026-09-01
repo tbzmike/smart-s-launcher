@@ -33,7 +33,8 @@ public final class SavedNotificationDestinationResolver {
                                          @Nullable NotificationHistoryRecord record) {
         if (record == null) return false;
         if (!TextUtils.isEmpty(record.notificationId)
-                && NotificationListener.isNotificationActive(context, record.notificationId)) {
+                && (NotificationListener.isNotificationActive(context, record.notificationId)
+                || NotificationListener.hasRetainedContentIntent(record.notificationId))) {
             return true;
         }
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
@@ -49,7 +50,6 @@ public final class SavedNotificationDestinationResolver {
         if (record == null) return false;
 
         if (!TextUtils.isEmpty(record.notificationId)
-                && NotificationListener.isNotificationActive(context, record.notificationId)
                 && NotificationListener.openNotification(context, record.notificationId)) {
             return true;
         }
