@@ -1,0 +1,130 @@
+name: Apply saved notification deep-link patch
+on:
+  push:
+    branches: [build/3.30.17]
+    paths: ['.github/workflows/patch-deeplink-3.30.17.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.17
+      - name: Apply exact source edits
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} exact matches, found {actual}')
+              p.write_text(text.replace(old, new, count))
+
+          # Database v15 persists only stable, public notification routing metadata.
+          path = 'app/src/main/java/fr/neamar/kiss/db/DB.java'
+          replace(path, 'private final static int DB_VERSION = 14;', 'private final static int DB_VERSION = 15;')
+          replace(path,
+              "database.execSQL(\"CREATE TABLE IF NOT EXISTS notification_history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id TEXT NOT NULL, package TEXT NOT NULL, app_name TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', post_time INTEGER NOT NULL, is_permanent INTEGER NOT NULL DEFAULT 0)\");",
+              "database.execSQL(\"CREATE TABLE IF NOT EXISTS notification_history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id TEXT NOT NULL, package TEXT NOT NULL, app_name TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', post_time INTEGER NOT NULL, is_permanent INTEGER NOT NULL DEFAULT 0, shortcut_id TEXT NOT NULL DEFAULT '', user_serial INTEGER NOT NULL DEFAULT -1)\");")
+          replace(path,
+              '''                case 13:\n                    database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package_time ON notification_history(package,post_time DESC)");\n                    break;''',
+              '''                case 13:\n                    database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package_time ON notification_history(package,post_time DESC)");\n                    // fall through\n                case 14:\n                    database.execSQL("ALTER TABLE notification_history ADD COLUMN shortcut_id TEXT NOT NULL DEFAULT ''");\n                    database.execSQL("ALTER TABLE notification_history ADD COLUMN user_serial INTEGER NOT NULL DEFAULT -1");\n                    break;''')
+
+          path = 'app/src/main/java/fr/neamar/kiss/db/NotificationHistoryRecord.java'
+          replace(path,
+              '''    public long postTime;\n    public boolean permanent;''',
+              '''    public long postTime;\n    public boolean permanent;\n    /** Stable app-published conversation shortcut captured while the notification was live. */\n    public String shortcutId;\n    /** Android profile serial that posted the notification; -1 when unavailable. */\n    public long userSerial = -1L;''')
+
+          path = 'app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java'
+          replace(path,
+              '''        String sql = "SELECT n._id,n.notification_id,n.package,n.app_name,n.title,n.body,"\n                + "n.post_time,n.is_permanent FROM notification_history n INNER JOIN "''',
+              '''        String sql = "SELECT n._id,n.notification_id,n.package,n.app_name,n.title,n.body,"\n                + "n.post_time,n.is_permanent,n.shortcut_id,n.user_serial FROM notification_history n INNER JOIN "''')
+          replace(path,
+              '''                                        @Nullable String title, @Nullable String body, long postTime,\n                                        boolean permanent) {''',
+              '''                                        @Nullable String title, @Nullable String body, long postTime,\n                                        boolean permanent, @Nullable String shortcutId, long userSerial) {''')
+          replace(path,
+              '''        values.put("post_time", postTime);\n        values.put("is_permanent", permanent ? 1 : 0);''',
+              '''        values.put("post_time", postTime);\n        values.put("is_permanent", permanent ? 1 : 0);\n        values.put("shortcut_id", shortcutId == null ? "" : shortcutId);\n        values.put("user_serial", userSerial);''')
+          replace(path,
+              '''                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent"},''',
+              '''                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent", "shortcut_id", "user_serial"},''')
+          replace(path,
+              '''        record.postTime = cursor.getLong(6);\n        record.permanent = cursor.getInt(7) != 0;\n        return record;''',
+              '''        record.postTime = cursor.getLong(6);\n        record.permanent = cursor.getInt(7) != 0;\n        record.shortcutId = cursor.getString(8);\n        record.userSerial = cursor.getLong(9);\n        return record;''')
+
+          path = 'app/src/main/java/fr/neamar/kiss/db/NotificationTimelineStore.java'
+          replace(path,
+              '''                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent"},''',
+              '''                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent", "shortcut_id", "user_serial"},''',
+              count=2)
+          replace(path,
+              '''        record.postTime = cursor.getLong(6);\n        record.permanent = cursor.getInt(7) != 0;\n        return record;''',
+              '''        record.postTime = cursor.getLong(6);\n        record.permanent = cursor.getInt(7) != 0;\n        record.shortcutId = cursor.getString(8);\n        record.userSerial = cursor.getLong(9);\n        return record;''')
+
+          # Capture the conversation shortcut at notification-post time; never infer it from text.
+          path = 'app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java'
+          replace(path,
+              '''        SmartStateStore.saveNotification(this, id, sbn.getPackageName(), getAppName(sbn.getPackageName()),\n                title == null ? "" : title.toString(), text == null ? "" : text.toString(), sbn.getPostTime(),\n                isPermanentForHistory(sbn));''',
+              '''        String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? n.getShortcutId() : null;\n        long userSerial = -1L;\n        android.os.UserManager userManager =\n                (android.os.UserManager) getSystemService(Context.USER_SERVICE);\n        if (userManager != null) userSerial = userManager.getSerialNumberForUser(sbn.getUser());\n        SmartStateStore.saveNotification(this, id, sbn.getPackageName(), getAppName(sbn.getPackageName()),\n                title == null ? "" : title.toString(), text == null ? "" : text.toString(), sbn.getPostTime(),\n                isPermanentForHistory(sbn), shortcutId, userSerial);''')
+
+          # The screenshot path: saved Notification History dialog now prefers the exact target.
+          path = 'app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java'
+          replace(path,
+              'import fr.neamar.kiss.utils.AppLaunchUtils;\nimport fr.neamar.kiss.utils.SemanticHints;',
+              'import fr.neamar.kiss.utils.AppLaunchUtils;\nimport fr.neamar.kiss.utils.SavedNotificationDestinationResolver;\nimport fr.neamar.kiss.utils.SemanticHints;')
+          replace(path,
+              '''        Button openApp = new Button(this);\n        openApp.setText("Open app");\n        openApp.setOnClickListener(v -> openApp(record));\n        buttons.addView(openApp);\n\n        if (record.notificationId != null && NotificationListener.isNotificationActive(this, record.notificationId)) {\n            Button openNotification = new Button(this);\n            openNotification.setText("Open notification");\n            openNotification.setOnClickListener(v -> {\n                if (!NotificationListener.openNotification(this, record.notificationId)) {\n                    Toast.makeText(this, "Unable to open this notification", Toast.LENGTH_SHORT).show();\n                }\n            });\n            buttons.addView(openNotification);\n        }''',
+              '''        boolean exactTarget = SavedNotificationDestinationResolver.hasExactTarget(this, record);\n        Button open = new Button(this);\n        open.setText(exactTarget ? "Open notification" : "Open app");\n        open.setOnClickListener(v -> {\n            if (exactTarget) {\n                if (!SavedNotificationDestinationResolver.openExact(this, record)) {\n                    Toast.makeText(this, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();\n                }\n            } else {\n                openApp(record);\n            }\n        });\n        buttons.addView(open);''')
+
+          # Rich history used from launcher history/long-press gets the same exact resolver.
+          path = 'app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java'
+          replace(path,
+              'import fr.neamar.kiss.utils.AppLaunchUtils;\n',
+              'import fr.neamar.kiss.utils.AppLaunchUtils;\nimport fr.neamar.kiss.utils.SavedNotificationDestinationResolver;\n')
+          replace(path, '                addOpenAppAction();', '                addSavedOpenAction(record);')
+          replace(path,
+              '''                boolean opened = NotificationListener.openNotification(context, record.notificationId);\n                if (!opened) opened = AppLaunchUtils.launchPackage(context, packageName);\n                if (opened) SmartAnimationEngine.dismissDialog(dialog);\n                else Toast.makeText(context, "Unable to open this notification",\n                        Toast.LENGTH_SHORT).show();''',
+              '''                boolean opened = SavedNotificationDestinationResolver.openExact(context, record);\n                if (opened) SmartAnimationEngine.dismissDialog(dialog);\n                else Toast.makeText(context, "Unable to open this exact notification",\n                        Toast.LENGTH_SHORT).show();''')
+          replace(path,
+              '''        private void addOpenAppAction() {\n            LinearLayout buttons = new LinearLayout(context);\n            buttons.setGravity(Gravity.END);\n            Button open = new Button(context);\n            open.setText("Open app");\n            AppNativeDialogStyle.styleButton(open, accent);\n            open.setOnClickListener(v -> {\n                if (!AppLaunchUtils.launchPackage(context, packageName)) {\n                    Toast.makeText(context, "App cannot be opened", Toast.LENGTH_SHORT).show();\n                    return;\n                }\n                SmartAnimationEngine.dismissDialog(dialog);\n            });\n            buttons.addView(open);\n            actionArea.addView(buttons);\n        }''',
+              '''        private void addSavedOpenAction(NotificationHistoryRecord record) {\n            LinearLayout buttons = new LinearLayout(context);\n            buttons.setGravity(Gravity.END);\n            Button open = new Button(context);\n            boolean exactTarget = SavedNotificationDestinationResolver.hasExactTarget(context, record);\n            open.setText(exactTarget ? "Open notification" : "Open app");\n            AppNativeDialogStyle.styleButton(open, accent);\n            open.setOnClickListener(v -> {\n                boolean opened = exactTarget\n                        ? SavedNotificationDestinationResolver.openExact(context, record)\n                        : AppLaunchUtils.launchPackage(context, packageName);\n                if (!opened) {\n                    Toast.makeText(context, exactTarget\n                                    ? "Unable to open this exact notification" : "App cannot be opened",\n                            Toast.LENGTH_SHORT).show();\n                    return;\n                }\n                SmartAnimationEngine.dismissDialog(dialog);\n            });\n            buttons.addView(open);\n            actionArea.addView(buttons);\n        }''')
+
+          # Persisted notification preview on shortcut/feature cards also uses the exact saved route.
+          path = 'app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java'
+          replace(path,
+              'import fr.neamar.kiss.utils.PackageManagerUtils;\nimport fr.neamar.kiss.utils.ShortcutUtil;',
+              'import fr.neamar.kiss.utils.PackageManagerUtils;\nimport fr.neamar.kiss.utils.SavedNotificationDestinationResolver;\nimport fr.neamar.kiss.utils.ShortcutUtil;')
+          replace(path,
+              '''        String latestMessage = activeMessage == null ? "" : activeMessage.trim();\n        if (latestMessage.isEmpty() && !history.isEmpty()) {\n            NotificationHistoryRecord latest = history.get(0);\n            latestMessage = combineNotification(latest.title, latest.text);\n        }''',
+              '''        NotificationHistoryRecord latestSaved = history.isEmpty() ? null : history.get(0);\n        String latestMessage = activeMessage == null ? "" : activeMessage.trim();\n        if (latestMessage.isEmpty() && latestSaved != null) {\n            latestMessage = combineNotification(latestSaved.title, latestSaved.text);\n        }''')
+          replace(path,
+              '''        } else {\n            row.setOnClickListener(null);\n            text.setOnClickListener(null);\n            markRead.setOnClickListener(null);\n            markRead.setVisibility(View.GONE);\n        }''',
+              '''        } else {\n            if (latestSaved != null\n                    && SavedNotificationDestinationResolver.hasExactTarget(context, latestSaved)) {\n                View.OnClickListener exactSavedNotificationClick = v -> {\n                    if (!SavedNotificationDestinationResolver.openExact(context, latestSaved)) {\n                        Toast.makeText(context, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();\n                    }\n                };\n                row.setOnClickListener(exactSavedNotificationClick);\n                text.setOnClickListener(exactSavedNotificationClick);\n            } else {\n                row.setOnClickListener(null);\n                text.setOnClickListener(null);\n            }\n            markRead.setOnClickListener(null);\n            markRead.setVisibility(View.GONE);\n        }''')
+
+      - name: Verify only expected source paths changed
+        run: |
+          git diff --check
+          git status --short
+          CHANGED=$(git diff --name-only | sort)
+          EXPECTED=$(printf '%s\n' \
+            app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java \
+            app/src/main/java/fr/neamar/kiss/db/DB.java \
+            app/src/main/java/fr/neamar/kiss/db/NotificationHistoryRecord.java \
+            app/src/main/java/fr/neamar/kiss/db/NotificationTimelineStore.java \
+            app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java \
+            app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java | sort)
+          test "$CHANGED" = "$EXPECTED"
+      - name: Commit patch
+        run: |
+          git config user.name 'tbzmike'
+          git config user.email '40115947+tbzmike@users.noreply.github.com'
+          git add app/src/main/java
+          git commit -m 'Persist and reopen exact saved notification destinations'
+          git push origin HEAD:build/3.30.17
