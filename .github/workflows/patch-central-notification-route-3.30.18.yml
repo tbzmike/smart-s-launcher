@@ -1,0 +1,57 @@
+name: Patch central notification route 3.30.18
+on:
+  push:
+    branches: [build/3.30.18]
+    paths: ['.github/workflows/patch-central-notification-route-3.30.18.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.18
+          fetch-depth: 0
+      - name: Apply exact central route patch
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java')
+          text = p.read_text()
+          old = 'import fr.neamar.kiss.db.DBHelper;\nimport fr.neamar.kiss.db.SmartStateStore;'
+          new = 'import fr.neamar.kiss.db.DBHelper;\nimport fr.neamar.kiss.db.NotificationHistoryRecord;\nimport fr.neamar.kiss.db.NotificationTimelineStore;\nimport fr.neamar.kiss.db.SmartStateStore;'
+          if text.count(old) != 1:
+              raise SystemExit(f'import anchor mismatch: {text.count(old)}')
+          text = text.replace(old, new, 1)
+          old = 'import fr.neamar.kiss.utils.Log;'
+          new = 'import fr.neamar.kiss.utils.Log;\nimport fr.neamar.kiss.utils.SavedNotificationDestinationResolver;'
+          if text.count(old) != 1:
+              raise SystemExit(f'utils import anchor mismatch: {text.count(old)}')
+          text = text.replace(old, new, 1)
+          old = '''    public static boolean openNotification(Context context, String notificationId) {\n        if (notificationId == null || notificationId.isEmpty()) return false;\n\n        // Keep the exact PendingIntent supplied by the posting app.'''
+          new = '''    public static boolean openNotification(Context context, String notificationId) {\n        if (notificationId == null || notificationId.isEmpty()) return false;\n\n        // Prefer the app-published conversation shortcut when Android exposes one. Some apps use\n        // a content PendingIntent that merely resumes their task, while the published shortcut is\n        // the stable route to the exact conversation represented by the notification.\n        NotificationHistoryRecord saved = NotificationTimelineStore.findLatest(context, notificationId);\n        if (saved != null && SavedNotificationDestinationResolver.openPublishedShortcut(context, saved)) {\n            return true;\n        }\n\n        // Keep the exact PendingIntent supplied by the posting app.'''
+          if text.count(old) != 1:
+              raise SystemExit(f'openNotification anchor mismatch: {text.count(old)}')
+          text = text.replace(old, new, 1)
+          p.write_text(text)
+      - name: Verify no history behavior changed
+        run: |
+          git diff --check
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'promoteHistoryResult(result);' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'HistoryRecencyPolicy.moveSelectedToNewest' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          test "$(git diff --name-only HEAD | wc -l)" -eq 1
+          git diff --name-only HEAD | grep -qx 'app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java'
+          grep -q 'SavedNotificationDestinationResolver.openPublishedShortcut' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+      - name: Build and test exact final source
+        run: |
+          chmod +x gradlew
+          ./gradlew lint testDebugUnitTest assembleDebug assembleRelease
+      - name: Commit source only
+        run: |
+          git config user.name 'tbzmike'
+          git config user.email '40115947+tbzmike@users.noreply.github.com'
+          git add app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          git commit -m 'Prefer exact conversation routes for notifications'
+          git push origin HEAD:build/3.30.18
