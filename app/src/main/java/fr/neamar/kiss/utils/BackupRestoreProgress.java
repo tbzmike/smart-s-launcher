@@ -11,8 +11,8 @@ import androidx.core.app.NotificationManagerCompat;
 import fr.neamar.kiss.R;
 
 /**
- * Small, isolated progress reporter for settings backup/restore.
- * It intentionally owns no backup data and changes no backup semantics.
+ * Small, isolated progress reporter for Smart S backup/restore.
+ * It owns no backup data and can report either step-based or direct percentage progress.
  */
 public final class BackupRestoreProgress {
     private static final String CHANNEL_ID = "smart_s_backup_restore";
@@ -44,9 +44,12 @@ public final class BackupRestoreProgress {
 
     public void step() {
         completedSteps = Math.min(totalSteps, completedSteps + 1);
-        int percent = Math.min(99, Math.round((completedSteps * 100f) / totalSteps));
-        if (completedSteps >= totalSteps) percent = 100;
-        if (percent != lastPercent) publish(percent, operation + " " + percent + "%");
+        setPercent(Math.round((completedSteps * 100f) / totalSteps));
+    }
+
+    public void setPercent(int percent) {
+        int bounded = Math.max(0, Math.min(99, percent));
+        if (bounded != lastPercent) publish(bounded, operation + " " + bounded + "%");
     }
 
     public void complete() {
