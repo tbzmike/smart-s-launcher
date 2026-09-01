@@ -1,0 +1,128 @@
+name: Repair exact notification links 3.30.18
+on:
+  push:
+    branches: [build/3.30.18]
+    paths: ['.github/workflows/patch-notification-links-3.30.18.yml']
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.18
+          fetch-depth: 0
+      - name: Apply guarded source edits
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} exact match(es), found {actual}')
+              p.write_text(text.replace(old, new, count))
+
+          listener = 'app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java'
+          settings = 'app/src/main/java/fr/neamar/kiss/result/SettingsResult.java'
+          resolver = 'app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java'
+
+          replace_exact(listener,
+              'import java.util.HashSet;\nimport java.util.List;',
+              'import java.util.HashSet;\nimport java.util.LinkedHashMap;\nimport java.util.List;')
+
+          replace_exact(listener,
+              '    private static final ExecutorService RECONCILE_EXECUTOR = Executors.newSingleThreadExecutor();\n    private static final AtomicBoolean RECONCILE_RUNNING = new AtomicBoolean(false);',
+              '''    private static final ExecutorService RECONCILE_EXECUTOR = Executors.newSingleThreadExecutor();\n    private static final AtomicBoolean RECONCILE_RUNNING = new AtomicBoolean(false);\n    private static final int RETAINED_CONTENT_INTENT_LIMIT = 256;\n    private static final LinkedHashMap<String, PendingIntent> RETAINED_CONTENT_INTENTS =\n            new LinkedHashMap<>(32, 0.75f, true);''')
+
+          replace_exact(listener,
+              '        Notification n = sbn.getNotification();\n        if (n == null) return;\n        CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);',
+              '        Notification n = sbn.getNotification();\n        if (n == null) return;\n        rememberContentIntent(id, n.contentIntent);\n        CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);',
+              count=1)
+
+          replace_exact(listener,
+              '    private void storeNotificationDetail(SharedPreferences.Editor editor, String id, String packageKey, StatusBarNotification sbn) {\n        Notification n = sbn.getNotification();\n        CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);',
+              '    private void storeNotificationDetail(SharedPreferences.Editor editor, String id, String packageKey, StatusBarNotification sbn) {\n        Notification n = sbn.getNotification();\n        if (n == null) return;\n        rememberContentIntent(id, n.contentIntent);\n        CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);')
+
+          old_open = '''    public static boolean openNotification(Context context, String notificationId) {\n        SharedPreferences details = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);\n        String key = details.getString(notificationId + "|key", null);\n        String packageName = details.getString(notificationId + "|package", null);\n        NotificationListener listener = instance;\n        if (listener == null || key == null) return false;\n        if (packageName != null && !AppLaunchUtils.ensurePackageEnabled(context, packageName)) return false;\n\n        StatusBarNotification sbn = listener.findActiveByKey(key);\n        if (sbn == null || sbn.getNotification() == null) return false;\n        PendingIntent contentIntent = sbn.getNotification().contentIntent;\n        if (contentIntent == null) return false;\n        try {\n            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {\n                ActivityOptions options = ActivityOptions.makeBasic();\n                if (Build.VERSION.SDK_INT >= 36) {\n                    // Android 16: grant only while Smart S Launcher is visibly handling this\n                    // explicit user click. This is the platform-recommended restricted mode.\n                    options.setPendingIntentBackgroundActivityStartMode(\n                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE);\n                } else {\n                    // Android 14-15 equivalent; the narrower ALLOW_IF_VISIBLE mode does not\n                    // exist until API 36.\n                    options.setPendingIntentBackgroundActivityStartMode(\n                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);\n                }\n                contentIntent.send(context, 0, null, null, null, null, options.toBundle());\n            } else {\n                contentIntent.send();\n            }\n            return true;\n        } catch (PendingIntent.CanceledException | RuntimeException e) {\n            Log.w(TAG, "Notification content intent could not be opened", e);\n            return false;\n        }\n    }'''
+          new_open = '''    public static boolean openNotification(Context context, String notificationId) {\n        if (notificationId == null || notificationId.isEmpty()) return false;\n\n        // Keep the exact PendingIntent supplied by the posting app. Android removes the\n        // StatusBarNotification when the notification leaves the panel, but the PendingIntent can\n        // remain valid. Retaining it lets recent saved history reopen the same conversation/action\n        // instead of silently degrading to the app's launcher activity.\n        PendingIntent retained = getRetainedContentIntent(notificationId);\n        if (retained != null) {\n            if (sendContentIntent(context, retained)) return true;\n            forgetRetainedContentIntent(notificationId, retained);\n        }\n\n        SharedPreferences details = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);\n        String key = details.getString(notificationId + "|key", null);\n        String packageName = details.getString(notificationId + "|package", null);\n        NotificationListener listener = instance;\n        if (listener == null || key == null) return false;\n        if (packageName != null && !AppLaunchUtils.ensurePackageEnabled(context, packageName)) return false;\n\n        StatusBarNotification sbn = listener.findActiveByKey(key);\n        if (sbn == null || sbn.getNotification() == null) return false;\n        PendingIntent contentIntent = sbn.getNotification().contentIntent;\n        if (contentIntent == null) return false;\n        rememberContentIntent(notificationId, contentIntent);\n        if (sendContentIntent(context, contentIntent)) return true;\n        forgetRetainedContentIntent(notificationId, contentIntent);\n        return false;\n    }\n\n    public static boolean hasRetainedContentIntent(String notificationId) {\n        if (notificationId == null || notificationId.isEmpty()) return false;\n        synchronized (RETAINED_CONTENT_INTENTS) {\n            return RETAINED_CONTENT_INTENTS.containsKey(notificationId);\n        }\n    }\n\n    private static void rememberContentIntent(String notificationId, PendingIntent contentIntent) {\n        if (notificationId == null || notificationId.isEmpty() || contentIntent == null) return;\n        synchronized (RETAINED_CONTENT_INTENTS) {\n            RETAINED_CONTENT_INTENTS.put(notificationId, contentIntent);\n            while (RETAINED_CONTENT_INTENTS.size() > RETAINED_CONTENT_INTENT_LIMIT) {\n                String eldest = RETAINED_CONTENT_INTENTS.keySet().iterator().next();\n                RETAINED_CONTENT_INTENTS.remove(eldest);\n            }\n        }\n    }\n\n    private static PendingIntent getRetainedContentIntent(String notificationId) {\n        synchronized (RETAINED_CONTENT_INTENTS) {\n            return RETAINED_CONTENT_INTENTS.get(notificationId);\n        }\n    }\n\n    private static void forgetRetainedContentIntent(String notificationId, PendingIntent expected) {\n        synchronized (RETAINED_CONTENT_INTENTS) {\n            PendingIntent current = RETAINED_CONTENT_INTENTS.get(notificationId);\n            if (current == expected) RETAINED_CONTENT_INTENTS.remove(notificationId);\n        }\n    }\n\n    private static boolean sendContentIntent(Context context, PendingIntent contentIntent) {\n        try {\n            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {\n                ActivityOptions options = ActivityOptions.makeBasic();\n                if (Build.VERSION.SDK_INT >= 36) {\n                    options.setPendingIntentBackgroundActivityStartMode(\n                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE);\n                } else {\n                    options.setPendingIntentBackgroundActivityStartMode(\n                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);\n                }\n                contentIntent.send(context, 0, null, null, null, null, options.toBundle());\n            } else {\n                contentIntent.send();\n            }\n            return true;\n        } catch (PendingIntent.CanceledException | RuntimeException e) {\n            Log.w(TAG, "Notification content intent could not be opened", e);\n            return false;\n        }\n    }'''
+          replace_exact(listener, old_open, new_open)
+
+          replace_exact(resolver,
+              '''        if (!TextUtils.isEmpty(record.notificationId)\n                && NotificationListener.isNotificationActive(context, record.notificationId)) {\n            return true;\n        }''',
+              '''        if (!TextUtils.isEmpty(record.notificationId)\n                && (NotificationListener.isNotificationActive(context, record.notificationId)\n                || NotificationListener.hasRetainedContentIntent(record.notificationId))) {\n            return true;\n        }''')
+
+          replace_exact(resolver,
+              '''        if (!TextUtils.isEmpty(record.notificationId)\n                && NotificationListener.isNotificationActive(context, record.notificationId)\n                && NotificationListener.openNotification(context, record.notificationId)) {\n            return true;\n        }''',
+              '''        if (!TextUtils.isEmpty(record.notificationId)\n                && NotificationListener.openNotification(context, record.notificationId)) {\n            return true;\n        }''')
+
+          replace_exact(settings,
+              '''            if (!NotificationListener.openNotification(context, item.id)\n                    && !AppLaunchUtils.launchPackage(context, group.packageName)) {\n                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();\n            }''',
+              '''            if (!NotificationListener.openNotification(context, item.id)) {\n                Toast.makeText(context, "Unable to open this exact notification",\n                        Toast.LENGTH_SHORT).show();\n            }''')
+
+          gradle = Path('app/build.gradle')
+          text = gradle.read_text()
+          for old, new in [
+              ('// Smart S Launcher 3.30.17', '// Smart S Launcher 3.30.18'),
+              ('versionCode 445', 'versionCode 446'),
+              ('versionName "3.30.17"', 'versionName "3.30.18"')]:
+              if text.count(old) != 1:
+                  raise SystemExit(f'app/build.gradle expected exactly one {old!r}')
+              text = text.replace(old, new, 1)
+          gradle.write_text(text)
+
+          build = Path('.github/workflows/build.yml')
+          text = build.read_text()
+          replacements = [
+              ('versionCode 445', 'versionCode 446'),
+              ('versionName "3.30.17"', 'versionName "3.30.18"'),
+              ("versionCode='445'", "versionCode='446'"),
+              ("versionName='3.30.17'", "versionName='3.30.18'"),
+              ('smart-s-launcher-3.30.17-debug', 'smart-s-launcher-3.30.18-debug')]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'build.yml missing {old!r}')
+              text = text.replace(old, new)
+          build.write_text(text)
+
+      - name: Verify scope and preserved history behavior
+        run: |
+          git diff --check
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'promoteHistoryResult(result);' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'HistoryRecencyPolicy.moveSelectedToNewest' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          python - <<'PY'
+          import subprocess
+          allowed = {
+            '.github/workflows/build.yml',
+            'app/build.gradle',
+            'app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java',
+            'app/src/main/java/fr/neamar/kiss/result/SettingsResult.java',
+            'app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java',
+          }
+          changed = set(subprocess.check_output(['git','diff','--name-only','HEAD'], text=True).splitlines())
+          extra = changed - allowed
+          missing = allowed - changed
+          if extra or missing:
+              raise SystemExit(f'unexpected scope: extra={sorted(extra)} missing={sorted(missing)}')
+          PY
+          grep -q 'RETAINED_CONTENT_INTENT_LIMIT = 256' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -q 'hasRetainedContentIntent' app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          ! grep -q 'NotificationListener.openNotification(context, item.id).*AppLaunchUtils.launchPackage' app/src/main/java/fr/neamar/kiss/result/SettingsResult.java
+      - name: Build and test before commit
+        run: |
+          chmod +x gradlew
+          ./gradlew lint testDebugUnitTest assembleDebug assembleRelease
+      - name: Commit verified repair
+        run: |
+          git config user.name 'tbzmike'
+          git config user.email '40115947+tbzmike@users.noreply.github.com'
+          git add .github/workflows/build.yml app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java \
+            app/src/main/java/fr/neamar/kiss/result/SettingsResult.java \
+            app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          git commit -m 'Retain exact notification launch routes'
+          git push origin HEAD:build/3.30.18
