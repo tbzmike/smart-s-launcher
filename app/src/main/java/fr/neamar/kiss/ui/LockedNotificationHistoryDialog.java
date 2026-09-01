@@ -27,6 +27,7 @@ import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 
 /**
  * Read-only notification browser used when the launcher UI is locked.
@@ -264,7 +265,7 @@ public final class LockedNotificationHistoryDialog {
                 }
                 addActiveActions(record);
             } else {
-                addOpenAppAction();
+                addSavedOpenAction(record);
             }
 
             if (dialog.isShowing()) {
@@ -326,13 +327,11 @@ public final class LockedNotificationHistoryDialog {
             open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                boolean opened = NotificationListener.openNotification(
-                        context, record.notificationId);
-                if (!opened) opened = AppLaunchUtils.launchPackage(context, packageName);
+                boolean opened = SavedNotificationDestinationResolver.openExact(context, record);
                 if (opened) {
                     SmartAnimationEngine.dismissDialog(dialog);
                 } else {
-                    Toast.makeText(context, "Unable to open this notification",
+                    Toast.makeText(context, "Unable to open this exact notification",
                             Toast.LENGTH_SHORT).show();
                 }
             });
@@ -340,15 +339,20 @@ public final class LockedNotificationHistoryDialog {
             actionArea.addView(buttons);
         }
 
-        private void addOpenAppAction() {
+        private void addSavedOpenAction(NotificationHistoryRecord record) {
             LinearLayout buttons = new LinearLayout(context);
             buttons.setGravity(Gravity.END);
             Button open = new Button(context);
-            open.setText("Open app");
+            boolean exactTarget = SavedNotificationDestinationResolver.hasExactTarget(context, record);
+            open.setText(exactTarget ? "Open notification" : "Open app");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                if (!AppLaunchUtils.launchPackage(context, packageName)) {
-                    Toast.makeText(context, "App cannot be opened",
+                boolean opened = exactTarget
+                        ? SavedNotificationDestinationResolver.openExact(context, record)
+                        : AppLaunchUtils.launchPackage(context, packageName);
+                if (!opened) {
+                    Toast.makeText(context, exactTarget
+                                    ? "Unable to open this exact notification" : "App cannot be opened",
                             Toast.LENGTH_SHORT).show();
                     return;
                 }
