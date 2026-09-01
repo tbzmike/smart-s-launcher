@@ -31,12 +31,16 @@ import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
-public class AppProvider extends Provider<AppPojo> {
+public class AppProvider extends Provider<AppPojo>
+        implements SharedPreferences.OnSharedPreferenceChangeListener {
     // LauncherApps callbacks are the primary source of package-state changes. This periodic pass is
     // only a fallback for freezer/root tools that can bypass callbacks, so it must never compete
     // with Home rendering or search on the main thread.
     private static final long FROZEN_RECONCILE_INITIAL_DELAY_MS = 2500L;
-    private static final long FROZEN_RECONCILE_MS = 60000L;
+    private static final String PREF_DETECT_FROZEN = "smart-detect-frozen-apps";
+    private static final String PREF_KEEP_FROZEN_SEARCHABLE = "smart-keep-frozen-searchable";
+    private static final String PREF_PACKAGE_MONITORING = "smart-package-change-monitoring";
+    private static final String PREF_RECONCILE_INTERVAL = "smart-frozen-refresh-interval";
     private static volatile boolean launcherUiVisible;
     private static volatile AppProvider activeInstance;
 
@@ -44,6 +48,7 @@ public class AppProvider extends Provider<AppPojo> {
     private final ExecutorService stateExecutor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean reconcileRunning = new AtomicBoolean(false);
     private LauncherApps launcherApps;
+    private SharedPreferences prefs;
 
     private final LauncherAppsCallback launcherAppsCallback = new LauncherAppsCallback() {
         @Override public void onPackageAdded(String packageName, android.os.UserHandle user) {
@@ -80,15 +85,18 @@ public class AppProvider extends Provider<AppPojo> {
 
         private void handleEvent(String action, String[] packageNames,
                                  android.os.UserHandle user, boolean replacing) {
+            if (prefs != null && !prefs.getBoolean(PREF_PACKAGE_MONITORING, true)) return;
             PackageAddedRemovedHandler.handleEvent(AppProvider.this, action, packageNames,
                     new UserHandle(AppProvider.this, user), replacing);
         }
     };
 
     private final Runnable reconcileFrozenState = () -> {
-        if (!launcherUiVisible) return;
+        if (!launcherUiVisible || !isFrozenDetectionEnabled()) return;
+        long reconcileDelayMs = getFrozenReconcileDelayMs();
+        if (reconcileDelayMs < 0L) return;
         if (!isLoaded()) {
-            scheduleNextReconcile(FROZEN_RECONCILE_INITIAL_DELAY_MS);
+            scheduleNextReconcile(Math.min(FROZEN_RECONCILE_INITIAL_DELAY_MS, reconcileDelayMs));
             return;
         }
         if (!reconcileRunning.compareAndSet(false, true)) return;
@@ -151,7 +159,8 @@ public class AppProvider extends Provider<AppPojo> {
                     }
                 } finally {
                     reconcileRunning.set(false);
-                    if (launcherUiVisible) scheduleNextReconcile(FROZEN_RECONCILE_MS);
+                    if (launcherUiVisible && isFrozenDetectionEnabled())
+                        scheduleNextReconcile(reconcileDelayMs);
                 }
             });
         });
@@ -172,6 +181,8 @@ public class AppProvider extends Provider<AppPojo> {
     @Override
     public void onCreate() {
         activeInstance = this;
+        prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        prefs.registerOnSharedPreferenceChangeListener(this);
         launcherApps = ContextCompat.getSystemService(this, LauncherApps.class);
         assert launcherApps != null;
         launcherApps.registerCallback(launcherAppsCallback);
@@ -181,6 +192,7 @@ public class AppProvider extends Provider<AppPojo> {
 
     @Override public void onDestroy() {
         stateHandler.removeCallbacks(reconcileFrozenState);
+        if (prefs != null) prefs.unregisterOnSharedPreferenceChangeListener(this);
         reconcileRunning.set(false);
         stateExecutor.shutdownNow();
         if (launcherApps != null) {
@@ -194,9 +206,39 @@ public class AppProvider extends Provider<AppPojo> {
         super.onDestroy();
     }
 
+    private boolean isFrozenDetectionEnabled() {
+        return prefs == null || prefs.getBoolean(PREF_DETECT_FROZEN, true);
+    }
+
+    private long getFrozenReconcileDelayMs() {
+        if (prefs == null) return -1L;
+        String value = prefs.getString(PREF_RECONCILE_INTERVAL, "15");
+        if (value == null || "package-only".equals(value)) return -1L;
+        try {
+            long seconds = Long.parseLong(value);
+            return Math.max(15L, Math.min(300L, seconds)) * 1000L;
+        } catch (NumberFormatException ignored) {
+            return -1L;
+        }
+    }
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if (PREF_DETECT_FROZEN.equals(key)) {
+            updateFrozenReconcileSchedule(launcherUiVisible);
+            reload();
+        } else if (PREF_RECONCILE_INTERVAL.equals(key)) {
+            updateFrozenReconcileSchedule(launcherUiVisible);
+        } else if (PREF_KEEP_FROZEN_SEARCHABLE.equals(key)) {
+            sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
+        }
+    }
+
     private void updateFrozenReconcileSchedule(boolean visible) {
         stateHandler.removeCallbacks(reconcileFrozenState);
-        if (visible) scheduleNextReconcile(FROZEN_RECONCILE_INITIAL_DELAY_MS);
+        if (!visible || !isFrozenDetectionEnabled()) return;
+        long delayMs = getFrozenReconcileDelayMs();
+        if (delayMs >= 0L) scheduleNextReconcile(Math.min(FROZEN_RECONCILE_INITIAL_DELAY_MS, delayMs));
     }
 
     private void scheduleNextReconcile(long delayMs) {
@@ -209,13 +251,15 @@ public class AppProvider extends Provider<AppPojo> {
     @Override
     public void requestResults(String query, Searcher searcher) {
         Set<String> excludedFavoriteIds = KissApplication.getApplication(this).getDataHandler().getExcludedFavorites();
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         List<String> semanticHints = SemanticHints.expand(query);
 
         int checked = 0;
         for (AppPojo pojo : getPojos()) {
             if ((checked++ & 31) == 0 && searcher.isCancelled()) return;
             if (pojo.isExcluded() && !prefs.getBoolean("enable-excluded-apps", false)) continue;
+            if (pojo.isDisabled()
+                    && (!isFrozenDetectionEnabled()
+                    || !prefs.getBoolean(PREF_KEEP_FROZEN_SEARCHABLE, true))) continue;
             if (excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
 
             MatchInfo matchInfo = SmartMatcher.match(this, query, pojo.normalizedName, pojo.getName());

@@ -372,12 +372,17 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         List<ValuedHistoryRecord> ids = DBHelper.getHistory(context, extendedItemCount, historyMode);
 
         // Find associated items
+        boolean keepFrozenHistory = PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean("smart-keep-frozen-history", true);
         int size = ids.size();
         for (int i = 0; i < ids.size(); i++) {
             // Ask all providers if they know this id
             Pojo pojo = getPojo(ids.get(i).record);
 
             if (pojo == null) {
+                continue;
+            }
+            if (!keepFrozenHistory && pojo instanceof AppPojo && ((AppPojo) pojo).isDisabled()) {
                 continue;
             }
 
@@ -862,10 +867,14 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
     public List<Pojo> getFavorites() {
         List<String> favoriteIds = getFavoriteIds();
         List<Pojo> favorites = new ArrayList<>(favoriteIds.size());
+        boolean keepFrozenHistory = PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean("smart-keep-frozen-history", true);
         // Find associated items
         for (int i = 0; i < favoriteIds.size(); i++) {
             Pojo pojo = getPojo(favoriteIds.get(i));
-            if (pojo != null) {
+            if (pojo != null
+                    && (keepFrozenHistory || !(pojo instanceof AppPojo)
+                    || !((AppPojo) pojo).isDisabled())) {
                 favorites.add(pojo);
             }
         }

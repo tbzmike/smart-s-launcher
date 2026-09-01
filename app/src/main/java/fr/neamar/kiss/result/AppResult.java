@@ -30,6 +30,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.preference.PreferenceManager;
 
 import fr.neamar.kiss.IconsHandler;
 import fr.neamar.kiss.KissApplication;
@@ -67,10 +68,6 @@ public class AppResult extends ResultWithTags<AppPojo> {
     public View display(final Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
         if (view == null) view = inflateFromId(context, R.layout.item_app, parent);
 
-        boolean wasDisabled = pojo.isDisabled();
-        boolean disabledNow = refreshLiveDisabledState(context);
-        if (wasDisabled != disabledNow) clearIcon();
-
         TextView appName = view.findViewById(R.id.item_app_name);
         displayHighlighted(pojo.normalizedName, pojo.getName(), fuzzyScore, appName, context);
 
@@ -94,7 +91,6 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
     @Override
     public void inflateFavorite(@NonNull Context context, @NonNull View favoriteView) {
-        refreshLiveDisabledState(context);
         restoreWarmIcon(context);
         super.inflateFavorite(context, favoriteView);
         ImageView favoriteIcon = favoriteView.findViewById(R.id.favorite);
@@ -108,7 +104,9 @@ public class AppResult extends ResultWithTags<AppPojo> {
      */
     private void applyFrozenIconFilter(@Nullable ImageView imageView) {
         if (imageView == null) return;
-        if (pojo.isDisabled()) imageView.setColorFilter(FROZEN_ICON_FILTER);
+        boolean greyFrozen = PreferenceManager.getDefaultSharedPreferences(imageView.getContext())
+                .getBoolean("smart-grey-frozen-apps", true);
+        if (pojo.isDisabled() && greyFrozen) imageView.setColorFilter(FROZEN_ICON_FILTER);
         else imageView.clearColorFilter();
     }
 
@@ -162,7 +160,12 @@ public class AppResult extends ResultWithTags<AppPojo> {
     private String getPackageKey() { return pojo.getPackageKey(); }
 
     private boolean refreshLiveDisabledState(Context context) {
-        // PackageManager can still see IceBox-disabled packages even when LauncherApps hides them.
+        if (!PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean("smart-detect-frozen-apps", true)) {
+            pojo.setDisabled(false);
+            return false;
+        }
+        // Live verification is reserved for user actions; rendering trusts provider state.
         boolean enabled = AppLaunchUtils.isPackageEnabled(context, pojo.packageName);
         pojo.setDisabled(!enabled);
         return !enabled;
@@ -301,7 +304,6 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
     @Override
     public Drawable getDrawable(Context context) {
-        refreshLiveDisabledState(context);
         if (icon == null) {
             synchronized (this) {
                 if (icon == null) {
@@ -335,6 +337,12 @@ public class AppResult extends ResultWithTags<AppPojo> {
         launchSucceeded = false;
         boolean wasFrozen = refreshLiveDisabledState(context);
         if (wasFrozen) {
+            if (!PreferenceManager.getDefaultSharedPreferences(context)
+                    .getBoolean("smart-auto-enable-frozen-apps", true)) {
+                Toast.makeText(context, "App is frozen. Auto-enable frozen apps is off.",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
             if (!pojo.userHandle.isCurrentUser()) {
                 Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
                 return;

@@ -36,6 +36,7 @@ import fr.neamar.kiss.utils.UserHandle;
 public class LoadAppPojos extends LoadPojos<AppPojo> {
 
     public static final String PREF_INDEX_DISABLED_APPS = "index-disabled-apps";
+    public static final String PREF_DETECT_FROZEN_APPS = "smart-detect-frozen-apps";
     private static final String TAG = LoadAppPojos.class.getSimpleName();
     private final TagsHandler tagsHandler;
 
@@ -54,7 +55,8 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         if (ctx == null) return apps;
 
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
-        boolean indexDisabledApps = prefs.getBoolean(PREF_INDEX_DISABLED_APPS, true);
+        boolean indexDisabledApps = prefs.getBoolean(PREF_DETECT_FROZEN_APPS,
+                prefs.getBoolean(PREF_INDEX_DISABLED_APPS, true));
         Set<String> excludedAppList = KissApplication.getApplication(ctx).getDataHandler().getExcluded();
         Set<String> excludedFromHistoryAppList = KissApplication.getApplication(ctx).getDataHandler().getExcludedFromHistory();
         Set<String> excludedShortcutsAppList = KissApplication.getApplication(ctx).getDataHandler().getExcludedShortcutApps();
@@ -73,7 +75,8 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                 String packageKey = packageKey(serial, appInfo.packageName);
                 if (seenPackages.contains(packageKey)) continue;
 
-                boolean disabled = PackageManagerUtils.isAppSuspended(appInfo) || isQuietModeEnabled(manager, profile);
+                boolean disabled = indexDisabledApps
+                        && (PackageManagerUtils.isAppSuspended(appInfo) || isQuietModeEnabled(manager, profile));
                 if (!disabled || !isPrivateProfile) {
                     AppPojo app = createPojo(user, appInfo.packageName, activityInfo.getName(), activityInfo.getLabel(), disabled,
                             excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
@@ -89,7 +92,7 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         UserHandle currentUser = new UserHandle(currentSerial, currentProfile);
         PackageManager pm = ctx.getPackageManager();
         Intent launcherIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        int flags = PackageManager.MATCH_DISABLED_COMPONENTS;
+        int flags = indexDisabledApps ? PackageManager.MATCH_DISABLED_COMPONENTS : 0;
 
         // Existing global disabled-component query. Keep it because it is cheap and works on many ROMs.
         List<ResolveInfo> disabledCandidates = pm.queryIntentActivities(launcherIntent, flags);
@@ -134,38 +137,41 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
             }
         }
 
-        // Persistent catalog is the final safety net. IceBox can hide a disabled package from both
-        // LauncherApps and launcher-intent queries. Installed-but-hidden is a frozen state, never an
-        // uninstall: retain the exact remembered app://package/activity identity.
-        for (AppCatalogRecord remembered : SmartStateStore.getRememberedApps(ctx, currentSerial)) {
-            String packageKey = packageKey(currentSerial, remembered.packageName);
-            if (seenPackages.contains(packageKey)) continue;
+        if (indexDisabledApps) {
+            // Persistent catalog is the final safety net. IceBox can hide a disabled package from both
+            // LauncherApps and launcher-intent queries. Installed-but-hidden is a frozen state, never an
+            // uninstall: retain the exact remembered app://package/activity identity.
+            for (AppCatalogRecord remembered : SmartStateStore.getRememberedApps(ctx, currentSerial)) {
+                String packageKey = packageKey(currentSerial, remembered.packageName);
+                if (seenPackages.contains(packageKey)) continue;
 
-            final ApplicationInfo info;
-            try {
-                info = pm.getApplicationInfo(remembered.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
-            } catch (PackageManager.NameNotFoundException e) {
-                SmartStateStore.forgetPackage(ctx, remembered.packageName);
-                continue;
+                final ApplicationInfo info;
+                try {
+                    info = pm.getApplicationInfo(remembered.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+                } catch (PackageManager.NameNotFoundException e) {
+                    SmartStateStore.forgetPackage(ctx, remembered.packageName);
+                    continue;
+                }
+
+                boolean packageEnabled = !isPackageDisabled(pm, info);
+                boolean activityVisible = false;
+                try {
+                    ActivityInfo activityInfo = pm.getActivityInfo(
+                            new android.content.ComponentName(remembered.packageName, remembered.activityName),
+                            PackageManager.MATCH_DISABLED_COMPONENTS);
+                    activityVisible = activityInfo.exported && activityInfo.enabled;
+                } catch (PackageManager.NameNotFoundException ignored) {
+                    // Keep the remembered component when package visibility hides the activity.
+                }
+
+                AppPojo app = createPojo(currentUser, remembered.packageName, remembered.activityName,
+                        remembered.label, !(packageEnabled && activityVisible),
+                        excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
+                app.setDisabled(true);
+                apps.add(app);
+                seenPackages.add(packageKey);
             }
 
-            boolean packageEnabled = !isPackageDisabled(pm, info);
-            boolean activityVisible = false;
-            try {
-                ActivityInfo activityInfo = pm.getActivityInfo(
-                        new android.content.ComponentName(remembered.packageName, remembered.activityName),
-                        PackageManager.MATCH_DISABLED_COMPONENTS);
-                activityVisible = activityInfo.exported && activityInfo.enabled;
-            } catch (PackageManager.NameNotFoundException ignored) {
-                // Keep the remembered component when package visibility hides the activity.
-            }
-
-            AppPojo app = createPojo(currentUser, remembered.packageName, remembered.activityName,
-                    remembered.label, !(packageEnabled && activityVisible),
-                    excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
-            app.setDisabled(true);
-            apps.add(app);
-            seenPackages.add(packageKey);
         }
 
         Map<String, AppRecord> customApps = DBHelper.getCustomAppData(ctx);
