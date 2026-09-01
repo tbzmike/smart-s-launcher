@@ -1,0 +1,111 @@
+name: Verify caller names 3.30.11
+
+on:
+  push:
+    branches:
+      - build/3.30.11
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    if: github.event.head_commit.message != 'Restore caller names in phone history'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.11
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+
+      - name: Audit baseline caller history wiring
+        run: |
+          set -euxo pipefail
+          grep -q 'pojo.setName(phoneNumber, false)' app/src/main/java/fr/neamar/kiss/dataprovider/simpleprovider/PhoneProvider.java
+          grep -q 'context.getString(R.string.ui_item_phone, pojo.phone)' app/src/main/java/fr/neamar/kiss/result/PhoneResult.java
+          grep -q 'if (contactPojo != null)' app/src/main/java/fr/neamar/kiss/broadcast/IncomingCallHandler.java
+          grep -q 'Manifest.permission.READ_CALL_LOG' app/src/main/AndroidManifest.xml
+          ! grep -q 'PERMISSION_READ_CALL_LOG' app/src/main/java/fr/neamar/kiss/utils/Permission.java
+
+      - name: Apply guarded caller-name repair
+        run: python3 .github/caller_names_33011.py
+
+      - name: Verify intended source state
+        run: |
+          set -euxo pipefail
+          grep -q 'versionCode 439' app/build.gradle
+          grep -q 'versionName "3.30.11"' app/build.gradle
+          grep -q 'PERMISSION_READ_CALL_LOG = 3' app/src/main/java/fr/neamar/kiss/utils/Permission.java
+          grep -q 'CallerNameResolver.resolve(context, phoneNumber)' app/src/main/java/fr/neamar/kiss/dataprovider/simpleprovider/PhoneProvider.java
+          grep -q 'callerName + " · " + pojo.phone' app/src/main/java/fr/neamar/kiss/result/PhoneResult.java
+          grep -q 'PhoneProvider.getHistoryId(phoneNumber)' app/src/main/java/fr/neamar/kiss/broadcast/IncomingCallHandler.java
+          grep -q 'PhoneProvider.getHistoryId(phoneNumber)' app/src/main/java/fr/neamar/kiss/broadcast/IncomingCallScreeningService.java
+          grep -q 'Permission.PERMISSION_READ_CALL_LOG' app/src/main/java/fr/neamar/kiss/SettingsFragment.java
+          grep -q 'CallLog.Calls.CACHED_NAME' app/src/main/java/fr/neamar/kiss/utils/CallerNameResolver.java
+
+          # Today's deep-link, search, rendering and frozen-app fixes are protected from this patch.
+          git diff --quiet build/3.30.10 -- \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java \
+            app/src/main/java/fr/neamar/kiss/result/ContactsResult.java \
+            app/src/main/java/fr/neamar/kiss/result/SettingsResult.java \
+            app/src/main/java/fr/neamar/kiss/result/AppResult.java \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java \
+            app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/dataprovider/AppProvider.java \
+            app/src/main/java/fr/neamar/kiss/loader/LoadAppPojos.java \
+            app/src/main/java/fr/neamar/kiss/DataHandler.java \
+            app/src/main/java/fr/neamar/kiss/searcher/QuerySearcher.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+
+          git diff --check
+
+      - name: Verify change scope
+        run: |
+          set -euxo pipefail
+          git diff --name-only build/3.30.10...HEAD > /tmp/committed-files.txt
+          git diff --name-only >> /tmp/working-files.txt
+          cat /tmp/committed-files.txt /tmp/working-files.txt | sort -u > /tmp/all-files.txt
+          cat /tmp/all-files.txt
+          while IFS= read -r f; do
+            case "$f" in
+              .github/caller_names_33011.py|.github/workflows/verify-caller-names-3.30.11.yml|app/build.gradle|app/src/main/java/fr/neamar/kiss/utils/CallerNameResolver.java|app/src/main/java/fr/neamar/kiss/utils/Permission.java|app/src/main/java/fr/neamar/kiss/dataprovider/simpleprovider/PhoneProvider.java|app/src/main/java/fr/neamar/kiss/result/PhoneResult.java|app/src/main/java/fr/neamar/kiss/broadcast/IncomingCallHandler.java|app/src/main/java/fr/neamar/kiss/broadcast/IncomingCallScreeningService.java|app/src/main/java/fr/neamar/kiss/SettingsFragment.java) ;;
+              *) echo "Unexpected changed file: $f"; exit 1 ;;
+            esac
+          done < /tmp/all-files.txt
+
+      - name: Full Android verification
+        run: |
+          chmod +x gradlew
+          ./gradlew lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify APK version
+        run: |
+          set -euxo pipefail
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          "$AAPT" dump badging "$APK" | tee /tmp/apk-badging.txt
+          grep -q "versionCode='439'" /tmp/apk-badging.txt
+          grep -q "versionName='3.30.11'" /tmp/apk-badging.txt
+
+      - name: Commit verified production source
+        run: |
+          set -euxo pipefail
+          git config user.name tbzmike
+          git config user.email 40115947+tbzmike@users.noreply.github.com
+          git add app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/utils/CallerNameResolver.java \
+            app/src/main/java/fr/neamar/kiss/utils/Permission.java \
+            app/src/main/java/fr/neamar/kiss/dataprovider/simpleprovider/PhoneProvider.java \
+            app/src/main/java/fr/neamar/kiss/result/PhoneResult.java \
+            app/src/main/java/fr/neamar/kiss/broadcast/IncomingCallHandler.java \
+            app/src/main/java/fr/neamar/kiss/broadcast/IncomingCallScreeningService.java \
+            app/src/main/java/fr/neamar/kiss/SettingsFragment.java
+          git commit -m 'Restore caller names in phone history'
+          git push origin HEAD:build/3.30.11
