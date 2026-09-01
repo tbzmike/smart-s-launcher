@@ -35,12 +35,12 @@ public class DialogShowingPreference extends DialogPreference {
         super.onAttached();
         String key = getKey();
         if (KEY_BACKUP_SETTINGS.equals(key)) {
-            setTitle("Backup settings and tags");
-            setSummary("Save Smart S settings, tags, and custom components to a backup file");
+            setTitle("Full Smart S backup");
+            setSummary("One portable .ssb file: settings, history, shortcuts, tags, databases, launcher state and app-owned files");
             renameParentSection();
         } else if (KEY_RESTORE_SETTINGS.equals(key)) {
-            setTitle("Restore settings and tags");
-            setSummary("Restore Smart S settings, tags, and custom components from a backup file");
+            setTitle("Restore full Smart S backup");
+            setSummary("Validate and restore a portable .ssb backup, then restart Smart S");
             renameParentSection();
         }
     }
@@ -75,7 +75,7 @@ public class DialogShowingPreference extends DialogPreference {
         PreferenceGroup parent = getParent();
         if (parent != null && "importexport".equals(parent.getKey())) {
             parent.setTitle("Backup & restore");
-            parent.setSummary("Save or restore Smart S settings and launcher customizations");
+            parent.setSummary("Portable full-state backup and restore for Smart S Launcher");
         }
     }
 }
