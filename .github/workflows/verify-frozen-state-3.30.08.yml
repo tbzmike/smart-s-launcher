@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch-test-commit:
-    if: github.event.head_commit.message == 'Run frozen-app state verifier'
+    if: github.event.head_commit.message == 'Retry frozen-app state verifier'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -24,11 +24,16 @@ jobs:
           distribution: 'zulu'
           cache: gradle
       - name: Apply audited frozen-app wiring fixes
-        run: python3 .github/fix_frozen_state_33008.py
+        run: |
+          python3 -c 'from pathlib import Path; p=Path(".github/fix_frozen_state_33008.py"); s=p.read_text(); a=s.index("build = Path(\047.github/workflows/build.yml\047)"); marker="build.write_text(s)"; b=s.index(marker,a)+len(marker); p.write_text(s[:a]+s[b:])'
+          python3 .github/fix_frozen_state_33008.py
+          sed -i 's/versionCode 435/versionCode 436/g; s/3\.30\.07/3.30.08/g' .github/workflows/build.yml
       - name: Verify intended source state
         run: |
           grep -q 'versionCode 436' app/build.gradle
           grep -q 'versionName "3.30.08"' app/build.gradle
+          grep -q 'versionCode 436' .github/workflows/build.yml
+          grep -q 'smart-s-launcher-3.30.08-debug' .github/workflows/build.yml
           grep -q 'smart-detect-frozen-apps' app/src/main/java/fr/neamar/kiss/loader/LoadAppPojos.java
           grep -q 'getFrozenReconcileDelayMs' app/src/main/java/fr/neamar/kiss/dataprovider/AppProvider.java
           grep -q 'smart-keep-frozen-searchable' app/src/main/java/fr/neamar/kiss/dataprovider/AppProvider.java
