@@ -9,6 +9,7 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
@@ -61,8 +62,9 @@ public final class SavedNotificationDestinationResolver {
         return openConversationShortcut(context, record);
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private static boolean openConversationShortcut(@NonNull Context context,
-                                                    @NonNull NotificationHistoryRecord record) {
+                                                     @NonNull NotificationHistoryRecord record) {
         LauncherApps launcherApps = ContextCompat.getSystemService(context, LauncherApps.class);
         UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
         if (launcherApps == null || userManager == null || !launcherApps.hasShortcutHostPermission()) {
@@ -97,6 +99,7 @@ public final class SavedNotificationDestinationResolver {
         return matches.size() == 1 && launch(launcherApps, matches.get(0));
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     @Nullable
     private static ShortcutInfo findShortcut(@NonNull Context context,
                                              @NonNull UserManager userManager,
@@ -112,6 +115,7 @@ public final class SavedNotificationDestinationResolver {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private static boolean launch(@NonNull LauncherApps launcherApps,
                                   @NonNull ShortcutInfo shortcut) {
         try {
