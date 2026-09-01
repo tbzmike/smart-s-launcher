@@ -70,7 +70,9 @@ public class QuerySearcher extends Searcher {
     public boolean addResults(List<? extends Pojo> pojos) {
         if (semanticPass) {
             List<Pojo> semanticMatches = new ArrayList<>();
+            int checked = 0;
             for (Pojo pojo : pojos) {
+                if ((checked++ & 31) == 0 && isCancelled()) return false;
                 if (pojo == null || lexicalIds.contains(pojo.id)) continue;
                 float score = SemanticEmbeddingScorer.scorePrepared(preparedSemanticQuery, pojo);
                 if (score < semanticThreshold) continue;
@@ -132,7 +134,14 @@ public class QuerySearcher extends Searcher {
         configureSemanticSearch();
         KissApplication.getApplication(activity).getDataHandler().requestResults(query, this);
 
-        if (semanticEnabled) {
+        // Do not hold useful lexical matches behind the full semantic-record scan. The same
+        // Searcher remains active, so the deeper pass can still improve the final ranking and is
+        // cancelled immediately if the user types again or chooses a result.
+        if (semanticEnabled && !lexicalIds.isEmpty() && !isCancelled()) {
+            publishCurrentResults();
+        }
+
+        if (semanticEnabled && !isCancelled()) {
             semanticPass = true;
             KissApplication.getApplication(activity).getDataHandler().requestAllRecords(this);
             semanticPass = false;

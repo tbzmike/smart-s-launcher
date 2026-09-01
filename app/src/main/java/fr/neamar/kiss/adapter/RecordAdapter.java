@@ -232,6 +232,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     private void configureNotificationTileClick(View view, Result<?> result) {
         View.OnClickListener openHistory = v -> {
+            SearchHandler.getInstance().cancelSearch();
             RecentLaunchTracker.remember(result.getPojo());
             promoteHistoryResult(result);
             if (NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo())) {
@@ -619,6 +620,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     public void onClick(final int position, View v) {
         try {
+            // A selection ends the search session immediately, including any semantic pass.
+            SearchHandler.getInstance().cancelSearch();
             final Result<?> result = getItem(position);
             RecentLaunchTracker.remember(result.getPojo());
             promoteHistoryResult(result);
