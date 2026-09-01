@@ -141,10 +141,14 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
         text.setText(message);
         row.setVisibility(View.VISIBLE);
-        View.OnClickListener popupClick = v -> NotificationPopupDialog.showGroup(context, packageKey);
-        row.setOnClickListener(popupClick);
-        text.setOnClickListener(popupClick);
-        if (appName != null) appName.setOnClickListener(popupClick);
+        View.OnClickListener exactNotificationClick = v -> {
+            if (!NotificationListener.openLatestNotification(context, packageKey)) {
+                NotificationPopupDialog.showGroup(context, packageKey);
+            }
+        };
+        row.setOnClickListener(exactNotificationClick);
+        text.setOnClickListener(exactNotificationClick);
+        if (appName != null) appName.setOnClickListener(exactNotificationClick);
 
         markRead.setOnClickListener(v -> {
             if (NotificationListener.markGroupRead(context, packageKey)) {

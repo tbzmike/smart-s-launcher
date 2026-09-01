@@ -574,6 +574,12 @@ public class NotificationListener extends NotificationListenerService {
         }
     }
 
+    public static boolean openLatestNotification(Context context, String groupKey) {
+        List<NotificationSnapshot> notifications = getGroupNotifications(context, groupKey);
+        if (notifications.isEmpty()) return false;
+        return openNotification(context, notifications.get(0).id);
+    }
+
     public static boolean hasReplyAction(Context context, String notificationId) {
         StatusBarNotification sbn = findActiveNotification(context, notificationId);
         return sbn != null && findReplyAction(sbn.getNotification()) != null;

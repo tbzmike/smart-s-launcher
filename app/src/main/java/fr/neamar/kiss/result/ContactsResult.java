@@ -253,6 +253,19 @@ public class ContactsResult extends CallResult<ContactsPojo> {
 
     @Override
     public void doLaunch(Context context, View v) {
+        // A third-party Contacts provider row (WhatsApp/Signal/etc.) is already an exact app
+        // destination. Preserve it instead of replacing it with the generic Android contact card.
+        if (pojo.getContactData() != null) {
+            Intent exactContactIntent = MimeTypeUtils.getRegisteredIntentByMimeType(context,
+                    pojo.getContactData().getMimeType(), pojo.getContactData().getId(),
+                    pojo.getContactData().getIdentifier());
+            if (exactContactIntent != null) {
+                setSourceBounds(exactContactIntent, v);
+                context.startActivity(exactContactIntent);
+                return;
+            }
+        }
+
         SharedPreferences settingPrefs = PreferenceManager.getDefaultSharedPreferences(v.getContext());
         boolean callContactOnClick = settingPrefs.getBoolean("call-contact-on-click", false);
 

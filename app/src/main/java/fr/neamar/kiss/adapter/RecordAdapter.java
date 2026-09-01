@@ -231,27 +231,23 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureNotificationTileClick(View view, Result<?> result) {
-        View.OnClickListener openHistory = v -> {
+        View.OnClickListener openExactTarget = v -> {
             SearchHandler.getInstance().cancelSearch();
             RecentLaunchTracker.remember(result.getPojo());
             promoteHistoryResult(result);
-            if (NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo())) {
-                recordExplicitSelection(v.getContext(), result.getPojo());
-                return;
-            }
             result.launch(v.getContext(), v, parent);
         };
         View.OnLongClickListener openRichNotification = v ->
                 NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo());
 
-        view.setOnClickListener(openHistory);
+        view.setOnClickListener(openExactTarget);
         view.setOnLongClickListener(openRichNotification);
         int[] ids = new int[]{R.id.item_notification_native_container, R.id.item_notification_app,
                 R.id.item_notification_title, R.id.item_notification_text};
         for (int id : ids) {
             View child = view.findViewById(id);
             if (child != null) {
-                child.setOnClickListener(openHistory);
+                child.setOnClickListener(openExactTarget);
                 child.setOnLongClickListener(openRichNotification);
             }
         }
@@ -625,12 +621,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             final Result<?> result = getItem(position);
             RecentLaunchTracker.remember(result.getPojo());
             promoteHistoryResult(result);
-            if (result.getPojo() instanceof NotificationPojo
-                    && NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo())) {
-                recordExplicitSelection(v.getContext(), result.getPojo());
-                return;
-            }
-
             Pojo pojo = result.getPojo();
             boolean morphLaunch = pojo instanceof AppPojo
                     || pojo instanceof ShortcutPojo

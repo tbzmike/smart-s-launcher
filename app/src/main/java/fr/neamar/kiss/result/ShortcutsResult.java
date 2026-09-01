@@ -142,9 +142,13 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         List<NotificationListener.NotificationSnapshot> active =
                 NotificationListener.getGroupNotifications(context, groupKey);
         if (!active.isEmpty()) {
-            View.OnClickListener popupClick = v -> NotificationPopupDialog.showGroup(context, groupKey);
-            row.setOnClickListener(popupClick);
-            text.setOnClickListener(popupClick);
+            View.OnClickListener exactNotificationClick = v -> {
+                if (!NotificationListener.openLatestNotification(context, groupKey)) {
+                    NotificationPopupDialog.showGroup(context, groupKey);
+                }
+            };
+            row.setOnClickListener(exactNotificationClick);
+            text.setOnClickListener(exactNotificationClick);
             markRead.setVisibility(View.VISIBLE);
             markRead.setOnClickListener(v -> {
                 if (NotificationListener.markGroupRead(context, groupKey)) {
@@ -328,17 +332,12 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                         && tryExactShortcutLaunch(context, retryApps, sourceBounds)) {
                     return;
                 }
-                launchShortcutFallbackApp(context);
+                notifyExactShortcutUnavailable(context);
             }, ENABLE_RETRY_DELAY_MS);
             return;
         }
 
-        if (launchShortcutFallbackApp(context)) {
-            launchSucceeded = true;
-            return;
-        }
-
-        Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
+        notifyExactShortcutUnavailable(context);
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -378,13 +377,9 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         return false;
     }
 
-    private boolean launchShortcutFallbackApp(Context context) {
-        String targetPackage = resolveTargetPackageName(context);
-        if (!TextUtils.isEmpty(targetPackage) && AppLaunchUtils.launchPackage(context, targetPackage)) {
-            return true;
-        }
-        return !TextUtils.equals(targetPackage, pojo.packageName)
-                && AppLaunchUtils.launchPackage(context, pojo.packageName);
+    private void notifyExactShortcutUnavailable(Context context) {
+        launchSucceeded = false;
+        Toast.makeText(context, "Unable to open this exact shortcut.", Toast.LENGTH_LONG).show();
     }
 
     @Override

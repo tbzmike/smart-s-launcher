@@ -43,6 +43,7 @@ import fr.neamar.kiss.ui.CompactNotificationFrame;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
+import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class SettingsResult extends Result<SettingPojo> {
@@ -200,7 +201,7 @@ public class SettingsResult extends Result<SettingPojo> {
     public void doLaunch(Context context, View v) {
         launchSucceeded = false;
         if (pojo instanceof NotificationPojo) {
-            showNotificationGroup(context, (NotificationPojo) pojo);
+            launchNotificationTarget(context, (NotificationPojo) pojo);
             return;
         }
         if (pojo instanceof DisabledAppPojo) {
@@ -243,6 +244,31 @@ public class SettingsResult extends Result<SettingPojo> {
             Log.w(TAG, "Unable to launch activity", e);
             hideFailedTarget(context);
             Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void launchNotificationTarget(Context context, NotificationPojo notification) {
+        boolean individual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME);
+        if (individual && NotificationListener.isNotificationActive(context, notification.id)
+                && NotificationListener.openNotification(context, notification.id)) {
+            launchSucceeded = true;
+            return;
+        }
+
+        List<NotificationListener.NotificationSnapshot> active =
+                NotificationListener.getGroupNotifications(context, notification.groupKey);
+        if (active.size() == 1 && NotificationListener.openNotification(context, active.get(0).id)) {
+            launchSucceeded = true;
+            return;
+        }
+        if (!active.isEmpty()) {
+            showNotificationGroup(context, notification);
+            return;
+        }
+
+        if (!NotificationHistoryResolver.showForPojo(context, notification)) {
+            Toast.makeText(context, "No exact notification destination is available.",
+                    Toast.LENGTH_SHORT).show();
         }
     }
 
