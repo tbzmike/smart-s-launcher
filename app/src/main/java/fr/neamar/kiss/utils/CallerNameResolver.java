@@ -65,7 +65,7 @@ public final class CallerNameResolver {
                 String name = cursor.getString(0);
                 if (!TextUtils.isEmpty(name)) return name;
             }
-        } catch (SecurityException | RuntimeException e) {
+        } catch (RuntimeException e) {
             Log.w(TAG, "Unable to resolve contact name for phone history", e);
         }
         return null;
@@ -127,7 +127,7 @@ public final class CallerNameResolver {
                         }
                     }
                 }
-            } catch (SecurityException | RuntimeException e) {
+            } catch (RuntimeException e) {
                 Log.w(TAG, "Unable to read cached caller names from call log", e);
             }
 
