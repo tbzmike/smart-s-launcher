@@ -24,6 +24,7 @@ import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.TagsHandler;
 import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.utils.BackupRestoreProgress;
 import fr.neamar.kiss.utils.Log;
 
 public class ImportSettingsPreference {
@@ -32,6 +33,7 @@ public class ImportSettingsPreference {
 
     public void onDialogClosed(Context context, boolean positiveResult) {
         if (positiveResult) {
+            BackupRestoreProgress progress = null;
             try {
                 // Apply changes
                 ClipboardManager clipboard = ContextCompat.getSystemService(context, ClipboardManager.class);
@@ -49,11 +51,16 @@ public class ImportSettingsPreference {
                     return;
                 }
 
+                int tagCount = jsonObject.has("__tags") ? jsonObject.getJSONObject("__tags").length() : 0;
+                int componentCount = jsonObject.has("__custom_components") ? jsonObject.getJSONArray("__custom_components").length() : 0;
+                progress = BackupRestoreProgress.restore(context, jsonObject.length() + tagCount + componentCount + 6);
+
                 // Reset everything to default
                 SharedPreferences oldPrefs = PreferenceManager.getDefaultSharedPreferences(context);
                 if (oldPrefs.edit().clear().commit()) {
                     PreferenceManager.setDefaultValues(context, R.xml.preferences, true);
                 }
+                progress.step();
 
                 // Set imported values
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
@@ -62,37 +69,37 @@ public class ImportSettingsPreference {
                 Iterator<?> keys = jsonObject.keys();
                 while (keys.hasNext()) {
                     String key = (String) keys.next();
-                    if (key.startsWith("__")) {
-                        continue;
-                    }
-
-                    Object newValue = jsonObject.get(key);
-                    Object currentValue = prefs.getAll().get(key);
-                    if (newValue instanceof Boolean) {
-                        if (hasMatchingType(key, currentValue, Boolean.class)) {
-                            editor.putBoolean(key, (Boolean) newValue);
-                        }
-                    } else if (newValue instanceof String) {
-                        if (hasMatchingType(key, currentValue, String.class)) {
-                            editor.putString(key, (String) newValue);
-                        }
-                    } else if (newValue instanceof JSONArray) {
-                        if (hasMatchingType(key, currentValue, Set.class)) {
-                            JSONArray newValues = (JSONArray) newValue;
-                            Set<String> unwrappedValues = new HashSet<>(newValues.length());
-                            for (int i = 0; i < newValues.length(); i++) {
-                                unwrappedValues.add(newValues.getString(i));
+                    if (!key.startsWith("__")) {
+                        Object newValue = jsonObject.get(key);
+                        Object currentValue = prefs.getAll().get(key);
+                        if (newValue instanceof Boolean) {
+                            if (hasMatchingType(key, currentValue, Boolean.class)) {
+                                editor.putBoolean(key, (Boolean) newValue);
                             }
-                            editor.putStringSet(key, unwrappedValues);
+                        } else if (newValue instanceof String) {
+                            if (hasMatchingType(key, currentValue, String.class)) {
+                                editor.putString(key, (String) newValue);
+                            }
+                        } else if (newValue instanceof JSONArray) {
+                            if (hasMatchingType(key, currentValue, Set.class)) {
+                                JSONArray newValues = (JSONArray) newValue;
+                                Set<String> unwrappedValues = new HashSet<>(newValues.length());
+                                for (int i = 0; i < newValues.length(); i++) {
+                                    unwrappedValues.add(newValues.getString(i));
+                                }
+                                editor.putStringSet(key, unwrappedValues);
+                            }
+                        } else {
+                            Log.w(TAG, "Unknown type: " + key + ":" + newValue);
                         }
-                    } else {
-                        Log.w(TAG, "Unknown type: " + key + ":" + newValue);
                     }
+                    progress.step();
                 }
                 // always commit preferences to ensure that changes are saved synchronously before continuing
                 if (!editor.commit()) {
                     Toast.makeText(context, R.string.import_settings_save_not_possible, Toast.LENGTH_SHORT).show();
                 }
+                progress.step();
 
                 DataHandler dataHandler = ((KissApplication) context.getApplicationContext()).getDataHandler();
 
@@ -105,6 +112,7 @@ public class ImportSettingsPreference {
                     while (tagKeys.hasNext()) {
                         String id = (String) tagKeys.next();
                         tagHandler.setTags(id, tags.getString(id));
+                        progress.step();
                     }
                 }
 
@@ -120,16 +128,23 @@ public class ImportSettingsPreference {
                         if (!TextUtils.isEmpty(id) && !TextUtils.isEmpty(pkg) && !TextUtils.isEmpty(cls)) {
                             DBHelper.setCustomComponent(context, id, new ComponentName(pkg, cls));
                         }
+                        progress.step();
                     }
                 }
 
                 dataHandler.reloadApps();
+                progress.step();
                 dataHandler.reloadShortcuts();
+                progress.step();
                 dataHandler.reloadSearchProvider();
+                progress.step();
                 dataHandler.reloadContactsProvider();
+                progress.step();
 
+                progress.complete();
                 Toast.makeText(context, R.string.import_settings_done, Toast.LENGTH_SHORT).show();
             } catch (JSONException | NullPointerException e) {
+                if (progress != null) progress.fail();
                 Log.e(TAG, "Unable to import preferences", e);
                 Toast.makeText(context, R.string.import_settings_error, Toast.LENGTH_SHORT).show();
             }
