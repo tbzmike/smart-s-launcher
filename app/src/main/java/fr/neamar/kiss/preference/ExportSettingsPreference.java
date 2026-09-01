@@ -18,6 +18,7 @@ import java.util.Set;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.utils.BackupRestoreProgress;
 import fr.neamar.kiss.utils.ClipboardUtils;
 import fr.neamar.kiss.utils.Log;
 
@@ -33,6 +34,7 @@ public class ExportSettingsPreference {
             SharedPreferences defaultValues = context.getSharedPreferences("__default__", Context.MODE_PRIVATE);
             PreferenceManager.setDefaultValues(context, "__default__", Context.MODE_PRIVATE, R.xml.preferences, true);
             JSONObject out = new JSONObject();
+            BackupRestoreProgress progress = null;
             try {
                 // Min version required to read those settings
                 out.put("__v", 223);
@@ -41,9 +43,14 @@ public class ExportSettingsPreference {
                 keys.addAll(defaultValues.getAll().keySet());
                 keys.addAll(prefs.getAll().keySet());
 
+                Map<String, String> tags = ((KissApplication) context.getApplicationContext()).getDataHandler().getTagsHandler().getTags();
+                Map<String, ComponentName> components = DBHelper.getCustomComponents(context);
+                progress = BackupRestoreProgress.backup(context, keys.size() + tags.size() + components.size() + 2);
+
                 // Export settings
+                Map<String, ?> allPrefs = prefs.getAll();
                 for (String key : keys) {
-                    Object value = prefs.getAll().get(key);
+                    Object value = allPrefs.get(key);
                     if (value instanceof Boolean) {
                         if (defaultValues.contains(key)) {
                             boolean defaultValue = defaultValues.getBoolean(key, true);
@@ -74,21 +81,22 @@ public class ExportSettingsPreference {
                         } else {
                             out.put(key, new JSONArray((Set<?>) value));
                         }
-                    } else {
+                    } else if (value != null) {
                         Log.w(TAG, "Unknown type: " + key + ":" + value);
                     }
+                    progress.step();
                 }
 
                 // Export tags
-                Map<String, String> tags = ((KissApplication) context.getApplicationContext()).getDataHandler().getTagsHandler().getTags();
                 JSONObject jsonTags = new JSONObject();
                 for (Map.Entry<String, String> entry : tags.entrySet()) {
                     jsonTags.put(entry.getKey(), entry.getValue());
+                    progress.step();
                 }
                 out.put("__tags", jsonTags);
+                progress.step();
 
                 // Export custom components
-                Map<String, ComponentName> components = DBHelper.getCustomComponents(context);
                 JSONArray jsonComponents = new JSONArray();
                 for (Map.Entry<String, ComponentName> entry : components.entrySet()) {
                     JSONObject jsonComponent = new JSONObject();
@@ -96,12 +104,16 @@ public class ExportSettingsPreference {
                     jsonComponent.put("package", entry.getValue().getPackageName());
                     jsonComponent.put("class", entry.getValue().getClassName());
                     jsonComponents.put(jsonComponent);
+                    progress.step();
                 }
                 out.put("__custom_components", jsonComponents);
+                progress.step();
 
                 ClipboardUtils.setClipboard(context, "kiss", out.toString());
+                progress.complete();
                 Toast.makeText(context, R.string.export_settings_done, Toast.LENGTH_SHORT).show();
             } catch (JSONException e) {
+                if (progress != null) progress.fail();
                 Log.e(TAG, "Unable to export settings", e);
                 Toast.makeText(context, R.string.export_settings_error, Toast.LENGTH_SHORT).show();
             } finally {
