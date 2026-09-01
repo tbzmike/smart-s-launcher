@@ -50,7 +50,7 @@ jobs:
           grep -q 'CallLog.Calls.CACHED_NAME' app/src/main/java/fr/neamar/kiss/utils/CallerNameResolver.java
 
           # Today's deep-link, search, rendering and frozen-app fixes are protected from this patch.
-          git diff --quiet build/3.30.10 -- \
+          git diff --quiet origin/build/3.30.10 -- \
             app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java \
             app/src/main/java/fr/neamar/kiss/result/ContactsResult.java \
             app/src/main/java/fr/neamar/kiss/result/SettingsResult.java \
@@ -69,7 +69,7 @@ jobs:
       - name: Verify change scope
         run: |
           set -euxo pipefail
-          git diff --name-only build/3.30.10...HEAD > /tmp/committed-files.txt
+          git diff --name-only origin/build/3.30.10...HEAD > /tmp/committed-files.txt
           git diff --name-only >> /tmp/working-files.txt
           cat /tmp/committed-files.txt /tmp/working-files.txt | sort -u > /tmp/all-files.txt
           cat /tmp/all-files.txt
