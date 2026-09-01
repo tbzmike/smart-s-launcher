@@ -1,6 +1,7 @@
 package fr.neamar.kiss.preference;
 
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.util.AttributeSet;
 
 import androidx.annotation.NonNull;
@@ -47,14 +48,27 @@ public class DialogShowingPreference extends DialogPreference {
     @Override
     protected void onClick() {
         String key = getKey();
-        if ((KEY_BACKUP_SETTINGS.equals(key) || KEY_RESTORE_SETTINGS.equals(key))
-                && getContext() instanceof FragmentActivity) {
-            BackupRestorePickerFragment.show(
-                    (FragmentActivity) getContext(),
-                    KEY_RESTORE_SETTINGS.equals(key));
-            return;
+        if (KEY_BACKUP_SETTINGS.equals(key) || KEY_RESTORE_SETTINGS.equals(key)) {
+            FragmentActivity activity = findFragmentActivity(getContext());
+            if (activity != null) {
+                BackupRestorePickerFragment.show(activity, KEY_RESTORE_SETTINGS.equals(key));
+                return;
+            }
         }
         super.onClick();
+    }
+
+    @Nullable
+    private FragmentActivity findFragmentActivity(Context context) {
+        Context current = context;
+        while (current != null) {
+            if (current instanceof FragmentActivity) return (FragmentActivity) current;
+            if (!(current instanceof ContextWrapper)) break;
+            Context base = ((ContextWrapper) current).getBaseContext();
+            if (base == current) break;
+            current = base;
+        }
+        return null;
     }
 
     private void renameParentSection() {
