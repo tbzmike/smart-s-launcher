@@ -8,12 +8,16 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.AppUsageTodayStore;
+import fr.neamar.kiss.db.HistoryItemUsageTodayStore;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
@@ -24,6 +28,10 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
 /**
  * Adds Android UsageStats foreground time for today to app-backed Vertical Cards.
+ *
+ * Parent app cards use the complete package foreground total. Shortcut cards use an isolated
+ * history-item duration, so a feature such as Reels or Shorts does not simply repeat the parent
+ * Facebook/YouTube total.
  *
  * UsageStats queries run only on a low-priority background worker. The visible usage value lives
  * in its own TextView so launch-stat decoration can never overwrite it. It auto-scrolls only when
@@ -45,6 +53,10 @@ final class VerticalCardUsageForwarder extends Forwarder {
 
     private ViewGroup column;
     private volatile AppUsageTodayStore.Snapshot snapshot;
+    private volatile HistoryItemUsageTodayStore.Snapshot shortcutSnapshot;
+    private Map<String, String> loadedShortcutTargets = Collections.emptyMap();
+    private Map<String, String> pendingShortcutTargets = Collections.emptyMap();
+    private boolean refreshRequested;
     private volatile boolean destroyed;
     private boolean pendingApplyFromDataSet;
     private boolean pendingApplyNeedsViewportProtection;
@@ -69,12 +81,17 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     void onDataSetChanged() {
-        // SmartCardListForwarder already rebuilt the card column. Reuse the in-memory snapshot;
-        // never query Android UsageStats from a provider/history change. The rebuild viewport
-        // controller already captured the pre-rebuild position, so this apply must not capture a
-        // second temporary position before the controller's measured restore pass.
+        // SmartCardListForwarder already rebuilt the card column. Reuse the in-memory snapshots
+        // unless the set of shortcut history items changed. This keeps UsageEvents work out of the
+        // normal search/provider refresh path while still loading feature durations when shortcuts
+        // first appear after startup.
         resolveColumn();
-        postApplySnapshot(false, true);
+        Map<String, String> currentShortcutTargets = collectShortcutTargets();
+        if (!currentShortcutTargets.equals(loadedShortcutTargets)) {
+            refreshSnapshotAsync(currentShortcutTargets);
+        } else {
+            postApplySnapshot(false, true);
+        }
     }
 
     void onConfigurationChanged() {
@@ -88,6 +105,10 @@ final class VerticalCardUsageForwarder extends Forwarder {
         if (column != null) column.removeCallbacks(applySnapshotRunnable);
         column = null;
         snapshot = null;
+        shortcutSnapshot = null;
+        loadedShortcutTargets = Collections.emptyMap();
+        pendingShortcutTargets = Collections.emptyMap();
+        refreshRequested = false;
         pendingApplyFromDataSet = false;
         pendingApplyNeedsViewportProtection = false;
     }
@@ -98,20 +119,67 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void refreshSnapshotAsync() {
+        refreshSnapshotAsync(collectShortcutTargets());
+    }
+
+    private void refreshSnapshotAsync(Map<String, String> shortcutTargets) {
         if (destroyed || !isEnabled()) {
             snapshot = null;
+            shortcutSnapshot = null;
             return;
         }
-        if (!refreshInFlight.compareAndSet(false, true)) return;
+
+        Map<String, String> requestedTargets = Collections.unmodifiableMap(
+                new HashMap<>(shortcutTargets));
+        if (!refreshInFlight.compareAndSet(false, true)) {
+            pendingShortcutTargets = requestedTargets;
+            refreshRequested = true;
+            return;
+        }
 
         final android.content.Context appContext = mainActivity.getApplicationContext();
         usageExecutor.execute(() -> {
             AppUsageTodayStore.Snapshot fresh = AppUsageTodayStore.getToday(appContext);
-            refreshInFlight.set(false);
-            if (destroyed) return;
-            snapshot = fresh;
-            mainActivity.runOnUiThread(() -> postApplySnapshot(true, false));
+            HistoryItemUsageTodayStore.Snapshot freshShortcuts =
+                    HistoryItemUsageTodayStore.getToday(
+                            appContext, requestedTargets, fresh.available);
+            if (destroyed) {
+                refreshInFlight.set(false);
+                return;
+            }
+            mainActivity.runOnUiThread(() -> {
+                refreshInFlight.set(false);
+                if (destroyed) return;
+                snapshot = fresh;
+                shortcutSnapshot = freshShortcuts;
+                loadedShortcutTargets = requestedTargets;
+                postApplySnapshot(true, false);
+
+                if (refreshRequested) {
+                    refreshRequested = false;
+                    Map<String, String> pending = pendingShortcutTargets;
+                    pendingShortcutTargets = Collections.emptyMap();
+                    if (!pending.equals(loadedShortcutTargets)) {
+                        refreshSnapshotAsync(pending);
+                    }
+                }
+            });
         });
+    }
+
+    private Map<String, String> collectShortcutTargets() {
+        if (mainActivity.adapter == null) return Collections.emptyMap();
+        HashMap<String, String> targets = new HashMap<>();
+        for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
+            if (result == null || !(result.getPojo() instanceof ShortcutPojo)) continue;
+            ShortcutPojo shortcut = (ShortcutPojo) result.getPojo();
+            String packageName = resolvePackage(shortcut);
+            if (!TextUtils.isEmpty(packageName)) {
+                targets.put(shortcut.getHistoryId(), packageName);
+            }
+        }
+        return targets;
     }
 
     private void resolveColumn() {
@@ -132,6 +200,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
 
     private void applySnapshot() {
         AppUsageTodayStore.Snapshot currentSnapshot = snapshot;
+        HistoryItemUsageTodayStore.Snapshot currentShortcutSnapshot = shortcutSnapshot;
         boolean fromDataSet = pendingApplyFromDataSet;
         boolean protectViewport = pendingApplyNeedsViewportProtection && !fromDataSet;
         pendingApplyFromDataSet = false;
@@ -148,7 +217,8 @@ final class VerticalCardUsageForwarder extends Forwarder {
         for (int position = 0; position < count; position++) {
             View wrapper = column.getChildAt(position);
             Result<?> result = mainActivity.adapter.getItem(position);
-            String packageName = resolvePackage(result == null ? null : result.getPojo());
+            Pojo pojo = result == null ? null : result.getPojo();
+            String packageName = resolvePackage(pojo);
             if (TextUtils.isEmpty(packageName)) continue;
 
             UsageView usageResult = getOrCreateUsageView(wrapper);
@@ -156,7 +226,16 @@ final class VerticalCardUsageForwarder extends Forwarder {
             if (usageResult.created) layoutChanged = true;
 
             String usageText;
-            if (!currentSnapshot.available) {
+            if (pojo instanceof ShortcutPojo) {
+                if (currentShortcutSnapshot == null || !currentShortcutSnapshot.available) {
+                    usageText = "Used today: unavailable";
+                } else {
+                    Long foregroundMs = currentShortcutSnapshot.foregroundMsByHistoryId.get(
+                            pojo.getHistoryId());
+                    usageText = "Used today: " + formatDuration(
+                            foregroundMs == null ? 0L : foregroundMs);
+                }
+            } else if (!currentSnapshot.available) {
                 usageText = "Used today: unavailable";
             } else {
                 Long foregroundMs = currentSnapshot.foregroundMsByPackage.get(packageName);
