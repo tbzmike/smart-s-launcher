@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch-test-commit:
-    if: github.event.head_commit.message == 'Retry frozen-app state verifier'
+    if: github.event.head_commit.message == 'Finalize frozen-app state verifier'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +28,7 @@ jobs:
           python3 -c 'from pathlib import Path; p=Path(".github/fix_frozen_state_33008.py"); s=p.read_text(); a=s.index("build = Path(\047.github/workflows/build.yml\047)"); marker="build.write_text(s)"; b=s.index(marker,a)+len(marker); p.write_text(s[:a]+s[b:])'
           python3 .github/fix_frozen_state_33008.py
           sed -i 's/versionCode 435/versionCode 436/g; s/3\.30\.07/3.30.08/g' .github/workflows/build.yml
+          python3 -c 'from pathlib import Path; p=Path("app/src/main/java/fr/neamar/kiss/DataHandler.java"); s=p.read_text(); old="        if (\"smart-detect-frozen-apps\".equals(key)) {\n            reloadApps();\n        }\n"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,"",1))'
       - name: Verify intended source state
         run: |
           grep -q 'versionCode 436' app/build.gradle
@@ -41,6 +42,7 @@ jobs:
           grep -q 'smart-auto-enable-frozen-apps' app/src/main/java/fr/neamar/kiss/result/AppResult.java
           grep -q 'smart-keep-frozen-history' app/src/main/java/fr/neamar/kiss/DataHandler.java
           ! grep -q 'FROZEN_RECONCILE_MS = 60000L' app/src/main/java/fr/neamar/kiss/dataprovider/AppProvider.java
+          ! grep -A4 'void onSharedPreferenceChanged' app/src/main/java/fr/neamar/kiss/DataHandler.java | grep -q 'smart-detect-frozen-apps'
           git diff --check
       - name: Full verification
         run: ./gradlew lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
@@ -56,7 +58,7 @@ jobs:
           git config user.name 'tbzmike'
           git config user.email '40115947+tbzmike@users.noreply.github.com'
           git add app/build.gradle .github/workflows/build.yml app/src/main/java/fr/neamar/kiss/loader/LoadAppPojos.java app/src/main/java/fr/neamar/kiss/dataprovider/AppProvider.java app/src/main/java/fr/neamar/kiss/result/AppResult.java app/src/main/java/fr/neamar/kiss/DataHandler.java
-          git rm .github/fix_frozen_state_33008.py .github/workflows/verify-frozen-state-3.30.08.yml
+          git rm -f .github/fix_frozen_state_33008.py .github/workflows/verify-frozen-state-3.30.08.yml
           git diff --cached --check
           git commit -m 'Fix frozen app state wiring and optimize performance'
           git push origin HEAD:build/3.30.08
