@@ -20,9 +20,9 @@ import fr.neamar.kiss.notification.NotificationListener;
 
 /**
  * Opens the exact destination represented by a saved notification when Android exposes a stable
- * route for it. Live notifications always use their original PendingIntent. Once a notification
- * has left Android's panel, only the app-published conversation shortcut is durable enough to
- * persist and replay; notification title/body text is deliberately never guessed into a deep link.
+ * route for it. App-published conversation shortcuts are preferred because they represent the
+ * durable exact conversation/action; the posting app's original PendingIntent is the second exact
+ * route. Notification title/body text is deliberately never guessed into a private deep link.
  */
 public final class SavedNotificationDestinationResolver {
     private static final String TAG = SavedNotificationDestinationResolver.class.getSimpleName();
@@ -49,12 +49,20 @@ public final class SavedNotificationDestinationResolver {
                                     @Nullable NotificationHistoryRecord record) {
         if (record == null) return false;
 
-        if (!TextUtils.isEmpty(record.notificationId)
-                && NotificationListener.openNotification(context, record.notificationId)) {
-            return true;
-        }
+        if (openPublishedShortcut(context, record)) return true;
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
+        return !TextUtils.isEmpty(record.notificationId)
+                && NotificationListener.openNotification(context, record.notificationId);
+    }
+
+    /**
+     * Try only the durable app-published conversation shortcut represented by a saved notification.
+     * No package/main-activity fallback is allowed here.
+     */
+    public static boolean openPublishedShortcut(@NonNull Context context,
+                                                @Nullable NotificationHistoryRecord record) {
+        if (record == null
+                || Build.VERSION.SDK_INT < Build.VERSION_CODES.O
                 || TextUtils.isEmpty(record.packageName)
                 || TextUtils.isEmpty(record.shortcutId)) {
             return false;
