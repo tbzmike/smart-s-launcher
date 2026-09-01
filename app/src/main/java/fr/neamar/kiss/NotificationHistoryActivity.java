@@ -50,6 +50,7 @@ import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 import fr.neamar.kiss.utils.SemanticHints;
 
 public class NotificationHistoryActivity extends AppCompatActivity {
@@ -306,21 +307,19 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setGravity(Gravity.END);
 
-        Button openApp = new Button(this);
-        openApp.setText("Open app");
-        openApp.setOnClickListener(v -> openApp(record));
-        buttons.addView(openApp);
-
-        if (record.notificationId != null && NotificationListener.isNotificationActive(this, record.notificationId)) {
-            Button openNotification = new Button(this);
-            openNotification.setText("Open notification");
-            openNotification.setOnClickListener(v -> {
-                if (!NotificationListener.openNotification(this, record.notificationId)) {
-                    Toast.makeText(this, "Unable to open this notification", Toast.LENGTH_SHORT).show();
+        boolean exactTarget = SavedNotificationDestinationResolver.hasExactTarget(this, record);
+        Button open = new Button(this);
+        open.setText(exactTarget ? "Open notification" : "Open app");
+        open.setOnClickListener(v -> {
+            if (exactTarget) {
+                if (!SavedNotificationDestinationResolver.openExact(this, record)) {
+                    Toast.makeText(this, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();
                 }
-            });
-            buttons.addView(openNotification);
-        }
+            } else {
+                openApp(record);
+            }
+        });
+        buttons.addView(open);
         content.addView(buttons);
 
         ScrollView scroll = new ScrollView(this);

@@ -113,7 +113,7 @@ public final class SmartStateStore {
             @NonNull Context context) {
         Map<String, NotificationHistoryRecord> result = new LinkedHashMap<>();
         String sql = "SELECT n._id,n.notification_id,n.package,n.app_name,n.title,n.body,"
-                + "n.post_time,n.is_permanent FROM notification_history n INNER JOIN "
+                + "n.post_time,n.is_permanent,n.shortcut_id,n.user_serial FROM notification_history n INNER JOIN "
                 + "(SELECT package,MAX(post_time) latest_time FROM notification_history "
                 + "GROUP BY package) latest ON latest.package=n.package "
                 + "AND latest.latest_time=n.post_time ORDER BY n.post_time DESC,n._id DESC";
@@ -131,7 +131,7 @@ public final class SmartStateStore {
     public static void saveNotification(@NonNull Context context, @NonNull String notificationId,
                                         @NonNull String packageName, @NonNull String appName,
                                         @Nullable String title, @Nullable String body, long postTime,
-                                        boolean permanent) {
+                                        boolean permanent, @Nullable String shortcutId, long userSerial) {
         if (!PreferenceManager.getDefaultSharedPreferences(context)
                 .getBoolean("enable-notification-history", false)) {
             return;
@@ -145,6 +145,8 @@ public final class SmartStateStore {
         values.put("body", body == null ? "" : body);
         values.put("post_time", postTime);
         values.put("is_permanent", permanent ? 1 : 0);
+        values.put("shortcut_id", shortcutId == null ? "" : shortcutId);
+        values.put("user_serial", userSerial);
         try {
             SQLiteDatabase database = db(context);
             if (permanent) {
@@ -204,7 +206,7 @@ public final class SmartStateStore {
         List<NotificationHistoryRecord> result = new ArrayList<>();
         String limitText = limit > 0 ? Integer.toString(limit) : null;
         try (Cursor cursor = db(context).query("notification_history",
-                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent"},
+                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent", "shortcut_id", "user_serial"},
                 where.length() == 0 ? null : where.toString(),
                 args.isEmpty() ? null : args.toArray(new String[0]),
                 null, null, "post_time DESC", limitText)) {
@@ -225,6 +227,8 @@ public final class SmartStateStore {
         record.text = cursor.getString(5);
         record.postTime = cursor.getLong(6);
         record.permanent = cursor.getInt(7) != 0;
+        record.shortcutId = cursor.getString(8);
+        record.userSerial = cursor.getLong(9);
         return record;
     }
 }

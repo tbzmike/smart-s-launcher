@@ -31,7 +31,7 @@ public final class NotificationTimelineStore {
     public static NotificationHistoryRecord findLatest(@NonNull Context context,
                                                        @NonNull String notificationId) {
         try (Cursor cursor = db(context).query("notification_history",
-                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent"},
+                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent", "shortcut_id", "user_serial"},
                 "notification_id=?", new String[]{notificationId}, null, null,
                 "post_time DESC, _id DESC", "1")) {
             if (!cursor.moveToFirst()) return null;
@@ -51,7 +51,7 @@ public final class NotificationTimelineStore {
         List<NotificationHistoryRecord> result = new ArrayList<>();
         String limitText = limit > 0 ? Integer.toString(limit) : null;
         try (Cursor cursor = db(context).query("notification_history",
-                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent"},
+                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent", "shortcut_id", "user_serial"},
                 "post_time>?", new String[]{Long.toString(Math.max(0L, afterTimestamp))},
                 null, null, "post_time ASC, _id ASC", limitText)) {
             while (cursor.moveToNext()) result.add(read(cursor));
@@ -69,6 +69,8 @@ public final class NotificationTimelineStore {
         record.text = cursor.getString(5);
         record.postTime = cursor.getLong(6);
         record.permanent = cursor.getInt(7) != 0;
+        record.shortcutId = cursor.getString(8);
+        record.userSerial = cursor.getLong(9);
         return record;
     }
 }

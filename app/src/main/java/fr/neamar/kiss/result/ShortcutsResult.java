@@ -45,6 +45,7 @@ import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
+import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
@@ -122,10 +123,10 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         String activeMessage = NotificationListener.getLatestMessage(context, groupKey);
         List<NotificationHistoryRecord> history = SmartStateStore.queryNotifications(
                 context, targetPackage, null, 1);
+        NotificationHistoryRecord latestSaved = history.isEmpty() ? null : history.get(0);
         String latestMessage = activeMessage == null ? "" : activeMessage.trim();
-        if (latestMessage.isEmpty() && !history.isEmpty()) {
-            NotificationHistoryRecord latest = history.get(0);
-            latestMessage = combineNotification(latest.title, latest.text);
+        if (latestMessage.isEmpty() && latestSaved != null) {
+            latestMessage = combineNotification(latestSaved.title, latestSaved.text);
         }
 
         if (latestMessage.isEmpty()) {
@@ -158,8 +159,19 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 }
             });
         } else {
-            row.setOnClickListener(null);
-            text.setOnClickListener(null);
+            if (latestSaved != null
+                    && SavedNotificationDestinationResolver.hasExactTarget(context, latestSaved)) {
+                View.OnClickListener exactSavedNotificationClick = v -> {
+                    if (!SavedNotificationDestinationResolver.openExact(context, latestSaved)) {
+                        Toast.makeText(context, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();
+                    }
+                };
+                row.setOnClickListener(exactSavedNotificationClick);
+                text.setOnClickListener(exactSavedNotificationClick);
+            } else {
+                row.setOnClickListener(null);
+                text.setOnClickListener(null);
+            }
             markRead.setOnClickListener(null);
             markRead.setVisibility(View.GONE);
         }
