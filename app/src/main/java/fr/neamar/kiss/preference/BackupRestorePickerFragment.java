@@ -16,16 +16,17 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
 
-/**
- * Headless fragment that owns the Storage Access Framework result lifecycle for
- * Smart S settings backup and restore. Keeping this isolated avoids changing
- * SettingsActivity/SettingsFragment result routing.
- */
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+import fr.neamar.kiss.backup.FullBackupManager;
+
+/** Owns the Storage Access Framework lifecycle for portable full backup and restore. */
 public final class BackupRestorePickerFragment extends Fragment {
     private static final String TAG = "smart_s_backup_restore_picker";
     private static final String ARG_RESTORE = "restore";
     private static final String STATE_STARTED = "started";
-    private static final String BACKUP_FILE_NAME = "smart-s-launcher-backup.json";
 
     private ActivityResultLauncher<String> createDocumentLauncher;
     private ActivityResultLauncher<String[]> openDocumentLauncher;
@@ -34,14 +35,11 @@ public final class BackupRestorePickerFragment extends Fragment {
 
     public static void show(@NonNull FragmentActivity activity, boolean restore) {
         if (activity.getSupportFragmentManager().findFragmentByTag(TAG) != null) return;
-
         BackupRestorePickerFragment fragment = new BackupRestorePickerFragment();
         Bundle args = new Bundle();
         args.putBoolean(ARG_RESTORE, restore);
         fragment.setArguments(args);
-        activity.getSupportFragmentManager().beginTransaction()
-                .add(fragment, TAG)
-                .commit();
+        activity.getSupportFragmentManager().beginTransaction().add(fragment, TAG).commit();
     }
 
     @Override
@@ -50,13 +48,11 @@ public final class BackupRestorePickerFragment extends Fragment {
         started = savedInstanceState != null && savedInstanceState.getBoolean(STATE_STARTED, false);
 
         createDocumentLauncher = registerForActivityResult(
-                new ActivityResultContracts.CreateDocument("application/json"),
+                new ActivityResultContracts.CreateDocument("application/zip"),
                 this::onBackupDestinationSelected);
-
         openDocumentLauncher = registerForActivityResult(
                 new ActivityResultContracts.OpenDocument(),
                 this::onRestoreSourceSelected);
-
         notificationPermissionLauncher = registerForActivityResult(
                 new ActivityResultContracts.RequestPermission(),
                 granted -> {
@@ -95,16 +91,16 @@ public final class BackupRestorePickerFragment extends Fragment {
 
     private void launchStoragePicker() {
         if (isRestore()) {
-            openDocumentLauncher.launch(new String[]{"application/json", "text/json", "text/plain"});
+            openDocumentLauncher.launch(new String[]{
+                    "application/zip", "application/octet-stream", "application/x-zip-compressed"});
         } else {
-            createDocumentLauncher.launch(BACKUP_FILE_NAME);
+            String stamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US).format(new Date());
+            createDocumentLauncher.launch("SmartS-full-backup-" + stamp + ".ssb");
         }
     }
 
     private void onBackupDestinationSelected(@Nullable Uri uri) {
-        if (uri != null && isAdded()) {
-            new ExportSettingsPreference().backupToUri(requireContext(), uri);
-        }
+        if (uri != null && isAdded()) FullBackupManager.backup(requireContext(), uri);
         removeSelf();
     }
 
@@ -113,14 +109,11 @@ public final class BackupRestorePickerFragment extends Fragment {
             removeSelf();
             return;
         }
-
         new AlertDialog.Builder(requireContext())
-                .setTitle("Restore Smart S backup?")
-                .setMessage("This will replace the current Smart S settings, tags, and custom components with the selected backup.")
-                .setPositiveButton("Restore", (dialog, which) -> {
-                    if (isAdded()) {
-                        new ImportSettingsPreference().restoreFromUri(requireContext(), uri);
-                    }
+                .setTitle("Restore full Smart S backup?")
+                .setMessage("This replaces Smart S persistent launcher data from the selected .ssb backup: settings, history, shortcuts, tags, launcher databases, custom state and app-owned files. The archive is validated and staged first. Smart S restarts after a successful restore.")
+                .setPositiveButton("Restore full backup", (dialog, which) -> {
+                    if (isAdded()) FullBackupManager.restore(requireContext(), uri);
                     removeSelf();
                 })
                 .setNegativeButton(android.R.string.cancel, (dialog, which) -> removeSelf())
@@ -135,8 +128,6 @@ public final class BackupRestorePickerFragment extends Fragment {
 
     private void removeSelf() {
         if (!isAdded()) return;
-        getParentFragmentManager().beginTransaction()
-                .remove(this)
-                .commitAllowingStateLoss();
+        getParentFragmentManager().beginTransaction().remove(this).commitAllowingStateLoss();
     }
 }
