@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.15
-        versionCode 443
-        versionName "3.30.15"
+        // Smart S Launcher 3.30.16
+        versionCode 444
+        versionName "3.30.16"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
