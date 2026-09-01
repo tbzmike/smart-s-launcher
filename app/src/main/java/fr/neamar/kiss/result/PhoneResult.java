@@ -35,7 +35,11 @@ public class PhoneResult extends CallResult<PhonePojo> {
             view = inflateFromId(context, R.layout.item_phone, parent);
 
         TextView phoneText = view.findViewById(R.id.item_phone_text);
-        String text = context.getString(R.string.ui_item_phone, pojo.phone);
+        String callerName = pojo.getName();
+        boolean hasResolvedCallerName = callerName != null && !callerName.equals(pojo.phone);
+        String text = hasResolvedCallerName
+                ? callerName + " · " + pojo.phone
+                : context.getString(R.string.ui_item_phone, pojo.phone);
         int pos = text.indexOf(pojo.phone);
         int len = pojo.phone.length();
         displayHighlighted(text, Collections.singletonList(new Pair<>(pos, pos + len)), phoneText, context);

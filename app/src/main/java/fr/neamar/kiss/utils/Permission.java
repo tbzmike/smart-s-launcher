@@ -17,11 +17,13 @@ public class Permission {
     public static final int PERMISSION_READ_CONTACTS = 0;
     public static final int PERMISSION_CALL_PHONE = 1;
     public static final int PERMISSION_READ_PHONE_STATE = 2;
+    public static final int PERMISSION_READ_CALL_LOG = 3;
 
     private static final String[] permissions = {
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.CALL_PHONE,
-            Manifest.permission.READ_PHONE_STATE
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG
     };
 
     // Static weak reference to the linked activity, this is sadly required

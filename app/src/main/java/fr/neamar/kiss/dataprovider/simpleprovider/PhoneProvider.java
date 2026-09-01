@@ -7,6 +7,7 @@ import java.util.regex.Pattern;
 
 import fr.neamar.kiss.pojo.PhonePojo;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.utils.CallerNameResolver;
 import fr.neamar.kiss.utils.PhoneUtils;
 
 public class PhoneProvider extends SimpleProvider<PhonePojo> {
@@ -36,6 +37,10 @@ public class PhoneProvider extends SimpleProvider<PhonePojo> {
         return id.startsWith(PHONE_SCHEME);
     }
 
+    public static String getHistoryId(String phoneNumber) {
+        return PHONE_SCHEME + phoneNumber;
+    }
+
     public PhonePojo findById(String id) {
         return getResult(id.replaceFirst(Pattern.quote(PHONE_SCHEME), ""), false);
     }
@@ -46,7 +51,7 @@ public class PhoneProvider extends SimpleProvider<PhonePojo> {
      * @return a result that may have a fake id.
      */
     private PhonePojo getResult(String phoneNumber, boolean fromSearch) {
-        String historyId = PHONE_SCHEME + phoneNumber;
+        String historyId = getHistoryId(phoneNumber);
         String searchId = PHONE_SCHEME + "search";
         String id = fromSearch ? searchId : historyId;
         PhonePojo pojo = new PhonePojo(id, historyId, phoneNumber, searchId);
@@ -60,7 +65,12 @@ public class PhoneProvider extends SimpleProvider<PhonePojo> {
             // Calculator expressions have a relevance of 19, so use something lower
             pojo.relevance = 15;
         }
-        pojo.setName(phoneNumber, false);
+        String displayName = phoneNumber;
+        if (!fromSearch) {
+            String resolvedName = CallerNameResolver.resolve(context, phoneNumber);
+            if (resolvedName != null && !resolvedName.isEmpty()) displayName = resolvedName;
+        }
+        pojo.setName(displayName, false);
         return pojo;
     }
 }

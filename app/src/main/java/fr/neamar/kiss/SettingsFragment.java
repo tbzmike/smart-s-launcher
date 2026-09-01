@@ -230,26 +230,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 getDataHandler().reloadSearchProvider();
             } else if (key.equalsIgnoreCase("enable-phone-history")) {
                 boolean enabled = sharedPreferences.getBoolean(key, false);
-                if (enabled && !Permission.checkPermission(getContext(), Permission.PERMISSION_READ_PHONE_STATE)) {
-                    Permission.askPermission(Permission.PERMISSION_READ_PHONE_STATE, new Permission.PermissionResultListener() {
-                        @Override
-                        public void onGranted() {
-                            setPhoneHistoryEnabled(true);
-                        }
-
-                        @Override
-                        public void onDenied() {
-                            // You don't want to give us permission, that's fine. Revert the toggle.
-                            SwitchPreference p = findPreference(key);
-                            if (p != null) {
-                                p.setChecked(false);
-                            }
-                            Toast.makeText(getContext(), R.string.permission_denied, Toast.LENGTH_SHORT).show();
-                        }
-                    });
-                } else {
-                    setPhoneHistoryEnabled(enabled);
-                }
+                if (enabled) ensurePhoneHistoryPermissions(key);
+                else setPhoneHistoryEnabled(false);
             } else if (key.equalsIgnoreCase("primary-color")) {
                 UIColors.clearColorCache();
             } else if (key.equalsIgnoreCase("number-of-display-elements")) {
@@ -297,6 +279,47 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         if (preference != null) {
             preference.refresh();
         }
+    }
+
+    private void ensurePhoneHistoryPermissions(String preferenceKey) {
+        if (!Permission.checkPermission(requireContext(), Permission.PERMISSION_READ_PHONE_STATE)) {
+            Permission.askPermission(Permission.PERMISSION_READ_PHONE_STATE, new Permission.PermissionResultListener() {
+                @Override
+                public void onGranted() {
+                    ensurePhoneHistoryPermissions(preferenceKey);
+                }
+
+                @Override
+                public void onDenied() {
+                    SwitchPreference p = findPreference(preferenceKey);
+                    if (p != null) p.setChecked(false);
+                    Toast.makeText(getContext(), R.string.permission_denied, Toast.LENGTH_SHORT).show();
+                }
+            });
+            return;
+        }
+
+        if (!Permission.checkPermission(requireContext(), Permission.PERMISSION_READ_CALL_LOG)) {
+            Permission.askPermission(Permission.PERMISSION_READ_CALL_LOG, new Permission.PermissionResultListener() {
+                @Override
+                public void onGranted() {
+                    setPhoneHistoryEnabled(true);
+                }
+
+                @Override
+                public void onDenied() {
+                    // Call screening still works without READ_CALL_LOG; only caller-name enrichment
+                    // falls back to Contacts/number when Android does not grant the restricted permission.
+                    setPhoneHistoryEnabled(true);
+                    Toast.makeText(getContext(),
+                            "Call log permission is needed for caller-ID names in phone history.",
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+            return;
+        }
+
+        setPhoneHistoryEnabled(true);
     }
 
     protected void setPhoneHistoryEnabled(boolean enabled) {
