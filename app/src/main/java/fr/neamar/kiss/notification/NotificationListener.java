@@ -39,10 +39,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.db.NotificationHistoryRecord;
+import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
+import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 
 public class NotificationListener extends NotificationListenerService {
     public static final String TAG = NotificationListener.class.getSimpleName();
@@ -551,6 +554,14 @@ public class NotificationListener extends NotificationListenerService {
 
     public static boolean openNotification(Context context, String notificationId) {
         if (notificationId == null || notificationId.isEmpty()) return false;
+
+        // Prefer the app-published conversation shortcut when Android exposes one. Some apps use
+        // a content PendingIntent that merely resumes their task, while the published shortcut is
+        // the stable route to the exact conversation represented by the notification.
+        NotificationHistoryRecord saved = NotificationTimelineStore.findLatest(context, notificationId);
+        if (saved != null && SavedNotificationDestinationResolver.openPublishedShortcut(context, saved)) {
+            return true;
+        }
 
         // Keep the exact PendingIntent supplied by the posting app. Android removes the
         // StatusBarNotification when the notification leaves the panel, but the PendingIntent can
