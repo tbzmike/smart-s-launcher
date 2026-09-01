@@ -84,7 +84,7 @@ public class ImportSettingsPreference {
     private void restoreJson(Context context, String json, boolean fromBackupFile) {
         BackupRestoreProgress progress = null;
         try {
-            // Validate the complete JSON before mutating any local data.
+            // Parse and validate the complete payload before mutating any local data.
             JSONObject jsonObject = new JSONObject(json);
             int minVersion = jsonObject.optInt("__v", -1);
             if (minVersion < 0) {
@@ -94,6 +94,7 @@ public class ImportSettingsPreference {
                 Toast.makeText(context, R.string.import_settings_upgrade_kiss, Toast.LENGTH_LONG).show();
                 return;
             }
+            validatePayload(jsonObject);
 
             int tagCount = jsonObject.has("__tags") ? jsonObject.getJSONObject("__tags").length() : 0;
             int componentCount = jsonObject.has("__custom_components")
@@ -101,7 +102,7 @@ public class ImportSettingsPreference {
             progress = BackupRestoreProgress.restore(
                     context, jsonObject.length() + tagCount + componentCount + 6);
 
-            // Reset preferences to defaults before applying the backup.
+            // Reset preferences to defaults before applying the validated backup.
             SharedPreferences oldPrefs = PreferenceManager.getDefaultSharedPreferences(context);
             if (!oldPrefs.edit().clear().commit()) {
                 progress.fail();
@@ -138,8 +139,6 @@ public class ImportSettingsPreference {
                         }
                     } else if (newValue instanceof Number) {
                         putNumericValue(editor, key, currentValue, (Number) newValue);
-                    } else {
-                        Log.w(TAG, "Unknown type: " + key + ":" + newValue);
                     }
                 }
                 progress.step();
@@ -203,13 +202,43 @@ public class ImportSettingsPreference {
         }
     }
 
+    private void validatePayload(JSONObject jsonObject) throws JSONException {
+        Iterator<?> keys = jsonObject.keys();
+        while (keys.hasNext()) {
+            String key = (String) keys.next();
+            Object value = jsonObject.get(key);
+            if ("__v".equals(key)) {
+                if (!(value instanceof Number)) throw new JSONException("Invalid backup version");
+            } else if ("__tags".equals(key)) {
+                JSONObject tags = jsonObject.getJSONObject(key);
+                Iterator<?> tagKeys = tags.keys();
+                while (tagKeys.hasNext()) tags.getString((String) tagKeys.next());
+            } else if ("__custom_components".equals(key)) {
+                JSONArray components = jsonObject.getJSONArray(key);
+                for (int i = 0; i < components.length(); i++) {
+                    JSONObject component = components.getJSONObject(i);
+                    component.getString("id");
+                    component.getString("package");
+                    component.getString("class");
+                }
+            } else if (key.startsWith("__")) {
+                // Unknown metadata is allowed for forward-compatible backups.
+                continue;
+            } else if (value instanceof JSONArray) {
+                JSONArray values = (JSONArray) value;
+                for (int i = 0; i < values.length(); i++) values.getString(i);
+            } else if (!(value instanceof Boolean) && !(value instanceof String) && !(value instanceof Number)) {
+                throw new JSONException("Unsupported preference type for " + key);
+            }
+        }
+    }
+
     private void putNumericValue(SharedPreferences.Editor editor, String key, Object currentValue, Number value) {
-        if (currentValue instanceof Long) {
+        if (currentValue instanceof Long || (currentValue == null && value instanceof Long)) {
             editor.putLong(key, value.longValue());
         } else if (currentValue instanceof Float || value instanceof Double) {
             editor.putFloat(key, value.floatValue());
         } else {
-            // SharedPreferences has no Double type. Integer is the safest type for an unknown numeric preference.
             editor.putInt(key, value.intValue());
         }
     }
