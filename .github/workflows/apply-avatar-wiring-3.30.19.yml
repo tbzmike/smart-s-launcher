@@ -1,0 +1,144 @@
+name: Apply notification avatar wiring 3.30.19
+on:
+  push:
+    branches: [build/3.30.19]
+    paths: ['.github/workflows/apply-avatar-wiring-3.30.19.yml']
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.19
+          fetch-depth: 0
+      - name: Apply guarded avatar wiring
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, got {count}')
+              p.write_text(text.replace(old, new, 1))
+
+          # Capture Android-exposed identity artwork whenever a notification first enters history.
+          path = 'app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java'
+          replace_once(path,
+              '        for (StatusBarNotification sbn : sbns) {\n            if (seedTimeline) persistHistory(sbn, getTimelineId(sbn));',
+              '        for (StatusBarNotification sbn : sbns) {\n            if (seedTimeline) NotificationAvatarSupport.captureAsync(this, getTimelineId(sbn), sbn);\n            if (seedTimeline) persistHistory(sbn, getTimelineId(sbn));')
+          replace_once(path,
+              '        String id = getTimelineId(sbn);\n        persistHistory(sbn, id);',
+              '        String id = getTimelineId(sbn);\n        NotificationAvatarSupport.captureAsync(this, id, sbn);\n        persistHistory(sbn, id);')
+
+          # Launcher notification result: avatar first, existing app icon fallback; click contract unchanged.
+          path = 'app/src/main/java/fr/neamar/kiss/result/SettingsResult.java'
+          replace_once(path,
+              'import fr.neamar.kiss.notification.NotificationListener;\n',
+              'import fr.neamar.kiss.notification.NotificationAvatarSupport;\nimport fr.neamar.kiss.notification.NotificationListener;\n')
+          replace_once(path,
+              '        if (!isHideIcons(context)) setAsyncDrawable(icon);\n        else icon.setImageDrawable(null);\n\n        // Only the app icon launches the app itself. IceBox-frozen apps are enabled first.',
+              '        String avatarNotificationId = individualRecord ? notification.id : null;\n        if (groupRecord) {\n            List<NotificationListener.NotificationSnapshot> avatarGroup =\n                    NotificationListener.getGroupNotifications(context, notification.groupKey);\n            if (!avatarGroup.isEmpty()) avatarNotificationId = avatarGroup.get(0).id;\n        }\n        Drawable avatar = NotificationAvatarSupport.avatar(context, avatarNotificationId);\n        if (!isHideIcons(context)) {\n            if (avatar != null) icon.setImageDrawable(avatar);\n            else setAsyncDrawable(icon);\n        } else icon.setImageDrawable(null);\n\n        // Only this identity image launches the app itself. Text/native content keeps exact-notification routing.')
+
+          # Notification History list and record-detail popup.
+          path = 'app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java'
+          replace_once(path,
+              'import fr.neamar.kiss.notification.NotificationListener;\n',
+              'import fr.neamar.kiss.notification.NotificationAvatarSupport;\nimport fr.neamar.kiss.notification.NotificationListener;\n')
+          replace_once(path,
+              '        TextView app = new TextView(this);\n        app.setText(highlightLiteral(safe(record.appName), query));\n        app.setTypeface(Typeface.DEFAULT, Typeface.BOLD);\n        app.setTextSize(18);\n        content.addView(app);',
+              '        LinearLayout identityHeader = new LinearLayout(this);\n        identityHeader.setGravity(Gravity.CENTER_VERTICAL);\n        ImageView identity = new ImageView(this);\n        identity.setScaleType(ImageView.ScaleType.CENTER_CROP);\n        int identitySize = dp(48);\n        android.graphics.drawable.Drawable avatar =\n                NotificationAvatarSupport.avatar(this, record.notificationId);\n        if (avatar != null) identity.setImageDrawable(avatar);\n        else {\n            try {\n                PackageManager pm = getPackageManager();\n                ApplicationInfo info = pm.getApplicationInfo(record.packageName,\n                        PackageManager.MATCH_DISABLED_COMPONENTS);\n                identity.setImageDrawable(info.loadIcon(pm));\n            } catch (PackageManager.NameNotFoundException ignored) { }\n        }\n        identityHeader.addView(identity, new LinearLayout.LayoutParams(identitySize, identitySize));\n        TextView app = new TextView(this);\n        app.setText(highlightLiteral(safe(record.appName), query));\n        app.setTypeface(Typeface.DEFAULT, Typeface.BOLD);\n        app.setTextSize(18);\n        app.setPadding(dp(12), 0, 0, 0);\n        identityHeader.addView(app, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));\n        content.addView(identityHeader);')
+          replace_once(path,
+              '            try {\n                PackageManager pm = getPackageManager();\n                ApplicationInfo info = pm.getApplicationInfo(record.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);\n                icon.setImageDrawable(info.loadIcon(pm));\n                if (!AppLaunchUtils.isPackageEnabled(NotificationHistoryActivity.this, record.packageName)\n                        && icon.getDrawable() != null) icon.getDrawable().setAlpha(140);\n            } catch (PackageManager.NameNotFoundException ignored) {}',
+              '            icon.setScaleType(ImageView.ScaleType.CENTER_CROP);\n            android.graphics.drawable.Drawable avatar =\n                    NotificationAvatarSupport.avatar(NotificationHistoryActivity.this, record.notificationId);\n            if (avatar != null) {\n                icon.setImageDrawable(avatar);\n            } else {\n                try {\n                    PackageManager pm = getPackageManager();\n                    ApplicationInfo info = pm.getApplicationInfo(record.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);\n                    icon.setImageDrawable(info.loadIcon(pm));\n                    if (!AppLaunchUtils.isPackageEnabled(NotificationHistoryActivity.this, record.packageName)\n                            && icon.getDrawable() != null) icon.getDrawable().setAlpha(140);\n                } catch (PackageManager.NameNotFoundException ignored) {}\n            }')
+
+          # Rich saved-history popup header follows the currently viewed notification identity.
+          path = 'app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java'
+          replace_once(path,
+              'import fr.neamar.kiss.notification.NotificationListener;\n',
+              'import fr.neamar.kiss.notification.NotificationAvatarSupport;\nimport fr.neamar.kiss.notification.NotificationListener;\n')
+          replace_once(path,
+              '        private final TextView appName;\n',
+              '        private final ImageView headerIcon;\n        private final TextView appName;\n')
+          replace_once(path,
+              '            ImageView icon = new ImageView(context);\n            int iconSize = dp(48);\n            try {\n                PackageManager pm = context.getPackageManager();\n                ApplicationInfo info = pm.getApplicationInfo(packageName,\n                        PackageManager.MATCH_DISABLED_COMPONENTS);\n                icon.setImageDrawable(info.loadIcon(pm));\n            } catch (PackageManager.NameNotFoundException ignored) { }\n            header.addView(icon, new LinearLayout.LayoutParams(iconSize, iconSize));',
+              '            headerIcon = new ImageView(context);\n            headerIcon.setScaleType(ImageView.ScaleType.CENTER_CROP);\n            int iconSize = dp(48);\n            setHeaderIdentity(null);\n            header.addView(headerIcon, new LinearLayout.LayoutParams(iconSize, iconSize));')
+          replace_once(path,
+              '            appName.setText(safeAppName(record));\n',
+              '            setHeaderIdentity(record);\n            appName.setText(safeAppName(record));\n')
+          replace_once(path,
+              '        private String safeAppName(NotificationHistoryRecord record) {',
+              '        private void setHeaderIdentity(NotificationHistoryRecord record) {\n            android.graphics.drawable.Drawable avatar = record == null ? null\n                    : NotificationAvatarSupport.avatar(context, record.notificationId);\n            if (avatar != null) {\n                headerIcon.setImageDrawable(avatar);\n                return;\n            }\n            try {\n                PackageManager pm = context.getPackageManager();\n                ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);\n                headerIcon.setImageDrawable(info.loadIcon(pm));\n            } catch (PackageManager.NameNotFoundException ignored) {\n                headerIcon.setImageDrawable(null);\n            }\n        }\n\n        private String safeAppName(NotificationHistoryRecord record) {')
+
+          # Live group popup and live notification detail popup.
+          path = 'app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java'
+          replace_once(path,
+              'import fr.neamar.kiss.notification.NotificationListener;\n',
+              'import fr.neamar.kiss.notification.NotificationAvatarSupport;\nimport fr.neamar.kiss.notification.NotificationListener;\n')
+          replace_once(path,
+              '            TextView row = new TextView(context);\n            String label = snapshot.title == null ? "" : snapshot.title.trim();\n            String body = snapshot.text == null ? "" : snapshot.text.trim();\n            if (!body.isEmpty()) label = label.isEmpty() ? body : label + "\\n" + body;\n            if (label.isEmpty()) label = "Notification";\n            row.setText(label);\n            row.setTextSize(15f);\n            row.setPadding(pad, pad, pad, pad);\n            row.setMaxLines(4);\n            AppNativeDialogStyle.setReadableText(row);\n            row.setOnClickListener(v -> {\n                SmartAnimationEngine.dismissDialog(dialog);\n                showNotification(context, groupKey, snapshot);\n            });\n            list.addView(row, new LinearLayout.LayoutParams(\n                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));',
+              '            LinearLayout row = new LinearLayout(context);\n            row.setGravity(Gravity.CENTER_VERTICAL);\n            row.setPadding(pad, pad, pad, pad);\n            ImageView avatar = new ImageView(context);\n            avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);\n            avatar.setImageDrawable(identityDrawable(context, snapshot.id, packageName));\n            row.addView(avatar, new LinearLayout.LayoutParams(dp(context, 40), dp(context, 40)));\n            TextView rowText = new TextView(context);\n            String label = snapshot.title == null ? "" : snapshot.title.trim();\n            String body = snapshot.text == null ? "" : snapshot.text.trim();\n            if (!body.isEmpty()) label = label.isEmpty() ? body : label + "\\n" + body;\n            if (label.isEmpty()) label = "Notification";\n            rowText.setText(label);\n            rowText.setTextSize(15f);\n            rowText.setPadding(pad, 0, 0, 0);\n            rowText.setMaxLines(4);\n            AppNativeDialogStyle.setReadableText(rowText);\n            row.addView(rowText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));\n            row.setOnClickListener(v -> {\n                SmartAnimationEngine.dismissDialog(dialog);\n                showNotification(context, groupKey, snapshot);\n            });\n            list.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));')
+          replace_once(path,
+              '        if (packageName != null) {\n            try {\n                PackageManager pm = context.getPackageManager();\n                ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);\n                icon.setImageDrawable(info.loadIcon(pm));\n            } catch (PackageManager.NameNotFoundException ignored) {\n                // Native notification content below remains usable without the app icon.\n            }\n        }',
+              '        icon.setScaleType(ImageView.ScaleType.CENTER_CROP);\n        icon.setImageDrawable(identityDrawable(context, snapshot.id, packageName));')
+          replace_once(path,
+              '    private static Button sendIfPresent(View view) {',
+              '    private static android.graphics.drawable.Drawable identityDrawable(Context context, String notificationId, String packageName) {\n        android.graphics.drawable.Drawable avatar = NotificationAvatarSupport.avatar(context, notificationId);\n        if (avatar != null) return avatar;\n        if (packageName == null) return null;\n        try {\n            PackageManager pm = context.getPackageManager();\n            ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);\n            return info.loadIcon(pm);\n        } catch (PackageManager.NameNotFoundException ignored) {\n            return null;\n        }\n    }\n\n    private static Button sendIfPresent(View view) {')
+
+          # Launcher vertical history cards / shortcut-backed app cards.
+          path = 'app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java'
+          replace_once(path,
+              'import fr.neamar.kiss.notification.NotificationListener;\n',
+              'import fr.neamar.kiss.notification.NotificationAvatarSupport;\nimport fr.neamar.kiss.notification.NotificationListener;\n')
+          replace_once(path,
+              '        TextView text = view.findViewById(R.id.item_notification_text);\n        View markRead = view.findViewById(R.id.item_notification_read);\n        if (row == null || text == null || markRead == null) return;',
+              '        ImageView avatar = view.findViewById(R.id.item_notification_avatar);\n        TextView text = view.findViewById(R.id.item_notification_text);\n        View markRead = view.findViewById(R.id.item_notification_read);\n        if (row == null || avatar == null || text == null || markRead == null) return;\n        avatar.setImageDrawable(null);\n        avatar.setVisibility(View.GONE);')
+          replace_once(path,
+              '        List<NotificationListener.NotificationSnapshot> active =\n                NotificationListener.getGroupNotifications(context, groupKey);\n        if (!active.isEmpty()) {',
+              '        List<NotificationListener.NotificationSnapshot> active =\n                NotificationListener.getGroupNotifications(context, groupKey);\n        String avatarId = !active.isEmpty() ? active.get(0).id\n                : latestSaved == null ? null : latestSaved.notificationId;\n        Drawable notificationAvatar = NotificationAvatarSupport.avatar(context, avatarId);\n        if (notificationAvatar != null) {\n            avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);\n            avatar.setImageDrawable(notificationAvatar);\n            avatar.setVisibility(View.VISIBLE);\n        }\n        if (!active.isEmpty()) {')
+
+          path = 'app/src/main/res/layout/item_shortcut.xml'
+          replace_once(path,
+              '        <LinearLayout\n            android:id="@+id/item_notification_row"\n            android:layout_width="match_parent"\n            android:layout_height="wrap_content"\n            android:gravity="center_vertical"\n            android:orientation="horizontal"\n            android:visibility="gone">\n\n            <fr.neamar.kiss.ui.AutoScrollPreviewTextView',
+              '        <LinearLayout\n            android:id="@+id/item_notification_row"\n            android:layout_width="match_parent"\n            android:layout_height="wrap_content"\n            android:gravity="center_vertical"\n            android:orientation="horizontal"\n            android:visibility="gone">\n\n            <ImageView\n                android:id="@+id/item_notification_avatar"\n                android:layout_width="28dp"\n                android:layout_height="28dp"\n                android:layout_marginEnd="6dp"\n                android:contentDescription="@null"\n                android:scaleType="centerCrop"\n                android:visibility="gone" />\n\n            <fr.neamar.kiss.ui.AutoScrollPreviewTextView')
+
+      - name: Verify protected wiring and source scope
+        run: |
+          set -eux
+          git diff --check
+          git diff --exit-code cd9425aeb9b6b12868b757a848b00404b0688cf2 -- app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          git diff --exit-code cd9425aeb9b6b12868b757a848b00404b0688cf2 -- app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'rememberContentIntent(id, n.contentIntent)' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -q 'SavedNotificationDestinationResolver.openExact' app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          grep -q 'SavedNotificationDestinationResolver.openExact' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'openNotification(context, snapshot.id)' app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java
+          for f in \
+            app/src/main/java/fr/neamar/kiss/result/SettingsResult.java \
+            app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java \
+            app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java \
+            app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java; do
+            grep -q 'NotificationAvatarSupport' "$f"
+          done
+      - name: Build and test exact repaired source
+        run: |
+          chmod +x gradlew
+          ./gradlew lint testDebugUnitTest assembleDebug assembleRelease
+      - name: Commit source only
+        run: |
+          git config user.name 'tbzmike'
+          git config user.email '40115947+tbzmike@users.noreply.github.com'
+          git add \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java \
+            app/src/main/java/fr/neamar/kiss/result/SettingsResult.java \
+            app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java \
+            app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java \
+            app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java \
+            app/src/main/res/layout/item_shortcut.xml
+          git commit -m 'Wire notification avatars across launcher history'
+          git push origin HEAD:build/3.30.19
