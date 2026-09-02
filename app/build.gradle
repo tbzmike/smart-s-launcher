@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.19 - verified avatar-loader build
-        versionCode 447
-        versionName "3.30.19"
+        // Smart S Launcher 3.30.20 - exact notification relink after app unfreeze
+        versionCode 448
+        versionName "3.30.20"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -88,15 +88,5 @@ dependencies {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.errorprone {
-        disableWarningsInGeneratedCode = true
-        disable('MissingOverride')
-        disable('MissingSummary')
-        disable('EmptyBlockTag')
-        disable('EmptyCatch')
-    }
-}
-
-tasks.withType(Test).configureEach {
-    useJUnitPlatform()
+    options.errorprone.disableWarningsInGeneratedCode = true
 }
