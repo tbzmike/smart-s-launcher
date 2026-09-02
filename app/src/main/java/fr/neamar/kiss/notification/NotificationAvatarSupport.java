@@ -158,7 +158,8 @@ public final class NotificationAvatarSupport {
 
     @Nullable
     private static Drawable drawableFromPerson(@NonNull Context context, @Nullable Person person) {
-        return person == null ? null : loadIcon(context, person.getIcon());
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || person == null) return null;
+        return loadIcon(context, person.getIcon());
     }
 
     @Nullable
