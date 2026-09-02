@@ -38,13 +38,21 @@ final class SmartUFinalPolishForwarder {
 
     private FrameLayout squareRoot;
     private ViewGroup squareTrack;
+    private ViewGroup observedTrack;
     private ScrollView notificationScroller;
     private LinearLayout notificationCenter;
     private LinearLayout controls;
     private TextView styleChip;
     private TextView motionChip;
-    private boolean listenerInstalled;
     private boolean refreshPosted;
+    private String appliedStyle;
+    private String appliedProfile;
+    private int styledChildCount = -1;
+    private int accessibleChildCount = -1;
+
+    private final View.OnLayoutChangeListener layoutChangeListener = (v, l, t, r, b, ol, ot, or, ob) -> {
+        if (isUStyle() && ((r - l) != (or - ol) || (b - t) != (ob - ot))) refreshSoon();
+    };
 
     SmartUFinalPolishForwarder(MainActivity activity,
                                HistoryDisplayForwarder historyDisplayForwarder) {
@@ -60,18 +68,41 @@ final class SmartUFinalPolishForwarder {
         if (!isUStyle()) { removeEnhancements(); return; }
         resolveViews(); installObserver(); refreshSoon();
     }
-    void onConfigurationChanged() { resolveViews(); if (isUStyle()) refreshSoon(); }
-    void onDestroy() { removeEnhancements(); squareRoot = null; squareTrack = null; notificationScroller = null; notificationCenter = null; }
+    void onConfigurationChanged() {
+        resolveViews();
+        installObserver();
+        appliedStyle = null;
+        appliedProfile = null;
+        styledChildCount = -1;
+        accessibleChildCount = -1;
+        if (isUStyle()) refreshSoon();
+    }
+    void onDestroy() {
+        if (observedTrack != null) observedTrack.removeOnLayoutChangeListener(layoutChangeListener);
+        observedTrack = null;
+        removeEnhancements();
+        squareRoot = null;
+        squareTrack = null;
+        notificationScroller = null;
+        notificationCenter = null;
+    }
 
     private boolean isUStyle() {
         return SQUARE_U.equals(prefs.getString(PREF_LAYOUT, "vertical"));
     }
 
     private void resolveViews() {
+        ViewGroup previousTrack = squareTrack;
         squareRoot = readField("squareRoot", FrameLayout.class);
         squareTrack = readField("squareTrack", ViewGroup.class);
         notificationScroller = readField("notificationScroller", ScrollView.class);
         notificationCenter = readField("notificationCenter", LinearLayout.class);
+        if (previousTrack != squareTrack) {
+            appliedStyle = null;
+            appliedProfile = null;
+            styledChildCount = -1;
+            accessibleChildCount = -1;
+        }
     }
 
     private <T> T readField(String name, Class<T> type) {
@@ -87,22 +118,25 @@ final class SmartUFinalPolishForwarder {
     }
 
     private void installObserver() {
-        if (squareTrack == null || listenerInstalled) return;
-        squareTrack.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> {
-            if (isUStyle()) refreshSoon();
-        });
-        listenerInstalled = true;
+        if (squareTrack == null || observedTrack == squareTrack) return;
+        if (observedTrack != null) observedTrack.removeOnLayoutChangeListener(layoutChangeListener);
+        squareTrack.addOnLayoutChangeListener(layoutChangeListener);
+        observedTrack = squareTrack;
     }
 
     private void refreshSoon() {
         if (squareTrack == null || refreshPosted) return;
         refreshPosted = true;
-        squareTrack.post(() -> { refreshPosted = false; refreshNow(); });
+        squareTrack.post(() -> {
+            refreshPosted = false;
+            if (isUStyle()) refreshNow();
+        });
     }
 
     private void refreshNow() {
         if (!isUStyle()) { removeEnhancements(); return; }
         resolveViews();
+        installObserver();
         if (squareTrack == null) return;
         ensureControls();
         applyResponsiveTuning();
@@ -129,8 +163,8 @@ final class SmartUFinalPolishForwarder {
         controls.setPadding(dp(3), dp(3), dp(3), dp(6));
         styleChip = createChip();
         motionChip = createChip();
-        styleChip.setOnClickListener(v -> { cycle(PREF_STYLE, STYLES, "glass"); refreshNow(); });
-        motionChip.setOnClickListener(v -> { cycle(PREF_PROFILE, PROFILES, "smooth"); refreshNow(); });
+        styleChip.setOnClickListener(v -> { cycle(PREF_STYLE, STYLES, "glass"); appliedStyle = null; refreshNow(); });
+        motionChip.setOnClickListener(v -> { cycle(PREF_PROFILE, PROFILES, "smooth"); appliedProfile = null; refreshNow(); });
         LinearLayout.LayoutParams chipParams = new LinearLayout.LayoutParams(0, dp(40), 1f);
         chipParams.setMargins(dp(3), 0, dp(3), 0);
         controls.addView(styleChip, chipParams);
@@ -167,57 +201,71 @@ final class SmartUFinalPolishForwarder {
         ViewGroup.LayoutParams raw = notificationScroller.getLayoutParams();
         if (raw instanceof FrameLayout.LayoutParams) {
             FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) raw;
+            int targetWidth = lp.width;
+            int targetHeight = lp.height;
             if (landscape) {
-                lp.width = Math.min(dp(540), Math.max(dp(250), Math.round(width * 0.47f)));
-                lp.height = Math.min(dp(350), Math.max(dp(180), Math.round(height * 0.66f)));
+                targetWidth = Math.min(dp(540), Math.max(dp(250), Math.round(width * 0.47f)));
+                targetHeight = Math.min(dp(350), Math.max(dp(180), Math.round(height * 0.66f)));
             } else if (compact) {
-                lp.width = Math.max(dp(214), width - dp(22));
-                lp.height = Math.min(dp(320), Math.max(dp(180), Math.round(height * 0.41f)));
+                targetWidth = Math.max(dp(214), width - dp(22));
+                targetHeight = Math.min(dp(320), Math.max(dp(180), Math.round(height * 0.41f)));
             }
-            lp.gravity = Gravity.CENTER;
-            notificationScroller.setLayoutParams(lp);
+            if (lp.width != targetWidth || lp.height != targetHeight || lp.gravity != Gravity.CENTER) {
+                lp.width = targetWidth;
+                lp.height = targetHeight;
+                lp.gravity = Gravity.CENTER;
+                notificationScroller.setLayoutParams(lp);
+            }
         }
-        if (styleChip != null) styleChip.setTextSize(compact ? 10.5f : 12f);
-        if (motionChip != null) motionChip.setTextSize(compact ? 10.5f : 12f);
+        float targetTextSp = compact ? 10.5f : 12f;
+        if (styleChip != null && Math.abs(styleChip.getTextSize() / activity.getResources().getDisplayMetrics().scaledDensity - targetTextSp) > 0.1f) styleChip.setTextSize(targetTextSp);
+        if (motionChip != null && Math.abs(motionChip.getTextSize() / activity.getResources().getDisplayMetrics().scaledDensity - targetTextSp) > 0.1f) motionChip.setTextSize(targetTextSp);
     }
 
     private void applyMotionProfile() {
         String profile = prefs.getString(PREF_PROFILE, "smooth");
         if (squareRoot == null || squareTrack == null) return;
-        if ("cinematic".equals(profile)) {
-            squareRoot.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-            squareTrack.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        } else {
-            squareRoot.setLayerType(View.LAYER_TYPE_NONE, null);
-            squareTrack.setLayerType(View.LAYER_TYPE_NONE, null);
-        }
+        if (profile.equals(appliedProfile)) return;
+        appliedProfile = profile;
+        int layer = "cinematic".equals(profile) ? View.LAYER_TYPE_HARDWARE : View.LAYER_TYPE_NONE;
+        if (squareRoot.getLayerType() != layer) squareRoot.setLayerType(layer, null);
+        if (squareTrack.getLayerType() != layer) squareTrack.setLayerType(layer, null);
         if ("off".equals(profile)) {
             squareRoot.animate().cancel();
             squareTrack.animate().cancel();
         }
-        if (controls != null) controls.setAlpha("off".equals(profile) ? 0.86f : 1f);
+        if (controls != null) {
+            float alpha = "off".equals(profile) ? 0.86f : 1f;
+            if (controls.getAlpha() != alpha) controls.setAlpha(alpha);
+        }
     }
 
     private void releaseTransientLayers() {
-        if (squareRoot != null) squareRoot.setLayerType(View.LAYER_TYPE_NONE, null);
-        if (squareTrack != null) squareTrack.setLayerType(View.LAYER_TYPE_NONE, null);
+        if (squareRoot != null && squareRoot.getLayerType() != View.LAYER_TYPE_NONE) squareRoot.setLayerType(View.LAYER_TYPE_NONE, null);
+        if (squareTrack != null && squareTrack.getLayerType() != View.LAYER_TYPE_NONE) squareTrack.setLayerType(View.LAYER_TYPE_NONE, null);
+        appliedProfile = null;
     }
 
     private void applyMaterialStyle() {
         if (squareTrack == null) return;
         String style = prefs.getString(PREF_STYLE, "glass");
-        for (int i = 0; i < squareTrack.getChildCount(); i++) {
+        int childCount = squareTrack.getChildCount();
+        if (style.equals(appliedStyle) && childCount == styledChildCount) return;
+        appliedStyle = style;
+        styledChildCount = childCount;
+        for (int i = 0; i < childCount; i++) {
             View child = squareTrack.getChildAt(i);
             if (!(child instanceof FrameLayout)) continue;
             FrameLayout card = (FrameLayout) child;
-            int accent = accentFor(label(card));
+            int accent = "dynamic".equals(style) ? accentFor(label(card)) : 0;
             GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, colorsFor(style, accent));
             bg.setCornerRadius(dp("minimal".equals(style) ? 22 : 18));
             int strokeColor = "dynamic".equals(style) ? lighten(accent, 0.70f, 1.25f, 235)
                     : ("deep".equals(style) ? Color.argb(230, 88, 130, 218) : Color.argb(205, 210, 228, 255));
             bg.setStroke(dp("deep".equals(style) ? 2 : 1), strokeColor);
             card.setBackground(bg);
-            card.setElevation(dp("deep".equals(style) ? 10 : ("minimal".equals(style) ? 2 : 6)));
+            float targetElevation = dp("deep".equals(style) ? 10 : ("minimal".equals(style) ? 2 : 6));
+            if (card.getElevation() != targetElevation) card.setElevation(targetElevation);
         }
         if (notificationScroller != null) {
             GradientDrawable centerBg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
@@ -241,6 +289,8 @@ final class SmartUFinalPolishForwarder {
         float tx = squareTrack.getWidth() / 2f;
         float ty = squareTrack.getHeight();
         String profile = prefs.getString(PREF_PROFILE, "smooth");
+        String style = prefs.getString(PREF_STYLE, "glass");
+        float alphaFloor = "minimal".equals(style) ? 0.70f : 0.58f;
         for (int i = 0; i < squareTrack.getChildCount(); i++) {
             View card = squareTrack.getChildAt(i);
             if (card.getVisibility() != View.VISIBLE) continue;
@@ -250,12 +300,13 @@ final class SmartUFinalPolishForwarder {
             float dy = Math.abs(cy - ty) / Math.max(1f, squareTrack.getHeight() * 0.75f);
             float distance = Math.min(1f, dx * 0.70f + dy * 0.52f);
             float focus = 1f - distance;
-            float alphaFloor = "minimal".equals(prefs.getString(PREF_STYLE, "glass")) ? 0.70f : 0.58f;
-            card.setAlpha(Math.max(alphaFloor, Math.min(1f, alphaFloor + 0.42f * focus)));
-            card.setTranslationZ(Math.max(card.getTranslationZ(), dp(3) + dp(21) * focus));
+            float targetAlpha = Math.max(alphaFloor, Math.min(1f, alphaFloor + 0.42f * focus));
+            if (Math.abs(card.getAlpha() - targetAlpha) > 0.002f) card.setAlpha(targetAlpha);
+            float targetZ = Math.max(card.getTranslationZ(), dp(3) + dp(21) * focus);
+            if (Math.abs(card.getTranslationZ() - targetZ) > 0.25f) card.setTranslationZ(targetZ);
             if (!"off".equals(profile)) {
-                float rotation = card.getRotationY();
-                card.setRotationY(rotation * (0.88f + 0.12f * focus));
+                float targetRotation = card.getRotationY() * (0.88f + 0.12f * focus);
+                if (Math.abs(card.getRotationY() - targetRotation) > 0.02f) card.setRotationY(targetRotation);
             }
         }
     }
@@ -266,19 +317,25 @@ final class SmartUFinalPolishForwarder {
             motionChip.setContentDescription("Smart U motion profile. Current " + prefs.getString(PREF_PROFILE, "smooth") + ". Tap to change.");
         }
         if (squareTrack == null) return;
-        for (int i = 0; i < squareTrack.getChildCount(); i++) {
+        int childCount = squareTrack.getChildCount();
+        if (childCount == accessibleChildCount) return;
+        accessibleChildCount = childCount;
+        int min = dp(48);
+        for (int i = 0; i < childCount; i++) {
             View card = squareTrack.getChildAt(i);
             String name = label(card);
             if (!TextUtils.isEmpty(name)) card.setContentDescription(name + ". Tap to open. Hold or swipe up for actions. Swipe down for details.");
-            card.setMinimumWidth(dp(48));
-            card.setMinimumHeight(dp(48));
+            if (card.getMinimumWidth() != min) card.setMinimumWidth(min);
+            if (card.getMinimumHeight() != min) card.setMinimumHeight(min);
         }
     }
 
     private void updateLabels() {
         if (styleChip == null || motionChip == null) return;
-        styleChip.setText("Style · " + title(prefs.getString(PREF_STYLE, "glass")));
-        motionChip.setText("Motion · " + title(prefs.getString(PREF_PROFILE, "smooth")));
+        String style = "Style · " + title(prefs.getString(PREF_STYLE, "glass"));
+        String motion = "Motion · " + title(prefs.getString(PREF_PROFILE, "smooth"));
+        if (!style.contentEquals(styleChip.getText())) styleChip.setText(style);
+        if (!motion.contentEquals(motionChip.getText())) motionChip.setText(motion);
     }
 
     private String label(View view) {
@@ -339,6 +396,9 @@ final class SmartUFinalPolishForwarder {
         controls = null;
         styleChip = null;
         motionChip = null;
+        appliedStyle = null;
+        styledChildCount = -1;
+        accessibleChildCount = -1;
     }
 
     private int dp(int value) {
