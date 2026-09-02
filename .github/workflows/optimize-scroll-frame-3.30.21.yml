@@ -1,0 +1,113 @@
+name: Optimize scroll frame 3.30.21
+
+on:
+  push:
+    branches:
+      - build/3.30.21-patch
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Apply guarded per-frame scroll optimization
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Coalesce multiple raw scroll callbacks into one animation calculation per display frame.
+          path = 'app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java'
+          replace_once(path,
+              '        if (smartScrollAnimations != null) smartScrollAnimations.apply();',
+              '        if (smartScrollAnimations != null) smartScrollAnimations.requestApply();')
+
+          path = 'app/src/main/java/fr/neamar/kiss/ui/SmartScrollAnimationController.java'
+          replace_once(path,
+              '    private final SharedPreferences prefs;\n',
+              '    private final SharedPreferences prefs;\n'
+              '    private final float density;\n'
+              '    private boolean frameScheduled;\n')
+          replace_once(path,
+              '        this.prefs = PreferenceManager.getDefaultSharedPreferences(listView.getContext());\n',
+              '        this.prefs = PreferenceManager.getDefaultSharedPreferences(listView.getContext());\n'
+              '        this.density = listView.getResources().getDisplayMetrics().density;\n')
+          replace_once(path,
+              '    void apply() {\n',
+              '    void requestApply() {\n'
+              '        if (frameScheduled) return;\n'
+              '        frameScheduled = true;\n'
+              '        listView.postOnAnimation(() -> {\n'
+              '            frameScheduled = false;\n'
+              '            apply();\n'
+              '        });\n'
+              '    }\n\n'
+              '    private void apply() {\n')
+          replace_once(path,
+              '    private float dp(int value) {\n'
+              '        Context context = listView.getContext();\n'
+              '        return value * context.getResources().getDisplayMetrics().density;\n'
+              '    }\n',
+              '    private float dp(int value) {\n'
+              '        return value * density;\n'
+              '    }\n')
+          # Context import no longer used after density caching.
+          p = Path(path)
+          text = p.read_text().replace('import android.content.Context;\n', '')
+          p.write_text(text)
+          PY
+      - name: Verify scope and protected wiring
+        run: |
+          set -euxo pipefail
+          git diff --check
+          CHANGED=$(git diff --name-only | sort)
+          EXPECTED=$(printf '%s\n' \
+            app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java \
+            app/src/main/java/fr/neamar/kiss/ui/SmartScrollAnimationController.java | sort)
+          test "$CHANGED" = "$EXPECTED"
+
+          # Every animation style remains present; only scheduling/density lookup changes.
+          for style in focus depth wave slide stack zoom tilt cascade flip whirl orbit elastic bounce helix fan; do
+            grep -q "case \"$style\"" app/src/main/java/fr/neamar/kiss/ui/SmartScrollAnimationController.java
+          done
+          grep -q 'postOnAnimation' app/src/main/java/fr/neamar/kiss/ui/SmartScrollAnimationController.java
+          grep -q 'requestApply' app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java
+
+          # Re-check all recently protected feature files are untouched by this phase.
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/MainActivity.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          git diff --exit-code HEAD -- app/src/main/res/menu/menu_main.xml
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+      - name: Commit verified source only
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java \
+            app/src/main/java/fr/neamar/kiss/ui/SmartScrollAnimationController.java
+          git commit -m 'Coalesce vertical scroll animation work per frame'
+          git push origin HEAD:build/3.30.21-patch
