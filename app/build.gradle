@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.21 - vertical-card performance optimization
-        versionCode 449
-        versionName "3.30.21"
+        // Smart S Launcher 3.30.22 - vertical-tile performance repair
+        versionCode 450
+        versionName "3.30.22"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
