@@ -1,4 +1,4 @@
-# rerun after Android API guard correction
+# rerun after direct Android 9 Person API guard
 name: Verify notification avatars 3.30.19
 on:
   push:
