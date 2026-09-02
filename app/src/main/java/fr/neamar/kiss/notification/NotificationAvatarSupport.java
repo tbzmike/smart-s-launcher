@@ -4,7 +4,6 @@ import android.app.Notification;
 import android.app.Person;
 import android.content.Context;
 import android.content.pm.LauncherApps;
-import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -120,17 +119,21 @@ public final class NotificationAvatarSupport {
         Bundle extras = notification.extras;
         if (extras == null) return null;
 
-        Parcelable[] bundles = extras.getParcelableArray(Notification.EXTRA_MESSAGES);
-        if (bundles != null) {
-            List<Notification.MessagingStyle.Message> messages =
-                    Notification.MessagingStyle.Message.getMessagesFromBundleArray(bundles);
-            if (messages != null) {
-                for (int i = messages.size() - 1; i >= 0; i--) {
-                    Notification.MessagingStyle.Message message = messages.get(i);
-                    if (message == null) continue;
-                    Person sender = message.getSenderPerson();
-                    Drawable avatar = drawableFromPerson(context, sender);
-                    if (avatar != null) return avatar;
+        // Android's public decoder for MessagingStyle message bundles was added in API 30.
+        // Keep this block independently guarded so Smart S remains installable down to minSdk 21.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Parcelable[] bundles = extras.getParcelableArray(Notification.EXTRA_MESSAGES);
+            if (bundles != null) {
+                List<Notification.MessagingStyle.Message> messages =
+                        Notification.MessagingStyle.Message.getMessagesFromBundleArray(bundles);
+                if (messages != null) {
+                    for (int i = messages.size() - 1; i >= 0; i--) {
+                        Notification.MessagingStyle.Message message = messages.get(i);
+                        if (message == null) continue;
+                        Person sender = message.getSenderPerson();
+                        Drawable avatar = drawableFromPerson(context, sender);
+                        if (avatar != null) return avatar;
+                    }
                 }
             }
         }
@@ -172,7 +175,7 @@ public final class NotificationAvatarSupport {
             if (shortcut == null) return null;
             return launcherApps.getShortcutIconDrawable(shortcut,
                     context.getResources().getDisplayMetrics().densityDpi);
-        } catch (IllegalStateException | SecurityException | RuntimeException e) {
+        } catch (RuntimeException e) {
             Log.w(TAG, "Unable to resolve conversation shortcut avatar", e);
             return null;
         }
@@ -194,7 +197,7 @@ public final class NotificationAvatarSupport {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || icon == null) return null;
         try {
             return icon.loadDrawable(context);
-        } catch (SecurityException | RuntimeException e) {
+        } catch (RuntimeException e) {
             Log.w(TAG, "Unable to load notification identity icon", e);
             return null;
         }
