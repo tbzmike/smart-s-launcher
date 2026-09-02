@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.pm.LauncherApps;
 import android.content.pm.ShortcutInfo;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.UserManager;
 import android.text.TextUtils;
 
@@ -26,6 +28,9 @@ import fr.neamar.kiss.notification.NotificationListener;
  */
 public final class SavedNotificationDestinationResolver {
     private static final String TAG = SavedNotificationDestinationResolver.class.getSimpleName();
+    private static final long ENABLE_SETTLE_DELAY_MS = 500L;
+    private static final long EXACT_RETRY_DELAY_MS = 400L;
+    private static final int EXACT_RETRY_COUNT = 3;
 
     private SavedNotificationDestinationResolver() {}
 
@@ -43,16 +48,69 @@ public final class SavedNotificationDestinationResolver {
 
     /**
      * Open only an exact notification destination. This method never falls back to an app's main
-     * launcher activity, so callers can tell the user when exact routing is unavailable.
+     * launcher activity. When the posting app is frozen/disabled, Smart S first enables it and
+     * defers exact-route resolution until PackageManager has made the package launchable again.
+     * Returning true in that case means the verified exact-open retry has been accepted; callers
+     * must not show a premature failure message while Android is still completing the unfreeze.
      */
     public static boolean openExact(@NonNull Context context,
                                     @Nullable NotificationHistoryRecord record) {
         if (record == null) return false;
 
+        if (!TextUtils.isEmpty(record.packageName)) {
+            // Do not trust the short enabled-state cache here: the user may have frozen the app
+            // seconds after it was last observed as enabled. Force a current PackageManager read.
+            AppLaunchUtils.invalidatePackageState(record.packageName);
+            if (!AppLaunchUtils.isPackageEnabled(context, record.packageName)) {
+                if (!AppLaunchUtils.ensurePackageEnabled(context, record.packageName)) return false;
+                scheduleExactOpenAfterEnable(context.getApplicationContext(), record, 0,
+                        ENABLE_SETTLE_DELAY_MS);
+                return true;
+            }
+        }
+
+        return openExactNow(context, record);
+    }
+
+    private static boolean openExactNow(@NonNull Context context,
+                                        @NonNull NotificationHistoryRecord record) {
         if (openPublishedShortcut(context, record)) return true;
 
         return !TextUtils.isEmpty(record.notificationId)
                 && NotificationListener.openNotification(context, record.notificationId);
+    }
+
+    /**
+     * Re-resolve the exact destination after an unfreeze. ShortcutInfo is deliberately looked up
+     * again on every attempt rather than retaining the pre-freeze object, and NotificationListener
+     * reuses the posting app's retained PendingIntent when that is the exact route instead.
+     */
+    private static void scheduleExactOpenAfterEnable(@NonNull Context context,
+                                                     @NonNull NotificationHistoryRecord record,
+                                                     int attempt,
+                                                     long delayMs) {
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (!TextUtils.isEmpty(record.packageName)) {
+                AppLaunchUtils.invalidatePackageState(record.packageName);
+                if (!AppLaunchUtils.isPackageEnabled(context, record.packageName)) {
+                    if (attempt + 1 < EXACT_RETRY_COUNT) {
+                        scheduleExactOpenAfterEnable(context, record, attempt + 1,
+                                EXACT_RETRY_DELAY_MS);
+                    } else {
+                        Log.w(TAG, "Posting app did not become enabled in time for exact notification route");
+                    }
+                    return;
+                }
+            }
+
+            if (openExactNow(context, record)) return;
+            if (attempt + 1 < EXACT_RETRY_COUNT) {
+                scheduleExactOpenAfterEnable(context, record, attempt + 1,
+                        EXACT_RETRY_DELAY_MS);
+            } else {
+                Log.w(TAG, "Exact notification route remained unavailable after app unfreeze");
+            }
+        }, delayMs);
     }
 
     /**
