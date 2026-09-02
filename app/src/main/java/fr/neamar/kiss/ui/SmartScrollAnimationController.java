@@ -1,6 +1,5 @@
 package fr.neamar.kiss.ui;
 
-import android.content.Context;
 import android.content.SharedPreferences;
 import android.view.View;
 import android.widget.ListView;
@@ -11,13 +10,25 @@ import androidx.preference.PreferenceManager;
 final class SmartScrollAnimationController {
     private final ListView listView;
     private final SharedPreferences prefs;
+    private final float density;
+    private boolean frameScheduled;
 
     SmartScrollAnimationController(ListView listView) {
         this.listView = listView;
         this.prefs = PreferenceManager.getDefaultSharedPreferences(listView.getContext());
+        this.density = listView.getResources().getDisplayMetrics().density;
     }
 
-    void apply() {
+    void requestApply() {
+        if (frameScheduled) return;
+        frameScheduled = true;
+        listView.postOnAnimation(() -> {
+            frameScheduled = false;
+            apply();
+        });
+    }
+
+    private void apply() {
         if (!prefs.getBoolean("smart-animations-enabled", true)) {
             resetChildren();
             return;
@@ -137,7 +148,6 @@ final class SmartScrollAnimationController {
     }
 
     private float dp(int value) {
-        Context context = listView.getContext();
-        return value * context.getResources().getDisplayMetrics().density;
+        return value * density;
     }
 }

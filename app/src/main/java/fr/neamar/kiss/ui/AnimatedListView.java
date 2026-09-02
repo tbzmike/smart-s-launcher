@@ -36,7 +36,7 @@ public class AnimatedListView extends BlockableListView {
     @Override
     protected void onScrollChanged(int l, int t, int oldl, int oldt) {
         super.onScrollChanged(l, t, oldl, oldt);
-        if (smartScrollAnimations != null) smartScrollAnimations.apply();
+        if (smartScrollAnimations != null) smartScrollAnimations.requestApply();
     }
 
     public void prepareChangeAnim() {
