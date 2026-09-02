@@ -18,7 +18,7 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.19
+        // Smart S Launcher 3.30.19 - verified avatar-loader build
         versionCode 447
         versionName "3.30.19"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
