@@ -1,0 +1,84 @@
+name: Apply avatar loader 3.30.19
+on:
+  push:
+    branches: [build/3.30.19]
+    paths: ['.github/workflows/apply-avatar-loader-3.30.19.yml']
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.19
+          fetch-depth: 0
+
+      - name: Wire loader into listener and KISS menu action
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, got {count}')
+              p.write_text(text.replace(old, new, 1))
+
+          path = 'app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java'
+          marker = '''    /**\n     * Synchronously reconcile the rendering cache before Launcher Home builds its history.\n'''
+          insertion = '''    /** Return a defensive platform snapshot for an explicit avatar-cache refresh. */\n    public static StatusBarNotification[] activeNotificationsSnapshot() {\n        NotificationListener listener = instance;\n        if (listener == null) return null;\n        try {\n            StatusBarNotification[] active = listener.getActiveNotifications();\n            return active == null ? null : active.clone();\n        } catch (RuntimeException e) {\n            Log.w(TAG, "Unable to snapshot active notifications for avatar refresh", e);\n            return null;\n        }\n    }\n\n'''
+          replace_once(path, marker, insertion + marker)
+
+          path = 'app/src/main/java/fr/neamar/kiss/MainActivity.java'
+          replace_once(path,
+              'import fr.neamar.kiss.notification.NotificationListener;\n',
+              'import fr.neamar.kiss.notification.NotificationAvatarSupport;\nimport fr.neamar.kiss.notification.NotificationListener;\n')
+          replace_once(path,
+              '''        } else if (itemId == R.id.preferences) {\n            startActivity(new Intent(this, SettingsActivity.class));\n            return true;\n''',
+              '''        } else if (itemId == R.id.load_avatars) {\n            Toast.makeText(this, "Loading avatars for recent history…", Toast.LENGTH_SHORT).show();\n            NotificationAvatarSupport.loadHistoryAvatarsAsync(this, (scanned, linked, fresh) -> {\n                updateSearchRecords();\n                Toast.makeText(this, "Avatar scan complete: " + linked + " of " + scanned\n                        + " history items linked to cached identity images", Toast.LENGTH_LONG).show();\n            });\n            return true;\n        } else if (itemId == R.id.preferences) {\n            startActivity(new Intent(this, SettingsActivity.class));\n            return true;\n''')
+
+      - name: Verify exact wiring and protected behavior
+        run: |
+          set -eux
+          git diff --check
+          grep -q 'versionCode 447' app/build.gradle
+          grep -q 'versionName "3.30.19"' app/build.gradle
+          grep -q 'android:id="@+id/load_avatars"' app/src/main/res/menu/menu_main.xml
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('app/src/main/res/menu/menu_main.xml').read_text()
+          assert text.index('@+id/load_avatars') < text.index('@+id/add_widget')
+          PY
+          grep -q 'loadHistoryAvatarsAsync' app/src/main/java/fr/neamar/kiss/MainActivity.java
+          grep -q 'activeNotificationsSnapshot' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -q 'HISTORY_SCAN_LIMIT = 200' app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
+          grep -q 'identityAvatarPath' app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
+          grep -q 'historicalShortcutAvatar' app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
+          grep -q 'NotificationAvatarSupport.captureAsync' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/result/SettingsResult.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          grep -q 'rememberContentIntent(id, n.contentIntent)' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -q 'SavedNotificationDestinationResolver.openExact' app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          grep -q 'SavedNotificationDestinationResolver.openExact' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          git diff --exit-code cd9425aeb9b6b12868b757a848b00404b0688cf2 -- app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          git diff --exit-code cd9425aeb9b6b12868b757a848b00404b0688cf2 -- app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+
+      - name: Full clean build and tests
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-configuration-cache clean lint testDebugUnitTest assembleDebug assembleRelease
+
+      - name: Commit verified integration
+        run: |
+          git config user.name 'tbzmike'
+          git config user.email '40115947+tbzmike@users.noreply.github.com'
+          git add app/src/main/java/fr/neamar/kiss/MainActivity.java \
+                  app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          git commit -m 'Wire 200-item avatar loader into KISS menu'
+          git push origin HEAD:build/3.30.19
