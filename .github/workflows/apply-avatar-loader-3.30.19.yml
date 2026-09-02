@@ -14,7 +14,7 @@ jobs:
           ref: build/3.30.19
           fetch-depth: 0
 
-      - name: Wire loader into listener and KISS menu action
+      - name: Wire loader and guard platform shortcut APIs
         shell: python
         run: |
           from pathlib import Path
@@ -26,6 +26,11 @@ jobs:
               if count != 1:
                   raise SystemExit(f'{path}: expected exactly one match, got {count}')
               p.write_text(text.replace(old, new, 1))
+
+          path = 'app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java'
+          replace_once(path,
+              '''    private static Drawable shortcutAvatar(@NonNull Context context, @NonNull UserHandle user,\n                                           @NonNull String packageName, @NonNull String shortcutId) {\n        LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);\n''',
+              '''    private static Drawable shortcutAvatar(@NonNull Context context, @NonNull UserHandle user,\n                                           @NonNull String packageName, @NonNull String shortcutId) {\n        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null;\n        LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);\n''')
 
           path = 'app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java'
           marker = '''    /**\n     * Synchronously reconcile the rendering cache before Launcher Home builds its history.\n'''
@@ -57,6 +62,7 @@ jobs:
           grep -q 'HISTORY_SCAN_LIMIT = 200' app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
           grep -q 'identityAvatarPath' app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
           grep -q 'historicalShortcutAvatar' app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
+          grep -q 'Build.VERSION.SDK_INT < Build.VERSION_CODES.O' app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
           grep -q 'NotificationAvatarSupport.captureAsync' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
           grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/result/SettingsResult.java
           grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
@@ -79,6 +85,7 @@ jobs:
           git config user.name 'tbzmike'
           git config user.email '40115947+tbzmike@users.noreply.github.com'
           git add app/src/main/java/fr/neamar/kiss/MainActivity.java \
-                  app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
-          git commit -m 'Wire 200-item avatar loader into KISS menu'
+                  app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java \
+                  app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
+          git commit -m 'Wire verified 200-item avatar loader into KISS menu'
           git push origin HEAD:build/3.30.19
