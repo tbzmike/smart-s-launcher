@@ -21,6 +21,7 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.service.notification.StatusBarNotification;
 import android.text.TextUtils;
+import android.util.LruCache;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -54,6 +55,13 @@ public final class NotificationAvatarSupport {
     public static final int HISTORY_SCAN_LIMIT = 200;
     private static final long MAX_AGE_MS = 45L * 24L * 60L * 60L * 1000L;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final int MEMORY_CACHE_BYTES = 8 * 1024 * 1024;
+    private static final LruCache<String, Bitmap> MEMORY_CACHE =
+            new LruCache<String, Bitmap>(MEMORY_CACHE_BYTES) {
+                @Override protected int sizeOf(String key, Bitmap value) {
+                    return value == null ? 0 : value.getAllocationByteCount();
+                }
+            };
 
     public interface LoadCallback {
         void onFinished(int scanned, int linked, int freshlyResolved);
@@ -147,6 +155,7 @@ public final class NotificationAvatarSupport {
         String path = persistIdentityBitmap(context, sbn.getPackageName(),
                 title == null ? "" : title.toString(), shortcutId, bitmap);
         if (path == null) return false;
+        if (bitmap != null) MEMORY_CACHE.put(notificationId, bitmap);
         prefs(context).edit()
                 .putString(notificationId + "|image", path)
                 .putLong(notificationId + "|seen", System.currentTimeMillis())
@@ -159,14 +168,18 @@ public final class NotificationAvatarSupport {
     @Nullable
     public static Drawable avatar(@Nullable Context context, @Nullable String notificationId) {
         if (context == null || TextUtils.isEmpty(notificationId)) return null;
+        Bitmap bitmap = MEMORY_CACHE.get(notificationId);
+        if (bitmap != null) return new BitmapDrawable(context.getResources(), bitmap);
         String path = avatarPath(context, notificationId);
         if (path == null) return null;
-        Bitmap bitmap = BitmapFactory.decodeFile(path);
+        bitmap = BitmapFactory.decodeFile(path);
         if (bitmap == null) {
             prefs(context).edit().remove(notificationId + "|image").apply();
             return null;
         }
-        touchAvatar(context, notificationId);
+        MEMORY_CACHE.put(notificationId, bitmap);
+        Context app = context.getApplicationContext();
+        EXECUTOR.execute(() -> touchAvatar(app, notificationId));
         return new BitmapDrawable(context.getResources(), bitmap);
     }
 

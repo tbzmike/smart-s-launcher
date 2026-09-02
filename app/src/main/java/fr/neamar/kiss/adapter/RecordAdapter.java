@@ -78,6 +78,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private final WeakHashMap<View, Integer> baseRowMinimumHeight = new WeakHashMap<>();
     private final WeakHashMap<View, int[]> baseIconBounds = new WeakHashMap<>();
     private final WeakHashMap<TextView, TextStyleState> baseTextStyles = new WeakHashMap<>();
+    private final WeakHashMap<View, Boolean> overflowConfigured = new WeakHashMap<>();
+    private final WeakHashMap<View, Integer> verticalStyleSignatures = new WeakHashMap<>();
     private String[] sections = new String[0];
     private String lastRenderedQuery = null;
 
@@ -102,16 +104,25 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
             applyBestNotificationPreview(view, (NotificationPojo) result.getPojo());
         }
-        configureOverflowText(view);
+        if (!overflowConfigured.containsKey(view)) {
+            configureOverflowText(view);
+            overflowConfigured.put(view, Boolean.TRUE);
+        }
         if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
         if (parent instanceof AbsListView) {
             Context context = parent.getContext();
             TileVisualStyle.apply(view, result, context);
             if (isVerticalHistory(context)) {
-                applyVerticalHistorySizing(view, context);
-                applyVerticalHistoryPolish(view, context);
+                int signature = verticalStyleSignature(context);
+                Integer previous = verticalStyleSignatures.get(view);
+                if (previous == null || previous != signature) {
+                    applyVerticalHistorySizing(view, context);
+                    applyVerticalHistoryPolish(view, context);
+                    verticalStyleSignatures.put(view, signature);
+                }
             } else {
                 restoreVerticalHistoryAppearance(view);
+                verticalStyleSignatures.remove(view);
             }
         }
         return view;
@@ -269,7 +280,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 text.setHorizontalFadingEdgeEnabled(false);
                 return;
             }
-            if (!TextUtils.isEmpty(text.getText())) configureMarquee(text);
+            configureMarquee(text);
             return;
         }
         if (!(view instanceof ViewGroup)) return;
@@ -426,6 +437,23 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 configureMarquee(text);
             }
         }
+    }
+
+    private int verticalStyleSignature(Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        int result = 17;
+        result = 31 * result + safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
+        result = 31 * result + safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
+        result = 31 * result + safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
+        result = 31 * result + safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
+        result = 31 * result + safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
+        result = 31 * result + safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
+        result = 31 * result + safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
+        result = 31 * result + String.valueOf(prefs.getString("smart-list-label-font", "sans_bold")).hashCode();
+        result = 31 * result + String.valueOf(prefs.getString("smart-list-body-font", "sans_normal")).hashCode();
+        result = 31 * result + String.valueOf(prefs.getString("smart-list-label-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();
+        result = 31 * result + String.valueOf(prefs.getString("smart-list-body-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();
+        return result;
     }
 
     private boolean isVerticalHistory(Context context) {

@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.20 - exact notification relink after app unfreeze
-        versionCode 448
-        versionName "3.30.20"
+        // Smart S Launcher 3.30.21 - vertical-card performance optimization
+        versionCode 449
+        versionName "3.30.21"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

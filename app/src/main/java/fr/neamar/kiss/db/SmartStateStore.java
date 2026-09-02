@@ -23,6 +23,8 @@ import fr.neamar.kiss.utils.Log;
 public final class SmartStateStore {
     private static final String TAG = SmartStateStore.class.getSimpleName();
     private static volatile SQLiteDatabase database;
+    private static final Object LATEST_NOTIFICATION_LOCK = new Object();
+    private static volatile Map<String, NotificationHistoryRecord> latestNotificationsCache;
 
     private SmartStateStore() {}
 
@@ -125,7 +127,26 @@ public final class SmartStateStore {
                 }
             }
         }
+        latestNotificationsCache = new LinkedHashMap<>(result);
         return result;
+    }
+
+    /** Fast O(1) lookup used by vertical-card binding after one grouped database scan. */
+    @Nullable
+    public static NotificationHistoryRecord latestNotificationForPackage(
+            @NonNull Context context, @Nullable String packageName) {
+        if (packageName == null || packageName.isEmpty()) return null;
+        Map<String, NotificationHistoryRecord> local = latestNotificationsCache;
+        if (local == null) {
+            synchronized (LATEST_NOTIFICATION_LOCK) {
+                local = latestNotificationsCache;
+                if (local == null) {
+                    local = queryLatestNotificationsByPackage(context);
+                    latestNotificationsCache = local;
+                }
+            }
+        }
+        return local.get(packageName);
     }
 
     public static void saveNotification(@NonNull Context context, @NonNull String notificationId,
@@ -159,6 +180,7 @@ public final class SmartStateStore {
                     "notification_id=? AND post_time=?",
                     new String[]{notificationId, Long.toString(postTime)});
             if (rows == 0) database.insertOrThrow("notification_history", null, values);
+            latestNotificationsCache = null;
         } catch (SQLiteFullException e) {
             Log.w(TAG, "Notification history reached available database storage", e);
         }

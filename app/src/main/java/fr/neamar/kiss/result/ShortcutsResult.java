@@ -124,11 +124,15 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         }
 
         String groupKey = pojo.getUserHandle().getRealHandle().hashCode() + "|" + targetPackage;
-        String activeMessage = NotificationListener.getLatestMessage(context, groupKey);
-        List<NotificationHistoryRecord> history = SmartStateStore.queryNotifications(
-                context, targetPackage, null, 1);
-        NotificationHistoryRecord latestSaved = history.isEmpty() ? null : history.get(0);
-        String latestMessage = activeMessage == null ? "" : activeMessage.trim();
+        List<NotificationListener.NotificationSnapshot> active =
+                NotificationListener.getGroupNotifications(context, groupKey);
+        NotificationListener.NotificationSnapshot latestActive =
+                active.isEmpty() ? null : active.get(0);
+        String activeMessage = latestActive == null ? ""
+                : combineNotification(latestActive.title, latestActive.text);
+        NotificationHistoryRecord latestSaved =
+                SmartStateStore.latestNotificationForPackage(context, targetPackage);
+        String latestMessage = activeMessage.trim();
         if (latestMessage.isEmpty() && latestSaved != null) {
             latestMessage = combineNotification(latestSaved.title, latestSaved.text);
         }
@@ -144,8 +148,6 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         text.setText(latestMessage);
         row.setVisibility(View.VISIBLE);
 
-        List<NotificationListener.NotificationSnapshot> active =
-                NotificationListener.getGroupNotifications(context, groupKey);
         String avatarId = !active.isEmpty() ? active.get(0).id
                 : latestSaved == null ? null : latestSaved.notificationId;
         Drawable notificationAvatar = NotificationAvatarSupport.avatar(context, avatarId);
