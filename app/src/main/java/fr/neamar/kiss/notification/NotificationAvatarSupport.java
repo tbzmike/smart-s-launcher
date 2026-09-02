@@ -3,6 +3,7 @@ package fr.neamar.kiss.notification;
 import android.app.Notification;
 import android.app.Person;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.LauncherApps;
 import android.content.pm.ShortcutInfo;
 import android.graphics.Bitmap;
@@ -13,7 +14,11 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Parcelable;
+import android.os.UserHandle;
+import android.os.UserManager;
 import android.service.notification.StatusBarNotification;
 import android.text.TextUtils;
 
@@ -32,21 +37,27 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.db.NotificationHistoryRecord;
+import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.ShortcutUtil;
 
 /**
- * Captures the identity image Android exposes for a notification without scraping another app's
- * private data. Identity artwork is intentionally separate from NotificationVisualSupport so a
- * sender/group avatar never replaces an attached image, video thumbnail, or media artwork.
+ * Captures identity artwork Android publicly exposes for notifications and keeps a durable local
+ * cache. Sender/group/channel artwork is deliberately separate from attached media artwork.
  */
 public final class NotificationAvatarSupport {
     private static final String TAG = NotificationAvatarSupport.class.getSimpleName();
     private static final String PREFS = "notification-avatar-history";
     private static final String DIR = "notification_avatars";
     private static final int MAX_EDGE = 256;
+    public static final int HISTORY_SCAN_LIMIT = 200;
     private static final long MAX_AGE_MS = 45L * 24L * 60L * 60L * 1000L;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+
+    public interface LoadCallback {
+        void onFinished(int scanned, int linked, int freshlyResolved);
+    }
 
     private NotificationAvatarSupport() { }
 
@@ -56,31 +67,120 @@ public final class NotificationAvatarSupport {
         if (TextUtils.isEmpty(notificationId)) return;
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> {
-            Drawable avatar = extractAvatar(app, sbn);
-            if (avatar == null) return;
-            File file = avatarFile(app, notificationId);
-            if (!writeBitmap(file, drawableToBitmap(avatar))) return;
-            app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                    .putString(notificationId + "|image", file.getAbsolutePath())
-                    .putLong(notificationId + "|seen", System.currentTimeMillis())
-                    .apply();
-            cleanup(app);
-            // The initial launcher render can race the background disk copy. Reload only after a
-            // real avatar was captured so live timeline/history rows can replace their app-icon
-            // fallback without altering notification launch or history ordering behavior.
-            app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
+            if (captureNow(app, notificationId, sbn)) {
+                cleanup(app);
+                app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
+            }
         });
+    }
+
+    /**
+     * Re-scan active notifications, then link cached conversation identities/shortcut icons to the
+     * newest 200 saved history records. No network scraping is used; everything comes from Android
+     * notification/shortcut metadata and is cached locally as PNG files.
+     */
+    public static void loadHistoryAvatarsAsync(@NonNull Context context,
+                                               @Nullable LoadCallback callback) {
+        Context app = context.getApplicationContext();
+        EXECUTOR.execute(() -> {
+            int fresh = 0;
+            StatusBarNotification[] active = NotificationListener.activeNotificationsSnapshot();
+            if (active != null) {
+                for (StatusBarNotification sbn : active) {
+                    if (sbn == null) continue;
+                    if (captureNow(app, NotificationListener.getTimelineId(sbn), sbn)) fresh++;
+                }
+            }
+
+            List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
+                    app, null, null, HISTORY_SCAN_LIMIT);
+            int linked = 0;
+            for (NotificationHistoryRecord record : records) {
+                if (record == null || TextUtils.isEmpty(record.notificationId)) continue;
+                if (avatarPath(app, record.notificationId) != null) {
+                    touchAvatar(app, record.notificationId);
+                    linked++;
+                    continue;
+                }
+
+                String cached = identityAvatarPath(app, record.packageName, record.title,
+                        record.shortcutId);
+                if (cached == null) {
+                    Drawable shortcut = historicalShortcutAvatar(app, record);
+                    if (shortcut != null) {
+                        cached = persistIdentityBitmap(app, record.packageName, record.title,
+                                record.shortcutId, drawableToBitmap(shortcut));
+                        if (cached != null) fresh++;
+                    }
+                }
+                if (cached != null) {
+                    SharedPreferences.Editor editor = prefs(app).edit()
+                            .putString(record.notificationId + "|image", cached)
+                            .putLong(record.notificationId + "|seen", System.currentTimeMillis());
+                    editor.apply();
+                    touchFile(cached);
+                    linked++;
+                }
+            }
+            cleanup(app);
+            app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
+            if (callback != null) {
+                int scanned = records.size();
+                int linkedFinal = linked;
+                int freshFinal = fresh;
+                new Handler(Looper.getMainLooper()).post(
+                        () -> callback.onFinished(scanned, linkedFinal, freshFinal));
+            }
+        });
+    }
+
+    private static boolean captureNow(@NonNull Context context, @NonNull String notificationId,
+                                      @NonNull StatusBarNotification sbn) {
+        Drawable avatar = extractAvatar(context, sbn);
+        if (avatar == null) return false;
+        Notification notification = sbn.getNotification();
+        Bundle extras = notification == null ? null : notification.extras;
+        CharSequence title = extras == null ? null : extras.getCharSequence(Notification.EXTRA_TITLE);
+        String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && notification != null
+                ? notification.getShortcutId() : null;
+        Bitmap bitmap = drawableToBitmap(avatar);
+        String path = persistIdentityBitmap(context, sbn.getPackageName(),
+                title == null ? "" : title.toString(), shortcutId, bitmap);
+        if (path == null) return false;
+        prefs(context).edit()
+                .putString(notificationId + "|image", path)
+                .putLong(notificationId + "|seen", System.currentTimeMillis())
+                .apply();
+        touchFile(path);
+        return true;
     }
 
     /** Return only a captured identity avatar; callers keep their existing app-icon fallback. */
     @Nullable
     public static Drawable avatar(@Nullable Context context, @Nullable String notificationId) {
         if (context == null || TextUtils.isEmpty(notificationId)) return null;
-        String path = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(notificationId + "|image", null);
-        if (TextUtils.isEmpty(path)) return null;
+        String path = avatarPath(context, notificationId);
+        if (path == null) return null;
         Bitmap bitmap = BitmapFactory.decodeFile(path);
-        return bitmap == null ? null : new BitmapDrawable(context.getResources(), bitmap);
+        if (bitmap == null) {
+            prefs(context).edit().remove(notificationId + "|image").apply();
+            return null;
+        }
+        touchAvatar(context, notificationId);
+        return new BitmapDrawable(context.getResources(), bitmap);
+    }
+
+    @Nullable
+    private static String avatarPath(@NonNull Context context, @NonNull String notificationId) {
+        String path = prefs(context).getString(notificationId + "|image", null);
+        if (TextUtils.isEmpty(path) || !new File(path).isFile()) return null;
+        return path;
+    }
+
+    private static void touchAvatar(@NonNull Context context, @NonNull String notificationId) {
+        String path = avatarPath(context, notificationId);
+        if (path != null) touchFile(path);
+        prefs(context).edit().putLong(notificationId + "|seen", System.currentTimeMillis()).apply();
     }
 
     @Nullable
@@ -89,11 +189,9 @@ public final class NotificationAvatarSupport {
         Notification notification = sbn.getNotification();
         if (notification == null) return null;
 
-        // 1. MessagingStyle sender/person avatar. This is the most specific identity image.
         Drawable personAvatar = personAvatar(context, notification);
         if (personAvatar != null) return personAvatar;
 
-        // 2. A notification large icon is commonly the chat/group/channel avatar in social apps.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && notification.getLargeIcon() != null) {
             Drawable large = loadIcon(context, notification.getLargeIcon());
             if (large != null) return large;
@@ -106,9 +204,6 @@ public final class NotificationAvatarSupport {
             large = drawableFromValue(context, extras.get(Notification.EXTRA_LARGE_ICON));
             if (large != null) return large;
         }
-
-        // 3. Conversation shortcut icon. This is durable app-published identity metadata and is
-        // also the same public Android shortcut mechanism used by exact saved-notification routing.
         return shortcutAvatar(context, sbn, notification);
     }
 
@@ -119,8 +214,6 @@ public final class NotificationAvatarSupport {
         Bundle extras = notification.extras;
         if (extras == null) return null;
 
-        // Android's public decoder for MessagingStyle message bundles was added in API 30.
-        // Keep this block independently guarded so Smart S remains installable down to minSdk 21.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Parcelable[] bundles = extras.getParcelableArray(Notification.EXTRA_MESSAGES);
             if (bundles != null) {
@@ -130,8 +223,7 @@ public final class NotificationAvatarSupport {
                     for (int i = messages.size() - 1; i >= 0; i--) {
                         Notification.MessagingStyle.Message message = messages.get(i);
                         if (message == null) continue;
-                        Person sender = message.getSenderPerson();
-                        Drawable avatar = drawableFromPerson(context, sender);
+                        Drawable avatar = drawableFromPerson(context, message.getSenderPerson());
                         if (avatar != null) return avatar;
                     }
                 }
@@ -168,11 +260,29 @@ public final class NotificationAvatarSupport {
                                            @NonNull Notification notification) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
                 || TextUtils.isEmpty(notification.getShortcutId())) return null;
+        return shortcutAvatar(context, sbn.getUser(), sbn.getPackageName(),
+                notification.getShortcutId());
+    }
+
+    @Nullable
+    private static Drawable historicalShortcutAvatar(@NonNull Context context,
+                                                     @NonNull NotificationHistoryRecord record) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || TextUtils.isEmpty(record.shortcutId)
+                || TextUtils.isEmpty(record.packageName) || record.userSerial < 0) return null;
+        UserManager userManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
+        if (userManager == null) return null;
+        UserHandle user = userManager.getUserForSerialNumber(record.userSerial);
+        return user == null ? null
+                : shortcutAvatar(context, user, record.packageName, record.shortcutId);
+    }
+
+    @Nullable
+    private static Drawable shortcutAvatar(@NonNull Context context, @NonNull UserHandle user,
+                                           @NonNull String packageName, @NonNull String shortcutId) {
         LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);
         if (launcherApps == null || !launcherApps.hasShortcutHostPermission()) return null;
         try {
-            ShortcutInfo shortcut = ShortcutUtil.getShortCut(context, sbn.getUser(),
-                    sbn.getPackageName(), notification.getShortcutId());
+            ShortcutInfo shortcut = ShortcutUtil.getShortCut(context, user, packageName, shortcutId);
             if (shortcut == null) return null;
             return launcherApps.getShortcutIconDrawable(shortcut,
                     context.getResources().getDisplayMetrics().densityDpi);
@@ -180,6 +290,77 @@ public final class NotificationAvatarSupport {
             Log.w(TAG, "Unable to resolve conversation shortcut avatar", e);
             return null;
         }
+    }
+
+    @Nullable
+    private static String identityAvatarPath(@NonNull Context context, @Nullable String packageName,
+                                             @Nullable String title, @Nullable String shortcutId) {
+        SharedPreferences preferences = prefs(context);
+        if (!TextUtils.isEmpty(shortcutId)) {
+            String shortcutPath = preferences.getString(
+                    aliasKey(packageName, null, shortcutId), null);
+            if (validFile(shortcutPath)) return shortcutPath;
+        }
+        if (!TextUtils.isEmpty(title)) {
+            String titlePath = preferences.getString(aliasKey(packageName, title, null), null);
+            if (validFile(titlePath)) return titlePath;
+        }
+        return null;
+    }
+
+    @Nullable
+    private static String persistIdentityBitmap(@NonNull Context context,
+                                                @Nullable String packageName,
+                                                @Nullable String title,
+                                                @Nullable String shortcutId,
+                                                @Nullable Bitmap bitmap) {
+        if (bitmap == null) return null;
+        String stableIdentity = !TextUtils.isEmpty(shortcutId)
+                ? safe(packageName) + "|shortcut|" + shortcutId
+                : safe(packageName) + "|title|" + normalize(title);
+        if (stableIdentity.endsWith("|title|")) return null;
+        File file = identityFile(context, stableIdentity);
+        if (!writeBitmap(file, bitmap)) return null;
+        String path = file.getAbsolutePath();
+        SharedPreferences.Editor editor = prefs(context).edit();
+        if (!TextUtils.isEmpty(shortcutId)) {
+            editor.putString(aliasKey(packageName, null, shortcutId), path);
+        }
+        if (!TextUtils.isEmpty(title)) {
+            editor.putString(aliasKey(packageName, title, null), path);
+        }
+        editor.apply();
+        return path;
+    }
+
+    private static String aliasKey(@Nullable String packageName, @Nullable String title,
+                                   @Nullable String shortcutId) {
+        if (!TextUtils.isEmpty(shortcutId)) {
+            return "alias|shortcut|" + digest(safe(packageName) + "|" + shortcutId);
+        }
+        return "alias|title|" + digest(safe(packageName) + "|" + normalize(title));
+    }
+
+    private static String normalize(@Nullable String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String safe(@Nullable String value) {
+        return value == null ? "" : value;
+    }
+
+    private static SharedPreferences prefs(@NonNull Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    private static boolean validFile(@Nullable String path) {
+        return !TextUtils.isEmpty(path) && new File(path).isFile();
+    }
+
+    private static void touchFile(@Nullable String path) {
+        if (TextUtils.isEmpty(path)) return;
+        File file = new File(path);
+        if (file.isFile()) file.setLastModified(System.currentTimeMillis());
     }
 
     @Nullable
@@ -204,12 +385,12 @@ public final class NotificationAvatarSupport {
         }
     }
 
-    private static File avatarFile(@NonNull Context context, @NonNull String notificationId) {
+    private static File identityFile(@NonNull Context context, @NonNull String identity) {
         File dir = new File(context.getFilesDir(), DIR);
         if (!dir.exists() && !dir.mkdirs()) {
             Log.w(TAG, "Unable to create notification avatar directory");
         }
-        return new File(dir, digest(notificationId) + ".png");
+        return new File(dir, digest(identity) + ".png");
     }
 
     @Nullable
