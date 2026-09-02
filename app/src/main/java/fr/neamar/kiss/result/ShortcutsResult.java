@@ -37,6 +37,7 @@ import fr.neamar.kiss.adapter.RecordAdapter;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.icons.IconPack;
+import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.ui.ListPopup;
@@ -99,9 +100,12 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     private void displaySmartCardTargetNotification(Context context, View view) {
         View row = view.findViewById(R.id.item_notification_row);
+        ImageView avatar = view.findViewById(R.id.item_notification_avatar);
         TextView text = view.findViewById(R.id.item_notification_text);
         View markRead = view.findViewById(R.id.item_notification_read);
-        if (row == null || text == null || markRead == null) return;
+        if (row == null || avatar == null || text == null || markRead == null) return;
+        avatar.setImageDrawable(null);
+        avatar.setVisibility(View.GONE);
 
         String layout = PreferenceManager.getDefaultSharedPreferences(context)
                 .getString("smart-history-layout", "vertical");
@@ -142,6 +146,14 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
         List<NotificationListener.NotificationSnapshot> active =
                 NotificationListener.getGroupNotifications(context, groupKey);
+        String avatarId = !active.isEmpty() ? active.get(0).id
+                : latestSaved == null ? null : latestSaved.notificationId;
+        Drawable notificationAvatar = NotificationAvatarSupport.avatar(context, avatarId);
+        if (notificationAvatar != null) {
+            avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            avatar.setImageDrawable(notificationAvatar);
+            avatar.setVisibility(View.VISIBLE);
+        }
         if (!active.isEmpty()) {
             View.OnClickListener exactNotificationClick = v -> {
                 if (!NotificationListener.openLatestNotification(context, groupKey)) {

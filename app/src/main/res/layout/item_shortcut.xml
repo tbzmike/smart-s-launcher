@@ -82,6 +82,15 @@
             android:orientation="horizontal"
             android:visibility="gone">
 
+            <ImageView
+                android:id="@+id/item_notification_avatar"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginEnd="6dp"
+                android:contentDescription="@null"
+                android:scaleType="centerCrop"
+                android:visibility="gone" />
+
             <fr.neamar.kiss.ui.AutoScrollPreviewTextView
                 android:id="@+id/item_notification_text"
                 android:layout_width="0dp"

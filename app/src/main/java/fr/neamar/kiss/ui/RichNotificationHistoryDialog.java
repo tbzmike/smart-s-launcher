@@ -25,6 +25,7 @@ import java.util.List;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
@@ -53,6 +54,7 @@ public final class RichNotificationHistoryDialog {
         private final String packageName;
         private final List<NotificationHistoryRecord> records;
         private final LinearLayout content;
+        private final ImageView headerIcon;
         private final TextView appName;
         private final TextView subtitle;
         private final TextView counter;
@@ -82,15 +84,11 @@ public final class RichNotificationHistoryDialog {
             LinearLayout header = new LinearLayout(context);
             header.setGravity(Gravity.CENTER_VERTICAL);
 
-            ImageView icon = new ImageView(context);
+            headerIcon = new ImageView(context);
+            headerIcon.setScaleType(ImageView.ScaleType.CENTER_CROP);
             int iconSize = dp(48);
-            try {
-                PackageManager pm = context.getPackageManager();
-                ApplicationInfo info = pm.getApplicationInfo(packageName,
-                        PackageManager.MATCH_DISABLED_COMPONENTS);
-                icon.setImageDrawable(info.loadIcon(pm));
-            } catch (PackageManager.NameNotFoundException ignored) { }
-            header.addView(icon, new LinearLayout.LayoutParams(iconSize, iconSize));
+            setHeaderIdentity(null);
+            header.addView(headerIcon, new LinearLayout.LayoutParams(iconSize, iconSize));
 
             LinearLayout heading = new LinearLayout(context);
             heading.setOrientation(LinearLayout.VERTICAL);
@@ -189,6 +187,7 @@ public final class RichNotificationHistoryDialog {
                     context, record.notificationId, packageName, record.title, expanded);
             boolean media = rich != null && rich.media;
 
+            setHeaderIdentity(record);
             appName.setText(safeAppName(record));
             Date posted = new Date(record.postTime);
             if (media && rich.activeMedia) {
@@ -363,6 +362,22 @@ public final class RichNotificationHistoryDialog {
             @Override public boolean dispatchTouchEvent(MotionEvent event) {
                 if (handleSwipeEvent(event)) return true;
                 return super.dispatchTouchEvent(event);
+            }
+        }
+
+        private void setHeaderIdentity(NotificationHistoryRecord record) {
+            android.graphics.drawable.Drawable avatar = record == null ? null
+                    : NotificationAvatarSupport.avatar(context, record.notificationId);
+            if (avatar != null) {
+                headerIcon.setImageDrawable(avatar);
+                return;
+            }
+            try {
+                PackageManager pm = context.getPackageManager();
+                ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+                headerIcon.setImageDrawable(info.loadIcon(pm));
+            } catch (PackageManager.NameNotFoundException ignored) {
+                headerIcon.setImageDrawable(null);
             }
         }
 

@@ -21,6 +21,7 @@ import android.widget.Toast;
 
 import java.util.List;
 
+import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 
 /**
@@ -51,22 +52,29 @@ public final class NotificationPopupDialog {
                 .create();
 
         for (NotificationListener.NotificationSnapshot snapshot : notifications) {
-            TextView row = new TextView(context);
+            LinearLayout row = new LinearLayout(context);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(pad, pad, pad, pad);
+            ImageView avatar = new ImageView(context);
+            avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            avatar.setImageDrawable(identityDrawable(context, snapshot.id, packageName));
+            row.addView(avatar, new LinearLayout.LayoutParams(dp(context, 40), dp(context, 40)));
+            TextView rowText = new TextView(context);
             String label = snapshot.title == null ? "" : snapshot.title.trim();
             String body = snapshot.text == null ? "" : snapshot.text.trim();
             if (!body.isEmpty()) label = label.isEmpty() ? body : label + "\n" + body;
             if (label.isEmpty()) label = "Notification";
-            row.setText(label);
-            row.setTextSize(15f);
-            row.setPadding(pad, pad, pad, pad);
-            row.setMaxLines(4);
-            AppNativeDialogStyle.setReadableText(row);
+            rowText.setText(label);
+            rowText.setTextSize(15f);
+            rowText.setPadding(pad, 0, 0, 0);
+            rowText.setMaxLines(4);
+            AppNativeDialogStyle.setReadableText(rowText);
+            row.addView(rowText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             row.setOnClickListener(v -> {
                 SmartAnimationEngine.dismissDialog(dialog);
                 showNotification(context, groupKey, snapshot);
             });
-            list.addView(row, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            list.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
         ScrollView scroll = new ScrollView(context);
@@ -89,15 +97,8 @@ public final class NotificationPopupDialog {
         ImageView icon = new ImageView(context);
         int iconSize = dp(context, 44);
         String packageName = NotificationListener.getNotificationPackage(context, snapshot.id);
-        if (packageName != null) {
-            try {
-                PackageManager pm = context.getPackageManager();
-                ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
-                icon.setImageDrawable(info.loadIcon(pm));
-            } catch (PackageManager.NameNotFoundException ignored) {
-                // Native notification content below remains usable without the app icon.
-            }
-        }
+        icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        icon.setImageDrawable(identityDrawable(context, snapshot.id, packageName));
         heading.addView(icon, new LinearLayout.LayoutParams(iconSize, iconSize));
 
         TextView title = new TextView(context);
@@ -241,6 +242,19 @@ public final class NotificationPopupDialog {
         showWide(dialog);
         AppNativeDialogStyle.styleDialog(dialog, packageName);
         SmartAnimationEngine.animateNotificationExpand(dialog);
+    }
+
+    private static android.graphics.drawable.Drawable identityDrawable(Context context, String notificationId, String packageName) {
+        android.graphics.drawable.Drawable avatar = NotificationAvatarSupport.avatar(context, notificationId);
+        if (avatar != null) return avatar;
+        if (packageName == null) return null;
+        try {
+            PackageManager pm = context.getPackageManager();
+            ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+            return info.loadIcon(pm);
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return null;
+        }
     }
 
     private static Button sendIfPresent(View view) {

@@ -131,6 +131,7 @@ public class NotificationListener extends NotificationListenerService {
         SharedPreferences.Editor detailEditor = details.edit().clear();
 
         for (StatusBarNotification sbn : sbns) {
+            if (seedTimeline) NotificationAvatarSupport.captureAsync(this, getTimelineId(sbn), sbn);
             if (seedTimeline) persistHistory(sbn, getTimelineId(sbn));
             if (isNotificationTrivial(sbn)) continue;
             String packageKey = getPackageKey(sbn);
@@ -184,6 +185,7 @@ public class NotificationListener extends NotificationListenerService {
         if (sbn == null) return;
 
         String id = getTimelineId(sbn);
+        NotificationAvatarSupport.captureAsync(this, id, sbn);
         persistHistory(sbn, id);
         if (isNotificationTrivial(sbn)) return;
 

@@ -34,6 +34,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
+import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
@@ -133,10 +134,19 @@ public class SettingsResult extends Result<SettingPojo> {
         text.setText(preview);
         text.setVisibility(View.VISIBLE);
 
-        if (!isHideIcons(context)) setAsyncDrawable(icon);
-        else icon.setImageDrawable(null);
+        String avatarNotificationId = individualRecord ? notification.id : null;
+        if (groupRecord) {
+            List<NotificationListener.NotificationSnapshot> avatarGroup =
+                    NotificationListener.getGroupNotifications(context, notification.groupKey);
+            if (!avatarGroup.isEmpty()) avatarNotificationId = avatarGroup.get(0).id;
+        }
+        Drawable avatar = NotificationAvatarSupport.avatar(context, avatarNotificationId);
+        if (!isHideIcons(context)) {
+            if (avatar != null) icon.setImageDrawable(avatar);
+            else setAsyncDrawable(icon);
+        } else icon.setImageDrawable(null);
 
-        // Only the app icon launches the app itself. IceBox-frozen apps are enabled first.
+        // Only this identity image launches the app itself. Text/native content keeps exact-notification routing.
         icon.setOnClickListener(v -> {
             if (!AppLaunchUtils.launchPackage(context, notification.packageName)) {
                 Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();

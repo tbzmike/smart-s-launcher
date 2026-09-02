@@ -47,6 +47,7 @@ import java.util.Set;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.AppLaunchUtils;
@@ -282,11 +283,30 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         int pad = dp(16);
         content.setPadding(pad, pad, pad, pad);
 
+        LinearLayout identityHeader = new LinearLayout(this);
+        identityHeader.setGravity(Gravity.CENTER_VERTICAL);
+        ImageView identity = new ImageView(this);
+        identity.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        int identitySize = dp(48);
+        android.graphics.drawable.Drawable avatar =
+                NotificationAvatarSupport.avatar(this, record.notificationId);
+        if (avatar != null) identity.setImageDrawable(avatar);
+        else {
+            try {
+                PackageManager pm = getPackageManager();
+                ApplicationInfo info = pm.getApplicationInfo(record.packageName,
+                        PackageManager.MATCH_DISABLED_COMPONENTS);
+                identity.setImageDrawable(info.loadIcon(pm));
+            } catch (PackageManager.NameNotFoundException ignored) { }
+        }
+        identityHeader.addView(identity, new LinearLayout.LayoutParams(identitySize, identitySize));
         TextView app = new TextView(this);
         app.setText(highlightLiteral(safe(record.appName), query));
         app.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         app.setTextSize(18);
-        content.addView(app);
+        app.setPadding(dp(12), 0, 0, 0);
+        identityHeader.addView(app, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        content.addView(identityHeader);
 
         String combined = safe(record.title);
         if (!safe(record.text).isEmpty()) combined = combined.isEmpty() ? safe(record.text) : combined + "\n\n" + safe(record.text);
@@ -377,13 +397,20 @@ public class NotificationHistoryActivity extends AppCompatActivity {
 
             ImageView icon = new ImageView(NotificationHistoryActivity.this);
             int size = dp(42);
-            try {
-                PackageManager pm = getPackageManager();
-                ApplicationInfo info = pm.getApplicationInfo(record.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
-                icon.setImageDrawable(info.loadIcon(pm));
-                if (!AppLaunchUtils.isPackageEnabled(NotificationHistoryActivity.this, record.packageName)
-                        && icon.getDrawable() != null) icon.getDrawable().setAlpha(140);
-            } catch (PackageManager.NameNotFoundException ignored) {}
+            icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            android.graphics.drawable.Drawable avatar =
+                    NotificationAvatarSupport.avatar(NotificationHistoryActivity.this, record.notificationId);
+            if (avatar != null) {
+                icon.setImageDrawable(avatar);
+            } else {
+                try {
+                    PackageManager pm = getPackageManager();
+                    ApplicationInfo info = pm.getApplicationInfo(record.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+                    icon.setImageDrawable(info.loadIcon(pm));
+                    if (!AppLaunchUtils.isPackageEnabled(NotificationHistoryActivity.this, record.packageName)
+                            && icon.getDrawable() != null) icon.getDrawable().setAlpha(140);
+                } catch (PackageManager.NameNotFoundException ignored) {}
+            }
             icon.setClickable(true);
             icon.setOnClickListener(v -> openApp(record));
             row.addView(icon, new LinearLayout.LayoutParams(size, size));
