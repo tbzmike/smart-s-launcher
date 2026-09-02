@@ -1,0 +1,74 @@
+name: Repair AnimatedListView diff 3.30.21
+
+on:
+  push:
+    branches:
+      - build/3.30.21-patch
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Restore original bytes and apply one intended call change
+        run: |
+          set -euxo pipefail
+          FILE=app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java
+          git show build/3.30.20:$FILE > /tmp/original
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/original')
+          data = p.read_bytes()
+          old = b'if (smartScrollAnimations != null) smartScrollAnimations.apply();'
+          new = b'if (smartScrollAnimations != null) smartScrollAnimations.requestApply();'
+          if data.count(old) != 1:
+              raise SystemExit(f'expected one original call, found {data.count(old)}')
+          Path('app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java').write_bytes(data.replace(old, new, 1))
+          PY
+          git diff --check
+          git diff --numstat build/3.30.20 -- "$FILE"
+          # Exactly one source line should differ, not the entire file.
+          test "$(git diff --numstat build/3.30.20 -- "$FILE" | awk '{print $1":"$2}')" = "1:1"
+          grep -q 'smartScrollAnimations.requestApply()' "$FILE"
+      - name: Verify complete protected wiring
+        run: |
+          set -euxo pipefail
+          # Recent exact-open, avatar, history and popup wiring must remain unchanged from 3.30.20
+          for FILE in \
+            app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java \
+            app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java \
+            app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java \
+            app/src/main/java/fr/neamar/kiss/MainActivity.java \
+            app/src/main/res/menu/menu_main.xml; do
+            git diff --exit-code build/3.30.20 -- "$FILE"
+          done
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'SavedNotificationDestinationResolver.openExact' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'NotificationListener.markGroupRead' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'postOnAnimation' app/src/main/java/fr/neamar/kiss/ui/SmartScrollAnimationController.java
+          for style in focus depth wave slide stack zoom tilt cascade flip whirl orbit elastic bounce helix fan; do
+            grep -q "case \"$style\"" app/src/main/java/fr/neamar/kiss/ui/SmartScrollAnimationController.java
+          done
+          grep -q 'versionCode 449' app/build.gradle
+          grep -q 'versionName "3.30.21"' app/build.gradle
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+      - name: Commit repaired file only
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java
+          git commit -m 'Preserve AnimatedListView bytes while coalescing scroll frames'
+          git push origin HEAD:build/3.30.21-patch
