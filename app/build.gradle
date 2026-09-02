@@ -88,5 +88,15 @@ dependencies {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.errorprone.disableWarningsInGeneratedCode = true
+    options.errorprone {
+        disableWarningsInGeneratedCode = true
+        disable('MissingOverride')
+        disable('MissingSummary')
+        disable('EmptyBlockTag')
+        disable('EmptyCatch')
+    }
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
 }
