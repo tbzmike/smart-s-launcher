@@ -24,12 +24,12 @@ jobs:
       - name: Restore original bytes and apply one intended call change
         run: |
           set -euxo pipefail
+          BASE=origin/build/3.30.20
           FILE=app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java
-          git show build/3.30.20:$FILE > /tmp/original
+          git show "$BASE:$FILE" > /tmp/original
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('/tmp/original')
-          data = p.read_bytes()
+          data = Path('/tmp/original').read_bytes()
           old = b'if (smartScrollAnimations != null) smartScrollAnimations.apply();'
           new = b'if (smartScrollAnimations != null) smartScrollAnimations.requestApply();'
           if data.count(old) != 1:
@@ -37,14 +37,13 @@ jobs:
           Path('app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java').write_bytes(data.replace(old, new, 1))
           PY
           git diff --check
-          git diff --numstat build/3.30.20 -- "$FILE"
-          # Exactly one source line should differ, not the entire file.
-          test "$(git diff --numstat build/3.30.20 -- "$FILE" | awk '{print $1":"$2}')" = "1:1"
+          git diff --numstat "$BASE" -- "$FILE"
+          test "$(git diff --numstat "$BASE" -- "$FILE" | awk '{print $1":"$2}')" = "1:1"
           grep -q 'smartScrollAnimations.requestApply()' "$FILE"
       - name: Verify complete protected wiring
         run: |
           set -euxo pipefail
-          # Recent exact-open, avatar, history and popup wiring must remain unchanged from 3.30.20
+          BASE=origin/build/3.30.20
           for FILE in \
             app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java \
             app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java \
@@ -52,7 +51,7 @@ jobs:
             app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java \
             app/src/main/java/fr/neamar/kiss/MainActivity.java \
             app/src/main/res/menu/menu_main.xml; do
-            git diff --exit-code build/3.30.20 -- "$FILE"
+            git diff --exit-code "$BASE" -- "$FILE"
           done
           grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
           grep -q 'SavedNotificationDestinationResolver.openExact' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
