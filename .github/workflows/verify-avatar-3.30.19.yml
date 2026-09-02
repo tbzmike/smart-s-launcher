@@ -1,0 +1,72 @@
+name: Verify notification avatars 3.30.19
+on:
+  push:
+    branches: [build/3.30.19]
+    paths: ['.github/workflows/verify-avatar-3.30.19.yml']
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.19
+          fetch-depth: 0
+      - name: Reapply exact guarded source patch
+        shell: python
+        run: |
+          from pathlib import Path
+          workflow = Path('.github/workflows/patch-avatar-3.30.19.yml').read_text()
+          marker = '      - name: Apply exact avatar wiring edits\n        shell: python\n        run: |\n'
+          start = workflow.index(marker) + len(marker)
+          end = workflow.index('\n      - name: Verify protected behavior and scope', start)
+          block = workflow[start:end]
+          lines = []
+          for line in block.splitlines():
+              if line.startswith('          '):
+                  lines.append(line[10:])
+              elif not line.strip():
+                  lines.append('')
+              else:
+                  raise SystemExit('Unexpected patch-script indentation: ' + repr(line))
+          exec('\n'.join(lines), {})
+      - name: Verify exact scope and preserved behavior
+        run: |
+          set -eux
+          git diff --check
+          git diff --exit-code cd9425aeb9b6b12868b757a848b00404b0688cf2 -- app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          git diff --exit-code cd9425aeb9b6b12868b757a848b00404b0688cf2 -- app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          git diff --exit-code cd9425aeb9b6b12868b757a848b00404b0688cf2 -- app/src/main/java/fr/neamar/kiss/searcher
+          git diff --exit-code cd9425aeb9b6b12868b757a848b00404b0688cf2 -- app/src/main/java/fr/neamar/kiss/db/HistoryItemUsageTodayStore.java
+          git diff --exit-code cd9425aeb9b6b12868b757a848b00404b0688cf2 -- app/src/main/java/fr/neamar/kiss/utils/CallerNameResolver.java
+          grep -q 'rememberContentIntent(id, n.contentIntent)' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -q 'openNotification(context, snapshot.id)' app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java
+          grep -q 'SavedNotificationDestinationResolver.openExact' app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          grep -q 'SavedNotificationDestinationResolver.openExact' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'NotificationAvatarSupport.captureAsync' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/result/SettingsResult.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'item_notification_avatar' app/src/main/res/layout/item_shortcut.xml
+      - name: Full Android verification
+        run: |
+          chmod +x gradlew
+          ./gradlew lint testDebugUnitTest assembleDebug assembleRelease
+      - name: Commit only verified implementation
+        run: |
+          git config user.name 'tbzmike'
+          git config user.email '40115947+tbzmike@users.noreply.github.com'
+          git add app/build.gradle .github/workflows/build.yml \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java \
+            app/src/main/java/fr/neamar/kiss/result/SettingsResult.java \
+            app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java \
+            app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java \
+            app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java \
+            app/src/main/res/layout/item_shortcut.xml
+          git commit -m 'Show Android exposed notification profile pictures globally'
+          git push origin HEAD:build/3.30.19
