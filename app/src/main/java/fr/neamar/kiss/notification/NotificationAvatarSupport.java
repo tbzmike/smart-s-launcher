@@ -279,6 +279,7 @@ public final class NotificationAvatarSupport {
     @Nullable
     private static Drawable shortcutAvatar(@NonNull Context context, @NonNull UserHandle user,
                                            @NonNull String packageName, @NonNull String shortcutId) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null;
         LauncherApps launcherApps = (LauncherApps) context.getSystemService(Context.LAUNCHER_APPS_SERVICE);
         if (launcherApps == null || !launcherApps.hasShortcutHostPermission()) return null;
         try {

@@ -57,6 +57,7 @@ import fr.neamar.kiss.broadcast.IncomingCallHandler;
 import fr.neamar.kiss.dataprovider.AppProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.SearchProvider;
 import fr.neamar.kiss.forwarder.ForwarderManager;
+import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.SearchPojo;
 import fr.neamar.kiss.result.Result;
@@ -584,6 +585,14 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             hideKeyboard();
             Intent intent = new Intent(Intent.ACTION_SET_WALLPAPER);
             startActivity(Intent.createChooser(intent, getString(R.string.menu_wallpaper)));
+            return true;
+        } else if (itemId == R.id.load_avatars) {
+            Toast.makeText(this, "Loading avatars for recent history…", Toast.LENGTH_SHORT).show();
+            NotificationAvatarSupport.loadHistoryAvatarsAsync(this, (scanned, linked, fresh) -> {
+                updateSearchRecords();
+                Toast.makeText(this, "Avatar scan complete: " + linked + " of " + scanned
+                        + " history items linked to cached identity images", Toast.LENGTH_LONG).show();
+            });
             return true;
         } else if (itemId == R.id.preferences) {
             startActivity(new Intent(this, SettingsActivity.class));

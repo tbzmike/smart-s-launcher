@@ -308,6 +308,19 @@ public class NotificationListener extends NotificationListenerService {
         return currentNotifications == null ? new HashSet<>() : new HashSet<>(currentNotifications);
     }
 
+    /** Return a defensive platform snapshot for an explicit avatar-cache refresh. */
+    public static StatusBarNotification[] activeNotificationsSnapshot() {
+        NotificationListener listener = instance;
+        if (listener == null) return null;
+        try {
+            StatusBarNotification[] active = listener.getActiveNotifications();
+            return active == null ? null : active.clone();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to snapshot active notifications for avatar refresh", e);
+            return null;
+        }
+    }
+
     /**
      * Synchronously reconcile the rendering cache before Launcher Home builds its history.
      * Returns false when the listener is not connected; callers then expose no live actions until
