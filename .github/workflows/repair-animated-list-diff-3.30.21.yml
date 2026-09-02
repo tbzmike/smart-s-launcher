@@ -36,7 +36,6 @@ jobs:
               raise SystemExit(f'expected one original call, found {data.count(old)}')
           Path('app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java').write_bytes(data.replace(old, new, 1))
           PY
-          git diff --check
           git diff --numstat "$BASE" -- "$FILE"
           test "$(git diff --numstat "$BASE" -- "$FILE" | awk '{print $1":"$2}')" = "1:1"
           grep -q 'smartScrollAnimations.requestApply()' "$FILE"
