@@ -1,0 +1,274 @@
+name: Optimize vertical cards 3.30.21
+
+on:
+  push:
+    branches:
+      - build/3.30.21-patch
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Apply guarded vertical-card optimization
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          # 1) Cache the newest notification per package so vertical-card binding does not issue
+          #    one SQLite query per row.
+          path = 'app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java'
+          replace_once(path,
+              '    private static volatile SQLiteDatabase database;\n',
+              '    private static volatile SQLiteDatabase database;\n'
+              '    private static final Object LATEST_NOTIFICATION_LOCK = new Object();\n'
+              '    private static volatile Map<String, NotificationHistoryRecord> latestNotificationsCache;\n')
+          replace_once(path,
+              '        return result;\n    }\n\n    public static void saveNotification',
+              '        latestNotificationsCache = new LinkedHashMap<>(result);\n'
+              '        return result;\n'
+              '    }\n\n'
+              '    /** Fast O(1) lookup used by vertical-card binding after one grouped database scan. */\n'
+              '    @Nullable\n'
+              '    public static NotificationHistoryRecord latestNotificationForPackage(\n'
+              '            @NonNull Context context, @Nullable String packageName) {\n'
+              '        if (packageName == null || packageName.isEmpty()) return null;\n'
+              '        Map<String, NotificationHistoryRecord> local = latestNotificationsCache;\n'
+              '        if (local == null) {\n'
+              '            synchronized (LATEST_NOTIFICATION_LOCK) {\n'
+              '                local = latestNotificationsCache;\n'
+              '                if (local == null) {\n'
+              '                    local = queryLatestNotificationsByPackage(context);\n'
+              '                    latestNotificationsCache = local;\n'
+              '                }\n'
+              '            }\n'
+              '        }\n'
+              '        return local.get(packageName);\n'
+              '    }\n\n'
+              '    public static void saveNotification')
+          replace_once(path,
+              '            if (rows == 0) database.insertOrThrow("notification_history", null, values);\n',
+              '            if (rows == 0) database.insertOrThrow("notification_history", null, values);\n'
+              '            latestNotificationsCache = null;\n')
+
+          # 2) Remove duplicate active-notification traversal and per-card SQLite query.
+          path = 'app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java'
+          replace_once(path,
+              '        String groupKey = pojo.getUserHandle().getRealHandle().hashCode() + "|" + targetPackage;\n'
+              '        String activeMessage = NotificationListener.getLatestMessage(context, groupKey);\n'
+              '        List<NotificationHistoryRecord> history = SmartStateStore.queryNotifications(\n'
+              '                context, targetPackage, null, 1);\n'
+              '        NotificationHistoryRecord latestSaved = history.isEmpty() ? null : history.get(0);\n'
+              '        String latestMessage = activeMessage == null ? "" : activeMessage.trim();\n',
+              '        String groupKey = pojo.getUserHandle().getRealHandle().hashCode() + "|" + targetPackage;\n'
+              '        List<NotificationListener.NotificationSnapshot> active =\n'
+              '                NotificationListener.getGroupNotifications(context, groupKey);\n'
+              '        NotificationListener.NotificationSnapshot latestActive =\n'
+              '                active.isEmpty() ? null : active.get(0);\n'
+              '        String activeMessage = latestActive == null ? ""\n'
+              '                : combineNotification(latestActive.title, latestActive.text);\n'
+              '        NotificationHistoryRecord latestSaved =\n'
+              '                SmartStateStore.latestNotificationForPackage(context, targetPackage);\n'
+              '        String latestMessage = activeMessage.trim();\n')
+          replace_once(path,
+              '        List<NotificationListener.NotificationSnapshot> active =\n'
+              '                NotificationListener.getGroupNotifications(context, groupKey);\n'
+              '        String avatarId = !active.isEmpty() ? active.get(0).id\n',
+              '        String avatarId = !active.isEmpty() ? active.get(0).id\n')
+
+          # 3) Keep decoded avatars in a bounded memory cache. Disk decode and file/prefs touching
+          #    are removed from repeated scroll binds; persistence remains unchanged.
+          path = 'app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java'
+          replace_once(path,
+              'import android.text.TextUtils;\n',
+              'import android.text.TextUtils;\nimport android.util.LruCache;\n')
+          replace_once(path,
+              '    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();\n',
+              '    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();\n'
+              '    private static final int MEMORY_CACHE_BYTES = 8 * 1024 * 1024;\n'
+              '    private static final LruCache<String, Bitmap> MEMORY_CACHE =\n'
+              '            new LruCache<String, Bitmap>(MEMORY_CACHE_BYTES) {\n'
+              '                @Override protected int sizeOf(String key, Bitmap value) {\n'
+              '                    return value == null ? 0 : value.getAllocationByteCount();\n'
+              '                }\n'
+              '            };\n')
+          replace_once(path,
+              '        if (path == null) return false;\n'
+              '        prefs(context).edit()\n',
+              '        if (path == null) return false;\n'
+              '        if (bitmap != null) MEMORY_CACHE.put(notificationId, bitmap);\n'
+              '        prefs(context).edit()\n')
+          replace_once(path,
+              '    public static Drawable avatar(@Nullable Context context, @Nullable String notificationId) {\n'
+              '        if (context == null || TextUtils.isEmpty(notificationId)) return null;\n'
+              '        String path = avatarPath(context, notificationId);\n'
+              '        if (path == null) return null;\n'
+              '        Bitmap bitmap = BitmapFactory.decodeFile(path);\n'
+              '        if (bitmap == null) {\n'
+              '            prefs(context).edit().remove(notificationId + "|image").apply();\n'
+              '            return null;\n'
+              '        }\n'
+              '        touchAvatar(context, notificationId);\n'
+              '        return new BitmapDrawable(context.getResources(), bitmap);\n'
+              '    }\n',
+              '    public static Drawable avatar(@Nullable Context context, @Nullable String notificationId) {\n'
+              '        if (context == null || TextUtils.isEmpty(notificationId)) return null;\n'
+              '        Bitmap bitmap = MEMORY_CACHE.get(notificationId);\n'
+              '        if (bitmap != null) return new BitmapDrawable(context.getResources(), bitmap);\n'
+              '        String path = avatarPath(context, notificationId);\n'
+              '        if (path == null) return null;\n'
+              '        bitmap = BitmapFactory.decodeFile(path);\n'
+              '        if (bitmap == null) {\n'
+              '            prefs(context).edit().remove(notificationId + "|image").apply();\n'
+              '            return null;\n'
+              '        }\n'
+              '        MEMORY_CACHE.put(notificationId, bitmap);\n'
+              '        Context app = context.getApplicationContext();\n'
+              '        EXECUTOR.execute(() -> touchAvatar(app, notificationId));\n'
+              '        return new BitmapDrawable(context.getResources(), bitmap);\n'
+              '    }\n')
+
+          # 4) Recycled rows keep their marquee and vertical style state. Do not recursively
+          #    traverse/restyle the same view tree on every frame while scrolling.
+          path = 'app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java'
+          replace_once(path,
+              '    private final WeakHashMap<TextView, TextStyleState> baseTextStyles = new WeakHashMap<>();\n',
+              '    private final WeakHashMap<TextView, TextStyleState> baseTextStyles = new WeakHashMap<>();\n'
+              '    private final WeakHashMap<View, Boolean> overflowConfigured = new WeakHashMap<>();\n'
+              '    private final WeakHashMap<View, Integer> verticalStyleSignatures = new WeakHashMap<>();\n')
+          replace_once(path,
+              '        configureOverflowText(view);\n'
+              '        if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);\n'
+              '        if (parent instanceof AbsListView) {\n'
+              '            Context context = parent.getContext();\n'
+              '            TileVisualStyle.apply(view, result, context);\n'
+              '            if (isVerticalHistory(context)) {\n'
+              '                applyVerticalHistorySizing(view, context);\n'
+              '                applyVerticalHistoryPolish(view, context);\n'
+              '            } else {\n'
+              '                restoreVerticalHistoryAppearance(view);\n'
+              '            }\n'
+              '        }\n',
+              '        if (!overflowConfigured.containsKey(view)) {\n'
+              '            configureOverflowText(view);\n'
+              '            overflowConfigured.put(view, Boolean.TRUE);\n'
+              '        }\n'
+              '        if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);\n'
+              '        if (parent instanceof AbsListView) {\n'
+              '            Context context = parent.getContext();\n'
+              '            TileVisualStyle.apply(view, result, context);\n'
+              '            if (isVerticalHistory(context)) {\n'
+              '                int signature = verticalStyleSignature(context);\n'
+              '                Integer previous = verticalStyleSignatures.get(view);\n'
+              '                if (previous == null || previous != signature) {\n'
+              '                    applyVerticalHistorySizing(view, context);\n'
+              '                    applyVerticalHistoryPolish(view, context);\n'
+              '                    verticalStyleSignatures.put(view, signature);\n'
+              '                }\n'
+              '            } else {\n'
+              '                restoreVerticalHistoryAppearance(view);\n'
+              '                verticalStyleSignatures.remove(view);\n'
+              '            }\n'
+              '        }\n')
+          replace_once(path,
+              '            if (!TextUtils.isEmpty(text.getText())) configureMarquee(text);\n'
+              '            return;\n',
+              '            configureMarquee(text);\n'
+              '            return;\n')
+          replace_once(path,
+              '    private boolean isVerticalHistory(Context context) {\n',
+              '    private int verticalStyleSignature(Context context) {\n'
+              '        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);\n'
+              '        int result = 17;\n'
+              '        result = 31 * result + safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);\n'
+              '        result = 31 * result + safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);\n'
+              '        result = 31 * result + safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);\n'
+              '        result = 31 * result + safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);\n'
+              '        result = 31 * result + safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);\n'
+              '        result = 31 * result + safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);\n'
+              '        result = 31 * result + safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);\n'
+              '        result = 31 * result + String.valueOf(prefs.getString("smart-list-label-font", "sans_bold")).hashCode();\n'
+              '        result = 31 * result + String.valueOf(prefs.getString("smart-list-body-font", "sans_normal")).hashCode();\n'
+              '        result = 31 * result + String.valueOf(prefs.getString("smart-list-label-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();\n'
+              '        result = 31 * result + String.valueOf(prefs.getString("smart-list-body-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();\n'
+              '        return result;\n'
+              '    }\n\n'
+              '    private boolean isVerticalHistory(Context context) {\n')
+
+          # Version bump. Preserve all existing build/error-prone settings.
+          path = 'app/build.gradle'
+          replace_once(path, 'Smart S Launcher 3.30.20 - exact notification relink after app unfreeze',
+                            'Smart S Launcher 3.30.21 - vertical-card performance optimization')
+          replace_once(path, 'versionCode 448', 'versionCode 449')
+          replace_once(path, 'versionName "3.30.20"', 'versionName "3.30.21"')
+          PY
+      - name: Verify protected feature wiring and change scope
+        run: |
+          set -euxo pipefail
+          git diff --check
+          CHANGED=$(git diff --name-only | sort)
+          printf '%s\n' "$CHANGED"
+          test "$CHANGED" = "$(printf '%s\n' \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java | sort)"
+
+          # Exact-link/unfreeze wiring from 3.30.20 must remain byte-identical.
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/ui/NotificationPopupDialog.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/MainActivity.java
+          git diff --exit-code HEAD -- app/src/main/res/menu/menu_main.xml
+
+          # Required performance and feature invariants.
+          grep -q 'latestNotificationForPackage' app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java
+          grep -q 'MEMORY_CACHE' app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java
+          grep -q 'NotificationAvatarSupport.avatar' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'SavedNotificationDestinationResolver.openExact' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'NotificationListener.markGroupRead' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'verticalStyleSignatures' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'SmartAnimationEngine' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java || true
+          grep -q 'versionCode 449' app/build.gradle
+          grep -q 'versionName "3.30.21"' app/build.gradle
+      - name: Full verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+      - name: Verify animations remain present
+        run: |
+          set -euxo pipefail
+          test -s app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java
+          grep -q 'animateTileListItem' app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java
+          grep -q 'smart-animation-scroll' app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java
+          git diff --exit-code HEAD -- app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java
+      - name: Commit verified source only
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationAvatarSupport.java \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          git commit -m 'Optimize vertical cards without changing feature wiring'
+          git push origin HEAD:build/3.30.21-patch
