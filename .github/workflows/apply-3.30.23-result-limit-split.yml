@@ -117,11 +117,11 @@ jobs:
           chmod +x gradlew
           ./gradlew testDebugUnitTest assembleDebug
 
-      - name: Commit verified 3.30.23 source
+      - name: Commit verified 3.30.23 app source
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/build.yml app/build.gradle \
+          git add app/build.gradle \
             app/src/main/java/fr/neamar/kiss/MainActivity.java \
             app/src/main/java/fr/neamar/kiss/SettingsFragment.java \
             app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java \
