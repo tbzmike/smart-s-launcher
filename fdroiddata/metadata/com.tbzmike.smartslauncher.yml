@@ -11,7 +11,7 @@ Repo: https://github.com/tbzmike/smart-s-launcher.git
 Builds:
   - versionName: 3.30.26
     versionCode: 454
-    commit: adeda9979096ad9c6129f0fe8d93ad0707043112
+    commit: bb09883c0d18718556c8d912d0df026be1859fef
     subdir: app
     gradle:
       - yes
@@ -28,6 +28,11 @@ MaintainerNotes: |-
   replaces only user-visible KISS product-name text (case-insensitively) with
   "Smart S" in every values*/strings.xml file; internal resource identifiers
   and XML attributes are not renamed.
+
+  Inherited KISS Fastlane icon, feature/promo artwork and screenshots were
+  removed from the Smart S source tree rather than publishing another app's
+  store artwork. F-Droid can use the application icon from the built APK; new
+  Smart S screenshots can be added upstream independently later.
 
   app/debug.keystore is a public debug-only CI key used by upstream to keep
   debug APKs update-compatible. It is not used for release signing and is
