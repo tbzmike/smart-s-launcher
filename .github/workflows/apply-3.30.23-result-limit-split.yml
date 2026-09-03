@@ -38,7 +38,6 @@ jobs:
                   raise SystemExit(f'{path}: expected exactly one guarded anchor, found {count}')
               p.write_text(text.replace(old, new, 1))
 
-          # 1) Settings UI: history keeps its own limit; search gets a separate limit under Search results options.
           replace_once(
               'app/src/main/res/xml/preferences.xml',
               '''        <EditTextPreference\n            android:inputType="number"\n            app:defaultValue="20"\n            app:key="number-of-display-elements"\n            app:title="@string/number_of_display_items"\n            app:useSimpleSummaryProvider="true" />''',
@@ -49,45 +48,38 @@ jobs:
               '''        <PreferenceCategory\n            app:key="results-section"\n            app:title="@string/search_results_options">\n            <ListPreference''',
               '''        <PreferenceCategory\n            app:key="results-section"\n            app:title="@string/search_results_options">\n            <EditTextPreference\n                android:inputType="number"\n                app:defaultValue="20"\n                app:key="number-of-search-results"\n                app:title="Max number of search results"\n                app:useSimpleSummaryProvider="true" />\n            <ListPreference''')
 
-          # 2) Runtime search consumer uses only the new search key, with the legacy value as upgrade fallback.
           replace_once(
               'app/src/main/java/fr/neamar/kiss/searcher/QuerySearcher.java',
               '''                MAX_RESULT_COUNT = Double.valueOf(prefs.getString("number-of-display-elements",\n                        String.valueOf(DEFAULT_MAX_RESULTS))).intValue();''',
               '''                String legacyValue = prefs.getString("number-of-display-elements",\n                        String.valueOf(DEFAULT_MAX_RESULTS));\n                MAX_RESULT_COUNT = Double.valueOf(prefs.getString("number-of-search-results",\n                        legacyValue)).intValue();''')
 
-          # 3) Runtime history consumer uses only the new history key, with the legacy value as upgrade fallback.
           replace_once(
               'app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java',
               '''            return Double.valueOf(prefs.getString("number-of-display-elements",\n                    String.valueOf(DEFAULT_MAX_RESULTS))).intValue();\n        } catch (NumberFormatException e) {''',
               '''            String legacyValue = prefs.getString("number-of-display-elements",\n                    String.valueOf(DEFAULT_MAX_RESULTS));\n            return Double.valueOf(prefs.getString("number-of-history-results",\n                    legacyValue)).intValue();\n        } catch (NumberFormatException | ClassCastException e) {''')
 
-          # 4) Settings listener invalidates only the searcher's cached search limit for the search preference.
           replace_once(
               'app/src/main/java/fr/neamar/kiss/SettingsFragment.java',
               '''            } else if (key.equalsIgnoreCase("number-of-display-elements")) {\n                QuerySearcher.clearMaxResultCountCache();''',
               '''            } else if (key.equalsIgnoreCase("number-of-search-results")\n                    || key.equalsIgnoreCase("number-of-display-elements")) {\n                QuerySearcher.clearMaxResultCountCache();''')
 
-          # 5) Upgrade migration runs BEFORE XML defaults are materialized, preserving an existing user's old value.
           replace_once(
               'app/src/main/java/fr/neamar/kiss/MainActivity.java',
               '''        PreferenceManager.setDefaultValues(this, R.xml.preferences, false);\n        prefs = PreferenceManager.getDefaultSharedPreferences(this);''',
               '''        SharedPreferences existingPrefs = PreferenceManager.getDefaultSharedPreferences(this);\n        if (existingPrefs.contains("number-of-display-elements")) {\n            String legacyDisplayLimit;\n            try {\n                legacyDisplayLimit = existingPrefs.getString("number-of-display-elements", "20");\n            } catch (ClassCastException e) {\n                legacyDisplayLimit = "20";\n            }\n            SharedPreferences.Editor migration = existingPrefs.edit();\n            boolean changed = false;\n            if (!existingPrefs.contains("number-of-search-results")) {\n                migration.putString("number-of-search-results", legacyDisplayLimit);\n                changed = true;\n            }\n            if (!existingPrefs.contains("number-of-history-results")) {\n                migration.putString("number-of-history-results", legacyDisplayLimit);\n                changed = true;\n            }\n            if (changed) migration.apply();\n        }\n        PreferenceManager.setDefaultValues(this, R.xml.preferences, false);\n        prefs = PreferenceManager.getDefaultSharedPreferences(this);''')
 
-          # 6) Version bump is verified from the actual 3.30.22 values.
           replace_once(
               'app/build.gradle',
               '''        // Smart S Launcher 3.30.22 - vertical-tile performance repair\n        versionCode 450\n        versionName "3.30.22"''',
               '''        // Smart S Launcher 3.30.23 - independent search/history result limits\n        versionCode 451\n        versionName "3.30.23"''')
 
-          # 7) CI version assertions and artifact names follow the new version.
           p = Path('.github/workflows/build.yml')
           text = p.read_text()
-          if text.count('3.30.22') != 4 or text.count('450') != 2:
+          if text.count('3.30.22') != 5 or text.count('450') != 2:
               raise SystemExit('build.yml: unexpected 3.30.22/450 occurrence count; refusing broad version replacement')
           text = text.replace('3.30.22', '3.30.23').replace('450', '451')
           p.write_text(text)
 
-          # Guard final source state before any build or commit.
           xml = Path('app/src/main/res/xml/preferences.xml').read_text()
           if 'app:key="number-of-display-elements"' in xml:
               raise SystemExit('legacy combined preference is still exposed in Settings XML')
