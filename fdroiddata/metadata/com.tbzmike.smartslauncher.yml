@@ -11,7 +11,7 @@ Repo: https://github.com/tbzmike/smart-s-launcher.git
 Builds:
   - versionName: 3.30.26
     versionCode: 454
-    commit: 7377b4abe77813de7a6d52f3a33a3c733be012f0
+    commit: 02b0f18289c6622ab207b7d84eb58c79b7ed4255
     subdir: app
     gradle:
       - yes
@@ -35,6 +35,10 @@ MaintainerNotes: |-
   app/debug.keystore is a public debug-only CI key used upstream to keep debug
   APKs update-compatible. It is not used for release signing and is deleted by
   the F-Droid scanner/build recipe.
+
+  The Google Maps history-card live map preview is disabled by default. A user
+  must explicitly enable Online map previews under Privacy & network before the
+  feature requests location or downloads a location-dependent OpenStreetMap tile.
 
   The communications index can optionally interoperate with a separately
   installed Truecaller app by reading locally exposed/provider data and, when
