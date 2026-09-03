@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.26 - isolate Vertical Cards from IME focus
-        versionCode 454
-        versionName "3.30.26"
+        // Smart S Launcher 3.30.27 - adaptive Vertical Cards text fitting
+        versionCode 455
+        versionName "3.30.27"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

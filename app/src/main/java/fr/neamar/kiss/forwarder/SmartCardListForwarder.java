@@ -26,7 +26,7 @@ import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.result.AppResult;
 import fr.neamar.kiss.result.Result;
-import fr.neamar.kiss.ui.AutoMarqueeTextView;
+import fr.neamar.kiss.ui.VerticalCardTextView;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 
 /**
@@ -304,24 +304,24 @@ final class SmartCardListForwarder extends Forwarder {
         mainRow.addView(center, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        AutoMarqueeTextView cardTitle = new AutoMarqueeTextView(mainActivity);
+        VerticalCardTextView cardTitle = new VerticalCardTextView(mainActivity);
         cardTitle.setText(label);
         cardTitle.setTextColor(Color.WHITE);
         cardTitle.setTextSize(16f * namePercent / 100f);
         cardTitle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         cardTitle.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
         center.addView(cardTitle, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
+                ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(31, heightPercent, namePercent)));
 
         if (!TextUtils.isEmpty(subtitle)) {
-            AutoMarqueeTextView meta = new AutoMarqueeTextView(mainActivity);
+            VerticalCardTextView meta = new VerticalCardTextView(mainActivity);
             meta.setText(subtitle);
             meta.setTextColor(Color.argb(220, 250, 250, 250));
             meta.setTextSize(13f);
             meta.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             meta.setShadowLayer(dp(1), 0f, dp(1), Color.argb(160, 0, 0, 0));
             center.addView(meta, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(27)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(27, heightPercent, 100)));
         }
 
         TextView messageView = null;
@@ -350,7 +350,7 @@ final class SmartCardListForwarder extends Forwarder {
             }
             notificationRow.setVisibility(View.GONE);
         } else if (hasMessage) {
-            AutoMarqueeTextView lastMessage = new AutoMarqueeTextView(mainActivity);
+            VerticalCardTextView lastMessage = new VerticalCardTextView(mainActivity);
             lastMessage.setText(latestMessage);
             lastMessage.setTextColor(Color.WHITE);
             lastMessage.setTextSize(13f);
@@ -358,21 +358,21 @@ final class SmartCardListForwarder extends Forwarder {
             lastMessage.setPadding(0, dp(2), 0, dp(2));
             lastMessage.setShadowLayer(dp(1), 0f, dp(1), Color.argb(150, 0, 0, 0));
             center.addView(lastMessage, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(31, heightPercent, 100)));
             messageView = lastMessage;
         } else if (TextUtils.isEmpty(subtitle)) {
-            AutoMarqueeTextView context = new AutoMarqueeTextView(mainActivity);
+            VerticalCardTextView context = new VerticalCardTextView(mainActivity);
             context.setText(describeResult(source));
             context.setTextColor(Color.argb(175, 255, 255, 255));
             context.setTextSize(12f);
             context.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             center.addView(context, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(25)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(25, heightPercent, 100)));
         }
 
         if (call != null && call.kind == CommunicationPojo.Kind.CALL
                 && hasDistinctCallerName(call)) {
-            AutoMarqueeTextView callerName = new AutoMarqueeTextView(mainActivity);
+            VerticalCardTextView callerName = new VerticalCardTextView(mainActivity);
             callerName.setText(call.displayName);
             callerName.setTextColor(Color.WHITE);
             callerName.setTextSize(15f * namePercent / 100f);
@@ -381,7 +381,7 @@ final class SmartCardListForwarder extends Forwarder {
             callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
             callerName.setContentDescription("Caller: " + call.displayName);
             center.addView(callerName, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
+                    ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(31, heightPercent, namePercent)));
         }
 
         prepareSourceForDetails(source);
@@ -410,7 +410,7 @@ final class SmartCardListForwarder extends Forwarder {
             details.setOnClickListener(v -> toggleDetails(detailsPanel, details));
         }
 
-        AutoMarqueeTextView name = new AutoMarqueeTextView(mainActivity);
+        VerticalCardTextView name = new VerticalCardTextView(mainActivity);
         name.setText(label);
         name.setTextColor(Color.WHITE);
         name.setTextSize(15f * namePercent / 100f);
@@ -418,7 +418,7 @@ final class SmartCardListForwarder extends Forwarder {
         name.setPadding(dp(8), dp(5), dp(8), dp(3));
         name.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
         LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34) * Math.max(90, namePercent) / 100);
+                ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(34, heightPercent, namePercent));
         nameLp.setMargins(dp(10), dp(3), dp(10), 0);
         wrapper.addView(name, nameLp);
 
@@ -817,6 +817,12 @@ final class SmartCardListForwarder extends Forwarder {
             }
         }
         return Math.max(min, Math.min(max, value));
+    }
+
+    private int scaledTextHeight(int baseDp, int heightPercent, int textPercent) {
+        int cardScale = Math.max(70, heightPercent);
+        int textScale = Math.max(90, textPercent);
+        return dp(baseDp) * cardScale * textScale / 10000;
     }
 
     private int dp(int value) {
