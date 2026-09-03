@@ -40,15 +40,20 @@ public final class LaunchStatsProvider {
         long startOfToday = start.getTimeInMillis();
 
         HashMap<String, LaunchStats> stats = new HashMap<>();
-        SQLiteDatabase db = new DB(context.getApplicationContext()).getReadableDatabase();
-        String sql = "SELECT record, MAX(timeStamp), "
-                + "SUM(CASE WHEN timeStamp >= ? THEN 1 ELSE 0 END), COUNT(*) "
-                + "FROM history GROUP BY record";
-        try (Cursor cursor = db.rawQuery(sql, new String[]{Long.toString(startOfToday)})) {
-            while (cursor.moveToNext()) {
-                stats.put(cursor.getString(0), new LaunchStats(
-                        cursor.getLong(1), cursor.getInt(2), cursor.getInt(3)));
+        DB helper = new DB(context.getApplicationContext());
+        try {
+            SQLiteDatabase db = helper.getReadableDatabase();
+            String sql = "SELECT record, MAX(timeStamp), "
+                    + "SUM(CASE WHEN timeStamp >= ? THEN 1 ELSE 0 END), COUNT(*) "
+                    + "FROM history GROUP BY record";
+            try (Cursor cursor = db.rawQuery(sql, new String[]{Long.toString(startOfToday)})) {
+                while (cursor.moveToNext()) {
+                    stats.put(cursor.getString(0), new LaunchStats(
+                            cursor.getLong(1), cursor.getInt(2), cursor.getInt(3)));
+                }
             }
+        } finally {
+            helper.close();
         }
         return stats;
     }
