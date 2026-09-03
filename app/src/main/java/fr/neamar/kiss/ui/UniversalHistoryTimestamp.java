@@ -30,7 +30,8 @@ import fr.neamar.kiss.result.Result;
  */
 public final class UniversalHistoryTimestamp {
     private static final String VIEW_TAG = "smart_s_universal_history_timestamp";
-    private static final long STATS_REFRESH_MS = 2_000L;
+    private static final long STATS_REFRESH_MS = 30_000L;
+    private static final int MAX_FIRST_SEEN_ENTRIES = 512;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final ConcurrentHashMap<String, Long> FIRST_SEEN = new ConcurrentHashMap<>();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
@@ -89,7 +90,14 @@ public final class UniversalHistoryTimestamp {
         String key = TextUtils.isEmpty(historyId)
                 ? pojo.getClass().getName() + '@' + System.identityHashCode(pojo)
                 : historyId;
+        if (FIRST_SEEN.size() >= MAX_FIRST_SEEN_ENTRIES && !FIRST_SEEN.containsKey(key)) {
+            FIRST_SEEN.clear();
+        }
         return FIRST_SEEN.computeIfAbsent(key, ignored -> System.currentTimeMillis());
+    }
+
+    public static void invalidateStats() {
+        statsLoadedAt = 0L;
     }
 
     private static CharSequence formatTimestamp(Context context, long timestamp,
