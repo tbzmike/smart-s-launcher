@@ -352,4 +352,12 @@
             app:title="@string/smart_blur_performance"
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
+    <PreferenceCategory app:title="Privacy &amp; network">
+        <SwitchPreference
+            app:defaultValue="false"
+            app:key="smart-online-map-previews"
+            app:title="Online map previews"
+            app:summary="When enabled, Google Maps history cards may send an approximate location tile request to OpenStreetMap. Off keeps this network preview disabled." />
+    </PreferenceCategory>
+
 </PreferenceScreen>

@@ -20,6 +20,7 @@ import android.os.Looper;
 import android.text.TextUtils;
 
 import androidx.core.content.ContextCompat;
+import androidx.preference.PreferenceManager;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -41,6 +42,7 @@ final class MapLiveTileProvider {
     static final String MAPS_PACKAGE = "com.google.android.apps.maps";
     private static final String TAG = "MapLiveTileProvider";
     private static final int LOCATION_REQUEST_CODE = 4704;
+    private static final String PREF_ONLINE_MAP_PREVIEWS = "smart-online-map-previews";
     private static final int ZOOM = 16;
     private static final long REFRESH_MIN_MS = 60_000L;
     private static final long MAX_CURRENT_LOCATION_AGE_MS = 2L * 60_000L;
@@ -54,6 +56,12 @@ final class MapLiveTileProvider {
 
     private MapLiveTileProvider() { }
 
+    private static boolean onlineMapPreviewsEnabled(Context context) {
+        return context != null
+                && PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(PREF_ONLINE_MAP_PREVIEWS, false);
+    }
+
     static boolean hasLocationPermission(Context context) {
         return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED
@@ -63,6 +71,7 @@ final class MapLiveTileProvider {
 
     static void requestFreshLocation(MainActivity activity, Runnable onChanged) {
         if (activity == null) return;
+        if (!onlineMapPreviewsEnabled(activity)) return;
         if (!hasLocationPermission(activity)) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
             if (PERMISSION_PROMPTED.compareAndSet(false, true)) {
@@ -166,6 +175,7 @@ final class MapLiveTileProvider {
     }
 
     static LiveTileDataProvider.LiveTileData latest(Context context) {
+        if (!onlineMapPreviewsEnabled(context)) return null;
         if (!hasLocationPermission(context)) return null;
         Location location = lastLocation != null ? new Location(lastLocation) : bestLastKnown(context);
         if (!isFresh(location, MAX_LAST_KNOWN_AGE_MS)) return null;
