@@ -355,9 +355,9 @@
     <PreferenceCategory app:title="Privacy &amp; network">
         <SwitchPreference
             app:defaultValue="false"
-            app:key="smart-online-map-previews"
-            app:title="Online map previews"
-            app:summary="When enabled, Google Maps history cards may send an approximate location tile request to OpenStreetMap. Off keeps this network preview disabled." />
+            app:key="smart-live-location-details"
+            app:title="Live location details"
+            app:summary="When enabled, Google Maps history cards may show locally obtained coordinates and accuracy. Smart S does not download map tiles or reverse-geocode this location." />
     </PreferenceCategory>
 
 </PreferenceScreen>
