@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.23 - independent search/history result limits
-        versionCode 451
-        versionName "3.30.23"
+        // Smart S Launcher 3.30.24 - visible independent search/history result limits
+        versionCode 452
+        versionName "3.30.24"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
