@@ -1,9 +1,6 @@
 name: Apply Smart S Launcher 3.30.25 Vertical Search Fix
 
 on:
-  push:
-    branches:
-      - build/3.30.25
   workflow_dispatch:
 
 permissions:
