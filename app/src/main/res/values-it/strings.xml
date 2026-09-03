@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">KISS Launcher</string>
-    <string name="activity_setting">Impostazioni KISS</string>
+    <string name="app_name">Smart S Launcher</string>
+    <string name="activity_setting">Impostazioni Smart S</string>
     <string name="ui_search_hint">Cerca applicazioni, contatti, …</string>
     <string name="ui_item_search">Cerca con %1$s: “%2$s”</string>
     <string name="ui_item_visit">Visita “%1$s”</string>
@@ -18,7 +18,7 @@
     <string name="ui_empty_2">Visualizza sempre la tua cronologia</string>
     <string name="ui_empty_2_sub">Per un accesso veloce</string>
     <string name="ui_empty_3">Accesso rapido alle app più usate</string>
-    <string name="ui_empty_3_sub">KISS launcher impara dalle tue abitudini</string>
+    <string name="ui_empty_3_sub">Smart S launcher impara dalle tue abitudini</string>
     <string name="contacts_name">Contatti</string>
     <string name="search_name">Motori di ricerca web</string>
     <string name="settings_name">Impostazioni dispositivo</string>
@@ -28,9 +28,9 @@
     <string name="main_kiss">Mostra elenco applicazioni</string>
     <string name="main_kiss_back">Mostra cronologia</string>
     <string name="reset_name">Elimina cronologia</string>
-    <string name="reset_excluded_apps_name">Elimina elenco app escluse da KISS</string>
+    <string name="reset_excluded_apps_name">Elimina elenco app escluse da Smart S</string>
     <string name="reset_excluded_apps_warn">Vuoi eliminare l\'elenco delle app escluse\?</string>
-    <string name="ui_excluded_apps">Modifica app escluse da KISS</string>
+    <string name="ui_excluded_apps">Modifica app escluse da Smart S</string>
     <string name="ui_excluded_apps_dialog_title">Seleziona le app da escludere</string>
     <string name="reset_warn">Vuoi eliminare la cronologia\?</string>
     <string name="reset_favorites_name">Elimina elenco preferiti</string>
@@ -99,7 +99,7 @@
     <string name="tags_confirmation_added">Etichette impostate</string>
     <string name="tags_visible">Mostra etichette</string>
     <string name="excluded_app_list_erased">Elenco app escluse eliminato.</string>
-    <string name="excluded_app_list_added">Applicazione esclusa da KISS. Puoi ripristinarla dalle impostazioni di KISS</string>
+    <string name="excluded_app_list_added">Applicazione esclusa da Smart S. Puoi ripristinarla dalle impostazioni di Smart S</string>
     <string name="removed_item">Rimosso</string>
     <string name="menu_remove">Rimuovi dalla cronologia</string>
     <string name="menu_exclude">Escludi app…</string>
@@ -123,8 +123,8 @@
     <string name="pref_hide_statusbar">Nascondi barra di stato</string>
     <string name="pref_hide_statusbar_desc">Nascondi la barra delle notifiche, attivando la modalità a schermo Intero</string>
     <string name="restart_desc">Risolve problemi di visualizzazione per temi e contatti</string>
-    <string name="restart_name">Riavvia KISS</string>
-    <string name="restart_warn">Vuoi riavviare KISS\? Se KISS non è il tuo launcher predefinito verrà solo terminato.</string>
+    <string name="restart_name">Riavvia Smart S</string>
+    <string name="restart_warn">Vuoi riavviare Smart S\? Se Smart S non è il tuo launcher predefinito verrà solo terminato.</string>
     <string name="default_launcher_title">Cambia launcher predefinito</string>
     <string name="default_launcher_warn">Dopo aver selezionato il launcher predefinito, verrai portato alla sua schermata iniziale. Vuoi procedere\?
 \n
@@ -166,23 +166,23 @@
     <string name="history_favorites_summary">Elimina preferiti, rimuovi barra preferiti, …</string>
     <string name="title_wallpaper">Interazione con sfondi animati</string>
     <string name="freeze_history_summary">Impedisci l\'aggiornamento della cronologia</string>
-    <string name="enable_favorites_bar_summary_off">Mostra preferiti solo alla pressione dell\'icona di KISS</string>
+    <string name="enable_favorites_bar_summary_off">Mostra preferiti solo alla pressione dell\'icona di Smart S</string>
     <string name="enable_favorites_bar_summary_on">Visualizza i preferiti sopra la barra di ricerca</string>
     <string name="get_help">Ricevi aiuto</string>
     <string name="permission_denied">Permesso negato</string>
     <string name="colors">Colori</string>
     <string name="wp_animate_center">Sfondo al centro</string>
-    <string name="unable_to_initialize_shortcuts">Impossibile inizializzare le Scorciatoie. KISS è il launcher predefinito\?</string>
+    <string name="unable_to_initialize_shortcuts">Impossibile inizializzare le Scorciatoie. Smart S è il launcher predefinito\?</string>
     <string name="wp_animate_center_desc">Lo sfondo tornerà in posizione centrale dopo lo scorrimento</string>
     <string name="wp_animate_sides">Sfondo ai lati</string>
     <string name="wp_animate_sides_desc">Lo sfondo resterà a destra o sinistra dopo lo scorrimento</string>
-    <string name="pref_hide_circle">Nascondi logo KISS e menu a puntini</string>
+    <string name="pref_hide_circle">Nascondi logo Smart S e menu a puntini</string>
     <string name="pref_hide_circle_desc">I pulsanti non saranno visibili, ma funzioneranno lo stesso.</string>
     <string name="black_notification_icons">Icone nere nella barra di notifica</string>
-    <string name="shortcuts_no_host_permission">KISS non può accedere alle scorciatoie perché non è il launcher predefinito.</string>
+    <string name="shortcuts_no_host_permission">Smart S non può accedere alle scorciatoie perché non è il launcher predefinito.</string>
     <string name="screen_toggle_tags">Modifica menu etichette</string>
     <string name="pref_toggle_tags_select">Etichette da mostrare nel menu</string>
-    <string name="ctx_menu">Menu KISS</string>
+    <string name="ctx_menu">Menu Smart S</string>
     <string name="pref_tags_menu">Aggiungi il menu etichette</string>
     <string name="pref_tags_menu_dismiss">Chiudi il menu etichette dopo la selezione</string>
     <string name="popup_tags_title">Etichette disponibili</string>
@@ -194,15 +194,15 @@
     <string name="reset_excluded_from_history_apps_warn">Vuoi eliminare l\'elenco delle app escluse dalla cronologia\?</string>
     <string name="settings_excluded_apps">Voci escluse</string>
     <string name="ui_excluded_from_history_apps">Modifica app escluse dalla cronologia</string>
-    <string name="excluded_app_history_added">Applicazione esclusa dalla cronologia. Puoi ripristinarla dalle impostazioni di KISS</string>
-    <string name="menu_exclude_kiss">da KISS</string>
+    <string name="excluded_app_history_added">Applicazione esclusa dalla cronologia. Puoi ripristinarla dalle impostazioni di Smart S</string>
+    <string name="menu_exclude_kiss">da Smart S</string>
     <string name="menu_exclude_history">dalla cronologia</string>
     <string name="contacts_call_on_click">Premi per chiamare i contatti</string>
-    <string name="swap_kiss_button_with_menu">Pulsante di KISS sulla destra</string>
+    <string name="swap_kiss_button_with_menu">Pulsante di Smart S sulla destra</string>
     <string name="keyboard_suggestions">Autocompletamento/Suggerimenti</string>
     <string name="notification_support">Mostra un punto su app che hanno notifiche</string>
-    <string name="notification_dialog">Abilita KISS nel menu seguente per attivarlo.</string>
-    <string name="cant_pin_shortcut">Impossibile aggiungere la scorciatoia. KISS è il launcher predefinito\?</string>
+    <string name="notification_dialog">Abilita Smart S nel menu seguente per attivarlo.</string>
+    <string name="cant_pin_shortcut">Impossibile aggiungere la scorciatoia. Smart S è il launcher predefinito\?</string>
     <string name="search_results_options">Risultati di ricerca</string>
     <string name="search_provider_toggle">Collegamenti a motori di ricerca web</string>
     <string name="copy_confirmation">Copiato negli appunti</string>
@@ -221,8 +221,8 @@
     <string name="large_favorites_bar">Preferiti più grandi</string>
     <string name="gestures">Gesti</string>
     <string name="double_tap_to_lock">Doppio tocco per blocco schermo</string>
-    <string name="lock_service_description">Blocca schermo da KISS Launcher</string>
-    <string name="enable_double_tap_to_lock">La funzione \"Doppio tocco per blocco schermo\" richiede l\'API di accessibilità di Android. Nessuna informazione verrà elaborata o memorizzata. Per utilizzare questa funzione, abilita KISS nella schermata seguente.</string>
+    <string name="lock_service_description">Blocca schermo da Smart S Launcher</string>
+    <string name="enable_double_tap_to_lock">La funzione \"Doppio tocco per blocco schermo\" richiede l\'API di accessibilità di Android. Nessuna informazione verrà elaborata o memorizzata. Per utilizzare questa funzione, abilita Smart S nella schermata seguente.</string>
     <string name="gesture_down_name">Scorrimento verso il basso</string>
     <string name="gesture_up_name">Scorrimento verso l\'alto</string>
     <string name="show_subicons">Icona app per le scorciatoie</string>
@@ -316,7 +316,7 @@
     <string name="gesture_menu">Mostra menu</string>
     <string name="tags_category">Etichette</string>
     <string name="import_settings_error">Impossibile importare le impostazioni.</string>
-    <string name="import_settings_upgrade_kiss">Aggiornare la versione di KISS prima di importare queste impostazioni.</string>
+    <string name="import_settings_upgrade_kiss">Aggiornare la versione di Smart S prima di importare queste impostazioni.</string>
     <string name="export_settings_done">Impostazioni esportate negli appunti.</string>
     <string name="import_settings_version_missing">Impossibile importare le impostazioni. Non è stata rilevata alcuna stringa di versione valida.</string>
     <string name="results_size_medium">Medio</string>

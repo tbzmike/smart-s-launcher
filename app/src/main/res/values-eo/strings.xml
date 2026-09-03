@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">KISS ĵetilo</string>
-    <string name="activity_setting">Agordoj de KISS</string>
+    <string name="app_name">Smart S ĵetilo</string>
+    <string name="activity_setting">Agordoj de Smart S</string>
     <string name="ui_search_hint">Serĉi aplikaĵojn, kontaktojn, …</string>
     <string name="ui_item_search">Serĉi %1$s por “%2$s”</string>
     <string name="ui_item_visit">Viziti “%1$s”</string>
@@ -18,7 +18,7 @@
     <string name="ui_empty_2">Ĉiam vidi vian historion</string>
     <string name="ui_empty_2_sub">Por rapida aliro</string>
     <string name="ui_empty_3">Rapida aliro al plej uzataj aplikaĵoj</string>
-    <string name="ui_empty_3_sub">KISS ĵetilo lernas de viaj kutimoj</string>
+    <string name="ui_empty_3_sub">Smart S ĵetilo lernas de viaj kutimoj</string>
     <string name="contacts_name">Kontaktoj</string>
     <string name="search_name">Interretaj serĉiloj</string>
     <string name="settings_name">Aparatoagordoj</string>
@@ -28,9 +28,9 @@
     <string name="main_kiss">Montri aplikaĵan liston</string>
     <string name="main_kiss_back">Montri historion</string>
     <string name="reset_name">Restarigi historion</string>
-    <string name="reset_excluded_apps_name">Restarigi liston de aplikaĵoj ekskluditaj el KISS</string>
+    <string name="reset_excluded_apps_name">Restarigi liston de aplikaĵoj ekskluditaj el Smart S</string>
     <string name="reset_excluded_apps_warn">Ĉu vi vere volas restarigi vian liston de ekskluditaj aplikaĵoj?</string>
-    <string name="ui_excluded_apps">Vidi aŭ redakti ekskluditajn aplikaĵojn el KISS</string>
+    <string name="ui_excluded_apps">Vidi aŭ redakti ekskluditajn aplikaĵojn el Smart S</string>
     <string name="ui_excluded_apps_dialog_title">Elektu la aplikaĵojn por ekskludi</string>
     <string name="reset_warn">Ĉu vi vere volas restarigi vian historion?</string>
     <string name="reset_favorites_name">Restarigi vian ŝatatoliston</string>
@@ -85,7 +85,7 @@
     <string name="custom_icon_hint">Filtri per nomo</string>
     <string name="gestures">Gestoj</string>
     <string name="double_tap_to_lock">Frapeti duoble por ŝlosi ekranon</string>
-    <string name="lock_service_description">Ŝlosi ekranon per KISS ĵetilo</string>
+    <string name="lock_service_description">Ŝlosi ekranon per Smart S ĵetilo</string>
     <string name="menu_widget_move_down">Movigi malsupren</string>
     <string name="menu_widget_move_up">Movigi supren</string>
     <string name="menu_size_up">Grandigi</string>
@@ -95,7 +95,7 @@
     <string name="popup_tags_actions">Disponeblaj agoj</string>
     <string name="popup_tags_title">Disponeblaj etikedoj</string>
     <string name="pref_tags_menu">Aldoni etikedojn en menuo</string>
-    <string name="ctx_menu">Menuo de KISS</string>
+    <string name="ctx_menu">Menuo de Smart S</string>
     <string name="colors">Koloroj</string>
     <string name="rate_the_app">Taksi la aplikaĵon</string>
     <string name="menu_widget_remove">Forigi fenestraĵon</string>
@@ -109,7 +109,7 @@
     <string name="misc">Diversaĵoj</string>
     <string name="keyboard_options">Klavaraj opcioj</string>
     <string name="items_title" tools:ignore="PluralsCandidate">%d elementoj</string>
-    <string name="restart_name">Restartigi KISS</string>
+    <string name="restart_name">Restartigi Smart S</string>
     <string name="pref_hide_statusbar">Kaŝi statan breton</string>
     <string name="pref_hide_navbar">Kaŝi navigacian breton</string>
     <string name="toast_favorites_added">%s estas aldonita al plej ŝataj</string>
@@ -118,7 +118,7 @@
     <string name="menu_contact_copy_phone">Kopii telefonnumeron</string>
     <string name="menu_shortcut_remove">Forigi simbolan ligilon</string>
     <string name="menu_exclude_history">de historio</string>
-    <string name="menu_exclude_kiss">de KISS</string>
+    <string name="menu_exclude_kiss">de Smart S</string>
     <string name="menu_remove">Forigi el historio</string>
     <string name="removed_item">Forigita</string>
     <string name="tags_visible">Montri etikedojn</string>
@@ -208,8 +208,8 @@
     <string name="favorites_erased">Ŝatataj forigitaj.</string>
     <string name="tags_add_title">Aldoni etikedojn apartigitajn de spacoj</string>
     <string name="excluded_app_list_erased">La listo de ekskluditaj aplikaĵoj estas forigita.</string>
-    <string name="excluded_app_list_added">La aplikaĵo estas ekskludita el KISS. Restaŭru ĝin per la agordoj de KISS</string>
-    <string name="excluded_app_history_added">La aplikaĵo estas ekskludita el la historio. Restaŭru ĝin per la agordoj de KISS</string>
+    <string name="excluded_app_list_added">La aplikaĵo estas ekskludita el Smart S. Restaŭru ĝin per la agordoj de Smart S</string>
+    <string name="excluded_app_history_added">La aplikaĵo estas ekskludita el la historio. Restaŭru ĝin per la agordoj de Smart S</string>
     <string name="menu_shortcut_pin">Fiksi mallongirejon</string>
     <string name="toast_hibernate_completed">%s pasivumigita, relanĉi por veki ĝin.</string>
     <string name="toast_hibernate_error">%s ne pasivumigita.</string>
@@ -222,10 +222,10 @@
     <string name="favorites_hide">Komence kaŝi ŝatatobreton</string>
     <string name="pref_hide_navbar_desc">Kaŝi navigobreton kaj ebligi mergan reĝimon</string>
     <string name="pref_hide_statusbar_desc">Kaŝi sciigobreton kaj ebligi mergan reĝimon</string>
-    <string name="pref_hide_circle">Kaŝi KISS-cirklon kaj menuon de tri punktoj</string>
+    <string name="pref_hide_circle">Kaŝi Smart S-cirklon kaj menuon de tri punktoj</string>
     <string name="pref_hide_circle_desc">La butonoj ankoraŭ funkcios, sed ili ne videblos.</string>
     <string name="restart_desc">Korekti problemojn de etosoj kaj novaj kontaktoj kiuj ne aperas</string>
-    <string name="restart_warn">Ĉu vi vere volas restartigi KISS? Se KISS ne estas via defaŭlta ĵetilo, la aplikaĵo simple fermiĝos.</string>
+    <string name="restart_warn">Ĉu vi vere volas restartigi Smart S? Se Smart S ne estas via defaŭlta ĵetilo, la aplikaĵo simple fermiĝos.</string>
     <string name="default_launcher_title">Ŝanĝi defaŭltan ĵetilon</string>
     <string name="default_launcher_warn">Post elekti la defaŭltan ĵetilon, vi iros al ĝia hejmekrano. Ĉu vi certas, ke vi volas procedi?\n\nNoto: Se vi ne vidas la opciojn «ĉiam», premu la hejmbutonon post elekti vian deziratan ĵetilon.</string>
     <string name="alternate_history_inputs">Aliaj historiaj enigoj</string>
@@ -239,7 +239,7 @@
     <string name="large_result_list_margins">Pli grandaj marĝenoj por listoj</string>
     <string name="rounded_list">Rondaj anguloj de listoj</string>
     <string name="rounded_bars">Rondaj anguloj de bretoj</string>
-    <string name="swap_kiss_button_with_menu">Butono de KISS je dekstro</string>
+    <string name="swap_kiss_button_with_menu">Butono de Smart S je dekstro</string>
     <string name="hide_search_bar_hint">Kaŝi konsiletan tekston de serĉobreto</string>
     <string name="history_settings_summary">Restarigi vian historion, ekskludi aplikaĵojn, …</string>
     <string name="user_interface_summary">Etosoj, travidebleco kaj koloroj</string>
@@ -254,29 +254,29 @@
     <string name="enable_favorites_bar_summary_on">Montri ŝatatajn super serĉobreto</string>
     <string name="title_wallpaper">Interagoj de animaciaj ekranfonoj</string>
     <string name="freeze_history_summary">Ne modifi historion ĝis malŝaltita</string>
-    <string name="enable_favorites_bar_summary_off">Nur montri ŝatatajn dum premado de la ikono de KISS</string>
+    <string name="enable_favorites_bar_summary_off">Nur montri ŝatatajn dum premado de la ikono de Smart S</string>
     <string name="get_help">Ricevi helpon</string>
     <string name="permission_denied">Atingo malpermesita</string>
     <string name="black_notification_icons">Montri sciigajn ikonojn en nigro</string>
-    <string name="shortcuts_no_host_permission">KISS ne plu estas via ĉefa ĵetilo kaj ne povas atingi viajn mallongirejojn.</string>
+    <string name="shortcuts_no_host_permission">Smart S ne plu estas via ĉefa ĵetilo kaj ne povas atingi viajn mallongirejojn.</string>
     <string name="screen_toggle_tags">Tajlori etikedomenuon</string>
     <string name="pref_toggle_tags_select">Etikedoj por montri en menuo</string>
     <string name="pref_fav_tags_select">Etikedoj por montri en ŝatatobreto</string>
     <string name="pref_tags_menu_dismiss">Fermi etikedomenuon post elekto</string>
     <string name="show_untagged">Montri senetikedajn</string>
     <string name="pref_show_untagged">Montri senetikedan akcion</string>
-    <string name="unable_to_initialize_shortcuts">Ne povis ŝargi mallongirejojn. Ĉu KISS estas via defaŭlta ĵetilo?</string>
+    <string name="unable_to_initialize_shortcuts">Ne povis ŝargi mallongirejojn. Ĉu Smart S estas via defaŭlta ĵetilo?</string>
     <string name="pref_fav_tags_drawable_desc">Malŝalti por uzi malpli da memoro por multaj ŝatatoetikedoj</string>
     <string name="pref_fav_tags_drawable">Generi ikonojn por ŝatatoetikedoj</string>
     <string name="notification_support">Montri punkton sur aplikaĵoj kun sciigoj</string>
-    <string name="notification_dialog">Elektu KISS en la sekva dialogo por ŝalti ĝin.</string>
-    <string name="cant_pin_shortcut">Malsukcesis aldoni mallongirejon. Ĉi KISS estas via defaŭlta ĵetilo?</string>
+    <string name="notification_dialog">Elektu Smart S en la sekva dialogo por ŝalti ĝin.</string>
+    <string name="cant_pin_shortcut">Malsukcesis aldoni mallongirejon. Ĉi Smart S estas via defaŭlta ĵetilo?</string>
     <string name="large_favorites_bar">Uzi pli grandajn ŝatatajn</string>
     <string name="gesture_up_name">Akcio je glito supren</string>
     <string name="gesture_down_name">Akcio je glito malsupren</string>
     <string name="gesture_left_name">Akcio je glito maldekstren</string>
     <string name="gesture_right_name">Akcio je glito dekstren</string>
-    <string name="enable_double_tap_to_lock">Ŝlosi per duobla frapo bezonas la alireblecan API de Android. Datumoj estas nek traktitaj nek garditaj. Por uzi tiun ĉi funkcion, ŝaltu KISS ĉe la sekva ekrano.</string>
+    <string name="enable_double_tap_to_lock">Ŝlosi per duobla frapo bezonas la alireblecan API de Android. Datumoj estas nek traktitaj nek garditaj. Por uzi tiun ĉi funkcion, ŝaltu Smart S ĉe la sekva ekrano.</string>
     <string name="theme_customisation">Altnivela tajlorado de etoso</string>
     <string name="theme_semi_transparent">Kvazaŭ travidebla</string>
     <string name="theme_semi_transparent_dark">Kvazaŭ travidebla malluma</string>
@@ -318,7 +318,7 @@
     <string name="export_settings_done">Agordoj elportitaj al la tondujo.</string>
     <string name="export_settings_error">Ne eblas elporti agordojn.</string>
     <string name="import_settings_version_missing">Ne eblas enporti agordojn. Neniu valida versio-ĉeno estis detektita.</string>
-    <string name="import_settings_upgrade_kiss">Bonvolu ĝisdatigi KISS antaŭ enporti tiujn agordojn.</string>
+    <string name="import_settings_upgrade_kiss">Bonvolu ĝisdatigi Smart S antaŭ enporti tiujn agordojn.</string>
     <string name="import_settings_save_not_possible">Ne eblas konservi agordojn.</string>
     <string name="import_settings_done">Agordoj enportitaj.</string>
     <string name="import_settings_error">Ne eblas enporti agordojn.</string>

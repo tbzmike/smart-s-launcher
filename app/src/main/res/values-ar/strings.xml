@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">مشغل KISS</string>
-    <string name="activity_setting">إعدادات KISS</string>
+    <string name="app_name">مشغل Smart S</string>
+    <string name="activity_setting">إعدادات Smart S</string>
     <string name="ui_search_hint">بحث عن التطبيقات، وجهات الاتصال، …</string>
     <string name="ui_item_search">%1$s البحث عن \"%2$s\"</string>
     <string name="ui_item_phone">اتصال بـ\"%s\"</string>
@@ -17,7 +17,7 @@
     <string name="ui_empty_2">اطلع دائماً على سجلك</string>
     <string name="ui_empty_2_sub">للوصول السريع</string>
     <string name="ui_empty_3">الوصول السريع إلى التطبيقات الأكثر استخدامًا</string>
-    <string name="ui_empty_3_sub">مشغّل KISS يتعلم من عاداتك</string>
+    <string name="ui_empty_3_sub">مشغّل Smart S يتعلم من عاداتك</string>
     <string name="contacts_name">جهات الاتصال</string>
     <string name="search_name">محركات البحث على الويب</string>
     <string name="settings_name">إعدادات الجهاز</string>
@@ -27,7 +27,7 @@
     <string name="main_kiss">عرض قائمة التطبيقات</string>
     <string name="main_kiss_back">عرض السجل</string>
     <string name="reset_name">إعادة تعيين السجل</string>
-    <string name="reset_excluded_apps_name">إعادة تعيين قائمة التطبيقات المستبعدة من KISS</string>
+    <string name="reset_excluded_apps_name">إعادة تعيين قائمة التطبيقات المستبعدة من Smart S</string>
     <string name="reset_excluded_apps_warn">هل حقًّا تريد إعادة تعيين قائمة التطبيقات المستبعدة الخاصة بك؟</string>
     <string name="reset_warn">هل حقًّا تريد إعادة تعيين سجلّك؟</string>
     <string name="reset_favorites_name">إعادة تعيين القوائم المفضلة</string>
@@ -61,7 +61,7 @@
     <string name="favorites_erased">المفضلة محوها.</string>
     <string name="menu_favorites_add">إضافة الى المفضلة</string>
     <string name="excluded_app_list_erased">مُحيت قائمة التطبيقات المستبعدة.</string>
-    <string name="excluded_app_list_added">التطبيق مستبعد من KISS. أعد التعيين من خلال إعدادات KISS</string>
+    <string name="excluded_app_list_added">التطبيق مستبعد من Smart S. أعد التعيين من خلال إعدادات Smart S</string>
     <string name="removed_item">إزالة</string>
     <string name="menu_remove">إزالة من السجل</string>
     <string name="menu_exclude">استبعاد التطبيق…</string>
@@ -79,7 +79,7 @@
     <string name="color_picker_default_title">اختيار لون</string>
     <string name="ui_item_visit">زيارة ”%1$s“</string>
     <string name="color_swatch_description">اللون %1$d</string>
-    <string name="ui_excluded_apps">عرض أو تحرير التطبيقات المستبعدة من KISS</string>
+    <string name="ui_excluded_apps">عرض أو تحرير التطبيقات المستبعدة من Smart S</string>
     <string name="ui_excluded_apps_dialog_title">حدد التطبيقات لاستبعادها</string>
     <string name="search_providers_title">تحديد محركات البحث على الويب</string>
     <string name="freeze_history_name">تجميد السجل</string>
@@ -88,7 +88,7 @@
     <string name="icons_pack_default_name">أيقونات النظام</string>
     <string name="settings_tethering">الربط</string>
     <string name="restart_desc">إصلاح مشاكل السمة وعدم ظهور جهات الاتصال الجدد</string>
-    <string name="restart_name">إعادة تشغيل KISS</string>
+    <string name="restart_name">إعادة تشغيل Smart S</string>
     <string name="history_mode_name">نمط السجل</string>
     <string name="history_mode_desc">اختر طريقة ترتيب السجل</string>
     <string name="menu_shortcut_remove">إزالة الاختصار</string>
@@ -129,8 +129,8 @@
     <string name="reset_excluded_from_history_apps_warn">هل حقًّا تريد إعادة تعيين قائمة التطبيقات المستبعدة من السجل؟</string>
     <string name="settings_excluded_apps">التطبيقات المستبعدة</string>
     <string name="ui_excluded_from_history_apps">عرض أو تحرير التطبيقات المستبعدة من السجل</string>
-    <string name="excluded_app_history_added">التطبيق مستبعد من السجل. إعادة التعيين من خلال إعدادات KISS</string>
-    <string name="menu_exclude_kiss">من KISS</string>
+    <string name="excluded_app_history_added">التطبيق مستبعد من السجل. إعادة التعيين من خلال إعدادات Smart S</string>
+    <string name="menu_exclude_kiss">من Smart S</string>
     <string name="menu_exclude_history">من السجل</string>
     <string name="contacts_call_on_click">انقر للاتصال بجهة اتصال</string>
     <string name="keyboard_suggestions">تمكين الإكمال التلقائي/الاقتراحات</string>
@@ -144,7 +144,7 @@
     <string name="menu_app_store">عرض في المتجر</string>
     <string name="settings_sound">الصوت والحجم</string>
     <string name="screen_toggle_tags">قائمة العلامات المخصصة</string>
-    <string name="shortcuts_no_host_permission">لم يعد KISS مُطلقك الافتراضي ولم يعد بإمكانه الوصول لاختصاراتك.</string>
+    <string name="shortcuts_no_host_permission">لم يعد Smart S مُطلقك الافتراضي ولم يعد بإمكانه الوصول لاختصاراتك.</string>
     <string name="black_notification_icons">عرض أيقونات الإشعارات باللون الأسود</string>
     <string name="colors">الألوان</string>
     <string name="permission_denied">لقد رُفض الإذن</string>
@@ -156,7 +156,7 @@
     <string name="user_interface_summary">السمات، والشفافية والألوان</string>
     <string name="rate_the_app">تقييم التطبيق</string>
     <string name="hide_search_bar_hint">إزالة التلميح من شريط البحث</string>
-    <string name="swap_kiss_button_with_menu">زر KISS على اليمين</string>
+    <string name="swap_kiss_button_with_menu">زر Smart S على اليمين</string>
     <string name="rounded_bars">زوايا الشريط مدورة</string>
     <string name="rounded_list">زوايا القائمة مستديرة</string>
     <string name="large_search_bar">شريط بحث أكبر</string>
@@ -178,7 +178,7 @@
     <string name="items_title" tools:ignore="PluralsCandidate">%d عنصرًا</string>
     <string name="tags_confirmation_added">تعيين العلامات</string>
     <string name="default_launcher_title">تغيير المطلق الافتراضي</string>
-    <string name="restart_warn">هل حقًّا تريد إعادة تشغيل KISS؟ إن لم يكن KISS مطلقك الافتراضي فسيغلق التطبيق ببساطة.</string>
+    <string name="restart_warn">هل حقًّا تريد إعادة تشغيل Smart S؟ إن لم يكن Smart S مطلقك الافتراضي فسيغلق التطبيق ببساطة.</string>
     <string name="pref_hide_navbar">إخفاء شريط التصفح</string>
     <string name="theme_wallpaper">الخلفية</string>
     <string name="gesture_history">عرض السجل</string>
@@ -203,31 +203,31 @@
     <string name="theme_customisation">التخصيص المتقدم للسمة</string>
     <string name="gestures">الإيماءات</string>
     <string name="double_tap_to_lock">قفل الشاشة بالنقر المزدوج</string>
-    <string name="enable_double_tap_to_lock">لقفل الشاشة بالنقر المزدوج، تحتاج لإعطاء أذون إضافية: فعّل KISS في الشاشة التالية.</string>
+    <string name="enable_double_tap_to_lock">لقفل الشاشة بالنقر المزدوج، تحتاج لإعطاء أذون إضافية: فعّل Smart S في الشاشة التالية.</string>
     <string name="gesture_right_name">الإجراء عند السحب لليمين</string>
     <string name="gesture_left_name">الإجراء عند السحب لليسار</string>
     <string name="gesture_down_name">الإجراء عند السحب للأسفل</string>
     <string name="gesture_up_name">الإجراء عند السحب للأعلى</string>
-    <string name="lock_service_description">أغلق الشاشة من خلال مطلق KISS</string>
+    <string name="lock_service_description">أغلق الشاشة من خلال مطلق Smart S</string>
     <string name="menu_widget_move_down">تقل لأسفل</string>
     <string name="menu_widget_move_up">نقل لأعلى</string>
     <string name="menu_size_up">تكبير</string>
     <string name="menu_size_down">تقليص</string>
     <string name="copy_confirmation">تم النسخ إلى الحافظة</string>
-    <string name="cant_pin_shortcut">تعذر إضافة الاختصار. هل KISS هو المطلق الافتراضي؟</string>
-    <string name="notification_dialog">أشر على KISS في القائمة التالية لتفعيلها.</string>
+    <string name="cant_pin_shortcut">تعذر إضافة الاختصار. هل Smart S هو المطلق الافتراضي؟</string>
+    <string name="notification_dialog">أشر على Smart S في القائمة التالية لتفعيلها.</string>
     <string name="notification_support">عرض نقطة على التطبيقات ذوات الإشعارات</string>
-    <string name="unable_to_initialize_shortcuts">تعذر تهيئة الاختصارات. هل KISS هو المطلق الافتراضي؟</string>
+    <string name="unable_to_initialize_shortcuts">تعذر تهيئة الاختصارات. هل Smart S هو المطلق الافتراضي؟</string>
     <string name="show_untagged">إظهار الغيرمعلَّمة</string>
     <string name="show_history">إظهار السجل</string>
     <string name="popup_tags_actions">الإجراءات المتوفرة</string>
     <string name="popup_tags_title">العلامات المتوفرة</string>
     <string name="pref_tags_menu_dismiss">إغلاق قائمة العلامات بعد الاختيار</string>
     <string name="pref_tags_menu">إضافة علامات للقائمة</string>
-    <string name="ctx_menu">قائمة KISS</string>
+    <string name="ctx_menu">قائمة Smart S</string>
     <string name="pref_toggle_tags_select">بدّل عرض القائمة</string>
     <string name="enable_favorites_bar_summary_on">عرض المفضلة فوق شريط البحث</string>
-    <string name="enable_favorites_bar_summary_off">عرض المفضلة فقط عند النقر على أيقونة KISS</string>
+    <string name="enable_favorites_bar_summary_off">عرض المفضلة فقط عند النقر على أيقونة Smart S</string>
     <string name="freeze_history_summary">حافظ على السجل كما هو حتى يُلغى التأشير</string>
     <string name="providers_summary">ضبط نتائج البحث، إضافة محركات بحث مخصصة، …</string>
     <string name="history_settings_summary">إعادة تعيين السجل، استبعاد التطبيقات، …</string>
@@ -236,7 +236,7 @@
 \nملاحظة: إذا لم يظهر لك خيار \"دائمًا\"، اضغط على زر \"المنزل\" بعد اختيار المطلق.</string>
     <string name="pref_show_untagged">إظهار إجراء بلا علامات</string>
     <string name="pref_fav_tags_select">العلامات المعروضة في شريط المفضلة</string>
-    <string name="pref_hide_circle">إخفاء دائرة KISS وقائمة الثلاث نقاط</string>
+    <string name="pref_hide_circle">إخفاء دائرة Smart S وقائمة الثلاث نقاط</string>
     <string name="custom_name_rename">إعادة تسمية</string>
     <string name="app_rename_confirmation">أصبح اسم التطبيق الآن %s</string>
     <string name="menu_app_rename">إعادة تسمية</string>

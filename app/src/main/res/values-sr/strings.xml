@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">KISS покретач</string>
+    <string name="app_name">Smart S покретач</string>
     <string name="activity_setting">Поставке</string>
     <string name="ui_search_hint">Тражите апликације, контакте…</string>
     <string name="ui_item_search">%1$s Тражи “%2$s”</string>
@@ -67,9 +67,9 @@
     <string name="icons_hide_desc">Корисно на спорим уређајима</string>
     <string name="icons_hide_main">Сакриј иконе</string>
     <string name="portrait_title">Присили усправни режим</string>
-    <string name="reset_excluded_apps_name">Ресетуј листу апликација искључених из KISS</string>
+    <string name="reset_excluded_apps_name">Ресетуј листу апликација искључених из Smart S</string>
     <string name="reset_excluded_apps_warn">Желите ли заиста да очистите списак искључених апликација?</string>
-    <string name="ui_excluded_apps">Прикажи или уреди апликације искључене из KISS</string>
+    <string name="ui_excluded_apps">Прикажи или уреди апликације искључене из Smart S</string>
     <string name="reset_warn">Желите ли заиста да очистите ваш историјат?</string>
     <string name="reset_favorites_name">Очисти списак омиљених</string>
     <string name="reset_favorites_warn">Желите ли заиста да очистите омиљено?</string>
@@ -214,10 +214,10 @@
     <string name="rounded_bars">Оркугли ћошкови траке</string>
     <string name="show_history">Прикажи историју</string>
     <string name="color_system">Боје система</string>
-    <string name="cant_pin_shortcut">Није могуће додати пречицу. Да ли је KISS ваш подразумевани покретач\?</string>
+    <string name="cant_pin_shortcut">Није могуће додати пречицу. Да ли је Smart S ваш подразумевани покретач\?</string>
     <string name="large_favorites_bar">Користи веће фаворите</string>
     <string name="menu_widget_move_up">Помери горе</string>
-    <string name="lock_service_description">Закључај екран из KISS покретача</string>
+    <string name="lock_service_description">Закључај екран из Smart S покретача</string>
     <string name="gesture_up_name">Акција при превлачењу навише</string>
     <string name="double_tap_to_lock">Дупли додир за закључавање</string>
     <string name="theme_shadow">Контура текста (сенка)</string>
@@ -284,12 +284,12 @@
     <string name="pref_fav_tags_drawable_desc">Искључите да бисте користили мање меморије за многе омиљене ознаке</string>
     <string name="reset_excluded_app_shortcuts_warn">Да ли заиста желиш да ресетујеш листу апликација искључених из приказивања пречица\?</string>
     <string name="copy_confirmation">Копирано у клипборд</string>
-    <string name="notification_dialog">Означите KISS у следећем менију да бисте га укључили.</string>
+    <string name="notification_dialog">Означите Smart S у следећем менију да бисте га укључили.</string>
     <string name="pref_toggle_tags_select">Тагови за приказати у менију</string>
     <string name="pref_fav_tags_drawable">Генериши иконице за омиљене тагове</string>
     <string name="menu_size_up">Повећај</string>
     <string name="menu_widget_move_down">Помери доле</string>
-    <string name="enable_double_tap_to_lock">Дупли додир за закључавање захтева Android Accessibility API. Подаци се не обрађују, подаци се не чувају. Да бисте користили ову функцију, омогућите KISS на следећем екрану.</string>
+    <string name="enable_double_tap_to_lock">Дупли додир за закључавање захтева Android Accessibility API. Подаци се не обрађују, подаци се не чувају. Да бисте користили ову функцију, омогућите Smart S на следећем екрану.</string>
     <string name="theme_amoled">АМОЛЕД тамно</string>
     <string name="gesture_history">Прикажи историју</string>
     <string name="gesture_homescreen">Иди на почетни екран</string>
@@ -322,7 +322,7 @@
     <string name="tagged_result_sort_mode_desc">Изаберите како треба сортирати резултате када се приказују по ознаци</string>
     <string name="tags_category">Тагови</string>
     <string name="import_settings_version_missing">Немогуће је увезти подешавања. Није пронађен важећи низ верзије.</string>
-    <string name="import_settings_upgrade_kiss">Молимо вас да ажурирате вашу KISS верзију пре увоза ових подешавања.</string>
+    <string name="import_settings_upgrade_kiss">Молимо вас да ажурирате вашу Smart S верзију пре увоза ових подешавања.</string>
     <string name="import_settings_done">Подешавања увезена.</string>
     <string name="import_settings_error">Немогуће је увезти подешавања.</string>
     <string name="tagged_result_sort_mode_default">Подразумевано, као у режиму историје</string>

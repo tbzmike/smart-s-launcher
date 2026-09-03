@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">KISS appstarter</string>
-    <string name="activity_setting">KISS indstillinger</string>
+    <string name="app_name">Smart S appstarter</string>
+    <string name="activity_setting">Smart S indstillinger</string>
     <string name="ui_search_hint">Søg i apps, kontakter…</string>
     <string name="ui_item_search">Søg med %1$s efter “%2$s”</string>
     <string name="ui_item_visit">Besøg “%1$s”</string>
@@ -23,7 +23,7 @@
     <string name="pref_hide_navbar">Skjul navigationsbjælken</string>
     <string name="color_system">Systemfarver</string>
     <string name="color_picker_default_title">Vælg en farve</string>
-    <string name="unable_to_initialize_shortcuts">Fandt ingen genveje. Er KISS din standard appstarter?</string>
+    <string name="unable_to_initialize_shortcuts">Fandt ingen genveje. Er Smart S din standard appstarter?</string>
     <string name="pref_fav_tags_drawable">Generer ikoner til foretrukne etiketter</string>
     <string name="pref_fav_tags_drawable_desc">Slå fra for at bruge mindre hukommelse på mange fortrukne etiketter</string>
     <string name="ui_empty_1_sub">Apps, kontakter, indstillinger, …</string>
@@ -38,7 +38,7 @@
     <string name="ui_empty_3">Hurtig adgang til mest brugte apps</string>
     <string name="ui_empty_2_sub">For hurtigt at få adgang</string>
     <string name="keyboard_name">Vis tastaturet ved opstart</string>
-    <string name="ui_empty_3_sub">KISS-appstarteren lærer af dine vaner</string>
+    <string name="ui_empty_3_sub">Smart S-appstarteren lærer af dine vaner</string>
     <string name="contacts_name">Kontakter</string>
     <string name="shortcuts_name">Genveje</string>
     <string name="main_kiss">Vis liste med apps</string>
@@ -46,13 +46,13 @@
     <string name="main_clear">Ryd søgefeltet</string>
     <string name="main_kiss_back">Vis historik</string>
     <string name="reset_name">Nulstil historik</string>
-    <string name="reset_excluded_apps_name">Nulstil listen over apps, der er ekskluderet fra KISS</string>
+    <string name="reset_excluded_apps_name">Nulstil listen over apps, der er ekskluderet fra Smart S</string>
     <string name="reset_excluded_apps_warn">Ønsker du virkelig at nulstille din liste over ekskluderede apps?</string>
     <string name="reset_excluded_from_history_apps_warn">Ønsker du virkelig at nulstille din liste over apps ekskluderet fra historikken?</string>
     <string name="reset_excluded_app_shortcuts_name">Nulstil liste over apps, der er ekskluderet fra at vise genveje</string>
     <string name="reset_excluded_app_shortcuts_warn">Ønsker du virkelig at nulstille din liste over apps, der er ekskluderet fra at vise genveje?</string>
     <string name="settings_excluded_apps">Ekskluderede apps</string>
-    <string name="ui_excluded_apps">Vis eller ret apps, der er ekskluderet fra KISS</string>
+    <string name="ui_excluded_apps">Vis eller ret apps, der er ekskluderet fra Smart S</string>
     <string name="ui_excluded_from_history_apps">Vis eller ret apps, der er ekskluderet fra historikken</string>
     <string name="ui_excluded_from_shortcuts_apps">Vis eller ret apps, der er ekskluderet fra at vise genveje</string>
     <string name="ui_excluded_apps_dialog_title">Vælg apps, der skal ekskluderes</string>
@@ -133,9 +133,9 @@
     <string name="tags_confirmation_added">Tilføjede etiketter</string>
     <string name="app_rename_confirmation">Appens navn er nu %s</string>
     <string name="excluded_app_list_erased">Liste over ekskluderede apps slettet</string>
-    <string name="excluded_app_history_added">Appen er nu ekskluderet fra historikken. Du kan nulstille dens status i KISS-indstillingerne</string>
-    <string name="menu_exclude_kiss">fra KISS</string>
-    <string name="excluded_app_list_added">Appen er nu ekskluderet fra KISS. Du kan nulstille dens status i KISS-indstillingerne</string>
+    <string name="excluded_app_history_added">Appen er nu ekskluderet fra historikken. Du kan nulstille dens status i Smart S-indstillingerne</string>
+    <string name="menu_exclude_kiss">fra Smart S</string>
+    <string name="excluded_app_list_added">Appen er nu ekskluderet fra Smart S. Du kan nulstille dens status i Smart S-indstillingerne</string>
     <string name="menu_app_details">App oplysninger</string>
     <string name="menu_app_store">Vis i butikken</string>
     <string name="menu_shortcut_remove">Fjern genvej</string>
@@ -158,17 +158,17 @@
     <string name="exclude_favorites_history">Ekskluder foretrukne fra historikken</string>
     <string name="enable_favorites_bar">Vis foretrukne over søgefeltet</string>
     <string name="exclude_favorites_apps">Ekskluder foretrukne fra app-listen</string>
-    <string name="restart_warn">Ønsker du virkelig at genstarte KISS?
+    <string name="restart_warn">Ønsker du virkelig at genstarte Smart S?
 \n
-\nHvis ikke KISS er indstillet til at være din standard appstarter, vil appen bare lukke.</string>
+\nHvis ikke Smart S er indstillet til at være din standard appstarter, vil appen bare lukke.</string>
     <string name="favorites_hide">Skjul bjælken med foretrukne i første omgang</string>
     <string name="pref_hide_navbar_desc">Skjul navigationsbjælken og slå omslutningstilstand til</string>
     <string name="pref_hide_statusbar">Skjul statuslinjen</string>
     <string name="pref_hide_statusbar_desc">Skjul notifikationslinjen og slå omslutningstilstand til</string>
-    <string name="pref_hide_circle">Skjul KISS-cirken og trepriksmenuen</string>
+    <string name="pref_hide_circle">Skjul Smart S-cirken og trepriksmenuen</string>
     <string name="pref_hide_circle_desc">Knapperne er stadig aktive, men de vil være usynlige</string>
     <string name="restart_desc">Løs problemer med tema og nye kontakter, der ikke vises</string>
-    <string name="restart_name">Genstart KISS</string>
+    <string name="restart_name">Genstart Smart S</string>
     <string name="main_color">Hovedfarve</string>
     <string name="default_launcher_title">Skift standard appstarter</string>
     <string name="default_launcher_warn">Efter at have valgt standard appstarteren, vil du blive ført til dens hovedmenu. Ønsker du at fortsætte?
@@ -197,7 +197,7 @@
     <string name="hide_search_bar_hint">Fjern tips fra søgebjællke</string>
     <string name="menu_widget_add">Tilføj widget</string>
     <string name="rounded_bars">Afrundede bjælkehjørner</string>
-    <string name="swap_kiss_button_with_menu">Placer KISS-knappen på højre side</string>
+    <string name="swap_kiss_button_with_menu">Placer Smart S-knappen på højre side</string>
     <string name="user_interface_summary">Temaer, gennemsigtighed og farver</string>
     <string name="user_experience_summary">Minimalistisk BGF, tastaturindstillinger, …</string>
     <string name="history_favorites_summary">Nulstil dine foretrukne, fjern bjælken med foretrukne, …</string>
@@ -209,9 +209,9 @@
     <string name="title_ux">Brugeroplevelse</string>
     <string name="title_favorites">Indstillinger for foretrukne</string>
     <string name="menu_size_up">Forstør</string>
-    <string name="shortcuts_no_host_permission">KISS er ikke din standard appstarter længere, og kan ikke tilgå dine genveje.</string>
+    <string name="shortcuts_no_host_permission">Smart S er ikke din standard appstarter længere, og kan ikke tilgå dine genveje.</string>
     <string name="freeze_history_summary">Beholder historikken som den er, indtil det slås fra igen</string>
-    <string name="enable_favorites_bar_summary_off">Vis kun foretrukne, når der trykkes på KISS-knappen</string>
+    <string name="enable_favorites_bar_summary_off">Vis kun foretrukne, når der trykkes på Smart S-knappen</string>
     <string name="enable_favorites_bar_summary_on">Vis foretrukne apps over søgefeltet</string>
     <string name="permission_denied">Tilladelse nægtet</string>
     <string name="pref_tags_menu">Tilføj etiketter i menuen</string>
@@ -221,7 +221,7 @@
     <string name="screen_toggle_tags">Tilpas etiketmenuen</string>
     <string name="black_notification_icons">Vis notifikationsikoner i sort</string>
     <string name="pref_fav_tags_select">Etiketter vises i bjælken med foretrukne</string>
-    <string name="ctx_menu">KISS Menu</string>
+    <string name="ctx_menu">Smart S Menu</string>
     <string name="popup_tags_title">Tilgængelige etiketter</string>
     <string name="popup_tags_actions">Tilgængelige handlinger</string>
     <string name="show_untagged">Vis emner uden etiketter</string>
@@ -229,19 +229,19 @@
     <string name="gesture_right_name">Handling ved svirp mod højre</string>
     <string name="menu_size_down">Reducer</string>
     <string name="notification_support">Vis en prik på apps med notifikationer</string>
-    <string name="notification_dialog">Vælg KISS i følgende menu for at starte appen.</string>
-    <string name="cant_pin_shortcut">Kunne ikke tilføje genvej. Er KISS din standard appstarter?</string>
+    <string name="notification_dialog">Vælg Smart S i følgende menu for at starte appen.</string>
+    <string name="cant_pin_shortcut">Kunne ikke tilføje genvej. Er Smart S din standard appstarter?</string>
     <string name="copy_confirmation">Kopieret til udklipsholderen</string>
     <string name="large_favorites_bar">Benyt større foretrukne</string>
     <string name="menu_widget_move_up">Flyt op</string>
     <string name="menu_widget_move_down">Flyt ned</string>
-    <string name="lock_service_description">Lås skærmen fra KISS-appstarteren</string>
+    <string name="lock_service_description">Lås skærmen fra Smart S-appstarteren</string>
     <string name="double_tap_to_lock">Dobbeltryk for at låse skærmen</string>
     <string name="custom_icon_hint">Filtrer efter navn</string>
     <string name="gesture_up_name">Handling ved svirp op</string>
     <string name="gesture_down_name">Handling ved svirp ned</string>
     <string name="gesture_left_name">Handling ved svirp mod venstre</string>
-    <string name="enable_double_tap_to_lock">\"Dobbeltryk for at lukke\" kræver at KISS har adgang Android Accessibility API\'en. Ingen data bliver behandlet eller opbevaret af KISS. For at bruge denne funktion skal du slå KISS til i næste menu.</string>
+    <string name="enable_double_tap_to_lock">\"Dobbeltryk for at lukke\" kræver at Smart S har adgang Android Accessibility API\'en. Ingen data bliver behandlet eller opbevaret af Smart S. For at bruge denne funktion skal du slå Smart S til i næste menu.</string>
     <string name="gestures">Gestik</string>
     <string name="default_icon">Standardikon</string>
     <string name="custom_icon_preview">Forhåndsvisning</string>
@@ -325,7 +325,7 @@
     <string name="shape_app">Appens form</string>
     <string name="icons_themed_name">Temaikoner</string>
     <string name="import_settings_version_missing">Kunne ikke importere indstillinger; fandt ingen gyldig versionsbeskrivelse.</string>
-    <string name="import_settings_upgrade_kiss">Opdater venligst KISS, før du importere indstillingerne.</string>
+    <string name="import_settings_upgrade_kiss">Opdater venligst Smart S, før du importere indstillingerne.</string>
     <string name="gesture_menu">Vis menu</string>
     <string name="gesture_quicksettings">Vis hurtigindstillingerne</string>
     <string name="tagged_result_sort_mode_name">Sortering af etiketsøgning</string>

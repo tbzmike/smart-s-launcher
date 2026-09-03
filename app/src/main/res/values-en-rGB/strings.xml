@@ -8,7 +8,7 @@
     <string name="history_mode_name">History mode</string>
     <string name="search_providers_delete">Delete web search providers</string>
     <string name="alias_mail">mail,email,e-mail</string>
-    <string name="app_name">KISS launcher</string>
+    <string name="app_name">Smart S launcher</string>
     <string name="ui_item_open">Open “%1$s”</string>
     <string name="reset_excluded_from_history_apps_name">Reset list of apps excluded from history</string>
     <string name="search_providers_title">Select web search providers</string>
@@ -39,11 +39,11 @@
     <string name="ui_empty_3">Quick access to most used apps</string>
     <string name="keyboard_name">Display keyboard on start</string>
     <string name="wp_animate_sides">Side stick wallpaper</string>
-    <string name="activity_setting">KISS settings</string>
+    <string name="activity_setting">Smart S settings</string>
     <string name="ui_search_hint">Search apps, contacts, …</string>
     <string name="ui_item_contact_hint_call">Call</string>
     <string name="main_menu">Menu</string>
-    <string name="reset_excluded_apps_name">Reset list of apps excluded from KISS</string>
+    <string name="reset_excluded_apps_name">Reset list of apps excluded from Smart S</string>
     <string name="reset_favorites_name">Reset your list of favourites</string>
     <string name="icons_pack_default_name">System icons</string>
     <string name="search_provider_reset_done_desc">The search providers have been reset</string>
@@ -63,7 +63,7 @@
     <string name="reset_name">Reset history</string>
     <string name="reset_excluded_app_shortcuts_name">Reset list of apps excluded from showing shortcuts</string>
     <string name="settings_excluded_apps">Excluded entries</string>
-    <string name="ui_excluded_apps">View or edit apps excluded from KISS</string>
+    <string name="ui_excluded_apps">View or edit apps excluded from Smart S</string>
     <string name="ui_excluded_from_history_apps">View or edit apps excluded from history</string>
     <string name="ui_excluded_apps_dialog_title">Select apps to exclude</string>
     <string name="history_onkeyboard_desc">Show history when software keyboard is visible</string>
@@ -80,7 +80,7 @@
     <string name="tags_confirmation_added">Tags set</string>
     <string name="tags_visible">Show tags</string>
     <string name="excluded_app_list_erased">List of excluded apps erased.</string>
-    <string name="excluded_app_list_added">App excluded from KISS. Reset through the KISS settings</string>
+    <string name="excluded_app_list_added">App excluded from Smart S. Reset through the Smart S settings</string>
     <string name="menu_exclude">Exclude app …</string>
     <string name="menu_shortcut_remove">Remove shortcut</string>
     <string name="menu_shortcut_pin">Pin shortcut</string>
@@ -97,7 +97,7 @@
     <string name="color_picker_default_title">Select a Colour</string>
     <string name="color_transparent_white">Transparently white</string>
     <string name="large_search_bar">Bigger search bar</string>
-    <string name="swap_kiss_button_with_menu">KISS button on the right</string>
+    <string name="swap_kiss_button_with_menu">Smart S button on the right</string>
     <string name="hide_search_bar_hint">Remove hint text from search bar</string>
     <string name="rounded_bars">Rounded bar corners</string>
     <string name="menu_widget_remove">Remove widget</string>
@@ -112,7 +112,7 @@
     <string name="notification_support">Display a dot on apps with notifications</string>
     <string name="menu_widget_move_down">Move down</string>
     <string name="menu_widget_settings">Settings</string>
-    <string name="lock_service_description">Lock screen from KISS Launcher</string>
+    <string name="lock_service_description">Lock screen from Smart S Launcher</string>
     <string name="gesture_up_name">Action on swipe up</string>
     <string name="menu_widget_move_up">Move up</string>
     <string name="theme_customisation">Advanced theme customisation</string>
@@ -158,7 +158,7 @@
     <string name="contacts_call_on_click">Click to call contacts</string>
     <string name="regenerate_shortcuts_desc">Would you like to regenerate the list of shortcuts?</string>
     <string name="pref_fav_tags_drawable_desc">Turn off to use less memory for many fav tags</string>
-    <string name="cant_pin_shortcut">Could not add shortcut. Is KISS your default launcher?</string>
+    <string name="cant_pin_shortcut">Could not add shortcut. Is Smart S your default launcher?</string>
     <string name="gestures">Gestures</string>
     <string name="custom_icon_preview">Preview</string>
     <string name="settings_applications">Apps</string>
@@ -171,7 +171,7 @@
     <string name="favorites_hide">Hide favourites bar initially</string>
     <string name="pref_hide_navbar_desc">Hide navigation bar and turn on immersive mode</string>
     <string name="history_favorites_summary">Reset your favourites, remove favourites bar, …</string>
-    <string name="enable_favorites_bar_summary_off">Only display favourites when pressing the KISS icon</string>
+    <string name="enable_favorites_bar_summary_off">Only display favourites when pressing the Smart S icon</string>
     <string name="theme_semi_transparent_dark">Dark semi-transparent</string>
     <string name="search_name">Web search providers</string>
     <string name="color_swatch_description_selected" tools:ignore="PluralsCandidate">Colour %1$d selected</string>
@@ -183,7 +183,7 @@
     <string name="theme_amoled">AMOLED dark</string>
     <string name="clipboard_warning_dialog">This will overwrite your clipboard content.</string>
     <string name="ui_empty_2_sub">For fast access</string>
-    <string name="notification_dialog">Check KISS in the following menu to turn it on.</string>
+    <string name="notification_dialog">Check Smart S in the following menu to turn it on.</string>
     <string name="theme_result_color">Text colour for results</string>
     <string name="contacts_shape_summary">Shape of contacts icon</string>
     <string name="alias_messaging">text message,compose,SMS,MMS,messaging</string>
@@ -203,7 +203,7 @@
     <string name="settings_connectivity">Connectivity</string>
     <string name="settings_accessibility">Accessibility</string>
     <string name="tags_add_title">Add space separated tags</string>
-    <string name="restart_name">Restart KISS</string>
+    <string name="restart_name">Restart Smart S</string>
     <string name="color_swatch_description">Colour %1$d</string>
     <string name="colors">Colours</string>
     <string name="popup_tags_actions">Available actions</string>
@@ -214,14 +214,14 @@
     <string name="providers_summary">Adjust search results, add custom search engines, …</string>
     <string name="theme_shadow">Text outline (shadow)</string>
     <string name="title_import_export">Import &amp; export</string>
-    <string name="restart_warn">Do you really want to restart KISS? If KISS is not your default launcher the app will simply quit.</string>
+    <string name="restart_warn">Do you really want to restart Smart S? If Smart S is not your default launcher the app will simply quit.</string>
     <string name="settings_battery">Battery</string>
     <string name="theme_customize_enabled">Enabled</string>
     <string name="theme_light">Light</string>
     <string name="gesture_down_name">Action on swipe down</string>
-    <string name="pref_hide_circle">Hide KISS circle and three-dots menu</string>
+    <string name="pref_hide_circle">Hide Smart S circle and three-dots menu</string>
     <string name="enable_favorites_bar_summary_on">Display favourites above the search bar</string>
-    <string name="ctx_menu">KISS Menu</string>
+    <string name="ctx_menu">Smart S Menu</string>
     <string name="menu_size_down">Reduce</string>
     <string name="export_settings">Export settings and tags</string>
     <string name="results_size_default">Default</string>
@@ -239,23 +239,23 @@
     <string name="app_rename_confirmation">App name is now %s</string>
     <string name="menu_app_details">App info</string>
     <string name="adaptive_shape_name">Background shape for icons</string>
-    <string name="menu_exclude_kiss">from KISS</string>
+    <string name="menu_exclude_kiss">from Smart S</string>
     <string name="settings_nfc">NFC</string>
     <string name="pref_fav_tags_select">Tags to show in fav bar</string>
     <string name="settings_tethering">Tethering</string>
     <string name="get_help">Get help</string>
-    <string name="excluded_app_history_added">App excluded from history. Reset through the KISS settings</string>
+    <string name="excluded_app_history_added">App excluded from history. Reset through the Smart S settings</string>
     <string name="force_adaptive">Force icon background</string>
     <string name="wp_drag_animate">Scroll wallpaper</string>
     <string name="settings_storage">Storage</string>
     <string name="transparent_favorites_bar">Transparent favourites bar</string>
     <string name="user_interface_summary">Themes, transparency and colours</string>
     <string name="black_notification_icons">Display notification icons in black</string>
-    <string name="shortcuts_no_host_permission">KISS is not your main launcher anymore and can\'t access your shortcuts.</string>
+    <string name="shortcuts_no_host_permission">Smart S is not your main launcher anymore and can\'t access your shortcuts.</string>
     <string name="theme_customize_disabled">Disabled</string>
     <string name="theme_dark">Dark</string>
     <string name="history_frequency">Accessed frequently</string>
-    <string name="import_settings_upgrade_kiss">Please upgrade your KISS version before importing those settings.</string>
+    <string name="import_settings_upgrade_kiss">Please upgrade your Smart S version before importing those settings.</string>
     <string name="import_settings_save_not_possible">Unable to save settings.</string>
     <string name="pref_toggle_tags_select">Tags to show in menu</string>
     <string name="gesture_do_nothing">Do nothing</string>
@@ -268,7 +268,7 @@
     <string name="title_advanced">Advanced</string>
     <string name="ui_empty_1">Start searching for anything</string>
     <string name="search_provider_error_url">Please, use a valid URL</string>
-    <string name="enable_double_tap_to_lock">Double-tap to lock needs the Android Accessibility API. No data is processed, no data is stored. To use this feature, enable KISS in the following screen.</string>
+    <string name="enable_double_tap_to_lock">Double-tap to lock needs the Android Accessibility API. No data is processed, no data is stored. To use this feature, enable Smart S in the following screen.</string>
     <string name="theme_separator">Result separator</string>
     <string name="shape_app">App shape</string>
     <string name="double_tap_to_lock">Double tap to lock screen</string>
@@ -296,7 +296,7 @@
     <string name="share">Share to…</string>
     <string name="title_wallpaper">Live wallpaper interactions</string>
     <string name="permission_denied">Permission has been denied</string>
-    <string name="unable_to_initialize_shortcuts">Unable to initialise shortcuts. Is KISS your default launcher?</string>
+    <string name="unable_to_initialize_shortcuts">Unable to initialise shortcuts. Is Smart S your default launcher?</string>
     <string name="copy_confirmation">Copied to clipboard</string>
     <string name="custom_icon_hint">Filter by name</string>
     <string name="gesture_keyboard">Display keyboard</string>
@@ -315,7 +315,7 @@
     <string name="search_provider_toggle">Links to web search providers</string>
     <string name="import_settings_done">Settings imported.</string>
     <string name="import_settings_error">Unable to import settings.</string>
-    <string name="ui_empty_3_sub">KISS launcher learns from your habits</string>
+    <string name="ui_empty_3_sub">Smart S launcher learns from your habits</string>
     <string name="contacts_name">Contacts</string>
     <string name="search_results_options">Search results</string>
     <string name="settings_name">Device settings</string>

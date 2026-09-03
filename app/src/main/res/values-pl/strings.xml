@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">KISS Launcher</string>
-    <string name="activity_setting">Ustawienia KISS</string>
+    <string name="app_name">Smart S Launcher</string>
+    <string name="activity_setting">Ustawienia Smart S</string>
     <string name="ui_search_hint">Wyszukaj aplikacji, kontaktów, ustawień…</string>
     <string name="ui_item_search">Wyszukaj „%2$s” w %1$s</string>
     <string name="ui_item_phone">Połącz „%s”</string>
@@ -17,7 +17,7 @@
     <string name="ui_empty_2">Zawsze wyświetlaj historię</string>
     <string name="ui_empty_2_sub">Dla szybkiego dostępu</string>
     <string name="ui_empty_3">Szybki dostęp do najczęściej używanych aplikacji</string>
-    <string name="ui_empty_3_sub">KISS uczy się nawyków podczas używania</string>
+    <string name="ui_empty_3_sub">Smart S uczy się nawyków podczas używania</string>
     <string name="contacts_name">Kontakty</string>
     <string name="search_name">Dostawcy wyszukiwania</string>
     <string name="settings_name">Ustawienia urządzenia</string>
@@ -67,7 +67,7 @@
     <string name="icons_hide_desc">Włącz, aby użyć mniej pamięci</string>
     <string name="favorites_erased">Usunięto ulubione.</string>
     <string name="menu_favorites_add">Dodaj do ulubionych</string>
-    <string name="excluded_app_list_added">Aplikacja wykluczona z wyświetlanych. Zresetuj w ustawieniach KISS</string>
+    <string name="excluded_app_list_added">Aplikacja wykluczona z wyświetlanych. Zresetuj w ustawieniach Smart S</string>
     <string name="excluded_app_list_erased">Usunięto listę wykluczonych aplikacji.</string>
     <string name="menu_exclude">Wyklucz aplikację…</string>
     <string name="toast_favorites_added">Dodano %s do ulubionych</string>
@@ -125,7 +125,7 @@
     <string name="tags_add_title">Dodaj znaczniki oddzielone spacją</string>
     <string name="tags_confirmation_added">Dodano znaczniki</string>
     <string name="tags_visible">Pokaż znaczniki</string>
-    <string name="excluded_app_history_added">Aplikacja wykluczona z historii. Zresetuj w ustawieniach KISS</string>
+    <string name="excluded_app_history_added">Aplikacja wykluczona z historii. Zresetuj w ustawieniach Smart S</string>
     <string name="menu_exclude_kiss">…z wyświetlanych</string>
     <string name="menu_exclude_history">…z historii</string>
     <string name="menu_shortcut_remove">Usuń skrót</string>
@@ -136,11 +136,11 @@
     <string name="pref_hide_navbar_desc">Ukryj pasek nawigacji oraz włącz tryb immersyjny</string>
     <string name="pref_hide_statusbar">Ukryj pasek stanu</string>
     <string name="pref_hide_statusbar_desc">Ukryj pasek stanu oraz włącz tryb immersyjny</string>
-    <string name="pref_hide_circle">Ukryj koło oraz przycisk menu KISS</string>
+    <string name="pref_hide_circle">Ukryj koło oraz przycisk menu Smart S</string>
     <string name="pref_hide_circle_desc">Przyciski będą działać, lecz będą niewidoczne</string>
     <string name="restart_desc">Napraw problemy z motywem oraz nowymi kontaktami</string>
     <string name="restart_name">Uruchom ponownie</string>
-    <string name="restart_warn">Uruchomić ponownie KISS? Jeżeli nie jest domyślnym programem uruchamiającym, zostanie zamknięty.</string>
+    <string name="restart_warn">Uruchomić ponownie Smart S? Jeżeli nie jest domyślnym programem uruchamiającym, zostanie zamknięty.</string>
     <string name="default_launcher_title">Zmień domyślny program uruchamiający</string>
     <string name="default_launcher_warn">Wybór domyślnego programu uruchamiającego przeniesie Cię do ekranu głównego. Kontynuować? \n \nPodpowiedź: Jeżeli opcja\"Zawsze\" jest niedostępna, naciśnij przycisk \"Strona główna\" po wybraniu programu uruchamiającego.</string>
     <string name="items_title" tools:ignore="PluralsCandidate">%d pozycja/i</string>
@@ -161,7 +161,7 @@
     <string name="large_search_bar">Powiększ pasek wyszukiwania</string>
     <string name="rounded_list">Zaokrągl rogi list</string>
     <string name="rounded_bars">Zaokrągl rogi pasków</string>
-    <string name="swap_kiss_button_with_menu">Zamień strony koła oraz menu KISS</string>
+    <string name="swap_kiss_button_with_menu">Zamień strony koła oraz menu Smart S</string>
     <string name="menu_widget_add">Dodaj widżet</string>
     <string name="menu_widget_remove">Usuń widżet</string>
     <string name="rate_the_app">Oceń aplikację</string>
@@ -174,16 +174,16 @@
     <string name="history_favorites_summary">Zresetuj ulubione, usuń pasek ulubionych…</string>
     <string name="title_wallpaper">Interakcje z animowanymi tapetami</string>
     <string name="freeze_history_summary">Nie aktualizuj listy wpisów historii</string>
-    <string name="enable_favorites_bar_summary_off">Wyświetlaj ulubione po naciśnięciu koła KISS</string>
+    <string name="enable_favorites_bar_summary_off">Wyświetlaj ulubione po naciśnięciu koła Smart S</string>
     <string name="enable_favorites_bar_summary_on">Wyświetlaj ulubione nad paskiem wyszukiwania</string>
     <string name="get_help">Pomoc</string>
     <string name="permission_denied">Odmowa dostępu</string>
     <string name="colors">Kolory</string>
     <string name="black_notification_icons">Wyświetlaj czarne ikony powiadomień</string>
-    <string name="shortcuts_no_host_permission">KISS nie jest domyślnym programem uruchamiającym oraz nie może uzyskać dostępu do skrótów.</string>
+    <string name="shortcuts_no_host_permission">Smart S nie jest domyślnym programem uruchamiającym oraz nie może uzyskać dostępu do skrótów.</string>
     <string name="screen_toggle_tags">Dostosuj menu znaczników</string>
     <string name="pref_toggle_tags_select">Znaczniki wyświetlane w menu</string>
-    <string name="ctx_menu">Menu KISS</string>
+    <string name="ctx_menu">Menu Smart S</string>
     <string name="pref_tags_menu">Wyświetlaj znaczniki w menu</string>
     <string name="pref_tags_menu_dismiss">Zamknij menu znaczników po wyborze</string>
     <string name="popup_tags_title">Dostępne znaczniki</string>
@@ -191,7 +191,7 @@
     <string name="show_history">Pokaż historię</string>
     <string name="show_untagged">Pokaż bez znaczników</string>
     <string name="pref_show_untagged">Pokaż czynności bez znaczników</string>
-    <string name="unable_to_initialize_shortcuts">Nie można załadować skrótów. Czy KISS jest domyślnym programem uruchamiającym?</string>
+    <string name="unable_to_initialize_shortcuts">Nie można załadować skrótów. Czy Smart S jest domyślnym programem uruchamiającym?</string>
     <string name="search_results_options">Wyniki wyszukiwania</string>
     <string name="history_frecency">Ostatnio często używane</string>
     <string name="search_provider_default">Domyślny dostawca wyszukiwania podczas wprowadzania</string>
@@ -220,18 +220,18 @@
     <string name="theme_customisation">Dostosowywanie motywu</string>
     <string name="gestures">Gesty</string>
     <string name="double_tap_to_lock">Naciśnij dwukrotnie, aby zablokować ekran</string>
-    <string name="enable_double_tap_to_lock">Naciśnij dwukrotnie, aby zablokować ekran, wymaga uprawnień Dostępności. Żadne dane nie są przetwarzane ani przechowywane. Aby użyć, włącz KISS w ustawieniach Dostępności.</string>
+    <string name="enable_double_tap_to_lock">Naciśnij dwukrotnie, aby zablokować ekran, wymaga uprawnień Dostępności. Żadne dane nie są przetwarzane ani przechowywane. Aby użyć, włącz Smart S w ustawieniach Dostępności.</string>
     <string name="gesture_down_name">Czynność przesunięcia w dół</string>
     <string name="gesture_up_name">Czynność przesunięcia w górę</string>
-    <string name="lock_service_description">Zablokuj ekran z KISS</string>
+    <string name="lock_service_description">Zablokuj ekran z Smart S</string>
     <string name="menu_widget_move_down">Przenieś niżej</string>
     <string name="menu_widget_move_up">Przenieś wyżej</string>
     <string name="menu_size_down">Pomniejsz</string>
     <string name="menu_size_up">Powiększ</string>
     <string name="large_favorites_bar">Powiększ ulubione</string>
     <string name="copy_confirmation">Skopiowano do schowka</string>
-    <string name="cant_pin_shortcut">Nie można dodać skrótu. Czy KISS jest domyślnym programem uruchamiającym?</string>
-    <string name="notification_dialog">Włącz KISS w ustawieniach, aby uruchomić.</string>
+    <string name="cant_pin_shortcut">Nie można dodać skrótu. Czy Smart S jest domyślnym programem uruchamiającym?</string>
+    <string name="notification_dialog">Włącz Smart S w ustawieniach, aby uruchomić.</string>
     <string name="notification_support">Wyświetlaj kropkę w aplikacjach z powiadomieniami</string>
     <string name="pref_fav_tags_drawable">Wygeneruj ikony ulubionych znaczników</string>
     <string name="pref_fav_tags_drawable_desc">Wyłącz, aby użyć mniej pamięci przy wielu znacznikach</string>
@@ -324,7 +324,7 @@
     <string name="export_settings_done">Kopia zapasowa została wyeksportowana do schowka.</string>
     <string name="export_settings_error">Nie można wyeksportować kopii zapasowej.</string>
     <string name="import_settings_version_missing">Nie można zaimportować kopii zapasowej. Wykryto nieprawidłowy numer wersji.</string>
-    <string name="import_settings_upgrade_kiss">Proszę, zaktualizuj KISS przed importem kopii zapasowej.</string>
+    <string name="import_settings_upgrade_kiss">Proszę, zaktualizuj Smart S przed importem kopii zapasowej.</string>
     <string name="import_settings_save_not_possible">Nie można zapisać ustawień.</string>
     <string name="import_settings_error">Nie można zaimportować kopii zapasowej.</string>
     <string name="results_size_largest">Największy</string>

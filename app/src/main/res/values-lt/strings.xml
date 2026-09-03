@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">KISS paleidimo priemonė</string>
-    <string name="activity_setting">KISS nustatymai</string>
+    <string name="app_name">Smart S paleidimo priemonė</string>
+    <string name="activity_setting">Smart S nustatymai</string>
     <string name="ui_search_hint">Ieškoti programėlių, kontaktų, …</string>
     <string name="ui_item_search">Ieškoti %1$s for “%2$s”</string>
     <string name="ui_item_visit">Aplankykite “%1$s”</string>
@@ -18,7 +18,7 @@
     <string name="ui_empty_2">Visada rodyti istoriją</string>
     <string name="ui_empty_2_sub">Greitam pasiekimui</string>
     <string name="ui_empty_3">Greitai pasiekti dažniausiai naudojamas programėles</string>
-    <string name="ui_empty_3_sub">KISS paleidimo priemonė prisiderina prie Jūsų įpročių</string>
+    <string name="ui_empty_3_sub">Smart S paleidimo priemonė prisiderina prie Jūsų įpročių</string>
     <string name="contacts_name">Kontaktai</string>
     <string name="search_name">Interneto paieškos teikėjai</string>
     <string name="settings_name">Įrenginio nustatymai</string>
@@ -28,9 +28,9 @@
     <string name="main_kiss">Rodyti programėlių sąrašą</string>
     <string name="main_kiss_back">Rodyti istoriją</string>
     <string name="reset_name">Perkrauti istoriją</string>
-    <string name="reset_excluded_apps_name">Perkrauti KISS neįtrauktų programėlių sąrašą</string>
+    <string name="reset_excluded_apps_name">Perkrauti Smart S neįtrauktų programėlių sąrašą</string>
     <string name="reset_excluded_apps_warn">Ar Jūs tikrai norite iš naujo nustatyti neįtrauktų programėlių sąrašą?</string>
-    <string name="ui_excluded_apps">Žiūrėti / redaguoti KISS neįtrauktas programėles</string>
+    <string name="ui_excluded_apps">Žiūrėti / redaguoti Smart S neįtrauktas programėles</string>
     <string name="ui_excluded_apps_dialog_title">Pasirinkite programėles, kurių norite neįtraukti</string>
     <string name="reset_warn">Ar Jūs tikrai norite nustatyti iš naujo istoriją?</string>
     <string name="reset_favorites_name">Nustatykite iš naujo mėgiamiausiųjų sąrašą</string>
@@ -82,7 +82,7 @@
     <string name="tags_confirmation_added">Žymos pridėtos</string>
     <string name="tags_visible">Rodyti programėlių žymas</string>
     <string name="excluded_app_list_erased">Neįtraukiamų programėlių sąrašas išvalytas.</string>
-    <string name="excluded_app_list_added">Programėlė neįtraukta į KISS. Nustatyti iš naujo per KISS nustatymus</string>
+    <string name="excluded_app_list_added">Programėlė neįtraukta į Smart S. Nustatyti iš naujo per Smart S nustatymus</string>
     <string name="removed_item">Pašalinta</string>
     <string name="menu_remove">Pašalinti iš istorijos</string>
     <string name="menu_exclude">Neįtraukti paprogramės…</string>
@@ -102,8 +102,8 @@
     <string name="exclude_favorites_history">Neįtraukti mėgstamiausiųjų į istoriją</string>
     <string name="favorites_hide">Pradžioje slėpti mėgiamiausiųjų juostą</string>
     <string name="restart_desc">Sutvarkyti temos klaidas ir nerodomus naujus kontaktus</string>
-    <string name="restart_name">Paleisti iš naujo KISS</string>
-    <string name="restart_warn">Ar tikrai norite iš naujo paleisti KISS? Jei KISS nėra Jūsų numatytoji paleidimo priemonė tai programėlė paprasčiausiai išsijungs.</string>
+    <string name="restart_name">Paleisti iš naujo Smart S</string>
+    <string name="restart_warn">Ar tikrai norite iš naujo paleisti Smart S? Jei Smart S nėra Jūsų numatytoji paleidimo priemonė tai programėlė paprasčiausiai išsijungs.</string>
     <string name="default_launcher_title">Pakeisti numatytąją paleidimo priemonę</string>
     <string name="default_launcher_warn">Po to kai pasirinksite numatytąją paleidimo priemonę, jūs atsidursite namų ekrane. Ar jūs įsitikinęs, kad norite pradėti\?
 \n
@@ -153,7 +153,7 @@
     <string name="custom_icon_preview">Peržiūra</string>
     <string name="custom_icon_hint">Filtruoti pagal pavadinimą</string>
     <string name="double_tap_to_lock">Dukart palieskite, kad užrakintumėte ekraną</string>
-    <string name="enable_double_tap_to_lock">Norėdami įjungti užrakinimą dvigubu bakstelėjimu, turėsite suteikti papildomų leidimų: įgalinkite KISS šiame ekrane.</string>
+    <string name="enable_double_tap_to_lock">Norėdami įjungti užrakinimą dvigubu bakstelėjimu, turėsite suteikti papildomų leidimų: įgalinkite Smart S šiame ekrane.</string>
     <string name="gesture_right_name">Veiksmas perbraukus į dešinę</string>
     <string name="gesture_left_name">Veiksmas perbraukus į kairę</string>
     <string name="gesture_down_name">Veiksmas perbraukus žemyn</string>
@@ -161,12 +161,12 @@
     <string name="menu_widget_move_down">Judėti žemyn</string>
     <string name="menu_widget_move_up">Judėti aukštyn</string>
     <string name="large_favorites_bar">Naudoti didesnę mėgstamiausiųjų juostą</string>
-    <string name="cant_pin_shortcut">Nepavyko pridėti sparčiosios nuorodos. Ar KISS yra jūsų numatytoji paleidimo programa\?</string>
-    <string name="notification_dialog">Šiame meniu pažymėkite KISS, kad jį įjungtumėte.</string>
+    <string name="cant_pin_shortcut">Nepavyko pridėti sparčiosios nuorodos. Ar Smart S yra jūsų numatytoji paleidimo programa\?</string>
+    <string name="notification_dialog">Šiame meniu pažymėkite Smart S, kad jį įjungtumėte.</string>
     <string name="notification_support">Rodyti taškelį prie programų su pranešimais</string>
     <string name="pref_fav_tags_drawable">Generuoti piktogramas mėgiamiausiųjų žymoms</string>
     <string name="pref_fav_tags_drawable_desc">Išjungti, kad būtų naudojama mažiau atminties esant daug mėgiamiausiųjų žymių</string>
-    <string name="unable_to_initialize_shortcuts">Nepavyksta inicijuoti nuorodų. Ar KISS yra jūsų numatytoji paleidimo programa\?</string>
+    <string name="unable_to_initialize_shortcuts">Nepavyksta inicijuoti nuorodų. Ar Smart S yra jūsų numatytoji paleidimo programa\?</string>
     <string name="show_untagged">Rodyti nepažymėtas</string>
     <string name="pref_tags_menu_dismiss">Uždaryti žymų meniu po pasirinkimo</string>
     <string name="pref_tags_menu">Pridėti žymas į meniu</string>
@@ -174,12 +174,12 @@
     <string name="pref_toggle_tags_select">Žymės, kurios bus rodomos meniu</string>
     <string name="screen_toggle_tags">Tinkinti žymų meniu</string>
     <string name="gesture_long_press_name">Ilgo paspaudimo veiksmas</string>
-    <string name="shortcuts_no_host_permission">KISS nebėra pagrindinė paleidimo programėlė ir negali pasiekti jūsų nuorodų.</string>
+    <string name="shortcuts_no_host_permission">Smart S nebėra pagrindinė paleidimo programėlė ir negali pasiekti jūsų nuorodų.</string>
     <string name="black_notification_icons">Rodyti pranešimų piktogramas juodai</string>
     <string name="permission_denied">Leidimas buvo atmestas</string>
     <string name="get_help">Gauti pagalbą</string>
     <string name="enable_favorites_bar_summary_on">Rodyti mėgstamiausius virš paieškos juostos</string>
-    <string name="enable_favorites_bar_summary_off">Mėgstamiausi rodomi tik tada, kai paspaudžiama KISS piktograma</string>
+    <string name="enable_favorites_bar_summary_off">Mėgstamiausi rodomi tik tada, kai paspaudžiama Smart S piktograma</string>
     <string name="freeze_history_summary">Laikyti istoriją tokią, kokia ji yra, kol nepažymėta</string>
     <string name="history_favorites_summary">Iš naujo nustatykite mėgstamiausius, pašalinkite mėgstamiausiųjų juostą, …</string>
     <string name="user_experience_summary">Minimalistinė vartotojo sąsaja, klaviatūros nustatymai,…</string>
@@ -187,14 +187,14 @@
     <string name="user_interface_summary">Temos, skaidrumas ir spalvos</string>
     <string name="history_settings_summary">Iš naujo nustatykite istoriją, neįtrauktinas programėles, …</string>
     <string name="hide_search_bar_hint">Pašalinti užuominos tekstą iš paieškos juostos</string>
-    <string name="swap_kiss_button_with_menu">KISS mygtukas dešinėje</string>
+    <string name="swap_kiss_button_with_menu">Smart S mygtukas dešinėje</string>
     <string name="pref_hide_circle_desc">Mygtukai vis tiek veiks, bet bus nematomi.</string>
-    <string name="pref_hide_circle">Slėpti KISS apskritimą ir trijų taškų meniu</string>
+    <string name="pref_hide_circle">Slėpti Smart S apskritimą ir trijų taškų meniu</string>
     <string name="pref_hide_statusbar_desc">Paslėpti pranešimų juostą ir įjungti įtraukiantį režimą</string>
     <string name="pref_hide_navbar_desc">Paslėpti naršymo juostą ir įjungti įtraukiantį režimą</string>
     <string name="exclude_favorites_apps">Išskirti mėgstamiausias iš programų sąrašo</string>
     <string name="menu_app_store">Peržiūrėti parduotuvėje</string>
-    <string name="excluded_app_history_added">Programėlė neįtraukta į istoriją. Atstatyti per KISS nustatymus</string>
+    <string name="excluded_app_history_added">Programėlė neįtraukta į istoriją. Atstatyti per Smart S nustatymus</string>
     <string name="app_rename_confirmation">Programėlės pavadinimas dabar yra %s</string>
     <string name="app_rename_title">Pasirinktinis pavadinimas</string>
     <string name="menu_custom_icon">Individualizuota piktograma</string>
@@ -230,11 +230,11 @@
     <string name="theme_amoled">Tamsi AMOLED</string>
     <string name="theme_semi_transparent_dark">Tamsi pusiau skaidri</string>
     <string name="menu_exclude_history">iš istorijos</string>
-    <string name="menu_exclude_kiss">iš KISS</string>
+    <string name="menu_exclude_kiss">iš Smart S</string>
     <string name="show_history">Rodyti istoriją</string>
     <string name="popup_tags_actions">Galimi veiksmai</string>
     <string name="popup_tags_title">Galimos žymos</string>
-    <string name="ctx_menu">KISS meniu</string>
+    <string name="ctx_menu">Smart S meniu</string>
     <string name="title_favorites">Mėgstamiausiųjų nustatymai</string>
     <string name="title_ux">Vartotojo patirtis</string>
     <string name="pref_hide_navbar">Slėpti naršymo juostą</string>
@@ -276,7 +276,7 @@
     <string name="history_frequency">Dažniausiai naudojami</string>
     <string name="history_recency">Vėliausiai peržiūrėti viršuje</string>
     <string name="theme_customize_default">Temos numatytasis</string>
-    <string name="lock_service_description">Užrakinti ekraną iš KISS</string>
+    <string name="lock_service_description">Užrakinti ekraną iš Smart S</string>
     <string name="gesture_homescreen">Eiti į pagrindinį ekraną</string>
     <string name="shape_square">Kvadratas</string>
     <string name="history_onkeyboard_name">Rodyti istoriją naudojant klaviatūrą</string>

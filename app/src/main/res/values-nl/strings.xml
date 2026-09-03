@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">KISS-launcher</string>
-    <string name="activity_setting">KISS-instellingen</string>
+    <string name="app_name">Smart S-launcher</string>
+    <string name="activity_setting">Smart S-instellingen</string>
     <string name="ui_search_hint">Zoek apps, contacten, …</string>
     <string name="ui_item_search">Doorzoek %1$s naar “%2$s”</string>
     <string name="ui_item_phone">Bel “%s”</string>
@@ -16,7 +16,7 @@
     <string name="ui_empty_2">Geschiedenis altijd tonen</string>
     <string name="ui_empty_2_sub">Voor snelle toegang</string>
     <string name="ui_empty_3">Snelle toegang tot de meest gebruikte apps</string>
-    <string name="ui_empty_3_sub">KISS-launcher leert van je gebruik</string>
+    <string name="ui_empty_3_sub">Smart S-launcher leert van je gebruik</string>
     <string name="contacts_name">Contacten</string>
     <string name="search_name">Zoekmachines</string>
     <string name="settings_name">Apparaatinstellingen</string>
@@ -57,9 +57,9 @@
     <string name="toast_hibernate_error">%s kan niet gepauzeerd worden.</string>
     <string name="ui_item_visit">Bezoek “%1$s”</string>
     <string name="shortcuts_name">Snelkoppelingen</string>
-    <string name="reset_excluded_apps_name">Geen apps meer uitsluiten van KISS</string>
-    <string name="reset_excluded_apps_warn">Wil je de lijst met apps uitgesloten van KISS echt wissen?</string>
-    <string name="ui_excluded_apps">Apps uitsluiten van KISS</string>
+    <string name="reset_excluded_apps_name">Geen apps meer uitsluiten van Smart S</string>
+    <string name="reset_excluded_apps_warn">Wil je de lijst met apps uitgesloten van Smart S echt wissen?</string>
+    <string name="ui_excluded_apps">Apps uitsluiten van Smart S</string>
     <string name="ui_excluded_apps_dialog_title">Apps selecteren</string>
     <string name="reset_warn">Wil je de geschiedenis echt wissen?</string>
     <string name="reset_favorites_name">Favorieten wissen</string>
@@ -90,7 +90,7 @@
     <string name="tags_add_title">Spatiegescheiden labels toevoegen</string>
     <string name="tags_confirmation_added">Labels ingesteld</string>
     <string name="excluded_app_list_erased">Lijst van verborgen apps verwijderd.</string>
-    <string name="excluded_app_list_added">App uitgesloten van KISS. Herstel dit via de instellingen</string>
+    <string name="excluded_app_list_added">App uitgesloten van Smart S. Herstel dit via de instellingen</string>
     <string name="menu_exclude">Uitsluiten app …</string>
     <string name="menu_shortcut_remove">Snelkoppeling verwijderen</string>
     <string name="menu_phone_create">Contact aanmaken…</string>
@@ -101,8 +101,8 @@
     <string name="exclude_favorites_history">Favorieten uitsluiten van de geschiedenis</string>
     <string name="favorites_hide">Favorietenbalk initieel verbergen</string>
     <string name="restart_desc">Themaproblemen en onzichtbare nieuwe contacten herstellen</string>
-    <string name="restart_name">KISS herstarten</string>
-    <string name="restart_warn">KISS zeker herstarten? Als KISS niet uw standaard-beginscherm is, zal het programma simpelweg afsluiten.</string>
+    <string name="restart_name">Smart S herstarten</string>
+    <string name="restart_warn">Smart S zeker herstarten? Als Smart S niet uw standaard-beginscherm is, zal het programma simpelweg afsluiten.</string>
     <string name="default_launcher_title">Standaard-launcher wijzigen</string>
     <string name="items_title">%d items</string>
     <string name="alternate_history_inputs">Geschiedenisinvoer keuzes</string>
@@ -158,7 +158,7 @@
     <string name="history_favorites_summary">Favorieten herstellen, favorietenbalk verwijderen, …</string>
     <string name="freeze_history_summary">Geschiedenis vastzetten tot uitschakeling</string>
     <string name="title_wallpaper">Live achtergrondinteracties</string>
-    <string name="enable_favorites_bar_summary_off">Alleen favorieten tonen tijdens drukken op het KISS-pictogram</string>
+    <string name="enable_favorites_bar_summary_off">Alleen favorieten tonen tijdens drukken op het Smart S-pictogram</string>
     <string name="enable_favorites_bar_summary_on">Favorieten boven de zoekbalk tonen</string>
     <string name="get_help">Hulp krijgen</string>
     <string name="permission_denied">Toegang geweigerd</string>
@@ -166,14 +166,14 @@
     <string name="rounded_bars">Afgeronde balkhoeken</string>
     <string name="colors">Kleuren</string>
     <string name="black_notification_icons">Zwarte meldingspictogrammen gebruiken</string>
-    <string name="shortcuts_no_host_permission">KISS is meer niet je standaardlauncher en heeft dus geen toegang tot snelkoppelingen.</string>
+    <string name="shortcuts_no_host_permission">Smart S is meer niet je standaardlauncher en heeft dus geen toegang tot snelkoppelingen.</string>
     <string name="wp_animate_center">Achtergrond centreren</string>
     <string name="wp_animate_center_desc">De achtergrond wordt gecentreerd na scrollen</string>
     <string name="wp_animate_sides">Klevende achtergrond</string>
     <string name="wp_animate_sides_desc">De achtergrond zal aan de linker- of rechterkant kleven na scrollen</string>
     <string name="screen_toggle_tags">Labelbalk aanpassen</string>
     <string name="pref_toggle_tags_select">Te tonen labels in menu</string>
-    <string name="ctx_menu">KISS-menu</string>
+    <string name="ctx_menu">Smart S-menu</string>
     <string name="pref_tags_menu">Labels aan menu toevoegen</string>
     <string name="popup_tags_title">Beschikbare labels</string>
     <string name="popup_tags_actions">Beschikbare acties</string>
@@ -200,12 +200,12 @@
     <string name="theme_transparent">Transparant</string>
     <string name="theme_result_color">Tekstkleur voor resultaat</string>
     <string name="pref_fav_tags_select">Te tonen labels in fav-balk</string>
-    <string name="unable_to_initialize_shortcuts">Aanmaken snelkoppelingen mislukt. Is KISS je standaardlauncher?</string>
+    <string name="unable_to_initialize_shortcuts">Aanmaken snelkoppelingen mislukt. Is Smart S je standaardlauncher?</string>
     <string name="pref_fav_tags_drawable_desc">Schakel uit om minder geheugen te gebruiken bij veel fav-labels</string>
     <string name="pref_fav_tags_drawable">Pictogrammen voor fav-labels genereren</string>
     <string name="notification_support">Punt op apps met meldingen weergeven</string>
-    <string name="notification_dialog">KISS in het volgende menu aanvinken om deze in te schakelen.</string>
-    <string name="cant_pin_shortcut">Toevoegen sneltoets is mislukt. Is KISS de standaardlauncher?</string>
+    <string name="notification_dialog">Smart S in het volgende menu aanvinken om deze in te schakelen.</string>
+    <string name="cant_pin_shortcut">Toevoegen sneltoets is mislukt. Is Smart S de standaardlauncher?</string>
     <string name="copy_confirmation">Naar klembord gekopieerd</string>
     <string name="gesture_right_name">Actie bij naar rechts vegen</string>
     <string name="custom_icon_hint">Op naam filteren</string>
@@ -256,13 +256,13 @@
     <string name="menu_custom_icon">Aangepast pictogram</string>
     <string name="app_rename_title">Aangepast naam</string>
     <string name="excluded_app_history_added">App uitgesloten van geschiedenis. Herstel dit via de instellingen</string>
-    <string name="menu_exclude_kiss">van KISS</string>
+    <string name="menu_exclude_kiss">van Smart S</string>
     <string name="menu_exclude_history">van geschiedenis</string>
     <string name="menu_app_store">In winkel tonen</string>
     <string name="menu_shortcut_pin">Sneltoets vastzetten</string>
-    <string name="pref_hide_circle">KISS-cirkel en drie-puntenmenu verbergen</string>
+    <string name="pref_hide_circle">Smart S-cirkel en drie-puntenmenu verbergen</string>
     <string name="color_system">Systeemkleuren</string>
-    <string name="swap_kiss_button_with_menu">KISS-knop aan rechterzijde</string>
+    <string name="swap_kiss_button_with_menu">Smart S-knop aan rechterzijde</string>
     <string name="pref_tags_menu_dismiss">Labelmenu sluiten na selectie</string>
     <string name="show_untagged">Zonder-label tonen</string>
     <string name="pref_show_untagged">Actie zonder label tonen</string>
@@ -271,7 +271,7 @@
     <string name="menu_size_up">Vergroten</string>
     <string name="menu_widget_move_up">Omhoog verplaatsen</string>
     <string name="menu_widget_move_down">Omlaag verplaatsen</string>
-    <string name="lock_service_description">Vergrendelscherm van KISS Launcher</string>
+    <string name="lock_service_description">Vergrendelscherm van Smart S Launcher</string>
     <string name="gesture_down_name">Actie bij omlaag vegen</string>
     <string name="gesture_left_name">Actie bij naar links vegen</string>
     <string name="double_tap_to_lock">Scherm vergrendelen met dubbel-tik</string>
@@ -286,7 +286,7 @@
     <string name="force_adaptive">Pictogramachtergrond forceren</string>
     <string name="hide_search_bar_hint">Hints uit zoekbalk verwijderen</string>
     <string name="theme_light">Licht</string>
-    <string name="import_settings_upgrade_kiss">De KISS-versie bijwerken voordat je die instellingen importeert.</string>
+    <string name="import_settings_upgrade_kiss">De Smart S-versie bijwerken voordat je die instellingen importeert.</string>
     <string name="theme_semi_transparent">Semi-transparant</string>
     <string name="gesture_homescreen">Ga naar startscherm</string>
     <string name="history_frequency">Vaak gebruikt</string>
@@ -307,7 +307,7 @@
     <string name="shape_teardrop_top_right">Druppelvorm rechtsboven</string>
     <string name="import_settings_dialog">Hiermee worden de huidige instellingen en labels overschreven met die van het clipboard. Bestaande labels worden verwijderd. Weet je het zeker?</string>
     <string name="shape_teardrop_random">Druppelvorm willekeurig</string>
-    <string name="enable_double_tap_to_lock">Met dubbel-tik blokkeren vereist de Android Accessibility API. Er wordt geen data verwerkt of opgeslagen. Deze optie vraagt dat je KISS inschakelt in het volgende scherm.</string>
+    <string name="enable_double_tap_to_lock">Met dubbel-tik blokkeren vereist de Android Accessibility API. Er wordt geen data verwerkt of opgeslagen. Deze optie vraagt dat je Smart S inschakelt in het volgende scherm.</string>
     <string name="export_settings">Instellingen en labels exporteren</string>
     <string name="import_settings">Instellingen en labels importeren</string>
     <string name="clipboard_warning_dialog">Dit zal de inhoud van je clipboard overschrijven.</string>

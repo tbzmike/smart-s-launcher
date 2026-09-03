@@ -13,7 +13,7 @@
     <string name="menu_settings">기기 설정…</string>
     <string name="ui_empty_1">무엇이든 검색 시작</string>
     <string name="ui_empty_1_sub">앱, 연락처, 설정등…</string>
-    <string name="ui_empty_3_sub">KISS 런처는 당신의 습관을 배웁니다</string>
+    <string name="ui_empty_3_sub">Smart S 런처는 당신의 습관을 배웁니다</string>
     <string name="contacts_name">연락처</string>
     <string name="search_name">웹 검색 제공업체</string>
     <string name="search_provider_toggle">웹 검색 공급자에 대한 링크</string>
@@ -24,7 +24,7 @@
     <string name="reset_name">기록 초기화</string>
     <string name="reset_excluded_apps_warn">제외된 앱 목록을 재설정하시겠습니까\?</string>
     <string name="settings_excluded_apps">제외된 앱</string>
-    <string name="ui_excluded_apps">KISS에서 제외된 앱 보기 또는 편집</string>
+    <string name="ui_excluded_apps">Smart S에서 제외된 앱 보기 또는 편집</string>
     <string name="ui_excluded_from_history_apps">기록에서 제외된 앱 보기 또는 수정</string>
     <string name="reset_warn">기록을 재설정하시겠습니까\?</string>
     <string name="keyboard_suggestions">자동 완성/제안 사용</string>
@@ -85,7 +85,7 @@
     <string name="app_rename_title">사용자 정의 이름</string>
     <string name="app_rename_confirmation">앱 이름은 현재 %s입니다</string>
     <string name="excluded_app_list_erased">제외된 앱 목록이 삭제되었습니다.</string>
-    <string name="excluded_app_list_added">앱이 KISS에서 제외됨. KISS 설정에서 재설정 가능</string>
+    <string name="excluded_app_list_added">앱이 Smart S에서 제외됨. Smart S 설정에서 재설정 가능</string>
     <string name="removed_item">제거됨</string>
     <string name="menu_exclude_history">히스토리로 부터</string>
     <string name="menu_app_details">앱 정보</string>
@@ -102,8 +102,8 @@
     <string name="enable_phone">히스토리에 수신 전화 표시</string>
     <string name="exclude_favorites_history">히스토리에서 즐겨찾기 앱 제외</string>
     <string name="favorites_hide">처음에 즐겨찾기 모음 숨기기</string>
-    <string name="app_name">KISS 런처</string>
-    <string name="activity_setting">KISS 설정</string>
+    <string name="app_name">Smart S 런처</string>
+    <string name="activity_setting">Smart S 설정</string>
     <string name="ui_item_open">“%1$s” 열기</string>
     <string name="title_history">히스토리 설정</string>
     <string name="ui_empty_2">항상 기록 보기</string>
@@ -114,7 +114,7 @@
     <string name="main_kiss">앱 목록 표시</string>
     <string name="settings_name">기기 설정</string>
     <string name="reset_excluded_from_history_apps_warn">기록에서 제외된 앱 목록을 재설정하시겠습니까\?</string>
-    <string name="reset_excluded_apps_name">KISS에서 제외된 앱 목록 재설정</string>
+    <string name="reset_excluded_apps_name">Smart S에서 제외된 앱 목록 재설정</string>
     <string name="reset_excluded_from_history_apps_name">기록에서 제외된 앱 목록 재설정</string>
     <string name="keyboard_name">시작 시 키보드 표시</string>
     <string name="history_hide_desc">방문 기록 및 소개 화면 숨기기, 위젯 켜기</string>
@@ -139,9 +139,9 @@
     <string name="settings_applications">앱</string>
     <string name="settings_storage">저장소</string>
     <string name="tags_visible">앱 태그 표시</string>
-    <string name="menu_exclude_kiss">KISS로 부터</string>
+    <string name="menu_exclude_kiss">Smart S로 부터</string>
     <string name="tags_confirmation_added">태그 셋트</string>
-    <string name="excluded_app_history_added">앱이 히스토이에서 제외됨. KISS 설정에서 재설정 가능</string>
+    <string name="excluded_app_history_added">앱이 히스토이에서 제외됨. Smart S 설정에서 재설정 가능</string>
     <string name="menu_remove">히스토이에서 제거</string>
     <string name="menu_exclude">제외 앱…</string>
     <string name="enable_app">히스토리에 새로 설치된 앱 표시</string>
@@ -152,7 +152,7 @@
     <string name="restart_warn">키스만 할 필요가 있습니까? 키스가 기본 실행기가 아닌 경우 앱이 간단하게 종료됩니다.</string>
     <string name="import_settings_dialog">이렇게하면 투어 설정 및 태그를 클립 보드 콘텐츠와 덮어 씁니다. 기존 태그가 제거됩니다. 확실합니까?</string>
     <string name="reset_excluded_app_shortcuts_warn">짧은 가벼운 삽화에서 제외 된 앱 목록에 마지막으로 가서 가자합니까?</string>
-    <string name="shortcuts_no_host_permission">KISS는 당신의 주요 발사기가 더 이상 없고 당신의 단축키에 접근할 수 없습니다.</string>
+    <string name="shortcuts_no_host_permission">Smart S는 당신의 주요 발사기가 더 이상 없고 당신의 단축키에 접근할 수 없습니다.</string>
     <string name="contact_mime_types_summary">검색 결과에 표시 할 수있는 모든 유형의 연락처</string>
     <string name="force_adaptive_summary">Non-adaptive icons를 위해, 가늠자를 감소시키고 백색 배경에 장소</string>
     <string name="search_provider_error_uri_cannot_be_handle">URI는 기기의 모든 응용 프로그램에 의해 담당자가 처리합니다.</string>
@@ -169,7 +169,7 @@
     <string name="restart_desc">테마 문제 해결 및 새로운 접점이 표시되지 않음</string>
     <string name="number_of_display_items">검색 및 역사의 최대 결과 수</string>
     <string name="providers_summary">검색 결과 조정, 맞춤 검색 엔진 추가 …</string>
-    <string name="enable_favorites_bar_summary_off">KISS 아이콘을 눌러서만 선호하는 디스플레이</string>
+    <string name="enable_favorites_bar_summary_off">Smart S 아이콘을 눌러서만 선호하는 디스플레이</string>
     <string name="always_default_web_search_on_enter">Enter에 기본 웹 검색 공급자를 항상 트리거합니다</string>
     <string name="reset_excluded_app_shortcuts_name">단축키를 보여주기에서 제외되는 앱의 재설정 목록</string>
     <string name="ui_excluded_from_shortcuts_apps">충격 단축키에서 제외 된 앱보기 또는 편집</string>
@@ -178,7 +178,7 @@
     <string name="icons_themed_summary">아이콘은 시스템 색상 (beta)로 주석</string>
     <string name="enable_notification_history">역사에 대한 새로운 알림이있는 앱 표시</string>
     <string name="pref_result_highlighting_summary">결과에 어떻게 일치했는지 강조합니다.</string>
-    <string name="pref_hide_circle">KISS 원과 3 점 메뉴 숨기기</string>
+    <string name="pref_hide_circle">Smart S 원과 3 점 메뉴 숨기기</string>
     <string name="hide_search_bar_hint">검색 막대에서 힌트 텍스트 제거</string>
     <string name="history_settings_summary">역사를 재설정, 앱 제외, …</string>
     <string name="enable_favorites_bar_summary_on">즐겨 찾기 즐겨 찾기 Aveve 검색 막대</string>

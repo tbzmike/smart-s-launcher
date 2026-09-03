@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">KISS Launcher</string>
+    <string name="app_name">Smart S Launcher</string>
     <string name="activity_setting">Definições</string>
     <string name="ui_search_hint">Procurar aplicações, contactos…</string>
     <string name="ui_item_search">Procurar por “%2$s” em %1$s</string>
@@ -18,7 +18,7 @@
     <string name="ui_empty_2">Mostrar sempre o seu histórico</string>
     <string name="ui_empty_2_sub">Para acesso rápido</string>
     <string name="ui_empty_3">Acesso rápido às aplicações mais usadas</string>
-    <string name="ui_empty_3_sub">KISS aprende com os seus hábitos</string>
+    <string name="ui_empty_3_sub">Smart S aprende com os seus hábitos</string>
     <string name="contacts_name">Contactos</string>
     <string name="search_name">Serviços de pesquisa na web</string>
     <string name="settings_name">Definições do dispositivo</string>
@@ -28,9 +28,9 @@
     <string name="main_kiss">Mostrar lista de aplicações</string>
     <string name="main_kiss_back">Mostrar histórico</string>
     <string name="reset_name">Limpar histórico</string>
-    <string name="reset_excluded_apps_name">Repor lista de aplicações excluídas do KISS</string>
+    <string name="reset_excluded_apps_name">Repor lista de aplicações excluídas do Smart S</string>
     <string name="reset_excluded_apps_warn">Tem a certeza de que deseja repor a lista de aplicações excluídas\?</string>
-    <string name="ui_excluded_apps">Ver ou editar aplicações excluídas do KISS</string>
+    <string name="ui_excluded_apps">Ver ou editar aplicações excluídas do Smart S</string>
     <string name="ui_excluded_apps_dialog_title">Selecione as aplicações a excluir</string>
     <string name="reset_warn">Tem a certeza de que deseja repor o histórico\?</string>
     <string name="reset_favorites_name">Repor lista de favoritos</string>
@@ -82,7 +82,7 @@
     <string name="tags_confirmation_added">Etiquetas definidas</string>
     <string name="tags_visible">Mostrar etiquetas</string>
     <string name="excluded_app_list_erased">A lista de aplicações excluídas foi apagada.</string>
-    <string name="excluded_app_list_added">Aplicação excluída do KISS. Pode repor a aplicação nas definições</string>
+    <string name="excluded_app_list_added">Aplicação excluída do Smart S. Pode repor a aplicação nas definições</string>
     <string name="removed_item">Removido</string>
     <string name="menu_remove">Remover do histórico</string>
     <string name="menu_exclude">Excluir aplicação…</string>
@@ -102,8 +102,8 @@
     <string name="exclude_favorites_history">Excluir favoritos do histórico</string>
     <string name="favorites_hide">Ocultar barra de favoritos</string>
     <string name="restart_desc">Corrigir problemas no tema e com novos contactos que não são mostrados</string>
-    <string name="restart_name">Reiniciar KISS</string>
-    <string name="restart_warn">Tem a certeza de que deseja reiniciar KISS\? Caso não seja o launcher padrão, a aplicação será fechada.</string>
+    <string name="restart_name">Reiniciar Smart S</string>
+    <string name="restart_warn">Tem a certeza de que deseja reiniciar Smart S\? Caso não seja o launcher padrão, a aplicação será fechada.</string>
     <string name="default_launcher_title">Alterar launcher padrão</string>
     <string name="default_launcher_warn">Após selecionar o launcher padrão, será levado ao ecrã principal. Tem a certeza de que deseja continuar\?
 \n
@@ -165,16 +165,16 @@
     <string name="history_favorites_summary">Repor favoritos, remover barra de favoritos…</string>
     <string name="title_wallpaper">Interações com papel de parede dinâmico</string>
     <string name="freeze_history_summary">Manter histórico como está até desmarcar</string>
-    <string name="enable_favorites_bar_summary_off">Apenas mostrar favoritos ao premir o ícone KISS</string>
+    <string name="enable_favorites_bar_summary_off">Apenas mostrar favoritos ao premir o ícone Smart S</string>
     <string name="enable_favorites_bar_summary_on">Mostrar favoritos acima da barra de pesquisa</string>
     <string name="get_help">Obter ajuda</string>
     <string name="permission_denied">Permissão recusada</string>
     <string name="colors">Cores</string>
     <string name="black_notification_icons">Mostrar ícones de notificação em preto</string>
-    <string name="shortcuts_no_host_permission">KISS já não é o launcher principal e não consegue aceder aos seus atalhos.</string>
+    <string name="shortcuts_no_host_permission">Smart S já não é o launcher principal e não consegue aceder aos seus atalhos.</string>
     <string name="screen_toggle_tags">Personalizar menu de etiquetas</string>
     <string name="pref_toggle_tags_select">Etiquetas a mostrar no menu</string>
-    <string name="ctx_menu">Menu KISS</string>
+    <string name="ctx_menu">Menu Smart S</string>
     <string name="pref_tags_menu">Adicionar etiquetas ao menu</string>
     <string name="popup_tags_title">Etiquetas disponíveis</string>
     <string name="popup_tags_actions">Ações disponíveis</string>
@@ -185,20 +185,20 @@
     <string name="ui_excluded_from_history_apps">Ver ou editar aplicações excluídas do histórico</string>
     <string name="wp_animate_sides">Lateralizar papel de parede</string>
     <string name="excluded_app_history_added">Aplicação excluída do histórico. Pode repor a aplicação nas definições</string>
-    <string name="menu_exclude_kiss">do KISS</string>
+    <string name="menu_exclude_kiss">do Smart S</string>
     <string name="menu_exclude_history">do histórico</string>
-    <string name="pref_hide_circle">Ocultar círculo KISS e o menu três pontos</string>
+    <string name="pref_hide_circle">Ocultar círculo Smart S e o menu três pontos</string>
     <string name="pref_hide_circle_desc">Os botões funcionam mas ficarão invisíveis.</string>
     <string name="pref_tags_menu_dismiss">Fechar menu das etiquetas após selecionar</string>
     <string name="show_untagged">Mostrar sem etiquetas</string>
     <string name="pref_show_untagged">Ação de mostrar sem etiquetas</string>
-    <string name="unable_to_initialize_shortcuts">Não foi possível iniciar os atalhos. KISS é o launcher padrão\?</string>
+    <string name="unable_to_initialize_shortcuts">Não foi possível iniciar os atalhos. Smart S é o launcher padrão\?</string>
     <string name="contacts_call_on_click">Clique para ligar aos contactos</string>
-    <string name="swap_kiss_button_with_menu">Botão KISS à direita</string>
+    <string name="swap_kiss_button_with_menu">Botão Smart S à direita</string>
     <string name="keyboard_suggestions">Ativar sugestões/preenchimento automático</string>
     <string name="notification_support">Mostrar ícone para aplicações com notificações</string>
-    <string name="notification_dialog">Assinale KISS no menu seguinte para ativar.</string>
-    <string name="cant_pin_shortcut">Não foi possível criar o atalho. KISS é o launcher padrão\?</string>
+    <string name="notification_dialog">Assinale Smart S no menu seguinte para ativar.</string>
+    <string name="cant_pin_shortcut">Não foi possível criar o atalho. Smart S é o launcher padrão\?</string>
     <string name="search_results_options">Resultados da procura</string>
     <string name="search_provider_toggle">Ligações para aceder aos serviços de pesquisa</string>
     <string name="copy_confirmation">Copiado para a área de transferência</string>
@@ -219,8 +219,8 @@
     <string name="gesture_down_name">Ação ao deslizar para baixo</string>
     <string name="gesture_up_name">Ação ao deslizar para cima</string>
     <string name="gestures">Gestos</string>
-    <string name="enable_double_tap_to_lock">Toque duas vezes para bloquear as necessidades da API de acessibilidade do Android. Nenhum dado é processado, nenhum dado é armazenado. Para usar este recurso, ative o KISS no ecrã seguinte.</string>
-    <string name="lock_service_description">Bloquear ecrã a partir do KISS</string>
+    <string name="enable_double_tap_to_lock">Toque duas vezes para bloquear as necessidades da API de acessibilidade do Android. Nenhum dado é processado, nenhum dado é armazenado. Para usar este recurso, ative o Smart S no ecrã seguinte.</string>
+    <string name="lock_service_description">Bloquear ecrã a partir do Smart S</string>
     <string name="gesture_notifications">Mostrar sombra nas notificações</string>
     <string name="theme_shadow">Contorno do texto (sombra)</string>
     <string name="show_subicons">Mostrar ícone da aplicação em atalhos</string>
@@ -306,7 +306,7 @@
     <string name="color_system">Cores do Sistema</string>
     <string name="icons_themed_summary">Os ícones são coloridos com as cores do sistema (beta)</string>
     <string name="export_settings_done">Definições exportadas para a área de transferência</string>
-    <string name="import_settings_upgrade_kiss">Atualize a aplicação KISS antes de importar as definições.</string>
+    <string name="import_settings_upgrade_kiss">Atualize a aplicação Smart S antes de importar as definições.</string>
     <string name="import_settings_save_not_possible">Não foi possível guardar as definições</string>
     <string name="tagged_result_sort_mode_default">Padrão, igual ao modo histórico</string>
     <string name="tagged_result_sort_mode_name">Ordenação dos resultados com etiqueta</string>

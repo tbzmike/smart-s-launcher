@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">KISS launcher</string>
-    <string name="activity_setting">KISS nastavenia</string>
+    <string name="app_name">Smart S launcher</string>
+    <string name="activity_setting">Smart S nastavenia</string>
     <string name="ui_search_hint">Hľadaj aplikácie, kontakty, …</string>
     <string name="ui_item_search">%1$s Vyhľadať “%2$s”</string>
     <string name="ui_item_phone">Volaj “%s”</string>
@@ -16,7 +16,7 @@
     <string name="ui_empty_2">Vždy zobrazovať históriu</string>
     <string name="ui_empty_2_sub">Pre rýchly prístup</string>
     <string name="ui_empty_3">Rýchly prístup pre najpoužívanejšie aplikácie</string>
-    <string name="ui_empty_3_sub">KISS launcher sa učí z Vaších zvykov</string>
+    <string name="ui_empty_3_sub">Smart S launcher sa učí z Vaších zvykov</string>
     <string name="contacts_name">Kontakty</string>
     <string name="search_name">Poskytovatelia webového vyhľadávania</string>
     <string name="settings_name">Systémové nastavenia</string>
@@ -34,8 +34,8 @@
     <string name="lwp_touch">Posielať udalosti dotyku pozadiu obrazovky</string>
     <string name="portrait_title">Vynútiť vertikálne zobrazenie</string>
     <string name="history_onclick_name">Zobraziť históriu na dotyk</string>
-    <string name="reset_excluded_apps_warn">Naozaj chcete vymazať zoznam aplikácií vyradených z KISS\?</string>
-    <string name="reset_excluded_apps_name">Vymazanie zoznamu aplikácií vyradených z KISS</string>
+    <string name="reset_excluded_apps_warn">Naozaj chcete vymazať zoznam aplikácií vyradených z Smart S\?</string>
+    <string name="reset_excluded_apps_name">Vymazanie zoznamu aplikácií vyradených z Smart S</string>
     <string name="history_hide_name">Minimalistické používateľské rozhranie</string>
     <string name="history_hide_desc">Skryť históriu a úvodnú obrazovku, zapnúť widgety</string>
     <string name="keyboard_suggestions">Povoliť automatické dokončovanie/odporúčania</string>
@@ -45,7 +45,7 @@
     <string name="reset_warn">Naozaj chcete vymazať Vašu históriu\?</string>
     <string name="ui_excluded_apps_dialog_title">Zvoľte aplikácie na vyradenie</string>
     <string name="ui_excluded_from_history_apps">Zobraziť alebo upraviť aplikácie vyradené z histórie</string>
-    <string name="ui_excluded_apps">Zobraziť alebo upraviť aplikácie vyradené z KISS</string>
+    <string name="ui_excluded_apps">Zobraziť alebo upraviť aplikácie vyradené z Smart S</string>
     <string name="settings_excluded_apps">Vyradené aplikácie</string>
     <string name="reset_excluded_from_history_apps_warn">Naozaj chcete vymazať Váš zoznam aplikácií vyradených z histórie\?</string>
     <string name="reset_excluded_from_history_apps_name">Vymazanie zoznamu aplikácií vyradených z histórie</string>

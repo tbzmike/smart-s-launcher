@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">KISS 桌面</string>
-    <string name="activity_setting">KISS 設定</string>
+    <string name="app_name">Smart S 桌面</string>
+    <string name="activity_setting">Smart S 設定</string>
     <string name="ui_search_hint">搜尋程式，聯絡人，…</string>
     <string name="ui_item_search">%1$s 搜尋“%2$s”</string>
     <string name="ui_item_visit">訪問“%1$s”</string>
@@ -18,7 +18,7 @@
     <string name="ui_empty_2">總是顯示您的歷史紀錄</string>
     <string name="ui_empty_2_sub">用以方便開啟</string>
     <string name="ui_empty_3">快速開啟常用程式</string>
-    <string name="ui_empty_3_sub">KISS 桌面會從您的使用習慣中學習調整</string>
+    <string name="ui_empty_3_sub">Smart S 桌面會從您的使用習慣中學習調整</string>
     <string name="contacts_name">聯絡人</string>
     <string name="search_name">線上搜尋引擎</string>
     <string name="settings_name">系統設定</string>
@@ -28,9 +28,9 @@
     <string name="main_kiss">顯示應用程式列表</string>
     <string name="main_kiss_back">顯示歷史紀錄</string>
     <string name="reset_name">清除歷史紀錄</string>
-    <string name="reset_excluded_apps_name">重設在 KISS 中被隱藏的程式列表</string>
+    <string name="reset_excluded_apps_name">重設在 Smart S 中被隱藏的程式列表</string>
     <string name="reset_excluded_apps_warn">您確定要重設您的隱藏程式列表？</string>
-    <string name="ui_excluded_apps">查看或編輯在 KISS 中被隱藏的程式</string>
+    <string name="ui_excluded_apps">查看或編輯在 Smart S 中被隱藏的程式</string>
     <string name="ui_excluded_apps_dialog_title">勾選要隱藏的應用程式</string>
     <string name="reset_warn">您確定要清除歷史紀錄？</string>
     <string name="reset_favorites_name">重設您的最愛列表</string>
@@ -99,7 +99,7 @@
     <string name="tags_confirmation_added">標籤已新增</string>
     <string name="tags_visible">顯示標籤</string>
     <string name="excluded_app_list_erased">隱藏程式列表已清除。</string>
-    <string name="excluded_app_list_added">應用程式已從 KISS 中隱藏。在 KISS 設定中可以重設</string>
+    <string name="excluded_app_list_added">應用程式已從 Smart S 中隱藏。在 Smart S 設定中可以重設</string>
     <string name="removed_item">移除已完成</string>
     <string name="menu_remove">從歷史紀錄中刪除</string>
     <string name="menu_exclude">隱藏應用…</string>
@@ -123,8 +123,8 @@
     <string name="pref_hide_statusbar">隱藏狀態列</string>
     <string name="pref_hide_statusbar_desc">隱藏狀態列並開啟沈浸模式</string>
     <string name="restart_desc">修復主題及新增聯絡人無法顯示問題</string>
-    <string name="restart_name">重啟 KISS</string>
-    <string name="restart_warn">您確定要重新啟動 KISS？如果 KISS 不是您的預設主畫面，本程式只會關閉並退出。</string>
+    <string name="restart_name">重啟 Smart S</string>
+    <string name="restart_warn">您確定要重新啟動 Smart S？如果 Smart S 不是您的預設主畫面，本程式只會關閉並退出。</string>
     <string name="default_launcher_title">更改預設主畫面應用程式</string>
     <string name="default_launcher_warn">更改預設主畫面應用程式後，您將會開啟該主畫面程式。確定要繼續？\n\n提醒：如果您沒有看到“一律採用”選項，您需要再次按下“HOME”鍵。</string>
     <string name="items_title">%d 項</string>
@@ -152,7 +152,7 @@
     <!-- Widget strings, preference id should not be translated -->
     <string name="menu_widget_add">添加主畫面小工具</string>
     <string name="menu_widget_remove">移除小工具</string>
-    <string name="rate_the_app">給 KISS 評分</string>
+    <string name="rate_the_app">給 Smart S 評分</string>
     <string name="history_settings_summary">重設您的歷史紀錄、隱藏應用程式…</string>
     <string name="user_interface_summary">主題、透明度和顏色</string>
     <string name="providers_summary">調整搜尋結果，新增自訂搜尋引擎…</string>
@@ -162,7 +162,7 @@
     <string name="history_favorites_summary">重置您的最愛列表，刪除最愛列等…</string>
     <string name="title_wallpaper">動態桌布互動</string>
     <string name="freeze_history_summary">維持歷史紀錄不變，直到取消勾選</string>
-    <string name="enable_favorites_bar_summary_off">只在按下 KISS 圖示時顯示收藏</string>
+    <string name="enable_favorites_bar_summary_off">只在按下 Smart S 圖示時顯示收藏</string>
     <string name="enable_favorites_bar_summary_on">在搜尋列上方顯示收藏</string>
     <string name="get_help">取得說明</string>
     <string name="permission_denied">請求權限被拒</string>
@@ -172,7 +172,7 @@
     <string name="settings_excluded_apps">被排除的項目</string>
     <string name="hide_search_bar_hint">從搜尋列移除提示文字</string>
     <string name="theme_bar_color">收藏列與搜尋列色彩</string>
-    <string name="notification_dialog">在接下來的目錄中勾選 KISS 以啟用。</string>
+    <string name="notification_dialog">在接下來的目錄中勾選 Smart S 以啟用。</string>
     <string name="ctx_menu">更多選項</string>
     <string name="import_settings_dialog">這會以剪貼板中的內容覆蓋掉你當前的設定。標籤會被*移除*。確定繼續？</string>
     <string name="force_adaptive_summary">將不自動適應的圖示縮小，並放在白色背景上</string>
@@ -222,23 +222,23 @@
     <string name="custom_icon_hint">以名稱過濾</string>
     <string name="gestures">手勢</string>
     <string name="double_tap_to_lock">雙擊鎖定螢幕</string>
-    <string name="enable_double_tap_to_lock">雙擊以鎖定需要 Android 的輔助功能 API。不處理任何資料，也不儲存任何資料。要使用此功能，請在接下來的畫面中啟用 KISS。</string>
+    <string name="enable_double_tap_to_lock">雙擊以鎖定需要 Android 的輔助功能 API。不處理任何資料，也不儲存任何資料。要使用此功能，請在接下來的畫面中啟用 Smart S。</string>
     <string name="gesture_right_name">右滑</string>
     <string name="gesture_left_name">左滑</string>
     <string name="gesture_down_name">下滑</string>
     <string name="gesture_up_name">上滑</string>
-    <string name="lock_service_description">從 KISS 鎖定螢幕</string>
+    <string name="lock_service_description">從 Smart S 鎖定螢幕</string>
     <string name="menu_widget_move_down">下移</string>
     <string name="menu_widget_move_up">上移</string>
     <string name="menu_size_down">縮小</string>
     <string name="menu_size_up">放大</string>
     <string name="large_favorites_bar">大型收藏列</string>
     <string name="copy_confirmation">複製到剪貼板</string>
-    <string name="cant_pin_shortcut">無法新增捷徑。KISS 是您的預設桌面嗎？</string>
+    <string name="cant_pin_shortcut">無法新增捷徑。Smart S 是您的預設桌面嗎？</string>
     <string name="notification_support">在有通知的程式上標點點</string>
     <string name="pref_fav_tags_drawable">為最愛標籤產生圖示</string>
     <string name="pref_fav_tags_drawable_desc">關閉以在多數的最愛標籤使用更少的記憶體</string>
-    <string name="unable_to_initialize_shortcuts">無法初始化捷徑。KISS 是你的預設桌面嗎？</string>
+    <string name="unable_to_initialize_shortcuts">無法初始化捷徑。Smart S 是你的預設桌面嗎？</string>
     <string name="pref_show_untagged">顯示「顯示沒標籤的」</string>
     <string name="show_untagged">顯示沒標籤的</string>
     <string name="show_history">顯示歷史記錄</string>
@@ -249,18 +249,18 @@
     <string name="pref_fav_tags_select">最愛列要顯示的標籤</string>
     <string name="pref_toggle_tags_select">目錄要顯示的標籤</string>
     <string name="screen_toggle_tags">自訂標籤目錄</string>
-    <string name="shortcuts_no_host_permission">KISS 不再是您的主要桌面，故不能獲取您的捷徑。</string>
+    <string name="shortcuts_no_host_permission">Smart S 不再是您的主要桌面，故不能獲取您的捷徑。</string>
     <string name="black_notification_icons">以黑色顯示通知圖示</string>
     <string name="colors">色彩</string>
     <string name="search_provider_default">預設線上搜尋引擎（Enter 時）</string>
-    <string name="swap_kiss_button_with_menu">右側的 KISS 鈕</string>
+    <string name="swap_kiss_button_with_menu">右側的 Smart S 鈕</string>
     <string name="pref_hide_circle_desc">按鈕將會可用而不可見。</string>
-    <string name="pref_hide_circle">隱藏 KISS 圓形及三點目錄</string>
+    <string name="pref_hide_circle">隱藏 Smart S 圓形及三點目錄</string>
     <string name="exclude_favorites_apps">在應用程式列表中隱藏最愛列表中的程式</string>
     <string name="menu_app_store">在商店中檢視</string>
     <string name="menu_exclude_history">從歷史記錄</string>
-    <string name="menu_exclude_kiss">從 KISS</string>
-    <string name="excluded_app_history_added">歷史記錄中被隱藏的程式。透過 KISS 設定以重設</string>
+    <string name="menu_exclude_kiss">從 Smart S</string>
+    <string name="excluded_app_history_added">歷史記錄中被隱藏的程式。透過 Smart S 設定以重設</string>
     <string name="app_rename_confirmation">應用程式已改為 %s</string>
     <string name="app_rename_title">自訂名稱</string>
     <string name="menu_custom_icon">自訂圖示</string>
@@ -317,7 +317,7 @@
     <string name="export_settings_done">設定已匯出至剪貼簿。</string>
     <string name="export_settings_error">無法匯出設定。</string>
     <string name="import_settings_version_missing">無法匯入設定。未偵測到有效的版本字串。</string>
-    <string name="import_settings_upgrade_kiss">請在匯入這些設定前升級您的 KISS 版本。</string>
+    <string name="import_settings_upgrade_kiss">請在匯入這些設定前升級您的 Smart S 版本。</string>
     <string name="import_settings_save_not_possible">無法儲存設定。</string>
     <string name="import_settings_done">設定已匯入。</string>
     <string name="import_settings_error">無法匯入設定。</string>

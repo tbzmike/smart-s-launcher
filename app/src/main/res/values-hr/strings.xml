@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">KISS pokretač</string>
-    <string name="activity_setting">KISS postavke</string>
+    <string name="app_name">Smart S pokretač</string>
+    <string name="activity_setting">Smart S postavke</string>
     <string name="ui_search_hint">Traži aplikacije, kontakte, …</string>
     <string name="ui_item_search">%1$s pretraga za „%2$s”</string>
     <string name="ui_item_phone">Nazovi „%s”</string>
@@ -17,7 +17,7 @@
     <string name="ui_empty_2">Uvijek vidi tvoju povijest</string>
     <string name="ui_empty_2_sub">Za brz pristup</string>
     <string name="ui_empty_3">Brz pristup najčešće korištenim aplikacijama</string>
-    <string name="ui_empty_3_sub">KISS pokretač uči iz tvojih navika</string>
+    <string name="ui_empty_3_sub">Smart S pokretač uči iz tvojih navika</string>
     <string name="contacts_name">Kontakti</string>
     <string name="search_name">Internetske tražilice</string>
     <string name="settings_name">Postavke uređaja</string>
@@ -57,9 +57,9 @@
     <string name="theme_name">Tema</string>
     <string name="misc">Ostalo</string>
     <string name="shortcuts_name">Prečaci</string>
-    <string name="reset_excluded_apps_name">Resetiraj listu aplikacija koje su izuzete iz KISS-a</string>
+    <string name="reset_excluded_apps_name">Resetiraj listu aplikacija koje su izuzete iz Smart S-a</string>
     <string name="reset_excluded_apps_warn">Stvarno želiš resetirati tvoju listu izuzetih aplikacija?</string>
-    <string name="ui_excluded_apps">Pogledaj ili uredi aplikacije koju su izuzete iz KISS-a</string>
+    <string name="ui_excluded_apps">Pogledaj ili uredi aplikacije koju su izuzete iz Smart S-a</string>
     <string name="ui_excluded_apps_dialog_title">Označi aplikacije za izuzimanje</string>
     <string name="reset_warn">Stvarno želiš resetirati povijest?</string>
     <string name="reset_favorites_name">Resetiraj listu favorita</string>
@@ -85,7 +85,7 @@
     <string name="menu_favorites_add">Dodaj u favorite</string>
     <string name="portrait_title">Prisili uspravni prikaz</string>
     <string name="excluded_app_list_erased">Lista izuzetih aplikacija izbrisana.</string>
-    <string name="excluded_app_list_added">Aplikacija je izuzeta iz KISS-a. Resetiraj putem KISS postavki</string>
+    <string name="excluded_app_list_added">Aplikacija je izuzeta iz Smart S-a. Resetiraj putem Smart S postavki</string>
     <string name="menu_exclude">Izuzmi aplikaciju …</string>
     <string name="menu_shortcut_remove">Ukloni prečac</string>
     <string name="menu_phone_create">Stvori kontakt …</string>
@@ -96,8 +96,8 @@
     <string name="exclude_favorites_history">Sakrij favorite iz povijesti</string>
     <string name="favorites_hide">Sakrij traku favorita na početku</string>
     <string name="restart_desc">Popravi probleme teme i ne prikazivanje novih kontakata</string>
-    <string name="restart_name">Ponovo pokreni KISS</string>
-    <string name="restart_warn">Stvarno želiš ponovo pokrenuti KISS\? Ako KISS nije glavni pokretač, aplikacija će se zatvoriti.</string>
+    <string name="restart_name">Ponovo pokreni Smart S</string>
+    <string name="restart_warn">Stvarno želiš ponovo pokrenuti Smart S\? Ako Smart S nije glavni pokretač, aplikacija će se zatvoriti.</string>
     <string name="items_title">%d stavke</string>
     <string name="keyboard_options">Postavke tipkovnice</string>
     <string name="color_picker_default_title">Odabir boje</string>
@@ -110,16 +110,16 @@
     <string name="menu_tags_edit">Dodaj ili uredi oznake</string>
     <string name="theme_transparent">Prozirna</string>
     <string name="large_favorites_bar">Koristi veće favorite</string>
-    <string name="menu_exclude_kiss">iz KISS-a</string>
+    <string name="menu_exclude_kiss">iz Smart S-a</string>
     <string name="gesture_up_name">Radnja pri povlačenju prema gore</string>
     <string name="gesture_notifications">Prikaži sjenu obavijesti</string>
     <string name="popup_tags_actions">Dostupne radnje</string>
     <string name="pref_hide_statusbar">Sakrij traku stanja</string>
-    <string name="lock_service_description">Zaključaj ekran iz pokretača KISS</string>
+    <string name="lock_service_description">Zaključaj ekran iz pokretača Smart S</string>
     <string name="pref_show_untagged">Prikaži neoznačene radnje</string>
     <string name="rounded_bars">Zaobljeni kutovi trake</string>
     <string name="search_provider_name">Ime pružatelja usluge</string>
-    <string name="cant_pin_shortcut">Neuspjelo dodavanje prečaca. Je li KISS standardni pokretač\?</string>
+    <string name="cant_pin_shortcut">Neuspjelo dodavanje prečaca. Je li Smart S standardni pokretač\?</string>
     <string name="lwp_drag_desc">Šalji vešestruke dodirne događaje</string>
     <string name="get_help">Pomoć</string>
     <string name="search_provider_reset">Resetiraj pružatelje internetskih tražilica</string>
@@ -131,7 +131,7 @@
     <string name="notification_bar_color">Boja trake obavijesti</string>
     <string name="rate_the_app">Ocijeni aplikaciju</string>
     <string name="search_providers_delete">Izbriši internetske tražilice</string>
-    <string name="excluded_app_history_added">Aplikacija je izuzeta iz povijesti. Resetiraj putem KISS postavki</string>
+    <string name="excluded_app_history_added">Aplikacija je izuzeta iz povijesti. Resetiraj putem Smart S postavki</string>
     <string name="search_provider_added">Internetska tražilica je dodana.</string>
     <string name="pref_hide_navbar_desc">Sakrij traku navigacije i uključi cjeloekranski prikaz</string>
     <string name="pref_toggle_tags_select">Oznake za prikaz u izborniku</string>
@@ -158,7 +158,7 @@
     <string name="history_frecency">Često pristupljeno nedavno</string>
     <string name="pref_tags_menu">Dodaj oznake u izbornik</string>
     <string name="history_adaptive">Prilagođeno korisničkoj upotrebi</string>
-    <string name="enable_double_tap_to_lock">Za dvostruki dodir za zaključavanje potreban je Android Accessibility API. Podaci se ne obrađuju niti spremaju. Za korištenje ove funkcije aktiviraj KISS na sljedećem ekranu.</string>
+    <string name="enable_double_tap_to_lock">Za dvostruki dodir za zaključavanje potreban je Android Accessibility API. Podaci se ne obrađuju niti spremaju. Za korištenje ove funkcije aktiviraj Smart S na sljedećem ekranu.</string>
     <string name="theme_semi_transparent_dark">Tamna poluprozirna</string>
     <string name="menu_widget_move_up">Pomakni gore</string>
     <string name="settings_display">Prikaz</string>
@@ -169,14 +169,14 @@
     <string name="theme_customisation">Napredno prilagođavanje teme</string>
     <string name="pref_hide_circle_desc">Gumbi će i dalje raditi, ali se neće vidjeti.</string>
     <string name="lwp_touch">Šalji dodirne događaje slici pozadine</string>
-    <string name="shortcuts_no_host_permission">KISS više nije glavni pokretač i ne može pristupiti prečacima.</string>
+    <string name="shortcuts_no_host_permission">Smart S više nije glavni pokretač i ne može pristupiti prečacima.</string>
     <string name="number_of_display_items">Najveći broj rezultata u pretrazi i povijesti</string>
     <string name="custom_search_provider">Dodaj internetsku tražilicu</string>
     <string name="pref_fav_tags_drawable_desc">Isključi za manju potrošnju memorije pri mnogim oznakama favorita</string>
     <string name="theme_separator">Znak odvajanja rezultata</string>
     <string name="theme_result_color">Boja teksta za rezultate</string>
     <string name="search_provider_error_url">Koristi ispravan URL</string>
-    <string name="swap_kiss_button_with_menu">KISS gumb na desnoj strani</string>
+    <string name="swap_kiss_button_with_menu">Smart S gumb na desnoj strani</string>
     <string name="pref_tags_menu_dismiss">Zatvori izbornik oznaka nakon odabira</string>
     <string name="gesture_down_name">Radnja pri povlačenju prema dolje</string>
     <string name="theme_customize_disabled">Deaktivirano</string>
@@ -185,7 +185,7 @@
     <string name="rounded_list">Zaobljeni kutovi liste</string>
     <string name="user_experience_summary">Minimalističko sučelje, postavke tipkovnice, …</string>
     <string name="search_provider_reset_done_desc">Pružatelji tražilica su resetirani</string>
-    <string name="enable_favorites_bar_summary_off">Prikaži favorite samo pri pritiskanju ikone KISS-a</string>
+    <string name="enable_favorites_bar_summary_off">Prikaži favorite samo pri pritiskanju ikone Smart S-a</string>
     <string name="menu_size_up">Povećaj</string>
     <string name="menu_exclude_history">iz povijesti</string>
     <string name="wp_animate_sides">Pričvrsti sliku pozadine na stranicu</string>
@@ -199,7 +199,7 @@
     <string name="regenerate_shortcuts_desc">Žeilš li ponovo generirati listu prečaca\?</string>
     <string name="menu_size_down">Smanji</string>
     <string name="reset_excluded_from_history_apps_warn">Stvarno želiš resetirati izuzete iz liste povijesti aplikacija?</string>
-    <string name="ctx_menu">KISS izbornik</string>
+    <string name="ctx_menu">Smart S izbornik</string>
     <string name="colors">Boje</string>
     <string name="theme_dark">Tamna</string>
     <string name="search_provider_deleted">Internetske tražilice su uklonjene.</string>
@@ -209,7 +209,7 @@
     <string name="tags_visible">Prikaži oznake</string>
     <string name="menu_widget_remove">Ukloni widget</string>
     <string name="copy_confirmation">Kopirano u međuspremnik</string>
-    <string name="notification_dialog">Označi KISS u sljedećem izborniku za uključivanje.</string>
+    <string name="notification_dialog">Označi Smart S u sljedećem izborniku za uključivanje.</string>
     <string name="title_wallpaper">Interakcija sa slikom pozadine uživo</string>
     <string name="wp_drag_animate">Pomiči sliku pozadine</string>
     <string name="ui_excluded_from_history_apps">Pogledaj ili uredi aplikacije koju su izuzete iz povijesti</string>
@@ -223,9 +223,9 @@
     <string name="gesture_do_nothing">Ne radi ništa</string>
     <string name="show_untagged">Prikaži neoznačene</string>
     <string name="permission_denied">Dozvola je odbijena</string>
-    <string name="pref_hide_circle">Sakrij krug KISS-a i trotočkasti izbornik</string>
+    <string name="pref_hide_circle">Sakrij krug Smart S-a i trotočkasti izbornik</string>
     <string name="wp_animate_center_desc">Slika pozadine će se ponovo centrirati nakon klizanja</string>
-    <string name="unable_to_initialize_shortcuts">Neuspjelo inicijaliziranje prečaca. Je li KISS standardni pokretač\?</string>
+    <string name="unable_to_initialize_shortcuts">Neuspjelo inicijaliziranje prečaca. Je li Smart S standardni pokretač\?</string>
     <string name="color_transparent">Prozirna</string>
     <string name="default_launcher_warn">Nakon što odabereš standardnog pokretača, otvorit će se njegov početni ekran. Stvarno želiš nastaviti\?
 \n
@@ -314,7 +314,7 @@
     <string name="export_settings_done">Postavke su izvezene u međuspremnik.</string>
     <string name="export_settings_error">Nije moguće izvesti postavke.</string>
     <string name="import_settings_version_missing">Nije moguće uvesti postavke. Nije otkriven valjani niz verzije.</string>
-    <string name="import_settings_upgrade_kiss">Aktualiziraj svoju KISS verziju prije uvoza tih postavki.</string>
+    <string name="import_settings_upgrade_kiss">Aktualiziraj svoju Smart S verziju prije uvoza tih postavki.</string>
     <string name="import_settings_save_not_possible">Nije moguće spremiti postavke.</string>
     <string name="import_settings_done">Postavke su uvezene.</string>
     <string name="import_settings_error">Nije moguće uvesti postavke.</string>

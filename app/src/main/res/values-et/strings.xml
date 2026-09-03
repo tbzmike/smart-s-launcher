@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="activity_setting">KISS sätted</string>
+    <string name="activity_setting">Smart S sätted</string>
     <string name="ui_search_hint">Otsi rakendusi, kontakte, …</string>
-    <string name="app_name">KISS: Rakenduste käivitaja</string>
+    <string name="app_name">Smart S: Rakenduste käivitaja</string>
     <string name="ui_item_phone">Helista \"%s\"</string>
     <string name="ui_item_contact_hint_message">Saada sõnum</string>
     <string name="ui_item_contact_hint_call">Helista</string>
@@ -61,12 +61,12 @@
     <string name="contacts_call_on_click">Helistamiseks klõpsi</string>
     <string name="ui_excluded_from_history_apps">Vaata ja muuda rakendusi, mis otsinguajaloos ei salvestu</string>
     <string name="settings_excluded_apps">Välistatud kirjed</string>
-    <string name="ui_excluded_apps">Vaata ja muuda rakendusi, mida KISS ei kuva</string>
+    <string name="ui_excluded_apps">Vaata ja muuda rakendusi, mida Smart S ei kuva</string>
     <string name="ui_excluded_apps_dialog_title">Vali välistatavad rakendused</string>
     <string name="reset_excluded_apps_warn">Kas sa kindlasti soovid välistatud rakenduste loendi kustutada\?</string>
     <string name="reset_excluded_apps_name">Tühista välistatud rakenduste loend</string>
     <string name="search_provider_toggle">Otsingumootorite lingid</string>
-    <string name="ui_empty_3_sub">KISS õpib sinu harjumustest</string>
+    <string name="ui_empty_3_sub">Smart S õpib sinu harjumustest</string>
     <string name="ui_empty_3">Leia enamkasutatavad rakendused kiiresti</string>
     <string name="ui_empty_1">Otsi mida iganes vaja</string>
     <string name="ui_item_open">Ava „%1$s“</string>
@@ -109,7 +109,7 @@
     <string name="menu_exclude">Välista rakendus…</string>
     <string name="menu_remove">Eemalda ajaloost</string>
     <string name="removed_item">Eemaldatud</string>
-    <string name="excluded_app_list_added">Rakendus on KISS\'ist välistatud. Seda saad muuta KISS\'i seadistustest</string>
+    <string name="excluded_app_list_added">Rakendus on Smart S\'ist välistatud. Seda saad muuta Smart S\'i seadistustest</string>
     <string name="excluded_app_list_erased">Välistatud rakenduste loend on kustutatud.</string>
     <string name="menu_favorites_add">Lisa lemmikuks</string>
     <string name="history_erased">Ajalugu on kustutatud.</string>
@@ -185,14 +185,14 @@
     <string name="app_rename_confirmation">Rakenduse nimi on nüüd „%s“</string>
     <string name="enable_favorites_bar">Näita lemmikuid otsinguriba kohal</string>
     <string name="favorites_hide">Algselt peida lemmikute riba</string>
-    <string name="pref_hide_circle">Peida KISSi ikoon ja kolme-punkti menüüikoon</string>
+    <string name="pref_hide_circle">Peida Smart Si ikoon ja kolme-punkti menüüikoon</string>
     <string name="pref_hide_circle_desc">Nupud toimivad jätkuvalt, kuid neid pole näha.</string>
     <string name="main_color">Põhivärv</string>
     <string name="toast_favorites_removed">Eemaldasid „%s“ ajaloost</string>
     <string name="color_transparent_white">Läbipaistev valge</string>
     <string name="menu_favorites_remove">Eemalda lemmik</string>
     <string name="color_transparent_dark">Läbipaistev tume</string>
-    <string name="ctx_menu">KISS-menüü</string>
+    <string name="ctx_menu">Smart S-menüü</string>
     <string name="show_history">Näita ajalugu</string>
     <string name="show_untagged">Näita sildistamata kirjeid</string>
     <string name="theme_transparent">Läbipaistev hele kujundus</string>
@@ -201,7 +201,7 @@
     <string name="theme_light">Hele kujundus</string>
     <string name="enable_notification_history">Näita ajaloos uute teavitustega rakendusi</string>
     <string name="pref_hide_statusbar">Peida olekuriba</string>
-    <string name="restart_warn">Kas sa kindlasti soovid KISSi uuesti tööle panna? Kui ta pole määratud vaikimisi käivitajaks, siis rakendus lihtsalt lõpetab töö.</string>
+    <string name="restart_warn">Kas sa kindlasti soovid Smart Si uuesti tööle panna? Kui ta pole määratud vaikimisi käivitajaks, siis rakendus lihtsalt lõpetab töö.</string>
     <string name="default_launcher_title">Muuda vaikimisi kasutatavat käivitajat</string>
     <string name="misc">Varia</string>
     <string name="transparent_search_bar">Läbipaistev otsinguriba</string>
@@ -210,8 +210,8 @@
     <string name="rounded_bars">Ribade ümarad nurgad</string>
     <string name="user_interface_summary">Kujundus, läbipaistvus ja värvid</string>
     <string name="popup_tags_actions">Saadavalolevad tegevused</string>
-    <string name="unable_to_initialize_shortcuts">Kiirvaliku nuppude laadimine ei õnnestunud. Kas KISS kindlasti on vaikimisi rakenduste käivitaja?</string>
-    <string name="cant_pin_shortcut">Kiirvaliku nuppude lisamine ei õnnestunud. Kas KISS kindlasti on vaikimisi rakenduste käivitaja?</string>
+    <string name="unable_to_initialize_shortcuts">Kiirvaliku nuppude laadimine ei õnnestunud. Kas Smart S kindlasti on vaikimisi rakenduste käivitaja?</string>
+    <string name="cant_pin_shortcut">Kiirvaliku nuppude lisamine ei õnnestunud. Kas Smart S kindlasti on vaikimisi rakenduste käivitaja?</string>
     <string name="pref_show_untagged">Näita sildistamata tegevusi</string>
     <string name="copy_confirmation">Kopeeritud lõikelauale</string>
     <string name="large_favorites_bar">Näita lemmikuid suurematena</string>
@@ -225,7 +225,7 @@
     <string name="menu_size_up">Suurenda</string>
     <string name="menu_widget_move_down">Liiguta allapoole</string>
     <string name="pref_tags_menu">Lisa menüüsse silte</string>
-    <string name="shortcuts_no_host_permission">KISS enam pole vaikimisi rakenduste käivitaja ja tal puudub ligipääs sinu määratud kiirvaliku nuppudele.</string>
+    <string name="shortcuts_no_host_permission">Smart S enam pole vaikimisi rakenduste käivitaja ja tal puudub ligipääs sinu määratud kiirvaliku nuppudele.</string>
     <string name="history_settings_summary">Lähtesta ajalugu, välista rakendusi, jne…</string>
     <string name="hide_search_bar_hint">Eemalda otsinguribalt vihje tekst</string>
     <string name="large_search_bar">Suurem otsinguriba</string>
@@ -233,7 +233,7 @@
     <string name="notification_bar_color">Teavituste riba värv</string>
     <string name="share">Jaga…</string>
     <string name="number_of_display_items">Suurim kirjete arv otsingus ja ajaloos</string>
-    <string name="restart_name">Käivita KISS uuesti</string>
+    <string name="restart_name">Käivita Smart S uuesti</string>
     <string name="menu_exclude_history">ajaloost</string>
     <string name="tags_confirmation_added">Sildid on määratud</string>
     <string name="tags_visible">Näita silte</string>
@@ -246,14 +246,14 @@
     <string name="theme_semi_transparent_dark">Osaliselt läbipaistev tume kujundus</string>
     <string name="theme_separator">Tulemuste eraldaja</string>
     <string name="tags_add_title">Lisa silte, mida eraldavad tühikud</string>
-    <string name="swap_kiss_button_with_menu">KISSi nupp asub paremal</string>
+    <string name="swap_kiss_button_with_menu">Smart Si nupp asub paremal</string>
     <string name="default_icon">Vaikimisi ikoon</string>
     <string name="settings_dev">Arendaja seadistused</string>
     <string name="settings_accessibility">Ligipääsetavus</string>
     <string name="settings_sound">Helid ja helivaljus</string>
     <string name="menu_tags_edit">Lisa või muuda silte</string>
-    <string name="menu_exclude_kiss">rakendusest KISS</string>
-    <string name="excluded_app_history_added">Rakendus on nüüd ajaloost välistatud. Seda saad muuta KISSi seadistustest</string>
+    <string name="menu_exclude_kiss">rakendusest Smart S</string>
+    <string name="excluded_app_history_added">Rakendus on nüüd ajaloost välistatud. Seda saad muuta Smart Si seadistustest</string>
     <string name="menu_app_store">Näita rakenduste poes</string>
     <string name="menu_shortcut_remove">Eemalda kiirvaliku nupp</string>
     <string name="gesture_history">Näita ajalugu</string>
@@ -279,10 +279,10 @@
     <string name="alternate_history_inputs">Täiendavad sisendandmed ajaloo jaoks</string>
     <string name="pref_fav_tags_drawable">Loo lemmiksiltidele ikoonid</string>
     <string name="gesture_up_name">Tegevus viipamisel üles</string>
-    <string name="lock_service_description">Lukusta ekraan KISSist</string>
+    <string name="lock_service_description">Lukusta ekraan Smart Sist</string>
     <string name="gesture_down_name">Tegevus viipamisel alla</string>
     <string name="gesture_left_name">Tegevus viipamisel vasakule</string>
-    <string name="enable_double_tap_to_lock">Selleks, et topeltpuudutus lukustaks ekraani, on vaja luba Android Accessibility API kasutamiseks. Andmeid ei töödelda ega salvestata. Selle funktsionaalsuse kasutamiseks luba KISS järgmises vaates.</string>
+    <string name="enable_double_tap_to_lock">Selleks, et topeltpuudutus lukustaks ekraani, on vaja luba Android Accessibility API kasutamiseks. Andmeid ei töödelda ega salvestata. Selle funktsionaalsuse kasutamiseks luba Smart S järgmises vaates.</string>
     <string name="double_tap_to_lock">Topeltpuudutus lukustab ekraani</string>
     <string name="gesture_long_press_name">Tegevus pikal vajutusel</string>
     <string name="gesture_right_name">Tegevus viipamisel paremale</string>
@@ -301,7 +301,7 @@
     <string name="history_favorites_summary">Lähtesta oma lemmikud, eemalda lemmikute riba…</string>
     <string name="title_wallpaper">Toimingud elava taustapildiga</string>
     <string name="freeze_history_summary">Ara muuda ajalugu kuni ta on kontrollimata</string>
-    <string name="enable_favorites_bar_summary_off">Näita lemmikuid vaid KISSi ikooni vajutamisel</string>
+    <string name="enable_favorites_bar_summary_off">Näita lemmikuid vaid Smart Si ikooni vajutamisel</string>
     <string name="results_size">Tulemuste kuvamise suurus</string>
     <string name="history_time">Kasutatud samal ajal</string>
     <string name="import_settings_error">Seadistuste importimine ei õnnestu.</string>
@@ -311,7 +311,7 @@
     <string name="contacts_shape">Kontaktide kuju</string>
     <string name="adaptive_shape_name">Ikoonide taustakuju</string>
     <string name="notification_support">Näita teavitustega rakendustel märkepunkti</string>
-    <string name="notification_dialog">Sisselülitamiseks vali KISS järgmises menüüs.</string>
+    <string name="notification_dialog">Sisselülitamiseks vali Smart S järgmises menüüs.</string>
     <string name="lwp_touch">Saada puudutusi taustapildile</string>
     <string name="lwp_drag">Imiteeri lohistamist taustapildi jaoks</string>
     <string name="lwp_drag_desc">Saada mitu puudutust</string>
@@ -320,7 +320,7 @@
     <string name="export_settings_done">Seadistused on eksporditud lõikelauale.</string>
     <string name="export_settings_error">Seadistuste eksportimine ei õnnestu.</string>
     <string name="import_settings_version_missing">Seadistuste importimine ei õnnestu. Ei õnnestunud tuvastada korrektset versioonitunnust.</string>
-    <string name="import_settings_upgrade_kiss">Enne nende seadistuste importimist palun uuenda kasutatav KISSi versioon.</string>
+    <string name="import_settings_upgrade_kiss">Enne nende seadistuste importimist palun uuenda kasutatav Smart Si versioon.</string>
     <string name="import_settings_save_not_possible">Seadistuste salvestamine ei õnnestu.</string>
     <string name="gesture_quicksettings">Näita kiirseadistusi</string>
     <string name="theme_customize_enabled">Kasutusel</string>

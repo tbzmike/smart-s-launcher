@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="ui_search_hint">பயன்பாடுகள், தொடர்புகள், தேடவும்…</string>
-    <string name="activity_setting">KISS அமைப்புகள்</string>
-    <string name="app_name">KISS துவக்கி</string>
+    <string name="activity_setting">Smart S அமைப்புகள்</string>
+    <string name="app_name">Smart S துவக்கி</string>
     <string name="search_provider_reset_desc">தேடல் வழங்குநர்களின் பட்டியலை மீட்டமைக்க விருப்பமா\?</string>
     <string name="search_provider_reset">வலை தேடல் வழங்குநர்களை மீட்டமை</string>
     <string name="custom_search_provider">வலை தேடல் வழங்குநர்களை சேர்</string>
@@ -22,7 +22,7 @@
     <string name="reset_excluded_from_history_apps_warn">நிச்சயம் வரலாற்றில் இருந்து நீக்கப்பட்ட செயலிகளின் பட்டியலை மீட்டமைக்க வேண்டுமா\?</string>
     <string name="reset_excluded_from_history_apps_name">வரலாற்றில் இருந்து ஒதுக்கப்பட்ட செயலிகளின் பட்டியலை மீட்டமை</string>
     <string name="reset_excluded_apps_warn">நிச்சயம் நீக்கப்பட்ட செயலிகள் பட்டியலை மீட்டமைக்க வேண்டுமா\?</string>
-    <string name="reset_excluded_apps_name">KISS- இல் இருந்து ஒதுக்கப்பட்ட செயலிகள் பட்டியலை மீட்டமை</string>
+    <string name="reset_excluded_apps_name">Smart S- இல் இருந்து ஒதுக்கப்பட்ட செயலிகள் பட்டியலை மீட்டமை</string>
     <string name="reset_name">வரலாற்றை மீட்டமை</string>
     <string name="main_kiss_back">வரலாற்றைக் காட்டு</string>
     <string name="main_kiss">செயலி பட்டியலை காட்டு</string>
@@ -33,7 +33,7 @@
     <string name="search_results_options">தேடல் முடிவுகள்</string>
     <string name="contacts_call_on_click">தொட்டவுடன் தொடர்புகளை அழை</string>
     <string name="contacts_name">தொடர்புகள்</string>
-    <string name="ui_empty_3_sub">KISS Launcher உங்கள் பழக்கங்களில் இருந்து கற்றுக்கொள்ளும்</string>
+    <string name="ui_empty_3_sub">Smart S Launcher உங்கள் பழக்கங்களில் இருந்து கற்றுக்கொள்ளும்</string>
     <string name="ui_empty_3">அதிகம் பயன்படுத்திய செயலிகளுக்கான விரைவு அணுகல்</string>
     <string name="ui_empty_2_sub">வேகமான அணுகளுக்கு</string>
     <string name="ui_empty_2">எப்பொழுதும் உங்கள் வரலாற்றை காண்க</string>
