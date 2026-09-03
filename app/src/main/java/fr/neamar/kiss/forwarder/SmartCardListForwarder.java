@@ -313,8 +313,9 @@ final class SmartCardListForwarder extends Forwarder {
         cardTitle.setTextSize(16f * namePercent / 100f);
         cardTitle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         cardTitle.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
+        cardTitle.setMinHeight(scaledTextHeight(31, heightPercent, namePercent));
         center.addView(cardTitle, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(31, heightPercent, namePercent)));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         if (!TextUtils.isEmpty(subtitle)) {
             VerticalCardTextView meta = new VerticalCardTextView(mainActivity);
@@ -324,8 +325,9 @@ final class SmartCardListForwarder extends Forwarder {
             meta.setTextSize(13f);
             meta.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             meta.setShadowLayer(dp(1), 0f, dp(1), Color.argb(160, 0, 0, 0));
+            meta.setMinHeight(scaledTextHeight(27, heightPercent, 100));
             center.addView(meta, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(27, heightPercent, 100)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
         TextView messageView = null;
@@ -336,6 +338,8 @@ final class SmartCardListForwarder extends Forwarder {
                 detachFromParent(activeText);
                 if (!TextUtils.isEmpty(latestMessage)) activeText.setText(latestMessage);
                 configureCollapsedMessage(activeText, textLineBudget);
+                activeText.setMinHeight(0);
+                activeText.setMaxHeight(Integer.MAX_VALUE);
                 center.addView(activeText, new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 messageView = activeText;
@@ -362,8 +366,9 @@ final class SmartCardListForwarder extends Forwarder {
             lastMessage.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             lastMessage.setPadding(0, dp(2), 0, dp(2));
             lastMessage.setShadowLayer(dp(1), 0f, dp(1), Color.argb(150, 0, 0, 0));
+            lastMessage.setMinHeight(scaledTextHeight(31, heightPercent, 100));
             center.addView(lastMessage, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(31, heightPercent, 100)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             messageView = lastMessage;
         } else if (TextUtils.isEmpty(subtitle)) {
             VerticalCardTextView context = new VerticalCardTextView(mainActivity);
@@ -372,8 +377,9 @@ final class SmartCardListForwarder extends Forwarder {
             context.setTextColor(Color.argb(175, 255, 255, 255));
             context.setTextSize(12f);
             context.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            context.setMinHeight(scaledTextHeight(25, heightPercent, 100));
             center.addView(context, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(25, heightPercent, 100)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
         if (call != null && call.kind == CommunicationPojo.Kind.CALL
@@ -387,8 +393,9 @@ final class SmartCardListForwarder extends Forwarder {
             callerName.setPadding(0, dp(3), 0, dp(1));
             callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
             callerName.setContentDescription("Caller: " + call.displayName);
+            callerName.setMinHeight(scaledTextHeight(31, heightPercent, namePercent));
             center.addView(callerName, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(31, heightPercent, namePercent)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
         prepareSourceForDetails(source);
@@ -425,8 +432,9 @@ final class SmartCardListForwarder extends Forwarder {
         name.setGravity(Gravity.CENTER);
         name.setPadding(dp(8), dp(5), dp(8), dp(3));
         name.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
+        name.setMinHeight(scaledTextHeight(34, heightPercent, namePercent));
         LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(34, heightPercent, namePercent));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         nameLp.setMargins(dp(10), dp(3), dp(10), 0);
         wrapper.addView(name, nameLp);
 
