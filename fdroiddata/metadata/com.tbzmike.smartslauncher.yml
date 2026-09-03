@@ -11,7 +11,7 @@ Repo: https://github.com/tbzmike/smart-s-launcher.git
 Builds:
   - versionName: 3.30.26
     versionCode: 454
-    commit: b697a7edb177e1578ccf8620634a7b8c7d3e14a2
+    commit: adeda9979096ad9c6129f0fe8d93ad0707043112
     subdir: app
     gradle:
       - yes
@@ -25,9 +25,9 @@ MaintainerNotes: |-
 
   Upstream KISS translations still contain inherited product-name text in a
   number of locales. The deterministic fdroid/rebrand_strings.py prebuild step
-  replaces only the user-visible uppercase product name "KISS" with "Smart S"
-  in every values*/strings.xml file; internal resource identifiers are not
-  renamed.
+  replaces only user-visible KISS product-name text (case-insensitively) with
+  "Smart S" in every values*/strings.xml file; internal resource identifiers
+  and XML attributes are not renamed.
 
   app/debug.keystore is a public debug-only CI key used by upstream to keep
   debug APKs update-compatible. It is not used for release signing and is
