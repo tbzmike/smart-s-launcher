@@ -11,7 +11,7 @@ Repo: https://github.com/tbzmike/smart-s-launcher.git
 Builds:
   - versionName: 3.30.26
     versionCode: 454
-    commit: f23a1fb802515c04d2fafcffbd5ab0d1444aa66a
+    commit: a3990a00e38dbf81b176e05260c4d793b7163cf6
     subdir: app
     gradle:
       - yes
@@ -36,9 +36,11 @@ MaintainerNotes: |-
   APKs update-compatible. It is not used for release signing and is deleted by
   the F-Droid scanner/build recipe.
 
-  The Google Maps history-card live map preview is disabled by default. A user
-  must explicitly enable Online map previews under Privacy & network before the
-  feature requests location or downloads a location-dependent OpenStreetMap tile.
+  Google Maps history cards can optionally show live location details, disabled
+  by default. When explicitly enabled, Smart S uses Android LocationManager data
+  locally to show coordinates and accuracy. It does not download map tiles or
+  reverse-geocode that location, so this feature does not send location to a map
+  or geocoding service.
 
   The Gradle 9.3.1 wrapper distribution is pinned with its verified SHA-256.
   This matches the minimum Gradle version required by Android Gradle Plugin 9.1.
