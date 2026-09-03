@@ -1,0 +1,45 @@
+Categories:
+  - Launcher
+License: GPL-3.0-only
+AuthorName: tbzmike
+SourceCode: https://github.com/tbzmike/smart-s-launcher
+IssueTracker: https://github.com/tbzmike/smart-s-launcher/issues
+
+RepoType: git
+Repo: https://github.com/tbzmike/smart-s-launcher.git
+
+Builds:
+  - versionName: 3.30.26
+    versionCode: 454
+    commit: b697a7edb177e1578ccf8620634a7b8c7d3e14a2
+    subdir: app
+    gradle:
+      - yes
+    scandelete:
+      - debug.keystore
+    prebuild: python3 ../fdroid/rebrand_strings.py src/main/res
+
+MaintainerNotes: |-
+  Smart S Launcher is a functional fork of KISS with applicationId
+  com.tbzmike.smartslauncher and distinct Smart S launcher artwork.
+
+  Upstream KISS translations still contain inherited product-name text in a
+  number of locales. The deterministic fdroid/rebrand_strings.py prebuild step
+  replaces only the user-visible uppercase product name "KISS" with "Smart S"
+  in every values*/strings.xml file; internal resource identifiers are not
+  renamed.
+
+  app/debug.keystore is a public debug-only CI key used by upstream to keep
+  debug APKs update-compatible. It is not used for release signing and is
+  deleted by the F-Droid scanner/build recipe.
+
+  The communications index can optionally interoperate with a separately
+  installed Truecaller app by reading locally exposed/provider data and, when
+  the user has root, a local Truecaller cache. Truecaller is not required for
+  Smart S Launcher to function, no Truecaller SDK is bundled, and this build
+  does not use a Truecaller network API.
+
+AutoUpdateMode: None
+UpdateCheckMode: RepoManifest/master
+CurrentVersion: 3.30.26
+CurrentVersionCode: 454
