@@ -27,19 +27,17 @@ jobs:
       - name: Apply verified source repair
         run: python3 .github/scripts/finish_33022_memory.py
 
-      - name: Verify exact source scope
+      - name: Verify exact remaining source scope
         run: |
           set -euxo pipefail
           git diff --name-only | sort > /tmp/changed
           cat > /tmp/expected <<'EOF'
           app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
-          app/src/main/java/fr/neamar/kiss/db/LaunchStatsProvider.java
           app/src/main/java/fr/neamar/kiss/result/Result.java
-          app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
-          app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
           EOF
           sort -o /tmp/expected /tmp/expected
           diff -u /tmp/expected /tmp/changed
+
           grep -q 'versionCode 450' app/build.gradle
           grep -q 'versionName "3.30.22"' app/build.gradle
           grep -q 'MAX_FIRST_SEEN_ENTRIES = 512' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
@@ -52,16 +50,13 @@ jobs:
       - name: Full clean verification
         run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
 
-      - name: Commit verified source repair
+      - name: Commit verified remaining repair
         run: |
           set -euxo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
             app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
-            app/src/main/java/fr/neamar/kiss/db/LaunchStatsProvider.java \
-            app/src/main/java/fr/neamar/kiss/result/Result.java \
-            app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java \
-            app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
+            app/src/main/java/fr/neamar/kiss/result/Result.java
           git commit -m 'Finish 3.30.22 vertical memory and stutter repair'
           git push origin HEAD:build/3.30.22
