@@ -65,6 +65,7 @@ import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.utils.ClipboardUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
@@ -471,6 +472,7 @@ public abstract class Result<T extends Pojo> {
         // Save in history
         if (canAddToHistory()) {
             KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());
+            UniversalHistoryTimestamp.invalidateStats();
         }
         // Record the launch after some period,
         // * to ensure the animation runs smoothly

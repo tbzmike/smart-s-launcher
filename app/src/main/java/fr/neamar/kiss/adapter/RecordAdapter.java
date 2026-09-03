@@ -4,7 +4,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
@@ -79,6 +81,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private final WeakHashMap<View, int[]> baseIconBounds = new WeakHashMap<>();
     private final WeakHashMap<TextView, TextStyleState> baseTextStyles = new WeakHashMap<>();
     private final WeakHashMap<View, Boolean> overflowConfigured = new WeakHashMap<>();
+    private final WeakHashMap<TextView, Boolean> marqueeObservers = new WeakHashMap<>();
     private final WeakHashMap<View, Integer> verticalStyleSignatures = new WeakHashMap<>();
     private String[] sections = new String[0];
     private String lastRenderedQuery = null;
@@ -295,10 +298,34 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         text.setMarqueeRepeatLimit(-1);
         text.setHorizontallyScrolling(true);
         text.setHorizontalFadingEdgeEnabled(true);
-        text.setSelected(true);
         text.setFocusable(false);
         text.setFocusableInTouchMode(false);
         makeTextUseAvailableWidth(text);
+        ensureMarqueeObserver(text);
+        updateMarqueeActivation(text);
+    }
+
+    private void ensureMarqueeObserver(TextView text) {
+        if (marqueeObservers.containsKey(text)) return;
+        marqueeObservers.put(text, Boolean.TRUE);
+        text.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                updateMarqueeActivation(text);
+            }
+            @Override public void afterTextChanged(Editable s) { }
+        });
+        text.addOnLayoutChangeListener((v, left, top, right, bottom,
+                                        oldLeft, oldTop, oldRight, oldBottom) ->
+                updateMarqueeActivation(text));
+    }
+
+    private void updateMarqueeActivation(TextView text) {
+        CharSequence value = text.getText();
+        int available = text.getWidth() - text.getCompoundPaddingLeft() - text.getCompoundPaddingRight();
+        boolean overflow = available > 0 && !TextUtils.isEmpty(value)
+                && text.getPaint().measureText(value.toString()) > available;
+        if (text.isSelected() != overflow) text.setSelected(overflow);
     }
 
     private void makeTextUseAvailableWidth(TextView text) {
