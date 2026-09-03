@@ -1,3 +1,4 @@
+# 3.30.22 one-time completion workflow; source commit is guarded from retrigger loops.
 name: Finish vertical memory repair 3.30.22
 
 on:
@@ -37,7 +38,6 @@ jobs:
                   raise SystemExit(f'{path}: expected exactly one match, found {count}')
               p.write_text(text.replace(old, new, 1))
 
-          # 1. Keep marquee behavior, but only animate text that actually overflows.
           path = 'app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java'
           replace_once(path,
               'import android.text.TextUtils;\n',
@@ -98,14 +98,9 @@ jobs:
 '''
           replace_once(path, old, new)
 
-          # 2. Bound accent memory and reuse per-ImageView halo drawables.
           path = 'app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java'
-          replace_once(path,
-              'import android.view.View;\n',
-              'import android.util.LruCache;\nimport android.view.View;\n')
-          replace_once(path,
-              'import java.util.concurrent.ConcurrentHashMap;\n',
-              'import java.util.WeakHashMap;\n')
+          replace_once(path, 'import android.view.View;\n', 'import android.util.LruCache;\nimport android.view.View;\n')
+          replace_once(path, 'import java.util.concurrent.ConcurrentHashMap;\n', 'import java.util.WeakHashMap;\n')
           replace_once(path,
               '    private static final ConcurrentHashMap<Long, Integer> ACCENT_CACHE = new ConcurrentHashMap<>();\n',
               '    private static final int MAX_ACCENT_ENTRIES = 512;\n'
@@ -170,7 +165,6 @@ jobs:
               '    }\n\n'
               '    private static final class IconState {\n')
 
-          # 3. Avoid rebuilding all grouped launch statistics every two seconds.
           path = 'app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java'
           replace_once(path,
               '    private static final long STATS_REFRESH_MS = 2_000L;\n',
@@ -190,7 +184,6 @@ jobs:
 '''
           replace_once(path, marker, insert + marker)
 
-          # 4. Close the SQLiteOpenHelper after each grouped statistics snapshot.
           path = 'app/src/main/java/fr/neamar/kiss/db/LaunchStatsProvider.java'
           old = '''        HashMap<String, LaunchStats> stats = new HashMap<>();
           SQLiteDatabase db = new DB(context.getApplicationContext()).getReadableDatabase();
@@ -225,7 +218,6 @@ jobs:
 '''
           replace_once(path, old, new)
 
-          # 5. Keep interaction counts immediate after a launch despite the longer idle TTL.
           path = 'app/src/main/java/fr/neamar/kiss/result/Result.java'
           replace_once(path,
               'import fr.neamar.kiss.ui.ListPopup;\n',
