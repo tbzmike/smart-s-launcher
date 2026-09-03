@@ -223,8 +223,15 @@ public class ExperienceTweaks extends Forwarder {
         VerticalCardKeyboardAnchor.onKeyboardVisibilityChanged(mainActivity, keyboardIsVisible);
         if (!keyboardIsVisible) return;
 
-        // Normal KISS list path. Vertical Cards have their own ScrollView and are anchored by
-        // VerticalCardKeyboardAnchor above; do not assume mainActivity.list is the visible surface.
+        // Vertical Cards own IME geometry through VerticalCardViewportController. Running the
+        // normal hidden ListView resize/scroll path at the same time creates competing layout
+        // mutations during typing and can destabilize IME focus.
+        if (HistoryDisplayForwarder.VERTICAL_CARDS.equals(prefs.getString(
+                HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL))) {
+            return;
+        }
+
+        // Normal KISS list path.
         if (mainActivity.hider != null) mainActivity.hider.fixScroll();
         mainActivity.list.post(this::scrollToLatestResult);
         mainActivity.list.postDelayed(this::scrollToLatestResult, 220L);

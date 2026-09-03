@@ -203,10 +203,12 @@ public class ForwarderManager extends Forwarder {
         if (isVerticalCardsMode()) {
             verticalCardViewportController.beforeDataSetChanged();
             smartCardListForwarder.onDataSetChanged();
-            verticalMapsCardForwarder.onDataSetChanged();
-            verticalCardGroupResizeController.onDataSetChanged();
-            verticalCardNotificationHistoryForwarder.onDataSetChanged();
-            verticalCardUsageForwarder.onDataSetChanged();
+            if (isHistorySearch()) {
+                verticalMapsCardForwarder.onDataSetChanged();
+                verticalCardGroupResizeController.onDataSetChanged();
+                verticalCardNotificationHistoryForwarder.onDataSetChanged();
+                verticalCardUsageForwarder.onDataSetChanged();
+            }
             verticalCardViewportController.afterDataSetChanged();
         } else if (isSquareMode()) {
             squareUHostFullscreenController.onDataSetChanged();

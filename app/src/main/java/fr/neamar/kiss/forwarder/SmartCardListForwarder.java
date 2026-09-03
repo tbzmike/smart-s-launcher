@@ -127,6 +127,11 @@ final class SmartCardListForwarder extends Forwarder {
                 prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL));
     }
 
+    private boolean isActiveQuery() {
+        return mainActivity.searchEditText != null
+                && !TextUtils.isEmpty(mainActivity.searchEditText.getText());
+    }
+
     private void applyState(boolean force) {
         if (scroller == null) return;
         boolean enabled = isEnabled();
@@ -147,8 +152,9 @@ final class SmartCardListForwarder extends Forwarder {
 
     private void rebuild() {
         if (column == null || mainActivity.adapter == null) return;
+        boolean activeQuery = isActiveQuery();
         Map<String, NotificationHistoryRecord> latestNotifications =
-                prefs.getBoolean("enable-notification-history", false)
+                !activeQuery && prefs.getBoolean("enable-notification-history", false)
                         ? SmartStateStore.queryLatestNotificationsByPackage(mainActivity)
                         : Collections.emptyMap();
         column.removeAllViews();
@@ -161,15 +167,17 @@ final class SmartCardListForwarder extends Forwarder {
             column.addView(item);
         }
 
-        scroller.post(() -> {
-            int childCount = column.getChildCount();
-            int first = Math.max(0, childCount - 16);
-            int visualIndex = 0;
-            for (int i = first; i < childCount; i++) {
-                View child = column.getChildAt(i);
-                animateIn(child, visualIndex++);
-            }
-        });
+        if (!activeQuery) {
+            scroller.post(() -> {
+                int childCount = column.getChildCount();
+                int first = Math.max(0, childCount - 16);
+                int visualIndex = 0;
+                for (int i = first; i < childCount; i++) {
+                    View child = column.getChildAt(i);
+                    animateIn(child, visualIndex++);
+                }
+            });
+        }
     }
 
     private View createCardItem(View source, Result<?> result, int adapterPosition,
