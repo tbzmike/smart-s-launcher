@@ -191,6 +191,26 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         /*
          * Initialize preferences
          */
+        SharedPreferences existingPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        if (existingPrefs.contains("number-of-display-elements")) {
+            String legacyDisplayLimit;
+            try {
+                legacyDisplayLimit = existingPrefs.getString("number-of-display-elements", "20");
+            } catch (ClassCastException e) {
+                legacyDisplayLimit = "20";
+            }
+            SharedPreferences.Editor migration = existingPrefs.edit();
+            boolean changed = false;
+            if (!existingPrefs.contains("number-of-search-results")) {
+                migration.putString("number-of-search-results", legacyDisplayLimit);
+                changed = true;
+            }
+            if (!existingPrefs.contains("number-of-history-results")) {
+                migration.putString("number-of-history-results", legacyDisplayLimit);
+                changed = true;
+            }
+            if (changed) migration.apply();
+        }
         PreferenceManager.setDefaultValues(this, R.xml.preferences, false);
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
 

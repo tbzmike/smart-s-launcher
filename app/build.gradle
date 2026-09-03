@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.22 - vertical-tile performance repair
-        versionCode 450
-        versionName "3.30.22"
+        // Smart S Launcher 3.30.23 - independent search/history result limits
+        versionCode 451
+        versionName "3.30.23"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

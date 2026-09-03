@@ -234,7 +234,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 else setPhoneHistoryEnabled(false);
             } else if (key.equalsIgnoreCase("primary-color")) {
                 UIColors.clearColorCache();
-            } else if (key.equalsIgnoreCase("number-of-display-elements")) {
+            } else if (key.equalsIgnoreCase("number-of-search-results")
+                    || key.equalsIgnoreCase("number-of-display-elements")) {
                 QuerySearcher.clearMaxResultCountCache();
             } else if (key.equalsIgnoreCase("default-search-provider")) {
                 getDataHandler().reloadSearchProvider();

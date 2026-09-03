@@ -61,8 +61,10 @@ public class QuerySearcher extends Searcher {
     protected int getMaxResultCount() {
         if (MAX_RESULT_COUNT == -1) {
             try {
-                MAX_RESULT_COUNT = Double.valueOf(prefs.getString("number-of-display-elements",
-                        String.valueOf(DEFAULT_MAX_RESULTS))).intValue();
+                String legacyValue = prefs.getString("number-of-display-elements",
+                        String.valueOf(DEFAULT_MAX_RESULTS));
+                MAX_RESULT_COUNT = Double.valueOf(prefs.getString("number-of-search-results",
+                        legacyValue)).intValue();
             } catch (NumberFormatException | ClassCastException e) {
                 MAX_RESULT_COUNT = DEFAULT_MAX_RESULTS;
             }

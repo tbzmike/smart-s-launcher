@@ -13,8 +13,8 @@
         <EditTextPreference
             android:inputType="number"
             app:defaultValue="20"
-            app:key="number-of-display-elements"
-            app:title="@string/number_of_display_items"
+            app:key="number-of-history-results"
+            app:title="Max number of history results"
             app:useSimpleSummaryProvider="true" />
         <ListPreference
             app:defaultValue="recency"
@@ -146,6 +146,12 @@
         <PreferenceCategory
             app:key="results-section"
             app:title="@string/search_results_options">
+            <EditTextPreference
+                android:inputType="number"
+                app:defaultValue="20"
+                app:key="number-of-search-results"
+                app:title="Max number of search results"
+                app:useSimpleSummaryProvider="true" />
             <ListPreference
                 app:defaultValue="default"
                 app:entries="@array/resultsSizeEntries"

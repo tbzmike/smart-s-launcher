@@ -42,9 +42,11 @@ public class HistorySearcher extends Searcher {
     @Override
     protected int getMaxResultCount() {
         try {
-            return Double.valueOf(prefs.getString("number-of-display-elements",
-                    String.valueOf(DEFAULT_MAX_RESULTS))).intValue();
-        } catch (NumberFormatException e) {
+            String legacyValue = prefs.getString("number-of-display-elements",
+                    String.valueOf(DEFAULT_MAX_RESULTS));
+            return Double.valueOf(prefs.getString("number-of-history-results",
+                    legacyValue)).intValue();
+        } catch (NumberFormatException | ClassCastException e) {
             return DEFAULT_MAX_RESULTS;
         }
     }
