@@ -15,6 +15,7 @@ import androidx.appcompat.widget.AppCompatTextView;
  */
 public class VerticalCardTextView extends AppCompatTextView {
     private boolean applyingFit;
+    private int lineBudget = 2;
 
     public VerticalCardTextView(Context context) {
         super(context);
@@ -37,6 +38,11 @@ public class VerticalCardTextView extends AppCompatTextView {
         setHorizontalFadingEdgeEnabled(true);
     }
 
+    public void setLineBudget(int lines) {
+        lineBudget = Math.max(2, Math.min(4, lines));
+        if (isAttachedToWindow()) post(this::applyBestFitMode);
+    }
+
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
@@ -56,38 +62,16 @@ public class VerticalCardTextView extends AppCompatTextView {
     }
 
     private void applyBestFitMode() {
-        if (applyingFit) return;
-        int availableWidth = getWidth() - getPaddingLeft() - getPaddingRight();
-        int availableHeight = getHeight() - getPaddingTop() - getPaddingBottom();
-        CharSequence value = getText();
-        if (availableWidth <= 0 || availableHeight <= 0 || TextUtils.isEmpty(value)) return;
-
-        StaticLayout wrapped = new StaticLayout(
-                value,
-                getPaint(),
-                availableWidth,
-                Layout.Alignment.ALIGN_NORMAL,
-                getLineSpacingMultiplier(),
-                getLineSpacingExtra(),
-                getIncludeFontPadding());
-        boolean fitsWrapped = wrapped.getHeight() <= availableHeight;
-
+        if (applyingFit || TextUtils.isEmpty(getText())) return;
         applyingFit = true;
         try {
-            if (fitsWrapped) {
-                setSelected(false);
-                setHorizontallyScrolling(false);
-                setSingleLine(false);
-                setMaxLines(Math.max(1, wrapped.getLineCount()));
-                setEllipsize(null);
-            } else {
-                setSingleLine(true);
-                setMaxLines(1);
-                setHorizontallyScrolling(true);
-                setEllipsize(TextUtils.TruncateAt.MARQUEE);
-                setMarqueeRepeatLimit(-1);
-                setSelected(true);
-            }
+            // Vertical Cards must use their available height before truncating. Never fall back
+            // to a one-line marquee merely because the complete value needs more than one line.
+            setSelected(false);
+            setHorizontallyScrolling(false);
+            setSingleLine(false);
+            setMaxLines(lineBudget);
+            setEllipsize(TextUtils.TruncateAt.END);
         } finally {
             applyingFit = false;
         }

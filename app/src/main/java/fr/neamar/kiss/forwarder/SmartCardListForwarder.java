@@ -5,6 +5,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.text.Layout;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -219,6 +220,7 @@ final class SmartCardListForwarder extends Forwarder {
         int namePercent = prefInt("smart-list-card-name-percent", 100, 70, 170);
         int spacingDp = prefInt("smart-list-card-spacing-dp", 12, 4, 36);
         int minimumCardHeight = Math.max(dp(96), dp(122) * heightPercent / 100);
+        int textLineBudget = cardTextLineBudget(heightPercent);
 
         LinearLayout wrapper = new LinearLayout(mainActivity);
         wrapper.setOrientation(LinearLayout.VERTICAL);
@@ -305,6 +307,7 @@ final class SmartCardListForwarder extends Forwarder {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         VerticalCardTextView cardTitle = new VerticalCardTextView(mainActivity);
+        cardTitle.setLineBudget(textLineBudget);
         cardTitle.setText(label);
         cardTitle.setTextColor(Color.WHITE);
         cardTitle.setTextSize(16f * namePercent / 100f);
@@ -315,6 +318,7 @@ final class SmartCardListForwarder extends Forwarder {
 
         if (!TextUtils.isEmpty(subtitle)) {
             VerticalCardTextView meta = new VerticalCardTextView(mainActivity);
+        meta.setLineBudget(textLineBudget);
             meta.setText(subtitle);
             meta.setTextColor(Color.argb(220, 250, 250, 250));
             meta.setTextSize(13f);
@@ -331,7 +335,7 @@ final class SmartCardListForwarder extends Forwarder {
             if (activeText != null) {
                 detachFromParent(activeText);
                 if (!TextUtils.isEmpty(latestMessage)) activeText.setText(latestMessage);
-                configureCollapsedMessage(activeText);
+                configureCollapsedMessage(activeText, textLineBudget);
                 center.addView(activeText, new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 messageView = activeText;
@@ -351,6 +355,7 @@ final class SmartCardListForwarder extends Forwarder {
             notificationRow.setVisibility(View.GONE);
         } else if (hasMessage) {
             VerticalCardTextView lastMessage = new VerticalCardTextView(mainActivity);
+        lastMessage.setLineBudget(textLineBudget);
             lastMessage.setText(latestMessage);
             lastMessage.setTextColor(Color.WHITE);
             lastMessage.setTextSize(13f);
@@ -362,6 +367,7 @@ final class SmartCardListForwarder extends Forwarder {
             messageView = lastMessage;
         } else if (TextUtils.isEmpty(subtitle)) {
             VerticalCardTextView context = new VerticalCardTextView(mainActivity);
+        context.setLineBudget(textLineBudget);
             context.setText(describeResult(source));
             context.setTextColor(Color.argb(175, 255, 255, 255));
             context.setTextSize(12f);
@@ -373,6 +379,7 @@ final class SmartCardListForwarder extends Forwarder {
         if (call != null && call.kind == CommunicationPojo.Kind.CALL
                 && hasDistinctCallerName(call)) {
             VerticalCardTextView callerName = new VerticalCardTextView(mainActivity);
+        callerName.setLineBudget(textLineBudget);
             callerName.setText(call.displayName);
             callerName.setTextColor(Color.WHITE);
             callerName.setTextSize(15f * namePercent / 100f);
@@ -411,6 +418,7 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         VerticalCardTextView name = new VerticalCardTextView(mainActivity);
+        name.setLineBudget(textLineBudget);
         name.setText(label);
         name.setTextColor(Color.WHITE);
         name.setTextSize(15f * namePercent / 100f);
@@ -501,26 +509,26 @@ final class SmartCardListForwarder extends Forwarder {
         return text == null ? "" : text.toString().trim();
     }
 
-    private void configureCollapsedMessage(TextView text) {
-        text.setSingleLine(true);
-        text.setMaxLines(1);
-        text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        text.setMarqueeRepeatLimit(-1);
-        text.setHorizontallyScrolling(true);
-        text.setSelected(true);
+    private void configureCollapsedMessage(TextView text, int lineBudget) {
+        text.setSelected(false);
+        text.setHorizontallyScrolling(false);
+        text.setSingleLine(false);
+        text.setMaxLines(lineBudget);
+        text.setEllipsize(TextUtils.TruncateAt.END);
         text.setTextColor(Color.WHITE);
         text.setTextSize(13f);
-        text.setGravity(Gravity.START);
+        text.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         text.setPadding(0, dp(2), 0, dp(2));
     }
 
     private boolean messageNeedsExpansion(TextView text) {
         CharSequence value = text.getText();
         if (TextUtils.isEmpty(value)) return false;
-        int available = text.getWidth() - text.getPaddingLeft() - text.getPaddingRight();
-        if (available <= 0) return true;
-        float measured = text.getPaint().measureText(value.toString());
-        return measured > available;
+        Layout layout = text.getLayout();
+        if (layout == null || layout.getLineCount() == 0) return false;
+        int lastLine = layout.getLineCount() - 1;
+        return layout.getEllipsisCount(lastLine) > 0
+                || layout.getLineEnd(lastLine) < value.length();
     }
 
     private void expandMessage(TextView text) {
@@ -817,6 +825,12 @@ final class SmartCardListForwarder extends Forwarder {
             }
         }
         return Math.max(min, Math.min(max, value));
+    }
+
+    private int cardTextLineBudget(int heightPercent) {
+        if (heightPercent >= 145) return 4;
+        if (heightPercent >= 115) return 3;
+        return 2;
     }
 
     private int scaledTextHeight(int baseDp, int heightPercent, int textPercent) {

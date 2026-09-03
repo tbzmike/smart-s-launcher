@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.27 - adaptive Vertical Cards text fitting
-        versionCode 455
-        versionName "3.30.27"
+        // Smart S Launcher 3.30.28 - true 2-to-4-line Vertical Cards text
+        versionCode 456
+        versionName "3.30.28"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
