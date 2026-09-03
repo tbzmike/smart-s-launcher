@@ -50,13 +50,12 @@ replace_once(
 
 build = ".github/workflows/build.yml"
 text = Path(build).read_text()
-text = text.replace("Smart S Launcher 3.30.24 Build", "Smart S Launcher 3.30.25 Build")
-text = text.replace("build/3.30.24", "build/3.30.25")
-text = text.replace("versionCode 452", "versionCode 453")
-text = text.replace('versionName \\"3.30.24\\"', 'versionName \\"3.30.25\\"')
-text = text.replace("versionCode='452'", "versionCode='453'")
-text = text.replace("versionName='3.30.24'", "versionName='3.30.25'")
-text = text.replace("smart-s-launcher-3.30.24-debug", "smart-s-launcher-3.30.25-debug")
+if text.count("3.30.24") != 7:
+    raise SystemExit(f"build workflow: expected 7 version-name markers, found {text.count('3.30.24')}")
+if text.count("452") != 2:
+    raise SystemExit(f"build workflow: expected 2 version-code markers, found {text.count('452')}")
+text = text.replace("3.30.24", "3.30.25")
+text = text.replace("452", "453")
 if "3.30.24" in text or "452" in text:
     raise SystemExit("build workflow still contains 3.30.24/452")
 Path(build).write_text(text)
