@@ -1,6 +1,9 @@
 name: Apply Smart S Launcher 3.30.27 Adaptive Card Text
 
 on:
+  push:
+    branches:
+      - build/3.30.27
   workflow_dispatch:
 
 permissions:
@@ -8,6 +11,7 @@ permissions:
 
 jobs:
   repair-and-verify:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
