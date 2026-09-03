@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.25 - stable Vertical Cards search and keyboard
-        versionCode 453
-        versionName "3.30.25"
+        // Smart S Launcher 3.30.26 - isolate Vertical Cards from IME focus
+        versionCode 454
+        versionName "3.30.26"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

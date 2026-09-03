@@ -132,6 +132,25 @@ final class SmartCardListForwarder extends Forwarder {
                 && !TextUtils.isEmpty(mainActivity.searchEditText.getText());
     }
 
+    /**
+     * While the IME search field owns text input, the rebuilt card tree must not enter Android's
+     * focus-navigation graph. Clickable Views are automatically focusable on modern Android, and
+     * this renderer recreates several clickable descendants per result. Blocking descendants only
+     * for an active query keeps touch interaction intact while preventing relayout from stealing
+     * EditText/IME focus.
+     */
+    private void applySearchFocusIsolation(boolean activeQuery) {
+        if (scroller == null) return;
+        scroller.setDescendantFocusability(activeQuery
+                ? ViewGroup.FOCUS_BLOCK_DESCENDANTS : ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        scroller.setFocusable(!activeQuery);
+        scroller.setFocusableInTouchMode(false);
+        if (column != null) {
+            column.setFocusable(false);
+            column.setFocusableInTouchMode(false);
+        }
+    }
+
     private void applyState(boolean force) {
         if (scroller == null) return;
         boolean enabled = isEnabled();
@@ -153,6 +172,10 @@ final class SmartCardListForwarder extends Forwarder {
     private void rebuild() {
         if (column == null || mainActivity.adapter == null) return;
         boolean activeQuery = isActiveQuery();
+        boolean preserveSearchFocus = activeQuery
+                && mainActivity.searchEditText != null
+                && mainActivity.searchEditText.hasFocus();
+        applySearchFocusIsolation(activeQuery);
         Map<String, NotificationHistoryRecord> latestNotifications =
                 !activeQuery && prefs.getBoolean("enable-notification-history", false)
                         ? SmartStateStore.queryLatestNotificationsByPackage(mainActivity)
@@ -165,6 +188,13 @@ final class SmartCardListForwarder extends Forwarder {
             View source = mainActivity.adapter.getView(position, null, column);
             View item = createCardItem(source, result, position, latestNotifications);
             column.addView(item);
+        }
+
+        if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
+            // Restore only a focus state that existed before this rebuild. This is not an
+            // unconditional IME reopen: it simply prevents card-tree replacement from ending
+            // an active typing session.
+            mainActivity.showKeyboard();
         }
 
         if (!activeQuery) {
@@ -417,6 +447,12 @@ final class SmartCardListForwarder extends Forwarder {
         card.setClickable(true);
         cardTitle.setClickable(true);
         name.setClickable(true);
+        card.setFocusable(false);
+        card.setFocusableInTouchMode(false);
+        cardTitle.setFocusable(false);
+        cardTitle.setFocusableInTouchMode(false);
+        name.setFocusable(false);
+        name.setFocusableInTouchMode(false);
         return wrapper;
     }
 
