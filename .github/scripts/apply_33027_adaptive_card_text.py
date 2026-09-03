@@ -11,7 +11,7 @@ def replace_exact(path, old, new, expected=1):
 
 f = "app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java"
 replace_exact(f, "import fr.neamar.kiss.ui.AutoMarqueeTextView;", "import fr.neamar.kiss.ui.VerticalCardTextView;")
-replace_exact(f, "AutoMarqueeTextView", "VerticalCardTextView", expected=6)
+replace_exact(f, "AutoMarqueeTextView", "VerticalCardTextView", expected=12)
 replace_exact(f, "ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));", "ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(31, heightPercent, namePercent)));", expected=2)
 replace_exact(f, "ViewGroup.LayoutParams.MATCH_PARENT, dp(27)));", "ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(27, heightPercent, 100)));", expected=1)
 replace_exact(f, "ViewGroup.LayoutParams.MATCH_PARENT, dp(31)));", "ViewGroup.LayoutParams.MATCH_PARENT, scaledTextHeight(31, heightPercent, 100)));", expected=1)
