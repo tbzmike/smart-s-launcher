@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.35 - OOM queue/cache hardening
-        versionCode 463
-        versionName "3.30.35"
+        // Smart S Launcher 3.30.36 - safe built-in keyboard detach lifecycle
+        versionCode 464
+        versionName "3.30.36"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
