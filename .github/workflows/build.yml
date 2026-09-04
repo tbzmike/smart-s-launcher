@@ -1,9 +1,9 @@
-name: Smart S Launcher 3.30.31 Build
+name: Smart S Launcher 3.30.32 Build
 
 on:
   push:
     branches:
-      - build/3.30.31
+      - build/3.30.32
   workflow_dispatch:
 
 jobs:
@@ -24,8 +24,8 @@ jobs:
 
     - name: Verify source version
       run: |
-        grep -q 'versionCode 459' app/build.gradle
-        grep -q 'versionName "3.30.31"' app/build.gradle
+        grep -q 'versionCode 460' app/build.gradle
+        grep -q 'versionName "3.30.32"' app/build.gradle
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug
@@ -35,12 +35,12 @@ jobs:
         APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
         AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
         "$AAPT" dump badging "$APK" | tee /tmp/apk-badging.txt
-        grep -q "versionCode='459'" /tmp/apk-badging.txt
-        grep -q "versionName='3.30.31'" /tmp/apk-badging.txt
-        mv "$APK" app/build/outputs/apk/debug/smart-s-launcher-3.30.31-debug.apk
+        grep -q "versionCode='460'" /tmp/apk-badging.txt
+        grep -q "versionName='3.30.32'" /tmp/apk-badging.txt
+        mv "$APK" app/build/outputs/apk/debug/smart-s-launcher-3.30.32-debug.apk
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: smart-s-launcher-3.30.31-debug
-        path: app/build/outputs/apk/debug/smart-s-launcher-3.30.31-debug.apk
+        name: smart-s-launcher-3.30.32-debug
+        path: app/build/outputs/apk/debug/smart-s-launcher-3.30.32-debug.apk
