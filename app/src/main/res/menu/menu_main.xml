@@ -28,6 +28,10 @@
         android:title="Global text size"
         app:showAsAction="never" />
     <item
+        android:id="@+id/search_keyboard"
+        android:title="Search keyboard"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/load_avatars"
         android:title="Load avatars"
         app:showAsAction="never" />

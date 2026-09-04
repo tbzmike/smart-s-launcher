@@ -565,6 +565,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     private void handleOnBackPressed() {
+        if (searchEditText != null && searchEditText.isBuiltInKeyboardVisible()) {
+            searchEditText.hideBuiltInKeyboard();
+            return;
+        }
         if (mPopup != null) {
             mPopup.dismiss();
         } else if (isViewingAllApps()) {
@@ -614,6 +618,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         } else if (itemId == R.id.global_text_size) {
             showGlobalTextSizeDialog();
             return true;
+        } else if (itemId == R.id.search_keyboard) {
+            showSearchKeyboardDialog();
+            return true;
         } else if (itemId == R.id.load_avatars) {
             Toast.makeText(this, "Loading avatars for recent history…", Toast.LENGTH_SHORT).show();
             NotificationAvatarSupport.loadHistoryAvatarsAsync(this, (scanned, linked, fresh) -> {
@@ -630,6 +637,23 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void showSearchKeyboardDialog() {
+        final boolean builtIn = searchEditText.isBuiltInKeyboardEnabled();
+        final String[] choices = {"Built-in keyboard", "System keyboard"};
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Search keyboard")
+                .setSingleChoiceItems(choices, builtIn ? 0 : 1, (dialog, which) -> {
+                    dialog.dismiss();
+                    if (which == 0) {
+                        searchEditText.useBuiltInKeyboard();
+                    } else {
+                        searchEditText.useSystemKeyboard(true);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private static final String PREF_GLOBAL_TEXT_SIZE_PERCENT = "global-text-size-percent";
@@ -1095,7 +1119,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
         if (searchEditText.requestFocus()) {
             searchEditText.setCursorVisible(true);
-            WindowCompat.getInsetsController(getWindow(), searchEditText).show(WindowInsetsCompat.Type.ime());
+            if (searchEditText.isBuiltInKeyboardEnabled()) {
+                searchEditText.showBuiltInKeyboard();
+            } else {
+                WindowCompat.getInsetsController(getWindow(), searchEditText).show(WindowInsetsCompat.Type.ime());
+            }
             showHistoryWithKeyboard(true);
         }
     }
@@ -1103,6 +1131,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     @Override
     public void hideKeyboard() {
         showKeyboardOnFocus = null;
+        searchEditText.hideBuiltInKeyboard();
 
         // Check if no view has focus:
         View view = this.getCurrentFocus();

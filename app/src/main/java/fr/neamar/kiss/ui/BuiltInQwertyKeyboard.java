@@ -60,11 +60,12 @@ public final class BuiltInQwertyKeyboard extends LinearLayout {
         addView(fourth);
 
         LinearLayout bottom = newRow();
-        addSpecialKey(bottom, "▾", 1.2f, target::hideBuiltInKeyboard);
-        addCharacterKey(bottom, ",", 0.9f);
-        addSpecialKey(bottom, "space", 4.7f, () -> target.commitFromBuiltInKeyboard(" "));
-        addCharacterKey(bottom, ".", 0.9f);
-        addSpecialKey(bottom, "↵", 1.35f, target::performBuiltInEditorAction);
+        addSpecialKey(bottom, "⌨", 1.1f, target::showInstalledKeyboardPicker);
+        addSpecialKey(bottom, "▾", 1.1f, target::hideBuiltInKeyboard);
+        addCharacterKey(bottom, ",", 0.85f);
+        addSpecialKey(bottom, "space", 4.35f, () -> target.commitFromBuiltInKeyboard(" "));
+        addCharacterKey(bottom, ".", 0.85f);
+        addSpecialKey(bottom, "↵", 1.25f, target::performBuiltInEditorAction);
         addView(bottom);
     }
 
