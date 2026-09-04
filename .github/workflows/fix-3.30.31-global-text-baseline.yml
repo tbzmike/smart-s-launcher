@@ -1,4 +1,5 @@
 name: Fix 3.30.31 global text baseline
+# one-time guarded runtime-safety verification
 on:
   push:
     branches: [build/3.30.31]
