@@ -12,52 +12,44 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Restore MainActivity and apply IME exclusion
-        shell: python
+      - name: Restore and patch
         run: |
+          python3 <<'PY'
           import subprocess
           from pathlib import Path
-
-          # Restore the last verified full MainActivity after an unsafe intermediate write.
           subprocess.run(['git','checkout','3cc63fab09d558ece607db7eda03328d4f0395d6','--','app/src/main/java/fr/neamar/kiss/MainActivity.java'], check=True)
-          p = Path('app/src/main/java/fr/neamar/kiss/MainActivity.java')
-          s = p.read_text()
-
-          old = '''        super.onResume();
+          p=Path('app/src/main/java/fr/neamar/kiss/MainActivity.java'); s=p.read_text()
+          old='''        super.onResume();
         homeLifecycleState.onResumeCompleted();
     }
 '''
-          new = '''        super.onResume();
-        // Built-in mode owns the input surface. Android may try to restore a previously
-        // visible IME when HOME brings this activity back to the foreground, so explicitly
-        // suppress that restored system IME before the launcher keyboard is shown.
+          new='''        super.onResume();
+        // Built-in mode owns the input surface. Android may restore a previously visible
+        // system IME when HOME returns here, so suppress that IME explicitly.
         if (searchEditText.isBuiltInKeyboardEnabled()) {
             suppressSystemImeForBuiltInKeyboard();
         }
         homeLifecycleState.onResumeCompleted();
     }
 '''
-          assert s.count(old) == 1, 'onResume anchor mismatch'
-          s = s.replace(old, new)
-
-          old = '''            if (searchEditText.isBuiltInKeyboardEnabled()) {
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          old='''            if (searchEditText.isBuiltInKeyboardEnabled()) {
                 searchEditText.showBuiltInKeyboard();
             } else {
 '''
-          new = '''            if (searchEditText.isBuiltInKeyboardEnabled()) {
+          new='''            if (searchEditText.isBuiltInKeyboardEnabled()) {
                 suppressSystemImeForBuiltInKeyboard();
                 searchEditText.showBuiltInKeyboard();
             } else {
 '''
-          assert s.count(old) == 1, 'showKeyboard anchor mismatch'
-          s = s.replace(old, new)
-
-          anchor = '''    @Override
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          anchor='''    @Override
     public void hideKeyboard() {
 '''
-          helper = '''    private void suppressSystemImeForBuiltInKeyboard() {
+          helper='''    private void suppressSystemImeForBuiltInKeyboard() {
         if (searchEditText == null || !searchEditText.isBuiltInKeyboardEnabled()) return;
-        // Cancel both modern WindowInsets IME visibility and legacy IMM restoration.
         WindowCompat.getInsetsController(getWindow(), searchEditText)
                 .hide(WindowInsetsCompat.Type.ime());
         InputMethodManager inputManager = ContextCompat.getSystemService(this, InputMethodManager.class);
@@ -67,27 +59,20 @@ jobs:
     }
 
 '''
-          assert s.count(anchor) == 1, 'hideKeyboard anchor mismatch'
-          s = s.replace(anchor, helper + anchor)
-          p.write_text(s)
-
-          # Version bump for this bug fix.
-          g = Path('app/build.gradle')
-          gs = g.read_text()
-          assert gs.count('versionCode 461') == 1
-          assert gs.count('versionName "3.30.33"') == 1
-          gs = gs.replace('// Smart S Launcher 3.30.33 - launcher-owned QWERTY keyboard', '// Smart S Launcher 3.30.34 - prevent system IME beside built-in keyboard')
-          gs = gs.replace('versionCode 461', 'versionCode 462')
-          gs = gs.replace('versionName "3.30.33"', 'versionName "3.30.34"')
+          assert s.count(anchor)==1
+          s=s.replace(anchor,helper+anchor); p.write_text(s)
+          g=Path('app/build.gradle'); gs=g.read_text()
+          assert gs.count('versionCode 461')==1 and gs.count('versionName "3.30.33"')==1
+          gs=gs.replace('// Smart S Launcher 3.30.33 - launcher-owned QWERTY keyboard','// Smart S Launcher 3.30.34 - prevent system IME beside built-in keyboard')
+          gs=gs.replace('versionCode 461','versionCode 462').replace('versionName "3.30.33"','versionName "3.30.34"')
           g.write_text(gs)
-      - name: Verify surgical diff
+          PY
+      - name: Verify and commit
         run: |
           git diff --check
           test "$(git diff --numstat 3cc63fab09d558ece607db7eda03328d4f0395d6 -- app/src/main/java/fr/neamar/kiss/MainActivity.java | awk '{print $2}')" -eq 0
           grep -q 'versionName "3.30.34"' app/build.gradle
           grep -q 'suppressSystemImeForBuiltInKeyboard' app/src/main/java/fr/neamar/kiss/MainActivity.java
-      - name: Commit repair
-        run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/java/fr/neamar/kiss/MainActivity.java app/build.gradle
