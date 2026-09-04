@@ -19,8 +19,8 @@ android {
             version = release(36)
         }
         // Smart S Launcher 3.30.29 - remove Vertical Cards multiline height clipping
-        versionCode 457
-        versionName "3.30.29"
+        versionCode 458
+        versionName "3.30.30"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

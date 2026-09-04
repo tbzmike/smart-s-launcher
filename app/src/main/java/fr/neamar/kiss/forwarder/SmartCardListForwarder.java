@@ -836,15 +836,15 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private int cardTextLineBudget(int heightPercent) {
-        if (heightPercent >= 145) return 4;
-        if (heightPercent >= 115) return 3;
-        return 2;
+        if (heightPercent >= 140) return 4;
+        if (heightPercent >= 120) return 3;
+        if (heightPercent >= 100) return 2;
+        return 1;
     }
 
     private int scaledTextHeight(int baseDp, int heightPercent, int textPercent) {
         int cardScale = Math.max(70, heightPercent);
-        int textScale = Math.max(90, textPercent);
-        return dp(baseDp) * cardScale * textScale / 10000;
+        return dp(baseDp) * cardScale / 100;
     }
 
     private int dp(int value) {

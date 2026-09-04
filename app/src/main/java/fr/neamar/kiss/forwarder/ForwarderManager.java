@@ -203,7 +203,7 @@ public class ForwarderManager extends Forwarder {
         if (isVerticalCardsMode()) {
             verticalCardViewportController.beforeDataSetChanged();
             smartCardListForwarder.onDataSetChanged();
-            if (isHistorySearch()) {
+            if (isVerticalCardHistoryPresentation()) {
                 verticalMapsCardForwarder.onDataSetChanged();
                 verticalCardGroupResizeController.onDataSetChanged();
                 verticalCardNotificationHistoryForwarder.onDataSetChanged();
@@ -299,6 +299,11 @@ public class ForwarderManager extends Forwarder {
 
     private boolean isHistorySearch() {
         return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+    }
+
+    private boolean isVerticalCardHistoryPresentation() {
+        return mainActivity.searchEditText == null
+                || TextUtils.isEmpty(mainActivity.searchEditText.getText());
     }
 
     private static boolean isHomeIntent(@Nullable Intent intent) {

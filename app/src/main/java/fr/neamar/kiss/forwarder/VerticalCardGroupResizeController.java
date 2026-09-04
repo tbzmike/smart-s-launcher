@@ -281,9 +281,6 @@ final class VerticalCardGroupResizeController {
                     prefs.edit()
                             .putInt(PREF_WIDTH, 100)
                             .putInt(PREF_HEIGHT, 100)
-                            .putInt(PREF_ICON, 100)
-                            .putInt(PREF_NAME, 100)
-                            .putInt(PREF_SPACING, 12)
                             .apply();
                     rebuildCards();
                     applyWidthSoon();
@@ -295,16 +292,8 @@ final class VerticalCardGroupResizeController {
 
     private void applyHeightGroup(int heightPercent) {
         int clamped = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, heightPercent));
-        int iconPercent = Math.max(60, Math.min(180, clamped));
-        int namePercent = Math.max(70, Math.min(170, clamped));
-        int spacing = Math.max(4, Math.min(36, Math.round(12f * clamped / 100f)));
-
-        prefs.edit()
-                .putInt(PREF_HEIGHT, clamped)
-                .putInt(PREF_ICON, iconPercent)
-                .putInt(PREF_NAME, namePercent)
-                .putInt(PREF_SPACING, spacing)
-                .apply();
+        // Height changes card geometry/line capacity only. Font, icon and spacing are independent.
+        prefs.edit().putInt(PREF_HEIGHT, clamped).apply();
         rebuildCards();
         applyWidthSoon();
     }
