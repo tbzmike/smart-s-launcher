@@ -1,3 +1,4 @@
+# 3.30.33 verification trigger: keyboard + global text size
 name: App testing
 
 on:
@@ -62,17 +63,17 @@ jobs:
           java-version: 21
       - name: Build APKs
         run: bash ./gradlew assembleDebug assembleRelease --stacktrace
-      - name: Upload debug APK
+      - name: Upload debug APK ZIP
         if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
-          name: debug
+          name: Smart-S-Launcher-debug
           path: app/build/outputs/apk/debug/app-debug.apk
-          archive: false
-      - name: Upload release APK
+          archive: true
+      - name: Upload release APK ZIP
         if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
-          name: release
+          name: Smart-S-Launcher-release
           path: app/build/outputs/apk/release/app-release-unsigned.apk
-          archive: false
+          archive: true
