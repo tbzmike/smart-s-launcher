@@ -6,7 +6,6 @@ permissions:
   contents: write
 jobs:
   apply:
-    if: github.event.head_commit.message == 'Add guarded 3.30.31 global text size implementation'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,60 +24,33 @@ jobs:
               p=Path(path); s=p.read_text(); n=s.count(old)
               if n != 1: raise SystemExit(f'{path}: expected one anchor, found {n}')
               p.write_text(s.replace(old,new,1))
-
-          # KISS context menu entry.
           p='app/src/main/res/menu/menu_main.xml'
           once(p, '''    <item\n        android:id="@+id/load_avatars"\n        android:title="Load avatars"\n        app:showAsAction="never" />''', '''    <item\n        android:id="@+id/global_text_size"\n        android:title="Global text size"\n        app:showAsAction="never" />\n    <item\n        android:id="@+id/load_avatars"\n        android:title="Load avatars"\n        app:showAsAction="never" />''')
-
-          # MainActivity: imports + dialog + global recursive scaler. Baseline sizes are stored as
-          # view tags, so repeated adjustment never compounds. This deliberately changes text only.
           p='app/src/main/java/fr/neamar/kiss/MainActivity.java'
           once(p, 'import android.view.ViewGroup;\n', 'import android.view.ViewGroup;\nimport android.util.TypedValue;\nimport android.widget.SeekBar;\nimport android.widget.TextView;\n')
           once(p, '''        } else if (itemId == R.id.load_avatars) {''', '''        } else if (itemId == R.id.global_text_size) {\n            showGlobalTextSizeDialog();\n            return true;\n        } else if (itemId == R.id.load_avatars) {''')
           anchor='''    @Override\n    public boolean onCreateOptionsMenu(Menu menu) {'''
-          method='''    private static final String PREF_GLOBAL_TEXT_SIZE_PERCENT = "global-text-size-percent";\n    private static final int TAG_GLOBAL_TEXT_BASELINE = 0x4b495353;\n\n    private void showGlobalTextSizeDialog() {\n        final int min = 70;\n        final int max = 160;\n        final int current = Math.max(min, Math.min(max,\n                prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));\n\n        android.widget.LinearLayout box = new android.widget.LinearLayout(this);\n        box.setOrientation(android.widget.LinearLayout.VERTICAL);\n        int pad = Math.round(20 * getResources().getDisplayMetrics().density);\n        box.setPadding(pad, pad / 2, pad, 0);\n\n        TextView value = new TextView(this);\n        value.setText(current + "%");\n        value.setGravity(android.view.Gravity.CENTER_HORIZONTAL);\n        SeekBar slider = new SeekBar(this);\n        slider.setMax(max - min);\n        slider.setProgress(current - min);\n        box.addView(value);\n        box.addView(slider);\n\n        final int[] selected = { current };\n        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {\n            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {\n                selected[0] = min + progress;\n                value.setText(selected[0] + "%");\n            }\n            @Override public void onStartTrackingTouch(SeekBar seekBar) { }\n            @Override public void onStopTrackingTouch(SeekBar seekBar) { }\n        });\n\n        new androidx.appcompat.app.AlertDialog.Builder(this)\n                .setTitle("Global text size")\n                .setMessage("Adjust launcher text only. Icons, cards and spacing stay unchanged.")\n                .setView(box)\n                .setNegativeButton(android.R.string.cancel, null)\n                .setNeutralButton("Reset", (dialog, which) -> setGlobalTextSizePercent(100))\n                .setPositiveButton(android.R.string.ok, (dialog, which) ->\n                        setGlobalTextSizePercent(selected[0]))\n                .show();\n    }\n\n    private void setGlobalTextSizePercent(int percent) {\n        int clamped = Math.max(70, Math.min(160, percent));\n        prefs.edit().putInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, clamped).apply();\n        // Recreate so XML-inflated, adapter-created, menu and dialog text all start from their\n        // original SP baselines. No feature-specific dimensions or preferences are touched.\n        recreate();\n    }\n\n    private void applyGlobalTextScale(View view) {\n        int percent = Math.max(70, Math.min(160,\n                prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));\n        applyGlobalTextScale(view, percent / 100f);\n    }\n\n    private void applyGlobalTextScale(View view, float scale) {\n        if (view instanceof TextView) {\n            TextView text = (TextView) view;\n            Object baseline = text.getTag(TAG_GLOBAL_TEXT_BASELINE);\n            float basePx;\n            if (baseline instanceof Float) {\n                basePx = (Float) baseline;\n            } else {\n                basePx = text.getTextSize();\n                text.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx);\n            }\n            text.setTextSize(TypedValue.COMPLEX_UNIT_PX, basePx * scale);\n        }\n        if (view instanceof ViewGroup) {\n            ViewGroup group = (ViewGroup) view;\n            for (int i = 0; i < group.getChildCount(); i++) {\n                applyGlobalTextScale(group.getChildAt(i), scale);\n            }\n        }\n    }\n\n'''
+          method='''    private static final String PREF_GLOBAL_TEXT_SIZE_PERCENT = "global-text-size-percent";\n    private static final int TAG_GLOBAL_TEXT_BASELINE = 0x4b495353;\n\n    private void showGlobalTextSizeDialog() {\n        final int min = 70;\n        final int max = 160;\n        final int current = Math.max(min, Math.min(max, prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));\n        android.widget.LinearLayout box = new android.widget.LinearLayout(this);\n        box.setOrientation(android.widget.LinearLayout.VERTICAL);\n        int pad = Math.round(20 * getResources().getDisplayMetrics().density);\n        box.setPadding(pad, pad / 2, pad, 0);\n        TextView value = new TextView(this);\n        value.setText(current + "%");\n        value.setGravity(android.view.Gravity.CENTER_HORIZONTAL);\n        SeekBar slider = new SeekBar(this);\n        slider.setMax(max - min); slider.setProgress(current - min);\n        box.addView(value); box.addView(slider);\n        final int[] selected = { current };\n        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {\n            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) { selected[0] = min + progress; value.setText(selected[0] + "%"); }\n            @Override public void onStartTrackingTouch(SeekBar seekBar) { }\n            @Override public void onStopTrackingTouch(SeekBar seekBar) { }\n        });\n        new androidx.appcompat.app.AlertDialog.Builder(this)\n                .setTitle("Global text size")\n                .setMessage("Adjust launcher text only. Icons, cards and spacing stay unchanged.")\n                .setView(box).setNegativeButton(android.R.string.cancel, null)\n                .setNeutralButton("Reset", (dialog, which) -> setGlobalTextSizePercent(100))\n                .setPositiveButton(android.R.string.ok, (dialog, which) -> setGlobalTextSizePercent(selected[0])).show();\n    }\n\n    private void setGlobalTextSizePercent(int percent) {\n        int clamped = Math.max(70, Math.min(160, percent));\n        prefs.edit().putInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, clamped).apply();\n        recreate();\n    }\n\n    private void applyGlobalTextScale(View view) {\n        int percent = Math.max(70, Math.min(160, prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));\n        applyGlobalTextScale(view, percent / 100f);\n    }\n\n    private void applyGlobalTextScale(View view, float scale) {\n        if (view instanceof TextView) {\n            TextView text = (TextView) view;\n            Object baseline = text.getTag(TAG_GLOBAL_TEXT_BASELINE);\n            float basePx;\n            if (baseline instanceof Float) basePx = (Float) baseline;\n            else { basePx = text.getTextSize(); text.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx); }\n            text.setTextSize(TypedValue.COMPLEX_UNIT_PX, basePx * scale);\n        }\n        if (view instanceof ViewGroup) {\n            ViewGroup group = (ViewGroup) view;\n            for (int i = 0; i < group.getChildCount(); i++) applyGlobalTextScale(group.getChildAt(i), scale);\n        }\n    }\n\n'''
           once(p, anchor, method+anchor)
-          # Scale existing hierarchy after forwarders have inflated their launcher UI.
           once(p, '''        forwarderManager.onCreate();\n    }''', '''        forwarderManager.onCreate();\n        applyGlobalTextScale(findViewById(android.R.id.content));\n    }''')
-          # Scale newly created result rows after every adapter refresh without changing adapter logic.
           once(p, '''                forwarderManager.onDataSetChanged();\n\n            }''', '''                forwarderManager.onDataSetChanged();\n                applyGlobalTextScale(findViewById(android.R.id.content));\n\n            }''')
-
-          # Version metadata.
-          p='app/build.gradle'
-          once(p, 'versionCode 458', 'versionCode 459')
-          once(p, 'versionName "3.30.30"', 'versionName "3.30.31"')
-          once(p, '// Smart S Launcher 3.30.30 - repair Vertical Cards timestamp and independent height/line behavior', '// Smart S Launcher 3.30.31 - add independent global launcher text-size adjustment')
-
-          # Dedicated build workflow identity/version/artifact.
-          p='.github/workflows/build.yml'
-          once(p, 'Smart S Launcher 3.30.30 Build', 'Smart S Launcher 3.30.31 Build')
-          once(p, 'build/3.30.30', 'build/3.30.31')
-          once(p, "versionCode 458", "versionCode 459")
-          once(p, 'versionName "3.30.30"', 'versionName "3.30.31"')
-          once(p, "versionCode='458'", "versionCode='459'")
-          once(p, "versionName='3.30.30'", "versionName='3.30.31'")
-          s=Path(p).read_text().replace('smart-s-launcher-3.30.30-debug', 'smart-s-launcher-3.30.31-debug')
-          Path(p).write_text(s)
+          p='app/build.gradle'; once(p,'versionCode 458','versionCode 459'); once(p,'versionName "3.30.30"','versionName "3.30.31"'); once(p,'// Smart S Launcher 3.30.30 - repair Vertical Cards timestamp and independent height/line behavior','// Smart S Launcher 3.30.31 - add independent global launcher text-size adjustment')
+          p='.github/workflows/build.yml'; once(p,'Smart S Launcher 3.30.30 Build','Smart S Launcher 3.30.31 Build'); once(p,'build/3.30.30','build/3.30.31'); once(p,'versionCode 458','versionCode 459'); once(p,'versionName "3.30.30"','versionName "3.30.31"'); once(p,"versionCode='458'","versionCode='459'"); once(p,"versionName='3.30.30'","versionName='3.30.31'"); Path(p).write_text(Path(p).read_text().replace('smart-s-launcher-3.30.30-debug','smart-s-launcher-3.30.31-debug'))
           PY
       - name: Verify exact scope and preservation invariants
         run: |
           set -euo pipefail
           git diff --check
-          changed="$(git diff --name-only | sort)"
-          expected="$(printf '%s\n' .github/workflows/build.yml app/build.gradle app/src/main/java/fr/neamar/kiss/MainActivity.java app/src/main/res/menu/menu_main.xml | sort)"
-          test "$changed" = "$expected"
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' .github/workflows/build.yml app/build.gradle app/src/main/java/fr/neamar/kiss/MainActivity.java app/src/main/res/menu/menu_main.xml | sort)"
           grep -q 'versionCode 459' app/build.gradle
           grep -q 'versionName "3.30.31"' app/build.gradle
           grep -q 'android:id="@+id/global_text_size"' app/src/main/res/menu/menu_main.xml
           grep -q 'showGlobalTextSizeDialog' app/src/main/java/fr/neamar/kiss/MainActivity.java
-          grep -q 'PREF_GLOBAL_TEXT_SIZE_PERCENT' app/src/main/java/fr/neamar/kiss/MainActivity.java
-          grep -q 'forwarderManager.onCreate();' app/src/main/java/fr/neamar/kiss/MainActivity.java
           grep -q 'NotificationAvatarSupport.loadHistoryAvatarsAsync' app/src/main/java/fr/neamar/kiss/MainActivity.java
           grep -q 'R.id.private_space' app/src/main/java/fr/neamar/kiss/MainActivity.java
           grep -q 'R.id.wallpaper' app/src/main/java/fr/neamar/kiss/MainActivity.java
           grep -q 'R.id.preferences' app/src/main/java/fr/neamar/kiss/MainActivity.java
           grep -q 'R.id.settings' app/src/main/java/fr/neamar/kiss/MainActivity.java
-          grep -q 'Smart S Launcher 3.30.31 Build' .github/workflows/build.yml
       - name: Full clean verification
         run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease
       - name: Commit verified source
