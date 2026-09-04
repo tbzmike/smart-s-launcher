@@ -1,0 +1,74 @@
+name: Apply 3.30.32 IME session repair
+on:
+  push:
+    branches: [build/3.30.32]
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.32
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Apply guarded typing-session repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def once(path, old, new):
+              p=Path(path); s=p.read_text(); n=s.count(old)
+              if n != 1: raise SystemExit(f'{path}: expected exactly one anchor, found {n}')
+              p.write_text(s.replace(old,new,1))
+
+          p='app/src/main/java/fr/neamar/kiss/MainActivity.java'
+          once(p, 'import androidx.core.content.ContextCompat;\n', 'import androidx.core.content.ContextCompat;\nimport androidx.core.view.ViewCompat;\n')
+
+          once(p, '''                forwarderManager.onDataSetChanged();\n                applyGlobalTextScale(findViewById(android.R.id.content));\n\n            }''', '''                // Result publication must never terminate an active typing/IME session.\n                // Capture the editor state before any renderer is allowed to rebuild its hierarchy,\n                // then restore only if that state was actually disturbed. This protects every\n                // history/search layout, not only Vertical Cards.\n                SearchInputSession inputSession = captureSearchInputSession();\n                forwarderManager.onDataSetChanged();\n                applyGlobalTextScale(findViewById(android.R.id.content), inputSession != null);\n                restoreSearchInputSession(inputSession);\n\n            }''')
+
+          once(p, '''    private void applyGlobalTextScale(View view) {\n        int percent = Math.max(70, Math.min(160, prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));\n        applyGlobalTextScale(view, percent / 100f);\n    }\n\n    private void applyGlobalTextScale(View view, float scale) {\n        if (view instanceof TextView) {\n            TextView text = (TextView) view;\n            Object baseline = text.getTag(TAG_GLOBAL_TEXT_BASELINE);\n            float basePx;\n            if (baseline instanceof Float) {\n                basePx = (Float) baseline;\n            } else {\n                basePx = text.getTextSize();\n                text.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx);\n            }\n            text.setTextSize(TypedValue.COMPLEX_UNIT_PX, basePx * scale);\n        }\n        if (view instanceof ViewGroup) {\n            ViewGroup group = (ViewGroup) view;\n            for (int i = 0; i < group.getChildCount(); i++) {\n                applyGlobalTextScale(group.getChildAt(i), scale);\n            }\n        }\n    }''', '''    private void applyGlobalTextScale(View view) {\n        applyGlobalTextScale(view, false);\n    }\n\n    private void applyGlobalTextScale(View view, boolean protectActiveEditor) {\n        int percent = Math.max(70, Math.min(160, prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));\n        applyGlobalTextScale(view, percent / 100f, protectActiveEditor);\n    }\n\n    private void applyGlobalTextScale(View view, float scale, boolean protectActiveEditor) {\n        if (view instanceof TextView) {\n            TextView text = (TextView) view;\n            // Never mutate the live SearchEditText while an IME session is in progress. Even an\n            // apparently idempotent setTextSize() can request layout and invalidate the editor/IME\n            // connection on some Android builds. Newly created result TextViews are still scaled.\n            if (!(protectActiveEditor && text == searchEditText)) {\n                Object baseline = text.getTag(TAG_GLOBAL_TEXT_BASELINE);\n                float basePx;\n                if (baseline instanceof Float) {\n                    basePx = (Float) baseline;\n                } else {\n                    basePx = text.getTextSize();\n                    text.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx);\n                }\n                float targetPx = basePx * scale;\n                if (Math.abs(text.getTextSize() - targetPx) > 0.5f) {\n                    text.setTextSize(TypedValue.COMPLEX_UNIT_PX, targetPx);\n                }\n            }\n        }\n        if (view instanceof ViewGroup) {\n            ViewGroup group = (ViewGroup) view;\n            for (int i = 0; i < group.getChildCount(); i++) {\n                applyGlobalTextScale(group.getChildAt(i), scale, protectActiveEditor);\n            }\n        }\n    }\n\n    private SearchInputSession captureSearchInputSession() {\n        if (searchEditText == null || !searchEditText.isAttachedToWindow()\n                || !searchEditText.isShown() || !searchEditText.hasFocus()) {\n            return null;\n        }\n        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(searchEditText);\n        boolean imeVisible = insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());\n        return new SearchInputSession(\n                searchEditText.getSelectionStart(),\n                searchEditText.getSelectionEnd(),\n                imeVisible);\n    }\n\n    private void restoreSearchInputSession(@Nullable SearchInputSession session) {\n        if (session == null || searchEditText == null || isFinishing()) return;\n\n        restoreSearchEditorFocusAndSelection(session);\n        if (!session.imeWasVisible) return;\n\n        // Renderer/layout work can complete one frame after notifyDataSetChanged(). Verify again\n        // after that frame and reopen the IME only if it was visible before the result update and\n        // Android actually dropped it. Normal user-requested keyboard hiding is therefore untouched.\n        searchEditText.postOnAnimation(() -> {\n            if (isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())\n                    || !searchEditText.isAttachedToWindow() || !searchEditText.isShown()) {\n                return;\n            }\n            restoreSearchEditorFocusAndSelection(session);\n            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(searchEditText);\n            boolean imeVisible = insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());\n            if (!imeVisible && searchEditText.hasWindowFocus()) {\n                WindowCompat.getInsetsController(getWindow(), searchEditText)\n                        .show(WindowInsetsCompat.Type.ime());\n            }\n        });\n    }\n\n    private void restoreSearchEditorFocusAndSelection(SearchInputSession session) {\n        if (!searchEditText.hasFocus()) searchEditText.requestFocus();\n        if (!searchEditText.hasFocus()) return;\n        searchEditText.setCursorVisible(true);\n        int length = searchEditText.length();\n        int start = Math.max(0, Math.min(session.selectionStart, length));\n        int end = Math.max(0, Math.min(session.selectionEnd, length));\n        if (searchEditText.getSelectionStart() != start || searchEditText.getSelectionEnd() != end) {\n            searchEditText.setSelection(start, end);\n        }\n    }\n\n    private static final class SearchInputSession {\n        final int selectionStart;\n        final int selectionEnd;\n        final boolean imeWasVisible;\n\n        SearchInputSession(int selectionStart, int selectionEnd, boolean imeWasVisible) {\n            this.selectionStart = selectionStart;\n            this.selectionEnd = selectionEnd;\n            this.imeWasVisible = imeWasVisible;\n        }\n    }''')
+
+          # Remove the Vertical Cards-only synchronous IME reopen. The centralized post-layout guard\n          # now owns this invariant for every mode; this local show call could race the insets cycle.\n          p='app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java'
+          once(p, '''        if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {\n            // Restore only a focus state that existed before this rebuild. This is not an\n            // unconditional IME reopen: it simply prevents card-tree replacement from ending\n            // an active typing session.\n            mainActivity.showKeyboard();\n        }''', '''        if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {\n            // Restore focus synchronously, but let MainActivity's cross-mode IME session guard\n            // verify keyboard visibility after all renderer/layout work has completed.\n            mainActivity.searchEditText.requestFocus();\n            mainActivity.searchEditText.setCursorVisible(true);\n        }''')
+
+          p='app/build.gradle'
+          once(p, 'versionCode 459', 'versionCode 460')
+          once(p, 'versionName "3.30.31"', 'versionName "3.30.32"')
+          once(p, '// Smart S Launcher 3.30.31 - add independent global launcher text-size adjustment', '// Smart S Launcher 3.30.32 - preserve active search IME sessions across every result layout')
+          PY
+
+      - name: Verify exact source scope and keyboard invariants
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' app/build.gradle app/src/main/java/fr/neamar/kiss/MainActivity.java app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java | sort)"
+          test "$changed" = "$expected"
+          grep -q 'versionCode 460' app/build.gradle
+          grep -q 'versionName "3.30.32"' app/build.gradle
+          grep -q 'captureSearchInputSession' app/src/main/java/fr/neamar/kiss/MainActivity.java
+          grep -q 'restoreSearchInputSession' app/src/main/java/fr/neamar/kiss/MainActivity.java
+          grep -q 'protectActiveEditor && text == searchEditText' app/src/main/java/fr/neamar/kiss/MainActivity.java
+          grep -q 'if (!imeVisible && searchEditText.hasWindowFocus())' app/src/main/java/fr/neamar/kiss/MainActivity.java
+          ! grep -A8 'if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus())' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java | grep -q 'showKeyboard()'
+          # Preservation checks for recent Vertical Cards work.
+          grep -q 'cardTextLineBudget' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'configureCollapsedMessage' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'applySearchFocusIsolation' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'Global text size' app/src/main/java/fr/neamar/kiss/MainActivity.java
+          grep -q 'NotificationAvatarSupport.loadHistoryAvatarsAsync' app/src/main/java/fr/neamar/kiss/MainActivity.java
+
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Commit verified app source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle app/src/main/java/fr/neamar/kiss/MainActivity.java app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          git commit -m 'Preserve search IME sessions across all layouts in 3.30.32'
+          git push origin HEAD:build/3.30.32
