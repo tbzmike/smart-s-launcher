@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.36 - safe built-in keyboard detach lifecycle
-        versionCode 464
-        versionName "3.30.36"
+        // Smart S Launcher 3.30.37 - bound cancelled search memory retention
+        versionCode 465
+        versionName "3.30.37"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
