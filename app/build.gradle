@@ -18,7 +18,7 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.29 - remove Vertical Cards multiline height clipping
+        // Smart S Launcher 3.30.30 - repair Vertical Cards timestamp and independent height/line behavior
         versionCode 458
         versionName "3.30.30"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
