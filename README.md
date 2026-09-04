@@ -1,30 +1,36 @@
-KISS
-======
-An Android launcher not spending time and memory on stuff you'd rather do.
+# Smart S Launcher
 
-[Copylefted](https://en.wikipedia.org/wiki/Copyleft) libre software, licensed [GPLv3+](https://github.com/Neamar/KISS/blob/master/LICENSE):
+Smart S Launcher is a fast, search-focused Android home screen built from the open-source [KISS Launcher](https://github.com/Neamar/KISS) project and extended with additional launcher, history, notification, usage, battery, and appearance features.
 
-Use, see, [change](CONTRIBUTING.md) and share at will; with all.
+From your home screen, type the first letters of apps, contacts, shortcuts, or other supported results and launch them quickly. Frequently used items can become easier to reach through local usage history.
 
-From _your_ background, type the first letters of apps, contact names, or settings—and click.  
-Results clicked more often are promoted.
+## How Smart S Launcher differs from KISS Launcher
 
-_Browsing for apps is and should be secondary_.
+Smart S Launcher keeps the search-first foundation of KISS while adding and extending features for users who want more information and control directly from their launcher. Current Smart S-specific additions include:
 
-[<img src="https://img.shields.io/f-droid/v/fr.neamar.kiss.svg?logo=f-droid&label=F-Droid&style=flat-square"
-      alt="F-Droid Release"/>](https://f-droid.org/packages/fr.neamar.kiss)
-[<img src="https://img.shields.io/endpoint?color=blue&logo=google-play&style=flat-square&url=https%3A%2F%2Fplay.cuzi.workers.dev%2Fplay%3Fi%3Dfr.neamar.kiss%26l%3DGoogle%2520Play%26m%3D%24version"
-      alt="Playstore Release"/>](https://play.google.com/store/apps/details?id=fr.neamar.kiss)
-[<img src="https://img.shields.io/github/v/release/Neamar/KISS.svg?logo=github&label=GitHub&style=flat-square"
-      alt="GitHub Release"/>](https://github.com/Neamar/KISS/releases)
-[<img src="https://hosted.weblate.org/widget/kiss/svg-badge.svg"
-      alt="Translation status"/>](https://hosted.weblate.org/engage/kiss/)
+- Launch/open/click history and usage information
+- Notification history with content previews when Android makes that content available
+- Extensive text, appearance, and wallpaper-readability controls
+- Battery monitoring and battery widgets
+- Optional accessibility-based double-tap-to-lock support
+- Additional local launcher preferences and history behavior
 
-Join the [beta program](https://play.google.com/apps/testing/fr.neamar.kiss/) to test the latest version.
+These changes are maintained in this repository under the Smart S Launcher application ID `com.tbzmike.smartslauncher`.
 
-Join the [Hosted Weblate](https://hosted.weblate.org/engage/kiss/) translation platform to help translate the app.
+## Features
 
-Public Telegram chat: https://t.me/joinchat/_eDeAIQJU1FlNjM0
+- Fast search-first launcher interface
+- App, shortcut, and supported contact search
+- Local usage-based result history
+- Notification history and previews where Android permits them
+- Appearance, text, and wallpaper readability controls
+- Battery monitoring and widgets
+- Optional double-tap-to-lock through Android Accessibility Service
 
-| ![Less interface](https://raw.githubusercontent.com/Neamar/KISS/master/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png) | ![Search anything](https://raw.githubusercontent.com/Neamar/KISS/master/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png) | ![Customize everything](https://raw.githubusercontent.com/Neamar/KISS/master/fastlane/metadata/android/en-US/images/phoneScreenshots/3.png) | ![Settings](https://raw.githubusercontent.com/Neamar/KISS/master/fastlane/metadata/android/en-US/images/phoneScreenshots/4.png) |
-|:-------------------------------------------------------------------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------------------------------:|
+Some optional features require Android permissions such as notification access, usage access, contacts, phone-related permissions, location, or Accessibility Service access. Features remain subject to Android's permission and privacy controls.
+
+## Free and open source
+
+Smart S Launcher is free and open-source software licensed under the GNU General Public License v3.0.
+
+Smart S Launcher is derived from the KISS Launcher open-source project. The original KISS Launcher source is available at [Neamar/KISS](https://github.com/Neamar/KISS).
