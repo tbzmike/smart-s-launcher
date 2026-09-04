@@ -26,6 +26,9 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
 
     private static final String TAG = Searcher.class.getSimpleName();
 
+    /**
+     * Possible types of search
+     */
     public enum Type {
         APPLICATION,
         QUERY,
@@ -35,15 +38,24 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         UNTAGGED
     }
 
+    /**
+     * Callback for when search is done.
+     */
     @FunctionalInterface
     public interface SearchDoneCallback {
+        /**
+         * Execute when search is done.
+         *
+         * @param isCancelled true if search was cancelled
+         */
         void execute(Searcher searcher, boolean isCancelled);
     }
 
     /**
-     * Search is serialized, but its pending queue must stay bounded. Rapid typing can cancel
-     * searches faster than a long provider pass exits; an unbounded single-thread executor keeps
-     * those cancelled AsyncTasks and their referenced state alive until eventually dequeued.
+     * Search is intentionally serialized, but its pending queue must stay bounded. Rapid typing can
+     * cancel searches faster than a long provider pass exits; Executors.newSingleThreadExecutor()
+     * uses an unbounded queue and keeps those cancelled AsyncTasks (and everything they reference)
+     * alive until the worker eventually dequeues them. Keep only the newest pending generation.
      */
     public static final ThreadPoolExecutor SEARCH_THREAD = new ThreadPoolExecutor(
             1,
@@ -64,6 +76,11 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
     private long start;
     private SearchDoneCallback searchDoneCallback;
     private boolean managingLoader;
+
+    /**
+     * Set to true when we are simply refreshing current results (scroll will not be reset)
+     * When false, we reset the scroll back to the last item in the list
+     */
     private final boolean isRefresh;
     protected final String query;
 
@@ -88,6 +105,7 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         return DEFAULT_MAX_RESULTS;
     }
 
+    /** Publish a preview list without adding it to the final provider result queue. */
     protected final void publishPreviewResults(List<? extends Pojo> previewPojos) {
         if (isCancelled() || previewPojos == null || previewPojos.isEmpty()) return;
         MainActivity activity = activityWeakReference.get();
@@ -110,6 +128,7 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         });
     }
 
+    /** Publish a stable snapshot without ending the active search. */
     protected final void publishCurrentResults() {
         if (isCancelled()) return;
         MainActivity activity = activityWeakReference.get();
@@ -133,10 +152,24 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         });
     }
 
+    /**
+     * Add single pojo to results.
+     * This is called from the background thread by the providers.
+     */
     public final boolean addResult(Pojo pojos) {
         return addResults(Collections.singletonList(pojos));
     }
 
+    /**
+     * Add one or more pojos to results.
+     * This is called from the background thread by the providers.
+     *
+     * Keep only the best configured number of candidates while the search is running. Previously
+     * the queue could grow to every fuzzy/provider match and was trimmed only in onPostExecute().
+     * Since RelevanceComparator makes the queue head the weakest result, immediately polling when
+     * the limit is exceeded preserves the same final top-N set while substantially reducing queue
+     * allocations/comparisons for large app, contact and shortcut indexes.
+     */
     public boolean addResults(List<? extends Pojo> pojos) {
         if (isCancelled()) return false;
 
@@ -145,7 +178,9 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         for (Pojo pojo : pojos) {
             if (pojo == null) continue;
             changed |= this.processedPojos.offer(pojo);
-            if (this.processedPojos.size() > maxResults) this.processedPojos.poll();
+            if (this.processedPojos.size() > maxResults) {
+                this.processedPojos.poll();
+            }
         }
         return changed;
     }
@@ -164,53 +199,70 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
 
     protected void displayActivityLoader() {
         MainActivity activity = activityWeakReference.get();
-        if (activity == null) return;
+        if (activity == null)
+            return;
+
         activity.displayLoader(true);
     }
 
     private void hideActivityLoader(MainActivity activity) {
+        // Loader should still be displayed until all the providers have finished loading
         activity.displayLoader(!KissApplication.getApplication(activity).getDataHandler().isAllProvidersLoaded());
     }
 
     @Override
     protected void onPostExecute(Void param) {
-        if (isCancelled()) return;
+        if (isCancelled()) {
+            return;
+        }
 
         MainActivity activity = activityWeakReference.get();
-        if (activity == null) return;
+        if (activity == null)
+            return;
 
         if (this.processedPojos.isEmpty()) {
             activity.adapter.clear();
         } else {
             PriorityQueue<Pojo> queue = this.processedPojos;
             int maxResults = getMaxResultCount();
-            while (queue.size() > maxResults) queue.poll();
+            while (queue.size() > maxResults) {
+                queue.poll();
+            }
             List<Pojo> pojos = new ArrayList<>(queue.size());
             while (queue.peek() != null) {
                 Pojo pojo = queue.poll();
-                if (pojo != null) pojos.add(pojo);
+                if (pojo != null) {
+                    pojos.add(pojo);
+                }
             }
+
             activity.adapter.updateWithPojos(activity, pojos, isRefresh, query);
         }
 
         searchDone(false);
+
         if (managingLoader) hideActivityLoader(activity);
 
         long time = System.currentTimeMillis() - start;
-        Log.d(TAG, "Time to run query `" + query + "` on " + getClass().getSimpleName()
-                + " to completion: " + time + "ms (isRefresh=" + isRefresh + ")");
+        Log.d(TAG, "Time to run query `" + query + "` on " + getClass().getSimpleName() + " to completion: " + time + "ms (isRefresh=" + isRefresh + ")");
     }
 
     private void searchDone(boolean isCancelled) {
-        if (searchDoneCallback != null) searchDoneCallback.execute(this, isCancelled);
+        if (searchDoneCallback != null) {
+            searchDoneCallback.execute(this, isCancelled);
+        }
+        // The callback may reference generation-specific state. Drop it as soon as this task ends.
         searchDoneCallback = null;
     }
 
     @Override
     protected void onCancelled(Void unused) {
         searchDone(true);
+
         MainActivity activity = activityWeakReference.get();
-        if (activity == null) return;
+        if (activity == null)
+            return;
+
         if (managingLoader) hideActivityLoader(activity);
     }
 
