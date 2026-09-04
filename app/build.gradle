@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.33 - launcher-owned QWERTY keyboard
-        versionCode 461
-        versionName "3.30.33"
+        // Smart S Launcher 3.30.34 - mutually exclusive built-in/system keyboards
+        versionCode 462
+        versionName "3.30.34"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

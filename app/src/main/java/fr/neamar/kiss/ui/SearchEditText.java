@@ -13,6 +13,9 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.RelativeLayout;
 
 import androidx.appcompat.widget.AppCompatEditText;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.preference.PreferenceManager;
 
 import fr.neamar.kiss.R;
@@ -61,7 +64,29 @@ public class SearchEditText extends AppCompatEditText {
     }
 
     private void applyKeyboardMode() {
-        setShowSoftInputOnFocus(!isBuiltInKeyboardEnabled());
+        if (isBuiltInKeyboardEnabled()) {
+            setShowSoftInputOnFocus(false);
+            hideSystemKeyboard();
+        } else {
+            setShowSoftInputOnFocus(true);
+            if (isBuiltInKeyboardVisible()) hideBuiltInKeyboard();
+        }
+    }
+
+    /** Re-read the persisted keyboard mode before focus/lifecycle transitions. */
+    public void syncKeyboardMode() {
+        applyKeyboardMode();
+    }
+
+    /** Built-in mode owns input completely; never leave Android IME visible behind it. */
+    private void hideSystemKeyboard() {
+        setShowSoftInputOnFocus(false);
+        WindowInsetsControllerCompat controller = ViewCompat.getWindowInsetsController(this);
+        if (controller != null) controller.hide(WindowInsetsCompat.Type.ime());
+        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null && getWindowToken() != null) {
+            imm.hideSoftInputFromWindow(getWindowToken(), 0);
+        }
     }
 
     @Override
@@ -120,18 +145,19 @@ public class SearchEditText extends AppCompatEditText {
 
     public void showBuiltInKeyboard() {
         if (!isBuiltInKeyboardEnabled()) return;
+        // Suppress Android IME before any focus/layout work, then reassert after showing.
+        hideSystemKeyboard();
         installBuiltInKeyboard();
         if (builtInKeyboard == null || searchEditLayout == null) return;
 
-        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (imm != null) imm.hideSoftInputFromWindow(getWindowToken(), 0);
-
-        setShowSoftInputOnFocus(false);
+        hideSystemKeyboard();
         setCursorVisible(true);
         builtInKeyboard.setVisibility(VISIBLE);
         placeSearchAreaAboveBuiltInKeyboard(true);
         builtInKeyboard.bringToFront();
         requestLayout();
+        // IME visibility changes are asynchronous; one posted hide closes any queued system show.
+        post(this::hideSystemKeyboard);
     }
 
     public void hideBuiltInKeyboard() {
@@ -170,9 +196,7 @@ public class SearchEditText extends AppCompatEditText {
 
     public void useBuiltInKeyboard() {
         prefs().edit().putString(PREF_SEARCH_KEYBOARD_MODE, KEYBOARD_MODE_BUILT_IN).apply();
-        setShowSoftInputOnFocus(false);
-        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (imm != null) imm.hideSoftInputFromWindow(getWindowToken(), 0);
+        hideSystemKeyboard();
         requestFocus();
         post(this::showBuiltInKeyboard);
     }

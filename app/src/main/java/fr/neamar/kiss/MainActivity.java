@@ -462,6 +462,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
 
         AppProvider.setLauncherUiVisible(true);
+        // Settings may have changed while the launcher was paused. Synchronize input mode
+        // before any later focus request can give Android IME a chance to appear.
+        if (searchEditText != null) searchEditText.syncKeyboardMode();
         dismissPopup();
 
         if (KissApplication.getApplication(this).getDataHandler().isAllProvidersLoaded()) {
@@ -1094,6 +1097,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         systemUiVisibilityHelper.onWindowFocusChanged(hasFocus);
+        if (hasFocus && searchEditText != null) searchEditText.syncKeyboardMode();
         if (showKeyboardOnFocus != null) {
             if (showKeyboardOnFocus) {
                 showKeyboard();
@@ -1117,6 +1121,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
         showKeyboardOnFocus = null;
 
+        // Keyboard mode must be established before requestFocus(); otherwise Android may
+        // open the system IME first and the built-in keyboard will then stack above it.
+        searchEditText.syncKeyboardMode();
         if (searchEditText.requestFocus()) {
             searchEditText.setCursorVisible(true);
             if (searchEditText.isBuiltInKeyboardEnabled()) {
