@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.34 - mutually exclusive built-in/system keyboards
-        versionCode 462
-        versionName "3.30.34"
+        // Smart S Launcher 3.30.35 - OOM queue/cache hardening
+        versionCode 463
+        versionName "3.30.35"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
