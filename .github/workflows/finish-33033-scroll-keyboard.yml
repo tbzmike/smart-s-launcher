@@ -1,0 +1,56 @@
+name: Finish 3.30.33 built-in keyboard scroll guard
+
+on:
+  push:
+    branches:
+      - build/3.30.33
+    paths:
+      - .github/workflows/finish-33033-scroll-keyboard.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: build/3.30.33
+      - name: Add explicit scroll-dismiss policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/fr/neamar/kiss/MainActivity.java')
+          s = p.read_text()
+          marker = '''    @Override
+              public void applyScrollSystemUi() {
+                  systemUiVisibilityHelper.applyScrollSystemUi();
+              }
+          '''
+          insert = '''    @Override
+              public void hideKeyboardOnScroll() {
+                  // The launcher-owned keyboard is part of Smart S layout, not a transient IME.
+                  // Scrolling search results must not collapse it. System IMEs retain the legacy
+                  // scroll-to-hide behavior.
+                  if (searchEditText != null && searchEditText.isBuiltInKeyboardVisible()) {
+                      return;
+                  }
+                  hideKeyboard();
+              }
+
+          '''
+          if marker not in s:
+              raise SystemExit('MainActivity scroll-policy insertion guard failed')
+          if 'public void hideKeyboardOnScroll()' in s:
+              raise SystemExit('hideKeyboardOnScroll already exists unexpectedly')
+          p.write_text(s.replace(marker, insert + marker, 1))
+          PY
+          rm .github/workflows/finish-33033-scroll-keyboard.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/fr/neamar/kiss/MainActivity.java .github/workflows/finish-33033-scroll-keyboard.yml
+          git commit -m "Prevent built-in keyboard from collapsing on result scroll"
+          git push origin HEAD:build/3.30.33
