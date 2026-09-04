@@ -1,4 +1,4 @@
-# 3.30.33 final verification: layout, close, stable scroll, IME switching + global text size
+# 3.30.33 final verification: Settings keyboard selector, layout, close, stable scroll, IME switching + global text size
 name: App testing
 
 on:
