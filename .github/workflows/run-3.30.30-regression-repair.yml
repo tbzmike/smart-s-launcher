@@ -1,0 +1,57 @@
+name: Run guarded 3.30.30 regression repair
+on:
+  push:
+    branches: [build/3.30.30]
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: build/3.30.30
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Repair exact regressions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          def once(path, old, new):
+              p=Path(path); s=p.read_text(); n=s.count(old)
+              if n != 1: raise SystemExit(f'{path}: anchor count {n}')
+              p.write_text(s.replace(old,new,1))
+          p='app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java'
+          once(p, '''    private void applyHeightGroup(int heightPercent) {\n        int clamped = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, heightPercent));\n        int iconPercent = Math.max(60, Math.min(180, clamped));\n        int namePercent = Math.max(70, Math.min(170, clamped));\n        int spacing = Math.max(4, Math.min(36, Math.round(12f * clamped / 100f)));\n\n        prefs.edit()\n                .putInt(PREF_HEIGHT, clamped)\n                .putInt(PREF_ICON, iconPercent)\n                .putInt(PREF_NAME, namePercent)\n                .putInt(PREF_SPACING, spacing)\n                .apply();\n        rebuildCards();\n        applyWidthSoon();\n    }''', '''    private void applyHeightGroup(int heightPercent) {\n        int clamped = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, heightPercent));\n        // Height changes card geometry/line capacity only. Font, icon and spacing are independent.\n        prefs.edit().putInt(PREF_HEIGHT, clamped).apply();\n        rebuildCards();\n        applyWidthSoon();\n    }''')
+          once(p, '''                    prefs.edit()\n                            .putInt(PREF_WIDTH, 100)\n                            .putInt(PREF_HEIGHT, 100)\n                            .putInt(PREF_ICON, 100)\n                            .putInt(PREF_NAME, 100)\n                            .putInt(PREF_SPACING, 12)\n                            .apply();''', '''                    prefs.edit()\n                            .putInt(PREF_WIDTH, 100)\n                            .putInt(PREF_HEIGHT, 100)\n                            .apply();''')
+          p='app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java'
+          once(p, '''    private int cardTextLineBudget(int heightPercent) {\n        if (heightPercent >= 145) return 4;\n        if (heightPercent >= 115) return 3;\n        return 2;\n    }''', '''    private int cardTextLineBudget(int heightPercent) {\n        if (heightPercent >= 140) return 4;\n        if (heightPercent >= 120) return 3;\n        if (heightPercent >= 100) return 2;\n        return 1;\n    }''')
+          once(p, '''    private int scaledTextHeight(int baseDp, int heightPercent, int textPercent) {\n        int cardScale = Math.max(70, heightPercent);\n        int textScale = Math.max(90, textPercent);\n        return dp(baseDp) * cardScale * textScale / 10000;\n    }''', '''    private int scaledTextHeight(int baseDp, int heightPercent, int textPercent) {\n        int cardScale = Math.max(70, heightPercent);\n        return dp(baseDp) * cardScale / 100;\n    }''')
+          p='app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java'
+          once(p, '''            if (isHistorySearch()) {\n                verticalMapsCardForwarder.onDataSetChanged();\n                verticalCardGroupResizeController.onDataSetChanged();\n                verticalCardNotificationHistoryForwarder.onDataSetChanged();\n                verticalCardUsageForwarder.onDataSetChanged();\n            }''', '''            if (isVerticalCardHistoryPresentation()) {\n                verticalMapsCardForwarder.onDataSetChanged();\n                verticalCardGroupResizeController.onDataSetChanged();\n                verticalCardNotificationHistoryForwarder.onDataSetChanged();\n                verticalCardUsageForwarder.onDataSetChanged();\n            }''')
+          once(p, '''    private boolean isHistorySearch() {\n        return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;\n    }''', '''    private boolean isHistorySearch() {\n        return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;\n    }\n\n    private boolean isVerticalCardHistoryPresentation() {\n        return mainActivity.searchEditText == null\n                || TextUtils.isEmpty(mainActivity.searchEditText.getText());\n    }''')
+          once('app/build.gradle','versionCode 457','versionCode 458')
+          once('app/build.gradle','versionName "3.30.29"','versionName "3.30.30"')
+          PY
+      - name: Verify scope
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' app/build.gradle app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java | sort)"
+          grep -q 'versionCode 458' app/build.gradle
+          grep -q 'versionName "3.30.30"' app/build.gradle
+          grep -q 'if (heightPercent >= 140) return 4;' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'isVerticalCardHistoryPresentation()' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+          ! grep -A10 'private void applyHeightGroup' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java | grep -Eq 'PREF_(ICON|NAME|SPACING)'
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease
+      - name: Commit verified source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          git commit -m 'Repair Vertical Cards regressions in 3.30.30'
+          git push origin HEAD:build/3.30.30
