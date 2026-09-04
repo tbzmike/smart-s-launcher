@@ -34,8 +34,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
@@ -54,7 +55,15 @@ public final class NotificationAvatarSupport {
     private static final int MAX_EDGE = 256;
     public static final int HISTORY_SCAN_LIMIT = 200;
     private static final long MAX_AGE_MS = 45L * 24L * 60L * 60L * 1000L;
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final int WORK_QUEUE_CAPACITY = 8;
+    private static final ThreadPoolExecutor EXECUTOR = new ThreadPoolExecutor(
+            1,
+            1,
+            30L,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(WORK_QUEUE_CAPACITY),
+            runnable -> new Thread(runnable, "smart-s-notification-avatar"),
+            new ThreadPoolExecutor.DiscardOldestPolicy());
     private static final int MEMORY_CACHE_BYTES = 8 * 1024 * 1024;
     private static final LruCache<String, Bitmap> MEMORY_CACHE =
             new LruCache<String, Bitmap>(MEMORY_CACHE_BYTES) {
@@ -62,6 +71,10 @@ public final class NotificationAvatarSupport {
                     return value == null ? 0 : value.getAllocationByteCount();
                 }
             };
+
+    static {
+        EXECUTOR.allowCoreThreadTimeOut(true);
+    }
 
     public interface LoadCallback {
         void onFinished(int scanned, int linked, int freshlyResolved);
@@ -181,6 +194,19 @@ public final class NotificationAvatarSupport {
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> touchAvatar(app, notificationId));
         return new BitmapDrawable(context.getResources(), bitmap);
+    }
+
+    /**
+     * Release only rebuildable in-memory state. Pending notification work is also discarded under
+     * severe pressure so queued StatusBarNotification objects cannot keep large extras/bitmaps alive.
+     */
+    public static void trimMemory(boolean severe) {
+        if (severe) {
+            EXECUTOR.getQueue().clear();
+            MEMORY_CACHE.evictAll();
+        } else {
+            MEMORY_CACHE.trimToSize(MEMORY_CACHE_BYTES / 2);
+        }
     }
 
     @Nullable
