@@ -1,4 +1,4 @@
-# 3.30.33 verification trigger: keyboard layout, close, IME switching + global text size
+# 3.30.33 final verification: layout, close, stable scroll, IME switching + global text size
 name: App testing
 
 on:
