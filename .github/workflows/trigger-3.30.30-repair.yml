@@ -1,0 +1,15 @@
+name: Trigger guarded 3.30.30 repair
+on:
+  push:
+    branches: [build/3.30.30]
+permissions:
+  actions: write
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch guarded repair
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run apply-3.30.30-vertical-card-regression-repair.yml --repo ${{ github.repository }} --ref build/3.30.30
