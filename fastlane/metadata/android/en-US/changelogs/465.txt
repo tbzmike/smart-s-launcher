@@ -1,0 +1,3 @@
+Smart S Launcher 3.30.37
+
+Updated the F-Droid release metadata for version 3.30.37 (versionCode 465), with Smart S Launcher-specific store artwork and screenshots.
