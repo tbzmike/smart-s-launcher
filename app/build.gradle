@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.30 - repair Vertical Cards timestamp and independent height/line behavior
-        versionCode 458
-        versionName "3.30.30"
+        // Smart S Launcher 3.30.31 - add independent global launcher text-size adjustment
+        versionCode 459
+        versionName "3.30.31"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
