@@ -1150,6 +1150,17 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     @Override
+    public void hideKeyboardOnScroll() {
+        // The launcher-owned keyboard is part of Smart S layout, not a transient IME.
+        // Scrolling search results must not collapse it. System IMEs retain the legacy
+        // scroll-to-hide behavior.
+        if (searchEditText != null && searchEditText.isBuiltInKeyboardVisible()) {
+            return;
+        }
+        hideKeyboard();
+    }
+
+    @Override
     public void applyScrollSystemUi() {
         systemUiVisibilityHelper.applyScrollSystemUi();
     }
