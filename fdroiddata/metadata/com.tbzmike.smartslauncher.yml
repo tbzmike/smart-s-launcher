@@ -9,9 +9,9 @@ RepoType: git
 Repo: https://github.com/tbzmike/smart-s-launcher.git
 
 Builds:
-  - versionName: 3.30.26
-    versionCode: 454
-    commit: a3990a00e38dbf81b176e05260c4d793b7163cf6
+  - versionName: 3.30.37
+    versionCode: 465
+    commit: v3.30.37
     subdir: app
     gradle:
       - yes
@@ -20,17 +20,16 @@ Builds:
 
 MaintainerNotes: |-
   Smart S Launcher is a functional fork of KISS with applicationId
-  com.tbzmike.smartslauncher and distinct Smart S launcher artwork.
+  com.tbzmike.smartslauncher and distinct Smart S Launcher artwork.
 
   Inherited KISS product-name text in localized Android string resources was
   migrated directly in the source tree to Smart S. Internal resource identifiers
   such as main_kiss remain unchanged because they are implementation identifiers,
   not user-visible product branding.
 
-  Inherited KISS Fastlane icon, feature/promo artwork and screenshots were
-  removed from the Smart S source tree rather than publishing another app's
-  store artwork. F-Droid can use the application icon from the built APK; new
-  Smart S screenshots can be added upstream independently later.
+  Upstream provides Smart S Launcher-specific Fastlane metadata, including
+  icon.png and four phone screenshots under
+  fastlane/metadata/android/en-US/images/phoneScreenshots/.
 
   app/debug.keystore is a public debug-only CI key used upstream to keep debug
   APKs update-compatible. It is not used for release signing and is deleted by
@@ -51,7 +50,7 @@ MaintainerNotes: |-
   Smart S Launcher to function, no Truecaller SDK is bundled, and this build
   does not use a Truecaller network API.
 
-AutoUpdateMode: None
-UpdateCheckMode: RepoManifest/master
-CurrentVersion: 3.30.26
-CurrentVersionCode: 454
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 3.30.37
+CurrentVersionCode: 465
