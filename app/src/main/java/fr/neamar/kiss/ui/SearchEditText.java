@@ -2,6 +2,8 @@ package fr.neamar.kiss.ui;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
@@ -98,12 +100,24 @@ public class SearchEditText extends AppCompatEditText {
 
     @Override
     protected void onDetachedFromWindow() {
-        if (builtInKeyboard != null) {
-            builtInKeyboard.release();
+        final BuiltInQwertyKeyboard keyboard = builtInKeyboard;
+        final RelativeLayout root = keyboardRoot;
+
+        if (keyboard != null) {
+            keyboard.release();
         }
-        if (keyboardRoot != null && builtInKeyboard != null && builtInKeyboard.getParent() == keyboardRoot) {
-            keyboardRoot.removeView(builtInKeyboard);
+
+        // Do not mutate root's child array while ViewGroup.dispatchDetachedFromWindow() is
+        // iterating it. Removing the keyboard synchronously from this sibling's detach callback can
+        // shift/null a child slot underneath Android's traversal and crash in dispatchDetachedFromWindow().
+        if (root != null && keyboard != null && keyboard.getParent() == root) {
+            new Handler(Looper.getMainLooper()).post(() -> {
+                if (keyboard.getParent() == root) {
+                    root.removeView(keyboard);
+                }
+            });
         }
+
         builtInKeyboard = null;
         keyboardRoot = null;
         searchEditLayout = null;
