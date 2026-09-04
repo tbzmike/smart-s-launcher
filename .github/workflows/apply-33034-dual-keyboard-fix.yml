@@ -1,0 +1,103 @@
+name: Apply 3.30.34 dual-keyboard fix
+
+on:
+  push:
+    branches:
+      - fix/3.30.34-dual-keyboard
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/3.30.34-dual-keyboard
+          fetch-depth: 0
+      - name: Apply guarded keyboard exclusivity and version bump
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Guard failed for {path}: expected exactly 1 match, got {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          search = "app/src/main/java/fr/neamar/kiss/ui/SearchEditText.java"
+          replace_once(search,
+              "import androidx.appcompat.widget.AppCompatEditText;\nimport androidx.preference.PreferenceManager;",
+              "import androidx.appcompat.widget.AppCompatEditText;\nimport androidx.core.view.ViewCompat;\nimport androidx.core.view.WindowInsetsCompat;\nimport androidx.core.view.WindowInsetsControllerCompat;\nimport androidx.preference.PreferenceManager;")
+
+          replace_once(search,
+              "    private void applyKeyboardMode() {\n        setShowSoftInputOnFocus(!isBuiltInKeyboardEnabled());\n    }",
+              "    private void applyKeyboardMode() {\n        if (isBuiltInKeyboardEnabled()) {\n            setShowSoftInputOnFocus(false);\n            hideSystemKeyboard();\n        } else {\n            setShowSoftInputOnFocus(true);\n            if (isBuiltInKeyboardVisible()) hideBuiltInKeyboard();\n        }\n    }\n\n    /** Re-read the persisted keyboard mode before focus/lifecycle transitions. */\n    public void syncKeyboardMode() {\n        applyKeyboardMode();\n    }\n\n    /** Built-in mode owns input completely; never leave Android IME visible behind it. */\n    private void hideSystemKeyboard() {\n        setShowSoftInputOnFocus(false);\n        WindowInsetsControllerCompat controller = ViewCompat.getWindowInsetsController(this);\n        if (controller != null) controller.hide(WindowInsetsCompat.Type.ime());\n        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);\n        if (imm != null && getWindowToken() != null) {\n            imm.hideSoftInputFromWindow(getWindowToken(), 0);\n        }\n    }")
+
+          replace_once(search,
+              "    public void showBuiltInKeyboard() {\n        if (!isBuiltInKeyboardEnabled()) return;\n        installBuiltInKeyboard();",
+              "    public void showBuiltInKeyboard() {\n        if (!isBuiltInKeyboardEnabled()) return;\n        // Suppress Android IME before any focus/layout work, then reassert after showing.\n        hideSystemKeyboard();\n        installBuiltInKeyboard();")
+
+          replace_once(search,
+              "        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);\n        if (imm != null) imm.hideSoftInputFromWindow(getWindowToken(), 0);\n\n        setShowSoftInputOnFocus(false);\n        setCursorVisible(true);",
+              "        hideSystemKeyboard();\n        setCursorVisible(true);")
+
+          replace_once(search,
+              "        builtInKeyboard.bringToFront();\n        requestLayout();\n    }",
+              "        builtInKeyboard.bringToFront();\n        requestLayout();\n        // IME visibility changes are asynchronous; one posted hide closes any queued system show.\n        post(this::hideSystemKeyboard);\n    }")
+
+          replace_once(search,
+              "        prefs().edit().putString(PREF_SEARCH_KEYBOARD_MODE, KEYBOARD_MODE_BUILT_IN).apply();\n        setShowSoftInputOnFocus(false);\n        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);\n        if (imm != null) imm.hideSoftInputFromWindow(getWindowToken(), 0);\n        requestFocus();",
+              "        prefs().edit().putString(PREF_SEARCH_KEYBOARD_MODE, KEYBOARD_MODE_BUILT_IN).apply();\n        hideSystemKeyboard();\n        requestFocus();")
+
+          main = "app/src/main/java/fr/neamar/kiss/MainActivity.java"
+          replace_once(main,
+              "        AppProvider.setLauncherUiVisible(true);\n        dismissPopup();",
+              "        AppProvider.setLauncherUiVisible(true);\n        // Settings may have changed while the launcher was paused. Synchronize input mode\n        // before any later focus request can give Android IME a chance to appear.\n        if (searchEditText != null) searchEditText.syncKeyboardMode();\n        dismissPopup();")
+
+          replace_once(main,
+              "        super.onWindowFocusChanged(hasFocus);\n        systemUiVisibilityHelper.onWindowFocusChanged(hasFocus);\n        if (showKeyboardOnFocus != null) {",
+              "        super.onWindowFocusChanged(hasFocus);\n        systemUiVisibilityHelper.onWindowFocusChanged(hasFocus);\n        if (hasFocus && searchEditText != null) searchEditText.syncKeyboardMode();\n        if (showKeyboardOnFocus != null) {")
+
+          replace_once(main,
+              "        showKeyboardOnFocus = null;\n\n        if (searchEditText.requestFocus()) {",
+              "        showKeyboardOnFocus = null;\n\n        // Keyboard mode must be established before requestFocus(); otherwise Android may\n        // open the system IME first and the built-in keyboard will then stack above it.\n        searchEditText.syncKeyboardMode();\n        if (searchEditText.requestFocus()) {")
+
+          gradle = "app/build.gradle"
+          replace_once(gradle,
+              "        // Smart S Launcher 3.30.33 - launcher-owned QWERTY keyboard\n        versionCode 461\n        versionName \"3.30.33\"",
+              "        // Smart S Launcher 3.30.34 - mutually exclusive built-in/system keyboards\n        versionCode 462\n        versionName \"3.30.34\"")
+
+          # Hard verification of retained features and new invariants.
+          s = Path(search).read_text()
+          m = Path(main).read_text()
+          g = Path(gradle).read_text()
+          settings = Path("app/src/main/java/fr/neamar/kiss/SettingsFragment.java").read_text()
+          prefs_xml = Path("app/src/main/res/xml/preferences.xml").read_text()
+          required = {
+              "version 3.30.34": 'versionName "3.30.34"' in g and 'versionCode 462' in g,
+              "pre-focus synchronization": 'searchEditText.syncKeyboardMode();\n        if (searchEditText.requestFocus())' in m,
+              "resume synchronization": 'if (searchEditText != null) searchEditText.syncKeyboardMode();' in m,
+              "window-focus synchronization": 'if (hasFocus && searchEditText != null) searchEditText.syncKeyboardMode();' in m,
+              "insets IME hide": 'controller.hide(WindowInsetsCompat.Type.ime())' in s,
+              "posted race guard": 'post(this::hideSystemKeyboard);' in s,
+              "settings uses same key": 'SearchEditText.PREF_SEARCH_KEYBOARD_MODE' in settings,
+              "settings chooser retained": 'Choose installed system keyboard' in settings,
+              "keyboard options category retained": 'app:key="keyboard-options"' in prefs_xml,
+              "global text size retained": 'PREF_GLOBAL_TEXT_SIZE_PERCENT' in m and 'applyGlobalTextScale' in m,
+          }
+          failed = [name for name, ok in required.items() if not ok]
+          if failed:
+              raise SystemExit("Verification failed: " + ", ".join(failed))
+
+      - name: Commit repaired source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/fr/neamar/kiss/ui/SearchEditText.java app/src/main/java/fr/neamar/kiss/MainActivity.java app/build.gradle
+          git commit -m "Fix dual keyboard lifecycle and bump 3.30.34"
+          git push origin HEAD:fix/3.30.34-dual-keyboard
