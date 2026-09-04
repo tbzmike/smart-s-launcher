@@ -5,6 +5,7 @@ import android.os.Looper;
 
 import androidx.annotation.NonNull;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -59,9 +60,13 @@ public class SearchHandler {
 
         if (type == Searcher.Type.QUERY && !isRefresh) {
             final String scheduledQuery = query;
+            final WeakReference<MainActivity> activityRef = new WeakReference<>(activity);
             pendingQuery = () -> {
                 pendingQuery = null;
-                startSearch(type, activity, scheduledQuery, false);
+                MainActivity currentActivity = activityRef.get();
+                if (currentActivity != null) {
+                    startSearch(type, currentActivity, scheduledQuery, false);
+                }
             };
             mainHandler.postDelayed(pendingQuery, QUERY_DEBOUNCE_MS);
             return;
@@ -76,13 +81,19 @@ public class SearchHandler {
         // a new operation invalidates it so repeated identical text still observes changed prefs.
         SmartMatcher.beginSearch();
         final Searcher.Type startedType = type;
+        final WeakReference<MainActivity> activityRef = new WeakReference<>(activity);
         runningSearch = createSearcher(type, activity, query, isRefresh);
         runningSearch.setSearchDoneCallback((searcher, isCancelled) -> {
-            if (!isCancelled && startedType == Searcher.Type.HISTORY && activity.adapter != null) {
-                historyQuerySeed = activity.adapter.snapshotPojos();
+            MainActivity currentActivity = activityRef.get();
+            if (!isCancelled && startedType == Searcher.Type.HISTORY
+                    && currentActivity != null && currentActivity.adapter != null) {
+                historyQuerySeed = currentActivity.adapter.snapshotPojos();
             }
             if (runningSearch == searcher) resetRunningSearch();
         });
+        // A prior generation may have been cancelled while still queued. Remove its FutureTask
+        // before scheduling this generation so it cannot retain stale search/UI state.
+        Searcher.purgeCancelledSearches();
         runningSearch.executeOnExecutor(Searcher.SEARCH_THREAD);
     }
 
@@ -102,6 +113,7 @@ public class SearchHandler {
     private void cancelRunningSearch() {
         if (runningSearch != null) {
             runningSearch.cancel(true);
+            Searcher.purgeCancelledSearches();
             resetRunningSearch();
         }
     }
