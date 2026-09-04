@@ -9,6 +9,7 @@ import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.appusage.AppUsageTracker;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
 import fr.neamar.kiss.notification.MediaHistoryCoordinator;
+import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.social.SocialContactIndexService;
 import fr.neamar.kiss.ui.GlobalTextStyler;
 import fr.neamar.kiss.utils.IconPackCache;
@@ -96,19 +97,27 @@ public class KissApplication extends Application {
         return getApplication(ctx).mimeTypeCache;
     }
 
-    /** Release rebuildable caches only when Android is under severe memory pressure. */
+    /**
+     * Release rebuildable working state before the launcher reaches OOM territory, without treating
+     * the normal UI_HIDDEN callback as memory pressure. UI_HIDDEN is intentionally excluded so a
+     * routine app launch from Home does not force a cold launcher rebuild.
+     */
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
 
-        // TRIM_MEMORY_UI_HIDDEN is delivered during every normal app launch from Home. Clearing
-        // here made every return cold: SQLite pages and decoded icon-pack state had to be rebuilt.
-        // Retain the launcher's working set while backgrounded and cooperate only when Android is
-        // already reclaiming process memory aggressively.
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+        boolean runningLow = level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW;
+        boolean runningCritical = level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL;
+        boolean backgroundSevere = level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE;
+
+        if (runningLow || runningCritical || backgroundSevere) {
             SQLiteDatabase.releaseMemory();
-            mIconPackCache.clearCache(this);
             mimeTypeCache.clearCache();
+            NotificationAvatarSupport.trimMemory(runningCritical || backgroundSevere);
+        }
+
+        if (runningCritical || backgroundSevere) {
+            mIconPackCache.clearCache(this);
         }
     }
 
@@ -116,6 +125,7 @@ public class KissApplication extends Application {
     public void onLowMemory() {
         super.onLowMemory();
         SQLiteDatabase.releaseMemory();
+        NotificationAvatarSupport.trimMemory(true);
         mIconPackCache.clearCache(this);
         mimeTypeCache.clearCache();
     }
