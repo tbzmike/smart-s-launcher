@@ -192,10 +192,10 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
-            // Restore only a focus state that existed before this rebuild. This is not an
-            // unconditional IME reopen: it simply prevents card-tree replacement from ending
-            // an active typing session.
-            mainActivity.showKeyboard();
+            // MainActivity owns IME recovery after all layout work. Avoid a synchronous insets
+            // show here, which can race the current IME/layout transaction.
+            mainActivity.searchEditText.requestFocus();
+            mainActivity.searchEditText.setCursorVisible(true);
         }
 
         if (!activeQuery) {

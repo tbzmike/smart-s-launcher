@@ -46,6 +46,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.DialogFragment;
@@ -337,8 +338,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                     emptyListView.setVisibility(View.GONE);
                 }
 
+                // Preserve the exact active editor/IME session around every renderer refresh.
+                SearchInputSession inputSession = captureSearchInputSession();
                 forwarderManager.onDataSetChanged();
-                applyGlobalTextScale(findViewById(android.R.id.content));
+                applyGlobalTextScale(findViewById(android.R.id.content), inputSession != null);
+                restoreSearchInputSession(inputSession);
 
             }
         });
@@ -677,28 +681,94 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     private void applyGlobalTextScale(View view) {
-        int percent = Math.max(70, Math.min(160, prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));
-        applyGlobalTextScale(view, percent / 100f);
+        applyGlobalTextScale(view, false);
     }
 
-    private void applyGlobalTextScale(View view, float scale) {
+    private void applyGlobalTextScale(View view, boolean protectActiveEditor) {
+        int percent = Math.max(70, Math.min(160, prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));
+        applyGlobalTextScale(view, percent / 100f, protectActiveEditor);
+    }
+
+    private void applyGlobalTextScale(View view, float scale, boolean protectActiveEditor) {
         if (view instanceof TextView) {
             TextView text = (TextView) view;
-            Object baseline = text.getTag(TAG_GLOBAL_TEXT_BASELINE);
-            float basePx;
-            if (baseline instanceof Float) {
-                basePx = (Float) baseline;
-            } else {
-                basePx = text.getTextSize();
-                text.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx);
+            if (!(protectActiveEditor && text == searchEditText)) {
+                Object baseline = text.getTag(TAG_GLOBAL_TEXT_BASELINE);
+                float basePx;
+                if (baseline instanceof Float) {
+                    basePx = (Float) baseline;
+                } else {
+                    basePx = text.getTextSize();
+                    text.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx);
+                }
+                float targetPx = basePx * scale;
+                if (Math.abs(text.getTextSize() - targetPx) > 0.5f) {
+                    text.setTextSize(TypedValue.COMPLEX_UNIT_PX, targetPx);
+                }
             }
-            text.setTextSize(TypedValue.COMPLEX_UNIT_PX, basePx * scale);
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
-                applyGlobalTextScale(group.getChildAt(i), scale);
+                applyGlobalTextScale(group.getChildAt(i), scale, protectActiveEditor);
             }
+        }
+    }
+
+    private SearchInputSession captureSearchInputSession() {
+        if (searchEditText == null || !searchEditText.isAttachedToWindow()
+                || !searchEditText.isShown() || !searchEditText.hasFocus()) {
+            return null;
+        }
+        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(searchEditText);
+        boolean imeVisible = insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());
+        return new SearchInputSession(searchEditText.getSelectionStart(),
+                searchEditText.getSelectionEnd(), imeVisible);
+    }
+
+    private void restoreSearchInputSession(@Nullable SearchInputSession session) {
+        if (session == null || searchEditText == null || isFinishing()) return;
+
+        restoreSearchEditorFocusAndSelection(session);
+        if (!session.imeWasVisible) return;
+
+        searchEditText.postOnAnimation(() -> {
+            if (isFinishing()
+                    || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())
+                    || !searchEditText.isAttachedToWindow() || !searchEditText.isShown()) {
+                return;
+            }
+            restoreSearchEditorFocusAndSelection(session);
+            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(searchEditText);
+            boolean imeVisible = insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());
+            if (!imeVisible && searchEditText.hasWindowFocus()) {
+                WindowCompat.getInsetsController(getWindow(), searchEditText)
+                        .show(WindowInsetsCompat.Type.ime());
+            }
+        });
+    }
+
+    private void restoreSearchEditorFocusAndSelection(SearchInputSession session) {
+        if (!searchEditText.hasFocus()) searchEditText.requestFocus();
+        if (!searchEditText.hasFocus()) return;
+        searchEditText.setCursorVisible(true);
+        int length = searchEditText.length();
+        int start = Math.max(0, Math.min(session.selectionStart, length));
+        int end = Math.max(0, Math.min(session.selectionEnd, length));
+        if (searchEditText.getSelectionStart() != start || searchEditText.getSelectionEnd() != end) {
+            searchEditText.setSelection(start, end);
+        }
+    }
+
+    private static final class SearchInputSession {
+        final int selectionStart;
+        final int selectionEnd;
+        final boolean imeWasVisible;
+
+        SearchInputSession(int selectionStart, int selectionEnd, boolean imeWasVisible) {
+            this.selectionStart = selectionStart;
+            this.selectionEnd = selectionEnd;
+            this.imeWasVisible = imeWasVisible;
         }
     }
 

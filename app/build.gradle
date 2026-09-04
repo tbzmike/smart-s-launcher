@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.31 - add independent global launcher text-size adjustment
-        versionCode 459
-        versionName "3.30.31"
+        // Smart S Launcher 3.30.32 - preserve active search IME sessions across every result layout
+        versionCode 460
+        versionName "3.30.32"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
