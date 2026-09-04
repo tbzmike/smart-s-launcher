@@ -266,7 +266,9 @@
         app:key="ux-holder"
         app:summary="@string/user_experience_summary"
         app:title="@string/title_ux">
-        <PreferenceCategory app:title="@string/keyboard_options">
+        <PreferenceCategory
+            app:key="keyboard-options"
+            app:title="@string/keyboard_options">
             <SwitchPreference
                 app:defaultValue="false"
                 app:key="display-keyboard"

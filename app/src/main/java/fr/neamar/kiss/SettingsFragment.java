@@ -78,11 +78,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
 
         setPreferencesFromResource(R.xml.preferences, rootKey);
-        try {
-            addSearchKeyboardPreferences();
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Unable to create search keyboard settings; keeping core settings available", e);
-        }
+        addSearchKeyboardPreferences();
         try {
             addSemanticSearchPreferences(rootKey);
         } catch (RuntimeException e) {
@@ -90,6 +86,11 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         }
 
         if (prefs.getStringSet("selected-search-provider-names", null) == null) {
+            // If null, it means this setting has never been accessed before
+            // In this case, null != [] ([] happens when the user manually unselected every single option)
+            // So, when null, we know it's the first time opening this setting and we can write the default value.
+            // note: other preferences are initialized automatically in MainActivity.onCreate() from the preferences XML,
+            // but this preference isn't defined in the XML so can't be initialized that easily.
             prefs.edit().putStringSet("selected-search-provider-names", SearchProvider.getSelectedSearchProviders(prefs)).apply();
         }
 
@@ -127,47 +128,31 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     }
 
     private void addSearchKeyboardPreferences() {
-        Preference displayKeyboard = findPreference("display-keyboard");
-        if (displayKeyboard == null || !(displayKeyboard.getParent() instanceof PreferenceGroup)) {
-            return;
-        }
-        PreferenceGroup keyboardOptions = displayKeyboard.getParent();
+        PreferenceGroup keyboardOptions = findPreference("keyboard-options");
+        if (keyboardOptions == null) return;
 
-        ListPreference mode = findPreference(SearchEditText.PREF_SEARCH_KEYBOARD_MODE);
-        if (mode == null) {
-            mode = new ListPreference(requireContext());
-            mode.setKey(SearchEditText.PREF_SEARCH_KEYBOARD_MODE);
-            mode.setTitle("Search keyboard");
-            mode.setEntries(new CharSequence[]{"Built-in Smart S keyboard", "System keyboard"});
-            mode.setEntryValues(new CharSequence[]{
-                    SearchEditText.KEYBOARD_MODE_BUILT_IN,
-                    SearchEditText.KEYBOARD_MODE_SYSTEM
-            });
-            mode.setDefaultValue(SearchEditText.KEYBOARD_MODE_BUILT_IN);
-            mode.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-            mode.setOrder(displayKeyboard.getOrder() - 2);
-            keyboardOptions.addPreference(mode);
-        }
+        ListPreference mode = new ListPreference(requireContext());
+        mode.setKey(SearchEditText.PREF_SEARCH_KEYBOARD_MODE);
+        mode.setTitle("Search keyboard");
+        mode.setEntries(new CharSequence[]{"Built-in Smart S keyboard", "System keyboard"});
+        mode.setEntryValues(new CharSequence[]{
+                SearchEditText.KEYBOARD_MODE_BUILT_IN,
+                SearchEditText.KEYBOARD_MODE_SYSTEM
+        });
+        mode.setDefaultValue(SearchEditText.KEYBOARD_MODE_BUILT_IN);
+        mode.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        keyboardOptions.addPreference(mode);
 
-        Preference chooser = findPreference(PREF_CHOOSE_SYSTEM_KEYBOARD);
-        if (chooser == null) {
-            chooser = new Preference(requireContext());
-            chooser.setKey(PREF_CHOOSE_SYSTEM_KEYBOARD);
-            chooser.setTitle("Choose installed system keyboard");
-            chooser.setSummary("Open Android's keyboard picker to switch between installed keyboards.");
-            chooser.setOrder(displayKeyboard.getOrder() - 1);
-            chooser.setOnPreferenceClickListener(preference -> {
-                InputMethodManager imm = ContextCompat.getSystemService(requireContext(), InputMethodManager.class);
-                if (imm != null) {
-                    imm.showInputMethodPicker();
-                    return true;
-                }
-                Toast.makeText(requireContext(), "Android keyboard picker is unavailable", Toast.LENGTH_SHORT).show();
-                return true;
-            });
-            keyboardOptions.addPreference(chooser);
-        }
-
+        Preference chooser = new Preference(requireContext());
+        chooser.setKey(PREF_CHOOSE_SYSTEM_KEYBOARD);
+        chooser.setTitle("Choose installed system keyboard");
+        chooser.setOnPreferenceClickListener(preference -> {
+            InputMethodManager imm = ContextCompat.getSystemService(requireContext(), InputMethodManager.class);
+            if (imm != null) imm.showInputMethodPicker();
+            else Toast.makeText(requireContext(), "Android keyboard picker is unavailable", Toast.LENGTH_SHORT).show();
+            return true;
+        });
+        keyboardOptions.addPreference(chooser);
         refreshSearchKeyboardPicker();
     }
 
@@ -307,6 +292,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
             } else if ("pref-fav-tags-list".equals(key)) {
                 getDataHandler().reloadTags();
 
+                // after we edit the fav tags list update DataHandler
                 Set<String> favTags = sharedPreferences.getStringSet(key, Collections.emptySet());
                 DataHandler dh = getDataHandler();
                 List<Pojo> favoritesPojo = dh.getFavorites();
@@ -373,6 +359,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
 
                 @Override
                 public void onDenied() {
+                    // Call screening still works without READ_CALL_LOG; only caller-name enrichment
+                    // falls back to Contacts/number when Android does not grant the restricted permission.
                     setPhoneHistoryEnabled(true);
                     Toast.makeText(getContext(),
                             "Call log permission is needed for caller-ID names in phone history.",
@@ -414,6 +402,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
             }
         }
 
+        // Only display "rate the app" preference if the user has been using KISS long enough to enjoy it ;)
         Preference rateApp = findPreference("rate-app");
         if (rateApp != null) {
             if (historyLength < 300) {
@@ -445,6 +434,14 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         }
     }
 
+    /**
+     * Override to catch an exception which can crash whole app.
+     * This exception can occure when entries are added to/removed from preferences dynamically.
+     *
+     * @param key The key of the preference to retrieve.
+     * @return The {@link Preference} with the key, or null.
+     * @see PreferenceFragmentCompat#findPreference(CharSequence)
+     */
     @Nullable
     @Override
     public <T extends Preference> T findPreference(@NonNull CharSequence key) {
@@ -470,17 +467,99 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         } else if (pref instanceof AddSearchProviderPreference) {
             dialogFragment = AddSearchProviderPreferenceDialogFragment.newInstance(pref.getKey());
         }
+
         if (dialogFragment != null) {
-            dialogFragment.setTargetFragment(this, 0);
+            // check if dialog is already showing
+            if (getParentFragmentManager().findFragmentByTag(DIALOG_FRAGMENT_TAG) != null) {
+                return true;
+            }
+            dialogFragment.setTargetFragment(caller, 0);
             dialogFragment.show(getParentFragmentManager(), DIALOG_FRAGMENT_TAG);
             return true;
         }
+
         return false;
     }
 
-    private void onDialogClosed(@NonNull DialogShowingPreference preference, boolean positiveResult) {
-        if (positiveResult) {
-            preference.onDialogClosed(true);
+    private void onDialogClosed(Preference pref, boolean positiveResult) {
+        switch (pref.getKey()) {
+            case "reset-history":
+                if (positiveResult) {
+                    KissApplication.getApplication(requireContext()).getDataHandler().clearHistory();
+                    pref.setSummary(requireContext().getString(R.string.history_erased));
+                    Toast.makeText(getContext(), R.string.history_erased, Toast.LENGTH_LONG).show();
+                }
+                break;
+            case "reset-search-providers":
+                if (positiveResult) {
+                    PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
+                            .remove("available-search-providers").apply();
+                    KissApplication.getApplication(requireContext()).getDataHandler().reloadSearchProvider();
+                    Toast.makeText(getContext(), R.string.search_provider_reset_done_desc, Toast.LENGTH_LONG).show();
+                }
+                break;
+            case "reset-excluded-apps":
+                if (positiveResult) {
+                    PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
+                            .putStringSet("excluded-apps", null).apply();
+                    KissApplication.getApplication(requireContext()).getDataHandler().reloadApps();
+                    Toast.makeText(getContext(), R.string.excluded_app_list_erased, Toast.LENGTH_LONG).show();
+                }
+                break;
+            case "reset-excluded-from-history-apps":
+                if (positiveResult) {
+                    PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
+                            .putStringSet("excluded-apps-from-history", null).apply();
+                    KissApplication.getApplication(requireContext()).getDataHandler().reloadApps(); // reload because it's cached in AppPojo#excludedFromHistory
+                    Toast.makeText(getContext(), R.string.excluded_app_list_erased, Toast.LENGTH_LONG).show();
+                }
+                break;
+            case "reset-excluded-app-shortcuts":
+                if (positiveResult) {
+                    PreferenceManager.getDefaultSharedPreferences(requireContext()).edit()
+                            .putStringSet(DataHandler.PREF_KEY_EXCLUDED_SHORTCUT_APPS, null).apply();
+                    DataHandler dataHandler = KissApplication.getApplication(requireContext()).getDataHandler();
+                    // Reload shortcuts to refresh the shortcuts shown in KISS
+                    dataHandler.reloadShortcuts();
+                    // Reload apps since the `AppPojo.isExcludedShortcuts` value also needs to be refreshed
+                    dataHandler.reloadApps();
+                    Toast.makeText(getContext(), R.string.excluded_app_list_erased, Toast.LENGTH_LONG).show();
+                }
+                break;
+            case "reset-favorites":
+                if (positiveResult) {
+                    getDataHandler().resetFavorites();
+                    Toast.makeText(getContext(), R.string.favorites_erased, Toast.LENGTH_LONG).show();
+                }
+                break;
+            case "reset-shortcuts":
+                if (positiveResult && android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    // Remove all shortcuts
+                    ShortcutUtil.removeAllShortcuts(getContext());
+                    // Build all shortcuts
+                    ShortcutUtil.addAllShortcuts(getContext());
+                    Toast.makeText(getContext(), R.string.regenerate_shortcuts_done, Toast.LENGTH_LONG).show();
+                }
+                break;
+            case "enable-notifications":
+                if (positiveResult && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                    startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+                }
+                break;
+            case "default-launcher":
+                new DefaultLauncherPreference().onDialogClosed(getContext(), positiveResult);
+                break;
+            case "export-settings":
+                new ExportSettingsPreference().onDialogClosed(getContext(), positiveResult);
+                break;
+            case "import-settings":
+                new ImportSettingsPreference().onDialogClosed(getContext(), positiveResult);
+                break;
+            case "restart":
+                if (positiveResult) {
+                    System.exit(0);
+                }
+                break;
         }
     }
 }
