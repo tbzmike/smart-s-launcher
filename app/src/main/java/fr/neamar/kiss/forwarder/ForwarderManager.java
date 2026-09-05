@@ -226,11 +226,13 @@ public class ForwarderManager extends Forwarder {
     public void updateSearchRecords(String query) {
         String normalized = query == null ? "" : query;
         boolean sameQuery = TextUtils.equals(lastSearchQuery, normalized);
+        boolean emptyQuery = TextUtils.isEmpty(normalized);
         if (isVerticalCardsMode()) {
             verticalCardViewportController.onSearchQueryChanged(
-                    !TextUtils.isEmpty(normalized), !sameQuery);
+                    !emptyQuery, !sameQuery);
         }
-        if (HistoryRefreshPolicy.shouldSkip(initialResumeComplete, sameQuery, isHistorySearch())) {
+        if (HistoryRefreshPolicy.shouldSkip(
+                initialResumeComplete, sameQuery, isHistorySearch(), emptyQuery)) {
             return;
         }
 

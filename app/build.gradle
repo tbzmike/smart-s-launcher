@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.38 - instant history-first search path
-        versionCode 466
-        versionName "3.30.38"
+        // Smart S Launcher 3.30.39 - restore History after HOME from search
+        versionCode 467
+        versionName "3.30.39"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
