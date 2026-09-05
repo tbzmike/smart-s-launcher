@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.40 - UI-lock-aware long-press routing
-        versionCode 468
-        versionName "3.30.40"
+        // Smart S Launcher 3.30.41 - marquee universal history interaction metadata
+        versionCode 469
+        versionName "3.30.41"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
