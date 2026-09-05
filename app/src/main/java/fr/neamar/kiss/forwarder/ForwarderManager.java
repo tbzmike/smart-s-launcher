@@ -50,7 +50,6 @@ public class ForwarderManager extends Forwarder {
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
-
         this.widgetsForwarder = new WorkspaceWidgets(mainActivity);
         this.interfaceTweaks = new InterfaceTweaks(mainActivity);
         this.liveWallpaperForwarder = new LiveWallpaper(mainActivity);
@@ -64,11 +63,9 @@ public class ForwarderManager extends Forwarder {
         this.smartCardListForwarder = new SmartCardListForwarder(mainActivity);
         this.verticalCardViewportController = new VerticalCardViewportController(mainActivity, smartCardListForwarder);
         this.verticalMapsCardForwarder = new VerticalMapsCardForwarder(mainActivity, smartCardListForwarder);
-        this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(
-                mainActivity, smartCardListForwarder, verticalCardViewportController);
+        this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(mainActivity, smartCardListForwarder, verticalCardViewportController);
         this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
-        this.verticalCardUsageForwarder = new VerticalCardUsageForwarder(
-                mainActivity, smartCardListForwarder, verticalCardViewportController);
+        this.verticalCardUsageForwarder = new VerticalCardUsageForwarder(mainActivity, smartCardListForwarder, verticalCardViewportController);
         this.squareUHostFullscreenController = new SquareUHostFullscreenController(mainActivity, historyDisplayForwarder);
         this.squareUStabilityController = new SquareUStabilityController(mainActivity, historyDisplayForwarder);
         this.squareUEdgeBoundsController = new SquareUEdgeBoundsController(mainActivity, historyDisplayForwarder);
@@ -81,25 +78,13 @@ public class ForwarderManager extends Forwarder {
     public void onCreate() {
         UiEditLock.syncRuntimeState(mainActivity);
         lastUiEditLocked = UiEditLock.isLocked(mainActivity);
-        favoritesForwarder.onCreate();
-        widgetsForwarder.onCreate();
-        widgetPeelController.onCreate();
-        interfaceTweaks.onCreate();
-        experienceTweaks.onCreate();
-        shortcutsForwarder.onCreate();
-        tagsMenu.onCreate();
-        historyDisplayForwarder.onCreate();
-        squareUHostFullscreenController.onCreate();
-        smartCardListForwarder.onCreate();
-        verticalCardViewportController.onCreate();
-        verticalMapsCardForwarder.onCreate();
-        verticalCardGroupResizeController.onCreate();
-        verticalCardNotificationHistoryForwarder.onCreate();
-        verticalCardUsageForwarder.onCreate();
-        squareUStabilityController.onCreate();
-        squareUEdgeBoundsController.onCreate();
-        uNotificationHistoryLongPressForwarder.onCreate();
-        lockedHistoryGestureBridge.onCreate();
+        favoritesForwarder.onCreate(); widgetsForwarder.onCreate(); widgetPeelController.onCreate();
+        interfaceTweaks.onCreate(); experienceTweaks.onCreate(); shortcutsForwarder.onCreate();
+        tagsMenu.onCreate(); historyDisplayForwarder.onCreate(); squareUHostFullscreenController.onCreate();
+        smartCardListForwarder.onCreate(); verticalCardViewportController.onCreate(); verticalMapsCardForwarder.onCreate();
+        verticalCardGroupResizeController.onCreate(); verticalCardNotificationHistoryForwarder.onCreate();
+        verticalCardUsageForwarder.onCreate(); squareUStabilityController.onCreate(); squareUEdgeBoundsController.onCreate();
+        uNotificationHistoryLongPressForwarder.onCreate(); lockedHistoryGestureBridge.onCreate();
     }
 
     public void onStart() { widgetsForwarder.onStart(); }
@@ -111,114 +96,66 @@ public class ForwarderManager extends Forwarder {
         lastUiEditLocked = uiEditLocked;
         boolean verticalCards = isVerticalCardsMode();
         boolean square = isSquareMode();
-
-        if (verticalCards) {
-            // Only the selected Vertical Cards renderer owns this persisted viewport state.
-            verticalCardViewportController.onLauncherResumed();
-        }
-
-        // These two listeners are explicitly unregistered in onPause and therefore must be restored.
+        if (verticalCards) verticalCardViewportController.onLauncherResumed();
         experienceTweaks.onResume();
         notificationForwarder.onResume();
-
         if (initialResumeComplete) {
             if (verticalCards && uiEditLockChanged) verticalCardGroupResizeController.onResume();
             if (verticalCards) verticalCardUsageForwarder.onResume();
             return;
         }
-
-        interfaceTweaks.onResume();
-        lockedHistoryGestureBridge.onResume();
-        tagsMenu.onResume();
-        communicationHistoryForwarder.onResume();
-        historyDisplayForwarder.onResume();
-
+        interfaceTweaks.onResume(); lockedHistoryGestureBridge.onResume(); tagsMenu.onResume();
+        communicationHistoryForwarder.onResume(); historyDisplayForwarder.onResume();
         if (verticalCards) {
-            verticalCardViewportController.beforeDataSetChanged();
-            smartCardListForwarder.onResume();
-            verticalMapsCardForwarder.onResume();
-            verticalCardGroupResizeController.onResume();
-            verticalCardNotificationHistoryForwarder.onResume();
-            verticalCardUsageForwarder.onResume();
+            verticalCardViewportController.beforeDataSetChanged(); smartCardListForwarder.onResume();
+            verticalMapsCardForwarder.onResume(); verticalCardGroupResizeController.onResume();
+            verticalCardNotificationHistoryForwarder.onResume(); verticalCardUsageForwarder.onResume();
             verticalCardViewportController.afterDataSetChanged();
         } else if (square) {
-            squareUHostFullscreenController.onResume();
-            squareUStabilityController.onResume();
-            squareUEdgeBoundsController.onResume();
-            uNotificationHistoryLongPressForwarder.onResume();
+            squareUHostFullscreenController.onResume(); squareUStabilityController.onResume();
+            squareUEdgeBoundsController.onResume(); uNotificationHistoryLongPressForwarder.onResume();
         }
-
         if (isHistorySearch()) historyVisualEnhancer.onResume();
         initialResumeComplete = true;
     }
 
     public void onPause() {
-        if (isVerticalCardsMode()) {
-            // Capture only when Vertical Cards actually owns the visible history viewport.
-            verticalCardViewportController.onLauncherPaused();
-        }
-        experienceTweaks.onPause();
-        notificationForwarder.onPause();
+        if (isVerticalCardsMode()) verticalCardViewportController.onLauncherPaused();
+        experienceTweaks.onPause(); notificationForwarder.onPause();
     }
 
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) { widgetsForwarder.onActivityResult(requestCode, resultCode, data); }
 
     public boolean onOptionsItemSelected(MenuItem item) {
         int itemId = item.getItemId();
-        if (itemId == R.id.app_usage) {
-            mainActivity.startActivity(new Intent(mainActivity, AppUsageActivity.class));
-            return true;
-        }
-        if (itemId == R.id.notification_history) {
-            mainActivity.startActivity(new Intent(mainActivity, NotificationHistoryActivity.class));
-            return true;
-        }
-        if (itemId == R.id.battery_monitor) {
-            mainActivity.startActivity(new Intent(mainActivity, BatteryMonitorActivity.class));
-            return true;
-        }
-
+        if (itemId == R.id.app_usage) { mainActivity.startActivity(new Intent(mainActivity, AppUsageActivity.class)); return true; }
+        if (itemId == R.id.notification_history) { mainActivity.startActivity(new Intent(mainActivity, NotificationHistoryActivity.class)); return true; }
+        if (itemId == R.id.battery_monitor) { mainActivity.startActivity(new Intent(mainActivity, BatteryMonitorActivity.class)); return true; }
         if (UiEditLock.isLocked(mainActivity)) {
             if (itemId == R.id.preferences || itemId == R.id.settings) return false;
             if (itemId == R.id.add_widget || itemId == R.id.wallpaper) { UiEditLock.allowEdit(mainActivity); return true; }
             return widgetsForwarder.onOptionsItemSelected(item);
         }
-        if (itemId == R.id.wallpaper) {
-            mainActivity.hideKeyboard();
-            WallpaperChooser.show(mainActivity);
-            return true;
-        }
+        if (itemId == R.id.wallpaper) { mainActivity.hideKeyboard(); WallpaperChooser.show(mainActivity); return true; }
         return widgetsForwarder.onOptionsItemSelected(item);
     }
 
     public void onCreateContextMenu(ContextMenu menu) { if (!UiEditLock.isLocked(mainActivity)) widgetsForwarder.onCreateContextMenu(menu); }
-
     public boolean onTouch(View view, MotionEvent event) { experienceTweaks.onTouch(event); return liveWallpaperForwarder.onTouch(view, event); }
 
     public void onDataSetChanged() {
-        widgetsForwarder.onDataSetChanged();
-        widgetPeelController.onDataSetChanged();
-        historyDisplayForwarder.onDataSetChanged();
-
+        widgetsForwarder.onDataSetChanged(); widgetPeelController.onDataSetChanged(); historyDisplayForwarder.onDataSetChanged();
         if (isVerticalCardsMode()) {
-            verticalCardViewportController.beforeDataSetChanged();
-            smartCardListForwarder.onDataSetChanged();
+            verticalCardViewportController.beforeDataSetChanged(); smartCardListForwarder.onDataSetChanged();
             if (isHistorySearch()) {
-                verticalMapsCardForwarder.onDataSetChanged();
-                verticalCardGroupResizeController.onDataSetChanged();
-                verticalCardNotificationHistoryForwarder.onDataSetChanged();
-                verticalCardUsageForwarder.onDataSetChanged();
+                verticalMapsCardForwarder.onDataSetChanged(); verticalCardGroupResizeController.onDataSetChanged();
+                verticalCardNotificationHistoryForwarder.onDataSetChanged(); verticalCardUsageForwarder.onDataSetChanged();
             }
             verticalCardViewportController.afterDataSetChanged();
         } else if (isSquareMode()) {
-            squareUHostFullscreenController.onDataSetChanged();
-            squareUStabilityController.onDataSetChanged();
-            squareUEdgeBoundsController.onDataSetChanged();
-            uNotificationHistoryLongPressForwarder.onDataSetChanged();
+            squareUHostFullscreenController.onDataSetChanged(); squareUStabilityController.onDataSetChanged();
+            squareUEdgeBoundsController.onDataSetChanged(); uNotificationHistoryLongPressForwarder.onDataSetChanged();
         }
-
-        // Launch-stat/live-card enrichment is history decoration. Never run its database/live-data
-        // pipeline for ordinary query results, where it only competes with search and scrolling.
         if (isHistorySearch()) historyVisualEnhancer.onDataSetChanged();
         lockedHistoryGestureBridge.onDataSetChanged();
     }
@@ -226,23 +163,17 @@ public class ForwarderManager extends Forwarder {
     public void updateSearchRecords(String query) {
         String normalized = query == null ? "" : query;
         boolean sameQuery = TextUtils.equals(lastSearchQuery, normalized);
+        boolean emptyQuery = TextUtils.isEmpty(normalized);
         if (isVerticalCardsMode()) {
-            verticalCardViewportController.onSearchQueryChanged(
-                    !TextUtils.isEmpty(normalized), !sameQuery);
+            verticalCardViewportController.onSearchQueryChanged(!emptyQuery, !sameQuery);
         }
-        if (HistoryRefreshPolicy.shouldSkip(initialResumeComplete, sameQuery, isHistorySearch())) {
-            return;
-        }
-
+        if (HistoryRefreshPolicy.shouldSkip(initialResumeComplete, sameQuery, isHistorySearch(), emptyQuery)) return;
         lastSearchQuery = normalized;
         experienceTweaks.updateSearchRecords(query);
     }
 
-    /** Route the exact Android HOME intent with verified foreground/background lifecycle state. */
     public void onNewIntent(@NonNull Intent intent, boolean launcherWasForeground) {
-        if (isVerticalCardsMode() && isHomeIntent(intent)) {
-            verticalCardViewportController.onHomeIntent(launcherWasForeground);
-        }
+        if (isVerticalCardsMode() && isHomeIntent(intent)) verticalCardViewportController.onHomeIntent(launcherWasForeground);
     }
 
     public void onFavoriteChange() { favoritesForwarder.onFavoriteChange(); experienceTweaks.onFavoriteChange(); }
@@ -250,60 +181,32 @@ public class ForwarderManager extends Forwarder {
     public boolean onMenuButtonClicked(View menuButton) { return tagsMenu.onMenuButtonClicked(menuButton); }
 
     public void onDestroy() {
-        liveWallpaperForwarder.onDestroy();
-        widgetPeelController.onDestroy();
-        verticalCardViewportController.onDestroy();
-        verticalCardUsageForwarder.onDestroy();
-        uNotificationHistoryLongPressForwarder.onDestroy();
-        lockedHistoryGestureBridge.onDestroy();
-        verticalCardNotificationHistoryForwarder.onDestroy();
-        verticalCardGroupResizeController.onDestroy();
-        squareUEdgeBoundsController.onDestroy();
-        squareUStabilityController.onDestroy();
-        squareUHostFullscreenController.onDestroy();
-        widgetsForwarder.onDestroy();
-        smartCardListForwarder.onDestroy();
+        liveWallpaperForwarder.onDestroy(); widgetPeelController.onDestroy(); verticalCardViewportController.onDestroy();
+        verticalCardUsageForwarder.onDestroy(); uNotificationHistoryLongPressForwarder.onDestroy(); lockedHistoryGestureBridge.onDestroy();
+        verticalCardNotificationHistoryForwarder.onDestroy(); verticalCardGroupResizeController.onDestroy(); squareUEdgeBoundsController.onDestroy();
+        squareUStabilityController.onDestroy(); squareUHostFullscreenController.onDestroy(); widgetsForwarder.onDestroy(); smartCardListForwarder.onDestroy();
     }
 
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
-        widgetPeelController.onConfigurationChanged();
-        interfaceTweaks.onConfigurationChanged(newConfig);
-        favoritesForwarder.onConfigurationChanged(newConfig);
+        widgetPeelController.onConfigurationChanged(); interfaceTweaks.onConfigurationChanged(newConfig); favoritesForwarder.onConfigurationChanged(newConfig);
         if (isVerticalCardsMode()) {
-            verticalCardGroupResizeController.onConfigurationChanged();
-            verticalCardNotificationHistoryForwarder.onConfigurationChanged();
-            verticalCardViewportController.onConfigurationChanged();
-            verticalCardUsageForwarder.onConfigurationChanged();
+            verticalCardGroupResizeController.onConfigurationChanged(); verticalCardNotificationHistoryForwarder.onConfigurationChanged();
+            verticalCardViewportController.onConfigurationChanged(); verticalCardUsageForwarder.onConfigurationChanged();
         } else if (isSquareMode()) {
-            squareUHostFullscreenController.onConfigurationChanged();
-            squareUStabilityController.onConfigurationChanged();
-            squareUEdgeBoundsController.onConfigurationChanged();
-            uNotificationHistoryLongPressForwarder.onConfigurationChanged();
+            squareUHostFullscreenController.onConfigurationChanged(); squareUStabilityController.onConfigurationChanged();
+            squareUEdgeBoundsController.onConfigurationChanged(); uNotificationHistoryLongPressForwarder.onConfigurationChanged();
         }
         lockedHistoryGestureBridge.onResume();
     }
 
     private String activeHistoryLayout() {
-        String layout = prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT,
-                HistoryDisplayForwarder.VERTICAL);
+        String layout = prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL);
         return layout == null ? HistoryDisplayForwarder.VERTICAL : layout;
     }
-
-    private boolean isVerticalCardsMode() {
-        return HistoryDisplayForwarder.VERTICAL_CARDS.equals(activeHistoryLayout());
-    }
-
-    private boolean isSquareMode() {
-        return HistoryDisplayForwarder.SQUARE_U.equals(activeHistoryLayout());
-    }
-
-    private boolean isHistorySearch() {
-        return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
-    }
-
+    private boolean isVerticalCardsMode() { return HistoryDisplayForwarder.VERTICAL_CARDS.equals(activeHistoryLayout()); }
+    private boolean isSquareMode() { return HistoryDisplayForwarder.SQUARE_U.equals(activeHistoryLayout()); }
+    private boolean isHistorySearch() { return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY; }
     private static boolean isHomeIntent(@Nullable Intent intent) {
-        return intent != null
-                && Intent.ACTION_MAIN.equals(intent.getAction())
-                && intent.hasCategory(Intent.CATEGORY_HOME);
+        return intent != null && Intent.ACTION_MAIN.equals(intent.getAction()) && intent.hasCategory(Intent.CATEGORY_HOME);
     }
 }
