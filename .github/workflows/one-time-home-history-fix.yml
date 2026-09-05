@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'Add guarded home-history patch workflow'
+    if: github.event.head_commit.message == 'Retry guarded home-history patch workflow'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -55,7 +55,7 @@ jobs:
 
           replace_exact(
               'app/build.gradle',
-              '''        // Smart S Launcher 3.30.38 - instant 400-item history-first search\n        versionCode 466\n        versionName "3.30.38"\n''',
+              '''        // Smart S Launcher 3.30.38 - instant history-first search path\n        versionCode 466\n        versionName "3.30.38"\n''',
               '''        // Smart S Launcher 3.30.39 - restore History after HOME from search\n        versionCode 467\n        versionName "3.30.39"\n''')
       - name: Commit guarded patch
         run: |
