@@ -251,8 +251,17 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             promoteHistoryResult(result);
             result.launch(v.getContext(), v, parent);
         };
-        View.OnLongClickListener openRichNotification = v ->
-                NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo());
+        View.OnLongClickListener openRichNotification = v -> {
+            int position = results.indexOf(result);
+            if (UiEditLock.isLocked(v.getContext())) {
+                return NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo());
+            }
+            if (position >= 0) {
+                onLongClick(position, v);
+                return true;
+            }
+            return false;
+        };
 
         view.setOnClickListener(openExactTarget);
         view.setOnLongClickListener(openRichNotification);
@@ -670,8 +679,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (pos < 0 || pos >= getCount()) return;
         Result<?> result = getItem(pos);
         Context context = v.getContext();
-        if (showNotificationHistoryIfAvailable(pos, v)) return;
-        if (UiEditLock.isLocked(context)) return;
+        if (UiEditLock.isLocked(context)) {
+            showNotificationHistoryIfAvailable(pos, v);
+            return;
+        }
         ListPopup menu = result.getPopupMenu(context, this, v);
         if (menu.getAdapter().getCount() > 0) {
             parent.registerPopup(menu);

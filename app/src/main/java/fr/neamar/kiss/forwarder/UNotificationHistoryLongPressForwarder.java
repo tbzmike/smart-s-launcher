@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 
 /** Keeps notification-history long press authoritative on Square-U cards that own saved history. */
@@ -38,7 +39,7 @@ final class UNotificationHistoryLongPressForwarder extends Forwarder {
     }
 
     private void refresh() {
-        if (!isUStyle()) {
+        if (!isUStyle() || !UiEditLock.isLocked(mainActivity)) {
             detach();
             historyPositions.clear();
             return;
@@ -91,7 +92,8 @@ final class UNotificationHistoryLongPressForwarder extends Forwarder {
     }
 
     private void applyHistoryLongPress() {
-        if (!isUStyle() || squareTrack == null || mainActivity.adapter == null) return;
+        if (!isUStyle() || !UiEditLock.isLocked(mainActivity)
+                || squareTrack == null || mainActivity.adapter == null) return;
         int count = Math.min(squareTrack.getChildCount(), mainActivity.adapter.getCount());
         for (int i = 0; i < count; i++) {
             if (!historyPositions.contains(i)) continue;
