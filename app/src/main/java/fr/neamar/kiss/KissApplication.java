@@ -12,6 +12,7 @@ import fr.neamar.kiss.notification.MediaHistoryCoordinator;
 import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.social.SocialContactIndexService;
 import fr.neamar.kiss.ui.GlobalTextStyler;
+import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.utils.IconPackCache;
 import fr.neamar.kiss.utils.Log;
 
@@ -139,5 +140,6 @@ public class KissApplication extends Application {
         globalTextStyler = GlobalTextStyler.install(this);
         MediaHistoryCoordinator.install(this);
         SocialContactIndexService.maybePrompt(this);
+        AppUpdater.maybeAutoUpdate(this);
     }
 }

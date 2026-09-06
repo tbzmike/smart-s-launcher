@@ -1,100 +1,4 @@
-from pathlib import Path
-import subprocess
-
-BASE_COMMIT = "70756767f78f20fa152e20afafb4eaf8237aa37a"
-EXPECTED_BLOBS = {
-    "app/build.gradle": "d53a30ae848f5b36eef7f1d56c7db72cce8959b9",
-    "app/src/main/java/fr/neamar/kiss/KissApplication.java": "8a96de940d8e627a328797da7555e026f9409db7",
-    "app/src/main/java/fr/neamar/kiss/SmartCategorySettingsFragment.java": "350e8b66129a699dc82da451c93fcf5a2ea1c831",
-    "app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java": "728a76037d7f5df37f202559795d7f616c23dcc2",
-    "app/src/main/res/values/arrays.xml": "78404d1823de13896a008a0c96d6b7b055d70546",
-    "app/src/main/res/xml/preferences.xml": "107f3ee0566eedd4f804b1bfc93499ee7ff6333f",
-}
-
-subprocess.run(["git", "merge-base", "--is-ancestor", BASE_COMMIT, "HEAD"], check=True)
-for path, expected in EXPECTED_BLOBS.items():
-    actual = subprocess.check_output(["git", "rev-parse", f"HEAD:{path}"], text=True).strip()
-    if actual != expected:
-        raise SystemExit(f"Unexpected source blob for {path}: {actual}; expected {expected}")
-
-
-def replace_once(path, old, new, label):
-    p = Path(path)
-    text = p.read_text()
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"{label}: expected one exact match in {path}, found {count}")
-    p.write_text(text.replace(old, new, 1))
-
-
-replace_once(
-    "app/build.gradle",
-    '        // Smart S Launcher 3.30.43 - persist and optimize 3D Wheel view mode\n        versionCode 471\n        versionName "3.30.43"\n',
-    '        // Smart S Launcher 3.30.44 - verified 3D Wheel plus automatic/manual in-app updater\n        versionCode 472\n        versionName "3.30.44"\n',
-    "version bump",
-)
-
-replace_once(
-    "app/src/main/java/fr/neamar/kiss/KissApplication.java",
-    "import fr.neamar.kiss.ui.GlobalTextStyler;\nimport fr.neamar.kiss.utils.IconPackCache;\n",
-    "import fr.neamar.kiss.ui.GlobalTextStyler;\nimport fr.neamar.kiss.update.AppUpdater;\nimport fr.neamar.kiss.utils.IconPackCache;\n",
-    "application updater import",
-)
-replace_once(
-    "app/src/main/java/fr/neamar/kiss/KissApplication.java",
-    "        MediaHistoryCoordinator.install(this);\n        SocialContactIndexService.maybePrompt(this);\n",
-    "        MediaHistoryCoordinator.install(this);\n        SocialContactIndexService.maybePrompt(this);\n        AppUpdater.maybeAutoUpdate(this);\n",
-    "application auto updater hook",
-)
-
-settings = "app/src/main/java/fr/neamar/kiss/SmartCategorySettingsFragment.java"
-replace_once(
-    settings,
-    "import fr.neamar.kiss.ui.SmartTextAppearance;\n",
-    "import fr.neamar.kiss.ui.SmartTextAppearance;\nimport fr.neamar.kiss.update.AppUpdater;\n",
-    "settings updater import",
-)
-replace_once(
-    settings,
-    '        } else if ("advanced".equals(rootKey)) {\n            addBackgroundFeatureToggles();\n            addEntry("frozen", "Frozen apps & app state",\n',
-    '        } else if ("advanced".equals(rootKey)) {\n            addBackgroundFeatureToggles();\n            addUpdatePreferences();\n            addEntry("frozen", "Frozen apps & app state",\n',
-    "advanced updater entry",
-)
-marker = "    private void addDefaultSearchAppearancePreferences() {\n"
-addition = '''    private void addUpdatePreferences() {
-        if (findPreference("smart-update-category") != null) return;
-
-        PreferenceCategory category = new PreferenceCategory(requireContext());
-        category.setKey("smart-update-category");
-        category.setTitle("App updates");
-        getPreferenceScreen().addPreference(category);
-
-        SwitchPreference automatic = new SwitchPreference(requireContext());
-        automatic.setKey(AppUpdater.PREF_AUTO_UPDATE);
-        automatic.setTitle("Automatic updates");
-        automatic.setSummary("Automatically check GitHub Releases and download a newer compatible APK. Android will still ask you to approve installation.");
-        automatic.setDefaultValue(false);
-        category.addPreference(automatic);
-
-        Preference manual = new Preference(requireContext());
-        manual.setKey("smart-check-for-updates-now");
-        manual.setTitle("Check for updates now");
-        manual.setSummary("Manually check the latest Smart S Launcher GitHub release");
-        manual.setOnPreferenceClickListener(preference -> {
-            AppUpdater.checkForUpdates(requireContext(), true);
-            return true;
-        });
-        category.addPreference(manual);
-    }
-
-'''
-replace_once(settings, marker, addition + marker, "settings updater controls")
-
-updater = Path("app/src/main/java/fr/neamar/kiss/update/AppUpdater.java")
-updater.parent.mkdir(parents=True, exist_ok=True)
-if updater.exists():
-    raise SystemExit("AppUpdater.java unexpectedly already exists")
-updater.write_text(r'''package fr.neamar.kiss.update;
+package fr.neamar.kiss.update;
 
 import android.app.Activity;
 import android.app.DownloadManager;
@@ -140,7 +44,9 @@ public final class AppUpdater {
     private static final String RELEASE_API =
             "https://api.github.com/repos/tbzmike/smart-s-launcher/releases/latest";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
-    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static Handler mainHandler() {
+    return new Handler(Looper.getMainLooper());
+}
 
     private AppUpdater() {
     }
@@ -179,7 +85,7 @@ public final class AppUpdater {
                 }
 
                 if (userInitiated && context instanceof Activity) {
-                    MAIN.post(() -> showUpdateDialog((Activity) context, release, asset));
+                    mainHandler().post(() -> showUpdateDialog((Activity) context, release, asset));
                 } else if (userInitiated) {
                     postToast(app, "Update " + release.version + " is available");
                 } else {
@@ -351,7 +257,7 @@ public final class AppUpdater {
     }
 
     private static void postToast(Context context, String message) {
-        MAIN.post(() -> Toast.makeText(context.getApplicationContext(), message, Toast.LENGTH_LONG).show());
+        mainHandler().post(() -> Toast.makeText(context.getApplicationContext(), message, Toast.LENGTH_LONG).show());
     }
 
     private static final class ReleaseInfo {
@@ -374,39 +280,3 @@ public final class AppUpdater {
         }
     }
 }
-''')
-
-test = Path("app/src/test/java/fr/neamar/kiss/update/AppUpdaterTest.java")
-test.parent.mkdir(parents=True, exist_ok=True)
-if test.exists():
-    raise SystemExit("AppUpdaterTest.java unexpectedly already exists")
-test.write_text('''package fr.neamar.kiss.update;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import org.junit.jupiter.api.Test;
-
-class AppUpdaterTest {
-    @Test
-    void comparesThreePartVersions() {
-        assertTrue(AppUpdater.compareVersions("3.30.44", "3.30.43") > 0);
-        assertTrue(AppUpdater.compareVersions("3.31.0", "3.30.99") > 0);
-        assertTrue(AppUpdater.compareVersions("4.0.0", "3.99.99") > 0);
-    }
-
-    @Test
-    void acceptsGitHubVPrefixAndMissingTrailingParts() {
-        assertEquals(0, AppUpdater.compareVersions("v3.30.44", "3.30.44"));
-        assertEquals(0, AppUpdater.compareVersions("3.30", "3.30.0"));
-    }
-
-    @Test
-    void doesNotTreatOlderReleaseAsUpdate() {
-        assertTrue(AppUpdater.compareVersions("3.30.37", "3.30.44") < 0);
-    }
-}
-''')
-
-Path(".github/workflows/apply-updater-3.30.44.yml").unlink()
-Path(".github/scripts/apply-updater-3.30.44.py").unlink()
