@@ -29,12 +29,11 @@ import java.util.regex.Pattern;
 import fr.neamar.kiss.BuildConfig;
 
 /**
- * In-app updater backed by the latest CI run that completed successfully.
+ * In-app updater backed by the newest CI run that completed successfully.
  *
  * CI publishes the verified debug APK and manifest only after lint, unit tests and APK generation
- * all pass. The public updater channel is mirrored through jsDelivr so the launcher does not depend
- * on the github.com/api.github.com DNS path that can be unreachable on some networks. A GitHub
- * release manifest remains a fallback for networks where GitHub itself is reachable.
+ * all pass. The manifest is mirrored through jsDelivr for reachability, but the APK itself always
+ * comes from the versioned public GitHub Latest Release that users can also download manually.
  */
 public final class AppUpdater {
     public static final String PREF_AUTO_UPDATE = "smart-auto-update";
@@ -47,8 +46,7 @@ public final class AppUpdater {
     private static final String CDN_MANIFEST_URL =
             "https://cdn.jsdelivr.net/gh/tbzmike/smart-s-launcher@updater-channel/latest-green.json";
     private static final String GITHUB_MANIFEST_URL =
-            "https://github.com/tbzmike/smart-s-launcher/releases/download/latest-green/latest-green.json";
-    private static final String CDN_APK_HOST = "cdn.jsdelivr.net";
+            "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/latest-green.json";
     private static final String GITHUB_APK_HOST = "github.com";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
@@ -68,8 +66,6 @@ public final class AppUpdater {
         long lastCheck = prefs.getLong(PREF_LAST_CHECK_MS, 0L);
         if (now - lastCheck < AUTO_CHECK_INTERVAL_MS) return;
 
-        // Record the attempted automatic check so a broken/offline connection cannot create a
-        // tight retry loop every time the launcher resumes.
         prefs.edit().putLong(PREF_LAST_CHECK_MS, now).apply();
         checkForUpdates(app, false);
     }
@@ -123,7 +119,7 @@ public final class AppUpdater {
                 if (firstFailure == null) firstFailure = e;
             }
         }
-        throw new IllegalStateException("Neither update mirror could be reached", firstFailure);
+        throw new IllegalStateException("Neither update manifest mirror could be reached", firstFailure);
     }
 
     private static BuildInfo fetchBuildInfo(String url) throws Exception {
@@ -139,11 +135,6 @@ public final class AppUpdater {
         return parseBuildInfo(body);
     }
 
-    /**
-     * Parse only the fixed, CI-generated latest-green schema. A tiny strict parser keeps this
-     * validation usable in ordinary JVM unit tests instead of depending on Android's org.json
-     * runtime stubs. CI controls every value in this manifest; escaped string values are rejected.
-     */
     static BuildInfo parseBuildInfo(String body) throws Exception {
         String version = normalizeVersion(jsonString(body, "version"));
         long runId = jsonLong(body, "runId");
@@ -164,7 +155,7 @@ public final class AppUpdater {
         if (!"app-debug.apk".equals(apkName)) {
             throw new IllegalStateException("Green build manifest has unexpected APK name");
         }
-        validateApkUrl(apkUrl);
+        validateApkUrl(apkUrl, version);
         return new BuildInfo(version, runId, runNumber, sha, variant, apkName, apkUrl);
     }
 
@@ -194,19 +185,18 @@ public final class AppUpdater {
         }
     }
 
-    private static void validateApkUrl(String value) throws Exception {
+    private static void validateApkUrl(String value, String version) throws Exception {
         URL url = new URL(value);
         if (!"https".equalsIgnoreCase(url.getProtocol())) {
             throw new IllegalStateException("Green build APK URL is not HTTPS");
         }
-        String host = url.getHost();
-        String path = url.getPath();
-        boolean validCdn = CDN_APK_HOST.equalsIgnoreCase(host)
-                && path.equals("/gh/tbzmike/smart-s-launcher@updater-channel/app-debug.apk");
-        boolean validGitHub = GITHUB_APK_HOST.equalsIgnoreCase(host)
-                && path.equals("/tbzmike/smart-s-launcher/releases/download/latest-green/app-debug.apk");
-        if (!validCdn && !validGitHub) {
-            throw new IllegalStateException("Green build APK URL is outside the verified updater channel");
+        if (!GITHUB_APK_HOST.equalsIgnoreCase(url.getHost())) {
+            throw new IllegalStateException("Green build APK URL is not a GitHub Release asset");
+        }
+        String expectedPath = "/tbzmike/smart-s-launcher/releases/download/v"
+                + normalizeVersion(version) + "/app-debug.apk";
+        if (!expectedPath.equals(url.getPath())) {
+            throw new IllegalStateException("Green build APK URL does not match its versioned Latest Release");
         }
     }
 
@@ -276,7 +266,7 @@ public final class AppUpdater {
 
     private static void enqueueDownload(Context context, String version, ApkAsset asset) {
         try {
-            validateApkUrl(asset.url);
+            validateApkUrl(asset.url, version);
         } catch (Exception e) {
             postToast(context, "Refusing invalid update download URL");
             return;
@@ -290,7 +280,7 @@ public final class AppUpdater {
 
         DownloadManager.Request request = new DownloadManager.Request(Uri.parse(asset.url));
         request.setTitle("Smart S Launcher " + version);
-        request.setDescription("Verified green App testing APK");
+        request.setDescription("Verified green Latest Release APK");
         request.setMimeType("application/vnd.android.package-archive");
         request.setAllowedOverMetered(true);
         request.setAllowedOverRoaming(false);
@@ -304,7 +294,6 @@ public final class AppUpdater {
         postToast(context, "Downloading green Smart S Launcher build " + version);
     }
 
-    /** Called only by the private ACTION_DOWNLOAD_COMPLETE receiver. */
     static void onDownloadComplete(Context context, long completedId) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         long expectedId = prefs.getLong(PREF_DOWNLOAD_ID, -1L);
