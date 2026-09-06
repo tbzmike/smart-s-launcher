@@ -107,9 +107,9 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
     }
 
     private void openMessageAndRecord(Context context, View view) {
-        if (!openMessage(context, view, true)) return;
         RecentLaunchTracker.remember(pojo);
         recordLaunch(context, null);
+        openMessage(context, view, true);
     }
 
     private void configureVerifiedMarkRead(Button markRead, String notificationId) {
@@ -214,6 +214,8 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
     }
 
     private void markMessageRead(Context context) {
+        RecentLaunchTracker.remember(pojo);
+        recordLaunch(context, null);
         String notificationId = effectiveNotificationId(context);
         if (!TextUtils.isEmpty(notificationId)
                 && NotificationListener.markNotificationRead(context, notificationId)) {

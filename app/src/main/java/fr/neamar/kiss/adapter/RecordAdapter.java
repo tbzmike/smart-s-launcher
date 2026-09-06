@@ -248,12 +248,15 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         View.OnClickListener openExactTarget = v -> {
             SearchHandler.getInstance().cancelSearch();
             RecentLaunchTracker.remember(result.getPojo());
+            recordExplicitSelection(v.getContext(), result.getPojo());
             promoteHistoryResult(result);
             result.launch(v.getContext(), v, parent);
         };
         View.OnLongClickListener openRichNotification = v -> {
             int position = results.indexOf(result);
             if (UiEditLock.isLocked(v.getContext())) {
+                recordExplicitSelection(v.getContext(), result.getPojo());
+                promoteHistoryResult(result);
                 return NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo());
             }
             if (position >= 0) {
@@ -680,6 +683,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (pos < 0 || pos >= getCount()) return;
         Result<?> result = getItem(pos);
         Context context = v.getContext();
+        recordExplicitSelection(context, result.getPojo());
+        promoteHistoryResult(result);
         if (UiEditLock.isLocked(context)) {
             showNotificationHistoryIfAvailable(pos, v);
             return;
@@ -697,6 +702,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             SearchHandler.getInstance().cancelSearch();
             final Result<?> result = getItem(position);
             RecentLaunchTracker.remember(result.getPojo());
+            recordExplicitSelection(v.getContext(), result.getPojo());
             promoteHistoryResult(result);
             Pojo pojo = result.getPojo();
             boolean morphLaunch = pojo instanceof AppPojo
