@@ -35,7 +35,7 @@ final class VerticalCardGroupResizeController {
     private static final String PREF_SPACING = "smart-list-card-spacing-dp";
 
     private static final int MIN_WIDTH = 48;
-    private static final int MAX_WIDTH = 100;
+    private static final int MAX_WIDTH = 200;
     private static final int MIN_HEIGHT = 55;
     private static final int MAX_HEIGHT = 150;
 
@@ -196,7 +196,9 @@ final class VerticalCardGroupResizeController {
             ViewGroup.LayoutParams raw = child.getLayoutParams();
             if (!(raw instanceof LinearLayout.LayoutParams)) continue;
             LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
-            int desired = widthPercent >= MAX_WIDTH
+            // Keep 100% as the exact historical full-width behaviour. Values above 100% are
+            // deliberate oversized card widths rather than being collapsed back to MATCH_PARENT.
+            int desired = widthPercent == 100
                     ? ViewGroup.LayoutParams.MATCH_PARENT : targetWidth;
             if (lp.width == desired && lp.gravity == Gravity.CENTER_HORIZONTAL) continue;
             lp.width = desired;
