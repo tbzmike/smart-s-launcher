@@ -730,6 +730,20 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
      * This is click-driven rather than lifecycle-driven so a later Home restoration cannot
      * lose the identity of the selected row.
      */
+    public void promoteHistoryPojo(Pojo pojo) {
+        if (pojo == null) return;
+        String historyId = pojo.getHistoryId();
+        for (Result<?> candidate : results) {
+            if (candidate == null || candidate.getPojo() == null) continue;
+            Pojo candidatePojo = candidate.getPojo();
+            if (candidatePojo == pojo
+                    || (historyId != null && historyId.equals(candidatePojo.getHistoryId()))) {
+                promoteHistoryResult(candidate);
+                return;
+            }
+        }
+    }
+
     private void promoteHistoryResult(Result<?> selected) {
         if (SearchHandler.getInstance().getLastSearchType() != Searcher.Type.HISTORY
                 || selected == null || results.size() < 2) return;
