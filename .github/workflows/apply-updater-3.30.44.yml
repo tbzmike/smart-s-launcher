@@ -20,7 +20,30 @@ jobs:
           fetch-depth: 0
 
       - name: Apply exact guarded patch
-        run: python3 .github/scripts/apply-updater-3.30.44.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/scripts/apply-updater-3.30.44.py')
+          text = p.read_text()
+          old = '    private static final Handler MAIN = new Handler(Looper.getMainLooper());'
+          new = '''    private static Handler mainHandler() {
+              return new Handler(Looper.getMainLooper());
+          }'''
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected one static Handler initializer, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          for old_call, new_call in [
+              ('MAIN.post(() -> showUpdateDialog', 'mainHandler().post(() -> showUpdateDialog'),
+              ('MAIN.post(() -> Toast.makeText', 'mainHandler().post(() -> Toast.makeText'),
+          ]:
+              if text.count(old_call) != 1:
+                  raise SystemExit(f'Expected one {old_call!r}, found {text.count(old_call)}')
+              text = text.replace(old_call, new_call, 1)
+          p.write_text(text)
+          PY
+          python3 .github/scripts/apply-updater-3.30.44.py
 
       - name: Verify intended diff
         run: |
@@ -31,6 +54,9 @@ jobs:
           grep -F 'addUpdatePreferences();' app/src/main/java/fr/neamar/kiss/SmartCategorySettingsFragment.java
           grep -F 'releases/latest' app/src/main/java/fr/neamar/kiss/update/AppUpdater.java
           grep -F 'name.contains("unsigned")' app/src/main/java/fr/neamar/kiss/update/AppUpdater.java
+          grep -F 'private static Handler mainHandler()' app/src/main/java/fr/neamar/kiss/update/AppUpdater.java
+          test ! -e .github/workflows/apply-updater-3.30.44.yml
+          test ! -e .github/scripts/apply-updater-3.30.44.py
 
       - name: Lint, unit test and build
         run: bash ./gradlew lint testDebugUnitTest assembleDebug --stacktrace
