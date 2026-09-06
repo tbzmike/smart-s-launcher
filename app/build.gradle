@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.48 - CDN green updater, 200% Vertical Cards, universal history recency
-        versionCode 476
-        versionName "3.30.48"
+        // Smart S Launcher 3.30.49 - CDN green updater, 200% Vertical Cards, universal history recency
+        versionCode 477
+        versionName "3.30.49"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
