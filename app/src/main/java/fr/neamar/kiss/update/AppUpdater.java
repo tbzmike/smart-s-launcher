@@ -3,6 +3,7 @@ package fr.neamar.kiss.update;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
@@ -13,7 +14,6 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.preference.PreferenceManager;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -29,10 +29,12 @@ import java.util.concurrent.Executors;
 import fr.neamar.kiss.BuildConfig;
 
 /**
- * GitHub Releases updater for Smart S Launcher.
+ * In-app updater backed by the latest CI run that completed successfully.
  *
- * Automatic mode intentionally stops at downloading the APK: Android's package installer still
- * requires user approval. Unsigned release assets are never selected.
+ * The CI workflow publishes a small manifest plus the debug APK to the stable latest-green
+ * prerelease only after lint, unit tests and APK generation all pass. The app therefore never
+ * installs an APK from a red, cancelled or still-running workflow. Android's package installer
+ * remains the final authority and may require the user to approve installation from this source.
  */
 public final class AppUpdater {
     public static final String PREF_AUTO_UPDATE = "smart-auto-update";
@@ -41,12 +43,17 @@ public final class AppUpdater {
     private static final String PREF_DOWNLOAD_VERSION = "smart-update-download-version";
     private static final String PREF_DOWNLOAD_ID = "smart-update-download-id";
     private static final long AUTO_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L;
-    private static final String RELEASE_API =
-            "https://api.github.com/repos/tbzmike/smart-s-launcher/releases/latest";
+
+    // This is deliberately served from github.com rather than api.github.com. The release is
+    // replaced by CI only after the complete App testing workflow is green.
+    private static final String GREEN_MANIFEST_URL =
+            "https://github.com/tbzmike/smart-s-launcher/releases/download/latest-green/latest-green.json";
+    private static final String EXPECTED_APK_HOST = "github.com";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+
     private static Handler mainHandler() {
-    return new Handler(Looper.getMainLooper());
-}
+        return new Handler(Looper.getMainLooper());
+    }
 
     private AppUpdater() {
     }
@@ -60,6 +67,8 @@ public final class AppUpdater {
         long lastCheck = prefs.getLong(PREF_LAST_CHECK_MS, 0L);
         if (now - lastCheck < AUTO_CHECK_INTERVAL_MS) return;
 
+        // Record the attempted automatic check so a broken/offline connection cannot create a
+        // tight retry loop every time the launcher resumes.
         prefs.edit().putLong(PREF_LAST_CHECK_MS, now).apply();
         checkForUpdates(app, false);
     }
@@ -68,43 +77,39 @@ public final class AppUpdater {
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> {
             try {
-                ReleaseInfo release = fetchLatestRelease();
-                if (compareVersions(release.version, BuildConfig.VERSION_NAME) <= 0) {
+                BuildInfo build = fetchLatestGreenBuild();
+                if (!isCompatibleVariant(build.variant)) {
                     if (userInitiated) {
-                        postToast(app, "Smart S Launcher " + BuildConfig.VERSION_NAME + " is already up to date");
+                        postToast(app, "Latest green build is not compatible with this installed variant");
+                    }
+                    return;
+                }
+                if (compareVersions(build.version, BuildConfig.VERSION_NAME) <= 0) {
+                    if (userInitiated) {
+                        postToast(app, "Smart S Launcher " + BuildConfig.VERSION_NAME
+                                + " is already on the latest green build");
                     }
                     return;
                 }
 
-                ApkAsset asset = selectCompatibleApk(release.assets);
-                if (asset == null) {
-                    if (userInitiated) {
-                        postToast(app, "Update " + release.version + " exists, but it has no compatible signed APK");
-                    }
-                    return;
-                }
-
+                ApkAsset asset = new ApkAsset(build.apkName, build.apkUrl);
                 if (userInitiated && context instanceof Activity) {
-                    mainHandler().post(() -> showUpdateDialog((Activity) context, release, asset));
+                    mainHandler().post(() -> showUpdateDialog((Activity) context, build, asset));
                 } else if (userInitiated) {
-                    postToast(app, "Update " + release.version + " is available");
+                    enqueueDownload(app, build.version, asset);
                 } else {
-                    enqueueIfNeeded(app, release.version, asset);
+                    enqueueIfNeeded(app, build.version, asset);
                 }
             } catch (Exception e) {
-                if (userInitiated) postToast(app, "Update check failed: " + safeMessage(e));
+                if (userInitiated) {
+                    postToast(app, "Update check failed: " + userFacingNetworkMessage(e));
+                }
             }
         });
     }
 
-    private static ReleaseInfo fetchLatestRelease() throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(RELEASE_API).openConnection();
-        connection.setConnectTimeout(12_000);
-        connection.setReadTimeout(15_000);
-        connection.setRequestProperty("Accept", "application/vnd.github+json");
-        connection.setRequestProperty("User-Agent", "Smart-S-Launcher/" + BuildConfig.VERSION_NAME);
-        connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
-
+    private static BuildInfo fetchLatestGreenBuild() throws Exception {
+        HttpURLConnection connection = openConnection(GREEN_MANIFEST_URL);
         int code = connection.getResponseCode();
         InputStream stream = code >= 200 && code < 300
                 ? connection.getInputStream() : connection.getErrorStream();
@@ -113,43 +118,71 @@ public final class AppUpdater {
         if (code < 200 || code >= 300) {
             throw new IllegalStateException("GitHub returned HTTP " + code);
         }
+        return parseBuildInfo(body);
+    }
 
+    static BuildInfo parseBuildInfo(String body) throws Exception {
         JSONObject json = new JSONObject(body);
-        String tag = json.optString("tag_name", "");
-        if (tag.isEmpty()) throw new IllegalStateException("Latest release has no version tag");
-        JSONArray assetsJson = json.optJSONArray("assets");
-        ApkAsset[] assets = assetsJson == null ? new ApkAsset[0] : new ApkAsset[assetsJson.length()];
-        if (assetsJson != null) {
-            for (int i = 0; i < assetsJson.length(); i++) {
-                JSONObject asset = assetsJson.getJSONObject(i);
-                assets[i] = new ApkAsset(
-                        asset.optString("name", ""),
-                        asset.optString("browser_download_url", ""));
-            }
+        String version = normalizeVersion(json.optString("version", ""));
+        long runId = json.optLong("runId", -1L);
+        long runNumber = json.optLong("runNumber", -1L);
+        String sha = json.optString("sha", "").trim();
+        String variant = json.optString("variant", "").trim().toLowerCase(Locale.ROOT);
+        String apkName = json.optString("apkName", "").trim();
+        String apkUrl = json.optString("apkUrl", "").trim();
+
+        if (version.isEmpty()) throw new IllegalStateException("Green build manifest has no version");
+        if (runId <= 0L || runNumber <= 0L) {
+            throw new IllegalStateException("Green build manifest has no workflow identity");
         }
-        return new ReleaseInfo(normalizeVersion(tag), assets);
+        if (sha.length() < 7) throw new IllegalStateException("Green build manifest has no commit SHA");
+        if (!"debug".equals(variant)) {
+            throw new IllegalStateException("Green build manifest has unsupported variant");
+        }
+        if (!"app-debug.apk".equals(apkName)) {
+            throw new IllegalStateException("Green build manifest has unexpected APK name");
+        }
+        validateApkUrl(apkUrl);
+        return new BuildInfo(version, runId, runNumber, sha, variant, apkName, apkUrl);
     }
 
-    private static ApkAsset selectCompatibleApk(ApkAsset[] assets) {
-        ApkAsset releaseFallback = null;
-        for (ApkAsset asset : assets) {
-            String name = asset.name.toLowerCase(Locale.ROOT);
-            if (!name.endsWith(".apk") || asset.url.isEmpty() || name.contains("unsigned")) continue;
-            if (BuildConfig.DEBUG && "app-debug.apk".equals(name)) return asset;
-            if (!BuildConfig.DEBUG && "app-release.apk".equals(name)) return asset;
-            if (!BuildConfig.DEBUG && name.contains("release")) releaseFallback = asset;
+    private static void validateApkUrl(String value) throws Exception {
+        URL url = new URL(value);
+        if (!"https".equalsIgnoreCase(url.getProtocol())) {
+            throw new IllegalStateException("Green build APK URL is not HTTPS");
         }
-        return releaseFallback;
+        if (!EXPECTED_APK_HOST.equalsIgnoreCase(url.getHost())) {
+            throw new IllegalStateException("Green build APK URL has unexpected host");
+        }
+        String expectedPrefix = "/tbzmike/smart-s-launcher/releases/download/latest-green/";
+        if (!url.getPath().startsWith(expectedPrefix)) {
+            throw new IllegalStateException("Green build APK URL has unexpected path");
+        }
     }
 
-    private static void showUpdateDialog(Activity activity, ReleaseInfo release, ApkAsset asset) {
+    private static boolean isCompatibleVariant(String variant) {
+        return BuildConfig.DEBUG && "debug".equals(variant);
+    }
+
+    private static HttpURLConnection openConnection(String url) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setConnectTimeout(15_000);
+        connection.setReadTimeout(20_000);
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestProperty("Accept", "application/json, application/octet-stream;q=0.9, */*;q=0.8");
+        connection.setRequestProperty("User-Agent", "Smart-S-Launcher/" + BuildConfig.VERSION_NAME);
+        return connection;
+    }
+
+    private static void showUpdateDialog(Activity activity, BuildInfo build, ApkAsset asset) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
         new AlertDialog.Builder(activity)
                 .setTitle("Smart S Launcher update")
-                .setMessage("Version " + release.version + " is available. Download it now?")
+                .setMessage("Green App testing build " + build.version + " (#" + build.runNumber
+                        + ") passed. Download and install it now?")
                 .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton("Download", (dialog, which) ->
-                        EXECUTOR.execute(() -> enqueueDownload(activity.getApplicationContext(), release.version, asset)))
+                .setPositiveButton("Download", (dialog, which) -> EXECUTOR.execute(() ->
+                        enqueueDownload(activity.getApplicationContext(), build.version, asset)))
                 .show();
     }
 
@@ -159,28 +192,43 @@ public final class AppUpdater {
         long storedId = prefs.getLong(PREF_DOWNLOAD_ID, -1L);
         if (version.equals(storedVersion) && storedId >= 0L
                 && isDownloadActiveOrSuccessful(context, storedId)) {
+            if (isDownloadSuccessful(context, storedId)) installDownloadedApk(context, storedId);
             return;
         }
         enqueueDownload(context, version, asset);
     }
 
     private static boolean isDownloadActiveOrSuccessful(Context context, long id) {
+        int status = downloadStatus(context, id);
+        return status == DownloadManager.STATUS_PENDING
+                || status == DownloadManager.STATUS_RUNNING
+                || status == DownloadManager.STATUS_PAUSED
+                || status == DownloadManager.STATUS_SUCCESSFUL;
+    }
+
+    private static boolean isDownloadSuccessful(Context context, long id) {
+        return downloadStatus(context, id) == DownloadManager.STATUS_SUCCESSFUL;
+    }
+
+    private static int downloadStatus(Context context, long id) {
         DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
-        if (manager == null) return false;
+        if (manager == null) return -1;
         DownloadManager.Query query = new DownloadManager.Query().setFilterById(id);
         try (Cursor cursor = manager.query(query)) {
-            if (cursor == null || !cursor.moveToFirst()) return false;
+            if (cursor == null || !cursor.moveToFirst()) return -1;
             int statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
-            if (statusIndex < 0) return false;
-            int status = cursor.getInt(statusIndex);
-            return status == DownloadManager.STATUS_PENDING
-                    || status == DownloadManager.STATUS_RUNNING
-                    || status == DownloadManager.STATUS_PAUSED
-                    || status == DownloadManager.STATUS_SUCCESSFUL;
+            return statusIndex < 0 ? -1 : cursor.getInt(statusIndex);
         }
     }
 
     private static void enqueueDownload(Context context, String version, ApkAsset asset) {
+        try {
+            validateApkUrl(asset.url);
+        } catch (Exception e) {
+            postToast(context, "Refusing invalid update download URL");
+            return;
+        }
+
         DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
         if (manager == null) {
             postToast(context, "Android Download Manager is unavailable");
@@ -189,7 +237,7 @@ public final class AppUpdater {
 
         DownloadManager.Request request = new DownloadManager.Request(Uri.parse(asset.url));
         request.setTitle("Smart S Launcher " + version);
-        request.setDescription("Launcher update APK");
+        request.setDescription("Verified green App testing APK");
         request.setMimeType("application/vnd.android.package-archive");
         request.setAllowedOverMetered(true);
         request.setAllowedOverRoaming(false);
@@ -200,7 +248,38 @@ public final class AppUpdater {
                 .putString(PREF_DOWNLOAD_VERSION, version)
                 .putLong(PREF_DOWNLOAD_ID, id)
                 .apply();
-        postToast(context, "Downloading Smart S Launcher " + version);
+        postToast(context, "Downloading green Smart S Launcher build " + version);
+    }
+
+    /** Called only by the private ACTION_DOWNLOAD_COMPLETE receiver. */
+    static void onDownloadComplete(Context context, long completedId) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        long expectedId = prefs.getLong(PREF_DOWNLOAD_ID, -1L);
+        if (completedId < 0L || completedId != expectedId) return;
+        if (!isDownloadSuccessful(context, completedId)) {
+            postToast(context, "Smart S Launcher update download did not complete successfully");
+            return;
+        }
+        installDownloadedApk(context, completedId);
+    }
+
+    private static void installDownloadedApk(Context context, long downloadId) {
+        DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+        if (manager == null) return;
+        Uri apkUri = manager.getUriForDownloadedFile(downloadId);
+        if (apkUri == null) {
+            postToast(context, "Downloaded update APK is unavailable");
+            return;
+        }
+
+        Intent install = new Intent(Intent.ACTION_VIEW);
+        install.setDataAndType(apkUri, "application/vnd.android.package-archive");
+        install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            context.startActivity(install);
+        } catch (Exception e) {
+            postToast(context, "Unable to open Android package installer: " + safeMessage(e));
+        }
     }
 
     static int compareVersions(String left, String right) {
@@ -251,22 +330,43 @@ public final class AppUpdater {
         return result.toString();
     }
 
+    private static String userFacingNetworkMessage(Exception e) {
+        String message = safeMessage(e);
+        String lower = message.toLowerCase(Locale.ROOT);
+        if (lower.contains("unable to resolve host") || lower.contains("unknownhost")) {
+            return "GitHub cannot be reached. Check Internet/DNS and try again";
+        }
+        return message;
+    }
+
     private static String safeMessage(Exception e) {
         String message = e.getMessage();
         return message == null || message.trim().isEmpty() ? e.getClass().getSimpleName() : message;
     }
 
     private static void postToast(Context context, String message) {
-        mainHandler().post(() -> Toast.makeText(context.getApplicationContext(), message, Toast.LENGTH_LONG).show());
+        mainHandler().post(() -> Toast.makeText(
+                context.getApplicationContext(), message, Toast.LENGTH_LONG).show());
     }
 
-    private static final class ReleaseInfo {
+    static final class BuildInfo {
         final String version;
-        final ApkAsset[] assets;
+        final long runId;
+        final long runNumber;
+        final String sha;
+        final String variant;
+        final String apkName;
+        final String apkUrl;
 
-        ReleaseInfo(String version, ApkAsset[] assets) {
+        BuildInfo(String version, long runId, long runNumber, String sha, String variant,
+                  String apkName, String apkUrl) {
             this.version = version;
-            this.assets = assets;
+            this.runId = runId;
+            this.runNumber = runNumber;
+            this.sha = sha;
+            this.variant = variant;
+            this.apkName = apkName;
+            this.apkUrl = apkUrl;
         }
     }
 
