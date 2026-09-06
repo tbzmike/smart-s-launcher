@@ -85,7 +85,7 @@ jobs:
           archive: true
 
   publish-green:
-    name: Publish latest passed build as Latest Release
+    name: Publish newest green build as versioned Latest Release
     needs: [test, apk]
     if: ${{ github.event_name == 'push' && needs.test.result == 'success' && needs.apk.result == 'success' }}
     runs-on: ubuntu-24.04
@@ -116,15 +116,16 @@ jobs:
           if not version_match or not code_match:
               raise SystemExit("Unable to read versionName/versionCode from app/build.gradle")
 
+          version = version_match.group(1)
           data = {
-              "version": version_match.group(1),
+              "version": version,
               "versionCode": int(code_match.group(1)),
               "runId": int(os.environ["GITHUB_RUN_ID"]),
               "runNumber": int(os.environ["GITHUB_RUN_NUMBER"]),
               "sha": os.environ["GITHUB_SHA"],
               "variant": "debug",
               "apkName": "app-debug.apk",
-              "apkUrl": "https://github.com/tbzmike/smart-s-launcher/releases/download/latest-green/app-debug.apk"
+              "apkUrl": f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}/app-debug.apk"
           }
           with open("latest-green.json", "w", encoding="utf-8") as f:
               json.dump(data, f, separators=(",", ":"))
@@ -138,7 +139,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p previous-green
-          if gh release download latest-green --pattern latest-green.json --dir previous-green >/dev/null 2>&1; then
+          LATEST_TAG="$(gh release view --json tagName -q .tagName 2>/dev/null || true)"
+          if [ -n "$LATEST_TAG" ] && gh release download "$LATEST_TAG" --pattern latest-green.json --dir previous-green >/dev/null 2>&1; then
             PREVIOUS_RUN="$(python3 -c 'import json; print(json.load(open("previous-green/latest-green.json"))["runNumber"])')"
             if [ "$PREVIOUS_RUN" -gt "$GITHUB_RUN_NUMBER" ]; then
               echo "A newer green run #$PREVIOUS_RUN is already published; this older run #$GITHUB_RUN_NUMBER will not replace it."
@@ -147,7 +149,7 @@ jobs:
             fi
           fi
           echo "publish=true" >> "$GITHUB_OUTPUT"
-      - name: Publish green APK as the public Latest Release
+      - name: Publish green APK as versioned public Latest Release
         if: ${{ steps.guard.outputs.publish == 'true' }}
         shell: bash
         env:
@@ -155,14 +157,16 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(python3 -c 'import json; print(json.load(open("latest-green.json"))["version"])')"
-          gh release delete latest-green --cleanup-tag --yes >/dev/null 2>&1 || true
-          gh release create latest-green \
+          TAG="v${VERSION}"
+          gh release delete "$TAG" --cleanup-tag --yes >/dev/null 2>&1 || true
+          gh release create "$TAG" \
             --target "$GITHUB_SHA" \
             --latest \
-            --title "Smart S Launcher v${VERSION} — Latest Green Build" \
-            --notes "Latest fully passed Smart S Launcher build. App testing run #$GITHUB_RUN_NUMBER completed successfully: lint passed, unit tests passed, and APK generation passed. This is the APK used by manual and automatic in-app updates." \
+            --title "Smart S Launcher v${VERSION}" \
+            --notes "Latest fully passed Smart S Launcher build. App testing run #$GITHUB_RUN_NUMBER completed successfully: lint passed, unit tests passed, and APK generation passed. This public release APK is also the APK used by manual and automatic in-app updates." \
             latest-green.json \
             app-debug.apk
+          gh release delete latest-green --cleanup-tag --yes >/dev/null 2>&1 || true
       - name: Mirror latest manifest for updater reachability
         if: ${{ steps.guard.outputs.publish == 'true' }}
         shell: bash
