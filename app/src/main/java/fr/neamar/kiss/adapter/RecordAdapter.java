@@ -248,7 +248,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         View.OnClickListener openExactTarget = v -> {
             SearchHandler.getInstance().cancelSearch();
             RecentLaunchTracker.remember(result.getPojo());
-            recordExplicitSelection(v.getContext(), result.getPojo());
             promoteHistoryResult(result);
             result.launch(v.getContext(), v, parent);
         };
@@ -702,7 +701,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             SearchHandler.getInstance().cancelSearch();
             final Result<?> result = getItem(position);
             RecentLaunchTracker.remember(result.getPojo());
-            recordExplicitSelection(v.getContext(), result.getPojo());
             promoteHistoryResult(result);
             Pojo pojo = result.getPojo();
             boolean morphLaunch = pojo instanceof AppPojo
