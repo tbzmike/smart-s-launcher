@@ -18,6 +18,24 @@
     <string-array name="historyModeValues" translatable="false">
         <item>recency</item><item>frecency</item><item>frequency</item><item>adaptive</item><item>time</item><item>alphabetically</item>
     </string-array>
+    <string-array name="smartHistoryLayoutEntries" translatable="false">
+        <item>Vertical list</item>
+        <item>Vertical cards</item>
+        <item>3D wheel</item>
+        <item>Horizontal icons</item>
+        <item>Horizontal cards</item>
+        <item>Horizontal app names</item>
+        <item>Square-U cards</item>
+    </string-array>
+    <string-array name="smartHistoryLayoutValues" translatable="false">
+        <item>vertical</item>
+        <item>vertical_cards</item>
+        <item>wheel_3d</item>
+        <item>horizontal_icons</item>
+        <item>horizontal_cards</item>
+        <item>horizontal_names</item>
+        <item>square_u</item>
+    </string-array>
     <string-array name="taggedResultSortModeEntries">
         <item>@string/tagged_result_sort_mode_default</item><item>@string/history_recency</item><item>@string/history_frecency</item><item>@string/history_frequency</item><item>@string/history_adaptive</item><item>@string/history_time</item><item>@string/history_alphabetically</item>
     </string-array>

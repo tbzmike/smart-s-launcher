@@ -91,27 +91,16 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
     }
 
     private void addHistoryLayoutPreference() {
-        String key = "smart-history-layout";
-        if (findPreference(key) != null) return;
-
-        ListPreference preference = new ListPreference(requireContext());
-        preference.setKey(key);
-        preference.setTitle("App history layout");
-        preference.setEntries(new CharSequence[]{
-                "Vertical list", "Vertical cards", "3D wheel", "Horizontal icons", "Horizontal cards",
-                "Horizontal app names", "Square-U cards"
-        });
-        preference.setEntryValues(new CharSequence[]{
-                "vertical", "vertical_cards", "wheel_3d", "horizontal_icons", "horizontal_cards",
-                "horizontal_names", "square_u"
-        });
-        preference.setDefaultValue("vertical");
+        // The selector is XML-backed so it is always present, including after Settings recreation
+        // and when this category is reached through Settings search. This fragment only attaches
+        // Smart S live-refresh behavior; it no longer owns creation of the preference.
+        ListPreference preference = findPreference("smart-history-layout");
+        if (preference == null) return;
         preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
         preference.setOnPreferenceChangeListener((changedPreference, newValue) -> {
             markLayoutDirty();
             return true;
         });
-        getPreferenceScreen().addPreference(preference);
     }
 
     private void addHistorySizingPreferences() {

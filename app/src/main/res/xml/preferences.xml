@@ -23,6 +23,13 @@
             app:title="Max number of search results"
             app:useSimpleSummaryProvider="true" />
         <ListPreference
+            app:defaultValue="vertical"
+            app:entries="@array/smartHistoryLayoutEntries"
+            app:entryValues="@array/smartHistoryLayoutValues"
+            app:key="smart-history-layout"
+            app:title="App history layout"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
             app:defaultValue="recency"
             app:entries="@array/historyModeEntries"
             app:entryValues="@array/historyModeValues"

@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.42 - add isolated 3D Wheel history view mode
-        versionCode 470
-        versionName "3.30.42"
+        // Smart S Launcher 3.30.43 - persist and optimize 3D Wheel view mode
+        versionCode 471
+        versionName "3.30.43"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

@@ -21,6 +21,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -64,6 +65,8 @@ final class HistoryDisplayForwarder extends Forwarder {
     private SquareTrackLayout squareTrack;
     private WheelScrollView wheelScroller;
     private LinearLayout wheelColumn;
+    private final ArrayList<Integer> wheelViewTypes = new ArrayList<>();
+    private boolean wheelTransformFramePosted;
     private ScrollView notificationScroller;
     private LinearLayout notificationCenter;
     private View edgeEffect;
@@ -141,7 +144,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         wheelColumn.setClipToPadding(false);
         wheelColumn.addOnLayoutChangeListener((v, left, top, right, bottom,
                                                oldLeft, oldTop, oldRight, oldBottom) -> {
-            if (WHEEL_3D.equals(activeMode)) updateWheelTransforms();
+            if (WHEEL_3D.equals(activeMode)) scheduleWheelTransforms();
         });
         wheelScroller.addView(wheelColumn, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -154,9 +157,6 @@ final class HistoryDisplayForwarder extends Forwarder {
     private void rebuildWheel() {
         if (wheelColumn == null || mainActivity.adapter == null) return;
 
-        resetWheelTransforms();
-        wheelColumn.removeAllViews();
-
         final int count = mainActivity.adapter.getCount();
         String currentQuery = mainActivity.searchEditText == null
                 ? "" : mainActivity.searchEditText.getText().toString().trim();
@@ -166,18 +166,37 @@ final class HistoryDisplayForwarder extends Forwarder {
                 || !currentQuery.equals(lastWheelQuery)
                 || currentPriorityId != lastWheelPriorityId;
 
+        // Rebind through the real List View adapter, but recycle rows by view type instead of
+        // destroying the whole wheel for every history/search dataset update. This keeps every
+        // List View feature while avoiding repeated inflate/layout/GC churn.
         for (int position = 0; position < count; position++) {
-            // Ask the existing ListView adapter for the real Smart S row so icons, text,
-            // notifications, history metadata, tags, custom icons and long-press behavior stay shared.
-            View source = mainActivity.adapter.getView(position, null, mainActivity.list);
+            int viewType = mainActivity.adapter.getItemViewType(position);
+            View existing = position < wheelColumn.getChildCount()
+                    ? wheelColumn.getChildAt(position) : null;
+            int oldType = position < wheelViewTypes.size() ? wheelViewTypes.get(position) : -1;
+            View reusable = existing != null && oldType == viewType ? existing : null;
+            View source = mainActivity.adapter.getView(position, reusable, mainActivity.list);
+
+            if (source != existing) {
+                if (existing != null) wheelColumn.removeViewAt(position);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                lp.setMargins(dp(3), dp(4), dp(3), dp(4));
+                wheelColumn.addView(source, position, lp);
+            }
+
+            while (wheelViewTypes.size() <= position) wheelViewTypes.add(-1);
+            wheelViewTypes.set(position, viewType);
             resetWheelTransform(source);
             source.setCameraDistance(mainActivity.getResources().getDisplayMetrics().density * 8000f);
             bindResultInteraction(source, position);
+        }
 
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(dp(3), dp(4), dp(3), dp(4));
-            wheelColumn.addView(source, lp);
+        while (wheelColumn.getChildCount() > count) {
+            wheelColumn.removeViewAt(wheelColumn.getChildCount() - 1);
+        }
+        while (wheelViewTypes.size() > count) {
+            wheelViewTypes.remove(wheelViewTypes.size() - 1);
         }
 
         wheelHasBeenEntered = true;
@@ -185,7 +204,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         lastWheelPriorityId = currentPriorityId;
         wheelScroller.post(() -> {
             if (refocusFront && count > 0) centerWheelItem(count - 1);
-            updateWheelTransforms();
+            scheduleWheelTransforms();
         });
     }
 
@@ -199,15 +218,39 @@ final class HistoryDisplayForwarder extends Forwarder {
         wheelScroller.scrollTo(0, Math.max(0, Math.min(max, target)));
     }
 
+    private void scheduleWheelTransforms() {
+        if (wheelScroller == null || wheelTransformFramePosted || !WHEEL_3D.equals(activeMode)) return;
+        wheelTransformFramePosted = true;
+        wheelScroller.postOnAnimation(() -> {
+            wheelTransformFramePosted = false;
+            if (WHEEL_3D.equals(activeMode)) updateWheelTransforms();
+        });
+    }
+
     private void updateWheelTransforms() {
         if (wheelScroller == null || wheelColumn == null || wheelScroller.getHeight() <= 0) return;
 
-        float viewportCenter = wheelScroller.getScrollY() + wheelScroller.getHeight() / 2f;
+        float viewportTop = wheelScroller.getScrollY();
+        float viewportBottom = viewportTop + wheelScroller.getHeight();
+        float viewportCenter = viewportTop + wheelScroller.getHeight() / 2f;
         float radius = Math.max(dp(160), wheelScroller.getHeight() * 0.52f);
+        float overscan = wheelScroller.getHeight() * 0.35f;
         float density = mainActivity.getResources().getDisplayMetrics().density;
 
         for (int i = 0; i < wheelColumn.getChildCount(); i++) {
             View child = wheelColumn.getChildAt(i);
+            if (child.getBottom() < viewportTop - overscan
+                    || child.getTop() > viewportBottom + overscan) {
+                // Keep off-screen rows laid out for ScrollView geometry, but skip perspective work
+                // until they approach the viewport.
+                child.setAlpha(0.12f);
+                child.setRotationX(0f);
+                child.setScaleX(0.82f);
+                child.setScaleY(0.82f);
+                child.setTranslationY(0f);
+                child.setTranslationZ(0f);
+                continue;
+            }
             float childCenter = child.getTop() + child.getHeight() / 2f;
             float normalized = (childCenter - viewportCenter) / radius;
             normalized = Math.max(-1f, Math.min(1f, normalized));
@@ -254,7 +297,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         @Override
         protected void onScrollChanged(int l, int t, int oldl, int oldt) {
             super.onScrollChanged(l, t, oldl, oldt);
-            updateWheelTransforms();
+            scheduleWheelTransforms();
         }
 
         @Override
@@ -265,7 +308,7 @@ final class HistoryDisplayForwarder extends Forwarder {
                 wheelColumn.setPadding(dp(4), verticalPadding, dp(4), verticalPadding);
             }
             post(() -> {
-                if (WHEEL_3D.equals(activeMode)) updateWheelTransforms();
+                if (WHEEL_3D.equals(activeMode)) scheduleWheelTransforms();
             });
         }
     }
