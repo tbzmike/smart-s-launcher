@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - '**'
+      - '!updater-channel'
   pull_request:
     branches:
       - master
@@ -115,21 +116,41 @@ jobs:
           if not version_match or not code_match:
               raise SystemExit("Unable to read versionName/versionCode from app/build.gradle")
 
+          run_number = int(os.environ["GITHUB_RUN_NUMBER"])
           data = {
               "version": version_match.group(1),
               "versionCode": int(code_match.group(1)),
               "runId": int(os.environ["GITHUB_RUN_ID"]),
-              "runNumber": int(os.environ["GITHUB_RUN_NUMBER"]),
+              "runNumber": run_number,
               "sha": os.environ["GITHUB_SHA"],
               "variant": "debug",
               "apkName": "app-debug.apk",
-              "apkUrl": "https://github.com/tbzmike/smart-s-launcher/releases/download/latest-green/app-debug.apk"
+              "apkUrl": "https://cdn.jsdelivr.net/gh/tbzmike/smart-s-launcher@updater-channel/app-debug.apk?run=" + str(run_number)
           }
           with open("latest-green.json", "w", encoding="utf-8") as f:
               json.dump(data, f, separators=(",", ":"))
               f.write("\n")
           PY
-      - name: Publish only if this run is newer than the currently published green run
+      - name: Publish verified CDN updater channel
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PUBLISH_DIR="$RUNNER_TEMP/smart-s-updater-channel"
+          rm -rf "$PUBLISH_DIR"
+          mkdir -p "$PUBLISH_DIR"
+          cp latest-green.json app-debug.apk "$PUBLISH_DIR/"
+          cd "$PUBLISH_DIR"
+          git init
+          git checkout -b updater-channel
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest-green.json app-debug.apk
+          git commit -m "Latest green Smart S Launcher run #$GITHUB_RUN_NUMBER"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin HEAD:updater-channel
+      - name: Publish GitHub fallback release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
