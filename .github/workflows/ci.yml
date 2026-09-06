@@ -141,6 +141,7 @@ jobs:
           fi
           gh release delete latest-green --cleanup-tag --yes >/dev/null 2>&1 || true
           gh release create latest-green \
+            --target "$GITHUB_SHA" \
             --prerelease \
             --title "Latest green Smart S Launcher build" \
             --notes "Automatically published from successful App testing run #$GITHUB_RUN_NUMBER ($GITHUB_SHA)." \
