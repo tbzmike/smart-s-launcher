@@ -1,4 +1,4 @@
-# 3.30.33 final verification: Settings keyboard selector, layout, close, stable scroll, IME switching + global text size
+# Smart S Launcher CI: test, build, then expose only the newest fully-green debug APK to the updater
 name: App testing
 
 on:
@@ -8,6 +8,10 @@ on:
   pull_request:
     branches:
       - master
+
+permissions:
+  contents: write
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.sha }}
@@ -51,6 +55,7 @@ jobs:
       - name: Enforce lint result
         if: ${{ always() && steps.lint.outcome == 'failure' }}
         run: exit 1
+
   apk:
     name: Generate APK
     runs-on: ubuntu-24.04
@@ -77,3 +82,70 @@ jobs:
           name: Smart-S-Launcher-release
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           archive: true
+
+  publish-green:
+    name: Publish latest green updater APK
+    needs: [test, apk]
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: smart-s-latest-green-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download verified debug APK
+        uses: actions/download-artifact@v8
+        with:
+          name: Smart-S-Launcher-debug
+          path: green-apk
+      - name: Prepare latest-green manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find green-apk -type f -name 'app-debug.apk' -print -quit)"
+          test -n "$APK"
+          cp "$APK" app-debug.apk
+          VERSION="$(sed -n 's/^[[:space:]]*versionName[[:space:]]*["'"']\([^"'"']*\)["'"'].*/\1/p' app/build.gradle | head -n1)"
+          VERSION_CODE="$(sed -n 's/^[[:space:]]*versionCode[[:space:]]*\([0-9][0-9]*\).*/\1/p' app/build.gradle | head -n1)"
+          test -n "$VERSION"
+          test -n "$VERSION_CODE"
+          python3 - <<'PY'
+          import json, os
+          data = {
+              "version": os.environ["VERSION"],
+              "versionCode": int(os.environ["VERSION_CODE"]),
+              "runId": int(os.environ["GITHUB_RUN_ID"]),
+              "runNumber": int(os.environ["GITHUB_RUN_NUMBER"]),
+              "sha": os.environ["GITHUB_SHA"],
+              "variant": "debug",
+              "apkName": "app-debug.apk",
+              "apkUrl": "https://github.com/tbzmike/smart-s-launcher/releases/download/latest-green/app-debug.apk"
+          }
+          with open("latest-green.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, separators=(",", ":"))
+              f.write("\n")
+          PY
+        env:
+          VERSION: ${{ env.VERSION }}
+          VERSION_CODE: ${{ env.VERSION_CODE }}
+      - name: Publish only if this run is newer than the currently published green run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p previous-green
+          if gh release download latest-green --pattern latest-green.json --dir previous-green >/dev/null 2>&1; then
+            PREVIOUS_RUN="$(python3 -c 'import json; print(json.load(open("previous-green/latest-green.json"))["runNumber"])')"
+            if [ "$PREVIOUS_RUN" -gt "$GITHUB_RUN_NUMBER" ]; then
+              echo "A newer green run #$PREVIOUS_RUN is already published; not replacing it with #$GITHUB_RUN_NUMBER."
+              exit 0
+            fi
+          fi
+          gh release delete latest-green --cleanup-tag --yes >/dev/null 2>&1 || true
+          gh release create latest-green \
+            --prerelease \
+            --title "Latest green Smart S Launcher build" \
+            --notes "Automatically published from successful App testing run #$GITHUB_RUN_NUMBER ($GITHUB_SHA)." \
+            latest-green.json \
+            app-debug.apk
