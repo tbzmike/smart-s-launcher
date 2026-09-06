@@ -38,6 +38,7 @@ final class HistoryDisplayForwarder extends Forwarder {
     static final String CARDS = "horizontal_cards";
     static final String NAMES = "horizontal_names";
     static final String SQUARE_U = "square_u";
+    static final String WHEEL_3D = "wheel_3d";
 
     private static final int CARD_WIDTH_DP = 190;
     private static final int CARD_HEIGHT_DP = 132;
@@ -61,6 +62,8 @@ final class HistoryDisplayForwarder extends Forwarder {
     private LinearLayout row;
     private FrameLayout squareRoot;
     private SquareTrackLayout squareTrack;
+    private WheelScrollView wheelScroller;
+    private LinearLayout wheelColumn;
     private ScrollView notificationScroller;
     private LinearLayout notificationCenter;
     private View edgeEffect;
@@ -68,6 +71,9 @@ final class HistoryDisplayForwarder extends Forwarder {
     private boolean squareHasBeenEntered;
     private String lastSquareQuery = "";
     private long lastSquarePriorityId = Long.MIN_VALUE;
+    private boolean wheelHasBeenEntered;
+    private String lastWheelQuery = "";
+    private long lastWheelPriorityId = Long.MIN_VALUE;
 
     HistoryDisplayForwarder(MainActivity mainActivity) {
         super(mainActivity);
@@ -78,13 +84,16 @@ final class HistoryDisplayForwarder extends Forwarder {
         container = (FrameLayout) mainActivity.listContainer;
         edgeEffect = mainActivity.findViewById(R.id.listEdgeEffect);
         createHorizontalRenderer();
+        createWheelRenderer();
         createSquareRenderer();
         applyMode(true);
     }
 
     void onResume() {
         applyMode(false);
-        if (SQUARE_U.equals(activeMode)) {
+        if (WHEEL_3D.equals(activeMode)) {
+            rebuildWheel();
+        } else if (SQUARE_U.equals(activeMode)) {
             applyNotificationPanelSizing();
             rebuildSquare();
         } else if (!VERTICAL.equals(activeMode) && !VERTICAL_CARDS.equals(activeMode)) {
@@ -114,6 +123,151 @@ final class HistoryDisplayForwarder extends Forwarder {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM);
         container.addView(scroller, params);
+    }
+
+    private void createWheelRenderer() {
+        wheelScroller = new WheelScrollView();
+        wheelScroller.setFillViewport(true);
+        wheelScroller.setVerticalScrollBarEnabled(false);
+        wheelScroller.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        wheelScroller.setClipChildren(false);
+        wheelScroller.setClipToPadding(false);
+        wheelScroller.setVisibility(View.GONE);
+
+        wheelColumn = new LinearLayout(mainActivity);
+        wheelColumn.setOrientation(LinearLayout.VERTICAL);
+        wheelColumn.setGravity(Gravity.CENTER_HORIZONTAL);
+        wheelColumn.setClipChildren(false);
+        wheelColumn.setClipToPadding(false);
+        wheelColumn.addOnLayoutChangeListener((v, left, top, right, bottom,
+                                               oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (WHEEL_3D.equals(activeMode)) updateWheelTransforms();
+        });
+        wheelScroller.addView(wheelColumn, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.BOTTOM);
+        container.addView(wheelScroller, params);
+    }
+
+    private void rebuildWheel() {
+        if (wheelColumn == null || mainActivity.adapter == null) return;
+
+        resetWheelTransforms();
+        wheelColumn.removeAllViews();
+
+        final int count = mainActivity.adapter.getCount();
+        String currentQuery = mainActivity.searchEditText == null
+                ? "" : mainActivity.searchEditText.getText().toString().trim();
+        long currentPriorityId = count > 0
+                ? mainActivity.adapter.getItem(count - 1).getUniqueId() : Long.MIN_VALUE;
+        boolean refocusFront = !wheelHasBeenEntered
+                || !currentQuery.equals(lastWheelQuery)
+                || currentPriorityId != lastWheelPriorityId;
+
+        for (int position = 0; position < count; position++) {
+            // Ask the existing ListView adapter for the real Smart S row so icons, text,
+            // notifications, history metadata, tags, custom icons and long-press behavior stay shared.
+            View source = mainActivity.adapter.getView(position, null, mainActivity.list);
+            resetWheelTransform(source);
+            source.setCameraDistance(mainActivity.getResources().getDisplayMetrics().density * 8000f);
+            bindResultInteraction(source, position);
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(dp(3), dp(4), dp(3), dp(4));
+            wheelColumn.addView(source, lp);
+        }
+
+        wheelHasBeenEntered = true;
+        lastWheelQuery = currentQuery;
+        lastWheelPriorityId = currentPriorityId;
+        wheelScroller.post(() -> {
+            if (refocusFront && count > 0) centerWheelItem(count - 1);
+            updateWheelTransforms();
+        });
+    }
+
+    private void centerWheelItem(int position) {
+        if (wheelScroller == null || wheelColumn == null
+                || position < 0 || position >= wheelColumn.getChildCount()) return;
+        View child = wheelColumn.getChildAt(position);
+        int target = Math.round(child.getTop() + child.getHeight() / 2f
+                - wheelScroller.getHeight() / 2f);
+        int max = Math.max(0, wheelColumn.getHeight() - wheelScroller.getHeight());
+        wheelScroller.scrollTo(0, Math.max(0, Math.min(max, target)));
+    }
+
+    private void updateWheelTransforms() {
+        if (wheelScroller == null || wheelColumn == null || wheelScroller.getHeight() <= 0) return;
+
+        float viewportCenter = wheelScroller.getScrollY() + wheelScroller.getHeight() / 2f;
+        float radius = Math.max(dp(160), wheelScroller.getHeight() * 0.52f);
+        float density = mainActivity.getResources().getDisplayMetrics().density;
+
+        for (int i = 0; i < wheelColumn.getChildCount(); i++) {
+            View child = wheelColumn.getChildAt(i);
+            float childCenter = child.getTop() + child.getHeight() / 2f;
+            float normalized = (childCenter - viewportCenter) / radius;
+            normalized = Math.max(-1f, Math.min(1f, normalized));
+            float distance = Math.abs(normalized);
+
+            child.setPivotX(child.getWidth() / 2f);
+            child.setPivotY(child.getHeight() / 2f);
+            child.setCameraDistance(density * 8000f);
+            child.setRotationX(-normalized * 72f);
+
+            float scale = 1f - 0.20f * distance;
+            child.setScaleX(scale);
+            child.setScaleY(scale);
+            child.setAlpha(Math.max(0.22f, 1f - 0.78f * distance));
+            child.setTranslationY(-normalized * distance * dp(22));
+            child.setTranslationZ((1f - distance) * dp(18));
+        }
+    }
+
+    private void resetWheelTransforms() {
+        if (wheelColumn == null) return;
+        for (int i = 0; i < wheelColumn.getChildCount(); i++) {
+            resetWheelTransform(wheelColumn.getChildAt(i));
+        }
+    }
+
+    private void resetWheelTransform(View child) {
+        if (child == null) return;
+        child.setRotationX(0f);
+        child.setRotationY(0f);
+        child.setScaleX(1f);
+        child.setScaleY(1f);
+        child.setAlpha(1f);
+        child.setTranslationX(0f);
+        child.setTranslationY(0f);
+        child.setTranslationZ(0f);
+    }
+
+    private final class WheelScrollView extends ScrollView {
+        WheelScrollView() {
+            super(mainActivity);
+        }
+
+        @Override
+        protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+            super.onScrollChanged(l, t, oldl, oldt);
+            updateWheelTransforms();
+        }
+
+        @Override
+        protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+            super.onSizeChanged(w, h, oldw, oldh);
+            if (wheelColumn != null && h > 0) {
+                int verticalPadding = Math.max(dp(80), h / 3);
+                wheelColumn.setPadding(dp(4), verticalPadding, dp(4), verticalPadding);
+            }
+            post(() -> {
+                if (WHEEL_3D.equals(activeMode)) updateWheelTransforms();
+            });
+        }
     }
 
     private void createSquareRenderer() {
@@ -182,20 +336,26 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (requested == null) requested = VERTICAL;
         if (!force && requested.equals(activeMode)) return;
 
+        boolean leavingWheel = WHEEL_3D.equals(activeMode) && !WHEEL_3D.equals(requested);
+        if (leavingWheel) resetWheelTransforms();
+
         activeMode = requested;
         boolean vertical = VERTICAL.equals(activeMode);
         boolean verticalCards = VERTICAL_CARDS.equals(activeMode);
         boolean square = SQUARE_U.equals(activeMode);
-        boolean horizontal = !vertical && !verticalCards && !square;
+        boolean wheel = WHEEL_3D.equals(activeMode);
+        boolean horizontal = !vertical && !verticalCards && !square && !wheel;
 
         mainActivity.list.setVisibility(vertical ? View.VISIBLE : View.GONE);
         if (edgeEffect != null) edgeEffect.setVisibility(vertical ? View.VISIBLE : View.GONE);
         scroller.setVisibility(horizontal ? View.VISIBLE : View.GONE);
         squareRoot.setVisibility(square ? View.VISIBLE : View.GONE);
+        wheelScroller.setVisibility(wheel ? View.VISIBLE : View.GONE);
 
         if (!vertical && !verticalCards) rebuild();
 
-        View incoming = vertical ? mainActivity.list : (square ? squareRoot : (horizontal ? scroller : null));
+        View incoming = vertical ? mainActivity.list
+                : (wheel ? wheelScroller : (square ? squareRoot : (horizontal ? scroller : null)));
         if (incoming != null && incoming.getVisibility() == View.VISIBLE) {
             SmartAnimationEngine.animateWindowSwitch(null, incoming);
         }
@@ -208,7 +368,8 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void rebuild() {
         if (mainActivity.adapter == null || VERTICAL_CARDS.equals(activeMode)) return;
-        if (SQUARE_U.equals(activeMode)) rebuildSquare();
+        if (WHEEL_3D.equals(activeMode)) rebuildWheel();
+        else if (SQUARE_U.equals(activeMode)) rebuildSquare();
         else rebuildHorizontal();
     }
 

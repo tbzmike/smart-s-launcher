@@ -494,7 +494,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     private boolean isVerticalHistory(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        return "vertical".equals(prefs.getString("smart-history-layout", "vertical"))
+        String layout = prefs.getString("smart-history-layout", "vertical");
+        return ("vertical".equals(layout) || "wheel_3d".equals(layout))
                 && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
     }
 

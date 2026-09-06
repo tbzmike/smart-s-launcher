@@ -98,11 +98,11 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
         preference.setKey(key);
         preference.setTitle("App history layout");
         preference.setEntries(new CharSequence[]{
-                "Vertical list", "Vertical cards", "Horizontal icons", "Horizontal cards",
+                "Vertical list", "Vertical cards", "3D wheel", "Horizontal icons", "Horizontal cards",
                 "Horizontal app names", "Square-U cards"
         });
         preference.setEntryValues(new CharSequence[]{
-                "vertical", "vertical_cards", "horizontal_icons", "horizontal_cards",
+                "vertical", "vertical_cards", "wheel_3d", "horizontal_icons", "horizontal_cards",
                 "horizontal_names", "square_u"
         });
         preference.setDefaultValue("vertical");

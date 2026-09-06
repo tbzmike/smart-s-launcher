@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.41 - marquee universal history interaction metadata
-        versionCode 469
-        versionName "3.30.41"
+        // Smart S Launcher 3.30.42 - add isolated 3D Wheel history view mode
+        versionCode 470
+        versionName "3.30.42"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
