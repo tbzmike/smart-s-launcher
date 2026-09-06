@@ -31,10 +31,10 @@ import fr.neamar.kiss.BuildConfig;
 /**
  * In-app updater backed by the latest CI run that completed successfully.
  *
- * The CI workflow publishes a small manifest plus the debug APK to the stable latest-green
- * prerelease only after lint, unit tests and APK generation all pass. The app therefore never
- * installs an APK from a red, cancelled or still-running workflow. Android's package installer
- * remains the final authority and may require the user to approve installation from this source.
+ * CI publishes the verified debug APK and manifest only after lint, unit tests and APK generation
+ * all pass. The public updater channel is mirrored through jsDelivr so the launcher does not depend
+ * on the github.com/api.github.com DNS path that can be unreachable on some networks. A GitHub
+ * release manifest remains a fallback for networks where GitHub itself is reachable.
  */
 public final class AppUpdater {
     public static final String PREF_AUTO_UPDATE = "smart-auto-update";
@@ -44,11 +44,12 @@ public final class AppUpdater {
     private static final String PREF_DOWNLOAD_ID = "smart-update-download-id";
     private static final long AUTO_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L;
 
-    // This is deliberately served from github.com rather than api.github.com. The release is
-    // replaced by CI only after the complete App testing workflow is green.
-    private static final String GREEN_MANIFEST_URL =
+    private static final String CDN_MANIFEST_URL =
+            "https://cdn.jsdelivr.net/gh/tbzmike/smart-s-launcher@updater-channel/latest-green.json";
+    private static final String GITHUB_MANIFEST_URL =
             "https://github.com/tbzmike/smart-s-launcher/releases/download/latest-green/latest-green.json";
-    private static final String EXPECTED_APK_HOST = "github.com";
+    private static final String CDN_APK_HOST = "cdn.jsdelivr.net";
+    private static final String GITHUB_APK_HOST = "github.com";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
     private static Handler mainHandler() {
@@ -109,14 +110,31 @@ public final class AppUpdater {
     }
 
     private static BuildInfo fetchLatestGreenBuild() throws Exception {
-        HttpURLConnection connection = openConnection(GREEN_MANIFEST_URL);
+        Exception firstFailure = null;
+        String cacheBuster = Long.toString(System.currentTimeMillis());
+        String[] urls = new String[]{
+                CDN_MANIFEST_URL + "?check=" + cacheBuster,
+                GITHUB_MANIFEST_URL + "?check=" + cacheBuster
+        };
+        for (String url : urls) {
+            try {
+                return fetchBuildInfo(url);
+            } catch (Exception e) {
+                if (firstFailure == null) firstFailure = e;
+            }
+        }
+        throw new IllegalStateException("Neither update mirror could be reached", firstFailure);
+    }
+
+    private static BuildInfo fetchBuildInfo(String url) throws Exception {
+        HttpURLConnection connection = openConnection(url);
         int code = connection.getResponseCode();
         InputStream stream = code >= 200 && code < 300
                 ? connection.getInputStream() : connection.getErrorStream();
         String body = readFully(stream);
         connection.disconnect();
         if (code < 200 || code >= 300) {
-            throw new IllegalStateException("GitHub returned HTTP " + code);
+            throw new IllegalStateException("Update server returned HTTP " + code);
         }
         return parseBuildInfo(body);
     }
@@ -181,12 +199,14 @@ public final class AppUpdater {
         if (!"https".equalsIgnoreCase(url.getProtocol())) {
             throw new IllegalStateException("Green build APK URL is not HTTPS");
         }
-        if (!EXPECTED_APK_HOST.equalsIgnoreCase(url.getHost())) {
-            throw new IllegalStateException("Green build APK URL has unexpected host");
-        }
-        String expectedPrefix = "/tbzmike/smart-s-launcher/releases/download/latest-green/";
-        if (!url.getPath().startsWith(expectedPrefix)) {
-            throw new IllegalStateException("Green build APK URL has unexpected path");
+        String host = url.getHost();
+        String path = url.getPath();
+        boolean validCdn = CDN_APK_HOST.equalsIgnoreCase(host)
+                && path.equals("/gh/tbzmike/smart-s-launcher@updater-channel/app-debug.apk");
+        boolean validGitHub = GITHUB_APK_HOST.equalsIgnoreCase(host)
+                && path.equals("/tbzmike/smart-s-launcher/releases/download/latest-green/app-debug.apk");
+        if (!validCdn && !validGitHub) {
+            throw new IllegalStateException("Green build APK URL is outside the verified updater channel");
         }
     }
 
@@ -199,6 +219,9 @@ public final class AppUpdater {
         connection.setConnectTimeout(15_000);
         connection.setReadTimeout(20_000);
         connection.setInstanceFollowRedirects(true);
+        connection.setUseCaches(false);
+        connection.setRequestProperty("Cache-Control", "no-cache");
+        connection.setRequestProperty("Pragma", "no-cache");
         connection.setRequestProperty("Accept", "application/json, application/octet-stream;q=0.9, */*;q=0.8");
         connection.setRequestProperty("User-Agent", "Smart-S-Launcher/" + BuildConfig.VERSION_NAME);
         return connection;
@@ -361,12 +384,18 @@ public final class AppUpdater {
     }
 
     private static String userFacingNetworkMessage(Exception e) {
-        String message = safeMessage(e);
-        String lower = message.toLowerCase(Locale.ROOT);
-        if (lower.contains("unable to resolve host") || lower.contains("unknownhost")) {
-            return "GitHub cannot be reached. Check Internet/DNS and try again";
+        Throwable current = e;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase(Locale.ROOT);
+                if (lower.contains("unable to resolve host") || lower.contains("unknownhost")) {
+                    return "Update servers cannot be reached. Check Internet/DNS and try again";
+                }
+            }
+            current = current.getCause();
         }
-        return message;
+        return safeMessage(e);
     }
 
     private static String safeMessage(Exception e) {
