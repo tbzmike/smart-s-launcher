@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.45 - Vertical Card expand arrow and locked long-press history fix
-        versionCode 473
-        versionName "3.30.45"
+        // Smart S Launcher 3.30.46 - latest-green CI updater with install handoff
+        versionCode 474
+        versionName "3.30.46"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
