@@ -14,8 +14,6 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.preference.PreferenceManager;
 
-import org.json.JSONObject;
-
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -25,6 +23,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import fr.neamar.kiss.BuildConfig;
 
@@ -121,15 +121,19 @@ public final class AppUpdater {
         return parseBuildInfo(body);
     }
 
+    /**
+     * Parse only the fixed, CI-generated latest-green schema. A tiny strict parser keeps this
+     * validation usable in ordinary JVM unit tests instead of depending on Android's org.json
+     * runtime stubs. CI controls every value in this manifest; escaped string values are rejected.
+     */
     static BuildInfo parseBuildInfo(String body) throws Exception {
-        JSONObject json = new JSONObject(body);
-        String version = normalizeVersion(json.optString("version", ""));
-        long runId = json.optLong("runId", -1L);
-        long runNumber = json.optLong("runNumber", -1L);
-        String sha = json.optString("sha", "").trim();
-        String variant = json.optString("variant", "").trim().toLowerCase(Locale.ROOT);
-        String apkName = json.optString("apkName", "").trim();
-        String apkUrl = json.optString("apkUrl", "").trim();
+        String version = normalizeVersion(jsonString(body, "version"));
+        long runId = jsonLong(body, "runId");
+        long runNumber = jsonLong(body, "runNumber");
+        String sha = jsonString(body, "sha").trim();
+        String variant = jsonString(body, "variant").trim().toLowerCase(Locale.ROOT);
+        String apkName = jsonString(body, "apkName").trim();
+        String apkUrl = jsonString(body, "apkUrl").trim();
 
         if (version.isEmpty()) throw new IllegalStateException("Green build manifest has no version");
         if (runId <= 0L || runNumber <= 0L) {
@@ -144,6 +148,32 @@ public final class AppUpdater {
         }
         validateApkUrl(apkUrl);
         return new BuildInfo(version, runId, runNumber, sha, variant, apkName, apkUrl);
+    }
+
+    private static String jsonString(String body, String key) {
+        if (body == null) throw new IllegalStateException("Green build manifest is empty");
+        Pattern pattern = Pattern.compile("\\\"" + Pattern.quote(key)
+                + "\\\"\\s*:\\s*\\\"([^\\\"\\\\]*)\\\"");
+        Matcher matcher = pattern.matcher(body);
+        if (!matcher.find()) {
+            throw new IllegalStateException("Green build manifest is missing " + key);
+        }
+        return matcher.group(1);
+    }
+
+    private static long jsonLong(String body, String key) {
+        if (body == null) throw new IllegalStateException("Green build manifest is empty");
+        Pattern pattern = Pattern.compile("\\\"" + Pattern.quote(key)
+                + "\\\"\\s*:\\s*([0-9]+)");
+        Matcher matcher = pattern.matcher(body);
+        if (!matcher.find()) {
+            throw new IllegalStateException("Green build manifest is missing " + key);
+        }
+        try {
+            return Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("Green build manifest has invalid " + key, e);
+        }
     }
 
     private static void validateApkUrl(String value) throws Exception {
