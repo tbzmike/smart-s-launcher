@@ -52,7 +52,32 @@ final class HistoryPreviewMatcher {
             }
             if (obvious) matches.add(pojo);
         }
+        // Keep the instant history-first preview in the exact same bottom-anchored order as the
+        // completed QuerySearcher. Java's List.sort is stable, so equal matches preserve the seed's
+        // oldest-to-newest order and therefore keep the more recent equal match nearer the bottom.
+        matches.sort((left, right) -> {
+            int group = Integer.compare(QueryResultComparator.priorityGroup(left),
+                    QueryResultComparator.priorityGroup(right));
+            if (group != 0) return group;
+
+            int quality = Integer.compare(matchQuality(left, normalizedQuery),
+                    matchQuality(right, normalizedQuery));
+            if (quality != 0) return quality;
+            return 0;
+        });
         return matches;
+    }
+
+    private static int matchQuality(Pojo pojo, String normalizedQuery) {
+        if (pojo == null || normalizedQuery.isEmpty()) return 0;
+        String name = normalize(pojo.getName());
+        String candidate = candidateText(pojo);
+        if (name.equals(normalizedQuery)) return 5;
+        if (name.startsWith(normalizedQuery)) return 4;
+        if (containsTokenPrefix(name, normalizedQuery)) return 3;
+        if (name.contains(normalizedQuery)) return 2;
+        if (candidate.contains(normalizedQuery)) return 1;
+        return 0;
     }
 
     private static String candidateText(Pojo pojo) {

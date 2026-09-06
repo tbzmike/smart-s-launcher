@@ -98,7 +98,14 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
     }
 
     PriorityQueue<Pojo> getPojoProcessor(Context context) {
-        return new PriorityQueue<>(DEFAULT_MAX_RESULTS, new RelevanceComparator());
+        // Query results have an explicit presentation contract: generic matches are above apps,
+        // frozen apps are above active apps, and relevance increases toward the bottom. Keep this
+        // comparator query-only so History, Tags, Applications and NULL modes retain their existing
+        // ordering semantics.
+        java.util.Comparator<Pojo> comparator = this instanceof QuerySearcher
+                ? new QueryResultComparator()
+                : new RelevanceComparator();
+        return new PriorityQueue<>(DEFAULT_MAX_RESULTS, comparator);
     }
 
     protected int getMaxResultCount() {
