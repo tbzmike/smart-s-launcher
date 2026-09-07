@@ -1,4 +1,4 @@
-name: Apply history metadata restoration 3.30.55 once
+name: Apply history metadata restoration 3.30.56 once
 
 on:
   push:
@@ -22,7 +22,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Apply verified history metadata wiring
+
+      - name: Apply exact timestamp, usage and launch metadata wiring
         shell: python
         run: |
           from pathlib import Path
@@ -32,7 +33,7 @@ jobs:
               text = p.read_text(encoding='utf-8')
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f'{path}: expected exactly 1 guarded match, found {count}')
+                  raise SystemExit(f'{path}: expected exactly one guarded match, found {count}')
               p.write_text(text.replace(old, new, 1), encoding='utf-8')
 
           adapter = 'app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java'
@@ -41,7 +42,7 @@ jobs:
           '''import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.TileVisualStyle;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;''')
           replace_once(adapter,
           '''        }\n        return view;\n    }\n\n    private void configureSocialMessageCard''',
-          '''        }\n        UniversalHistoryTimestamp.bind(view, result, parent.getContext());\n        return view;\n    }\n\n    private void configureSocialMessageCard''')
+          '''        }\n        if (parent instanceof AbsListView) {\n            UniversalHistoryTimestamp.bind(view, result, parent.getContext());\n        }\n        return view;\n    }\n\n    private void configureSocialMessageCard''')
 
           result = 'app/src/main/java/fr/neamar/kiss/result/Result.java'
           replace_once(result,
@@ -51,8 +52,16 @@ jobs:
           '''import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;''',
           '''import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.TileLaunchCounter;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;''')
           replace_once(result,
-          '''        // Save in history\n        if (canAddToHistory()) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n            UniversalHistoryTimestamp.invalidateStats();\n        }''',
-          '''        // Save in history. Notification arrivals are inserted separately by NotificationListener,\n        // so only explicit notification tile launches belong in the dedicated launch counter.\n        boolean storedInHistory = canAddToHistory();\n        if (storedInHistory) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n        }\n        if (storedInHistory || pojo instanceof NotificationPojo) {\n            TileLaunchCounter.record(context, pojo.getHistoryId());\n            UniversalHistoryTimestamp.invalidateStats();\n        }''')
+          '''    protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {\n        // Save in history\n        if (canAddToHistory()) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n            UniversalHistoryTimestamp.invalidateStats();\n        }''',
+          '''    protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {\n        // Save ordinary app/shortcut launches in history. Notification arrivals are already inserted\n        // by NotificationListener, so notification click counts are tracked separately below.\n        boolean storedInHistory = canAddToHistory();\n        if (storedInHistory) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n        }\n        if (storedInHistory || pojo instanceof NotificationPojo) {\n            TileLaunchCounter.record(context, pojo.getHistoryId());\n            UniversalHistoryTimestamp.invalidateStats();\n        }''')
+
+          cards = 'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java'
+          replace_once(cards,
+          '''import fr.neamar.kiss.ui.AutoMarqueeTextView;\nimport fr.neamar.kiss.ui.SmartAnimationEngine;''',
+          '''import fr.neamar.kiss.ui.AutoMarqueeTextView;\nimport fr.neamar.kiss.ui.SmartAnimationEngine;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;''')
+          replace_once(cards,
+          '''        if (call != null && call.kind == CommunicationPojo.Kind.CALL\n                && hasDistinctCallerName(call)) {\n            AutoMarqueeTextView callerName = new AutoMarqueeTextView(mainActivity);\n            callerName.setText(call.displayName);\n            callerName.setTextColor(Color.WHITE);\n            callerName.setTextSize(15f * namePercent / 100f);\n            callerName.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);\n            callerName.setPadding(0, dp(3), 0, dp(1));\n            callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));\n            callerName.setContentDescription("Caller: " + call.displayName);\n            center.addView(callerName, new LinearLayout.LayoutParams(\n                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));\n        }\n\n        prepareSourceForDetails(source);''',
+          '''        if (call != null && call.kind == CommunicationPojo.Kind.CALL\n                && hasDistinctCallerName(call)) {\n            AutoMarqueeTextView callerName = new AutoMarqueeTextView(mainActivity);\n            callerName.setText(call.displayName);\n            callerName.setTextColor(Color.WHITE);\n            callerName.setTextSize(15f * namePercent / 100f);\n            callerName.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);\n            callerName.setPadding(0, dp(3), 0, dp(1));\n            callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));\n            callerName.setContentDescription("Caller: " + call.displayName);\n            center.addView(callerName, new LinearLayout.LayoutParams(\n                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));\n        }\n\n        // Vertical Cards own renderer: bind the same verified metadata inside the card itself.\n        UniversalHistoryTimestamp.bind(center, result, mainActivity);\n\n        prepareSourceForDetails(source);''')
 
           Path('app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java').write_text(r'''package fr.neamar.kiss.ui;
 
@@ -61,7 +70,7 @@ import android.content.SharedPreferences;
 
 import androidx.annotation.NonNull;
 
-/** Persistent counter for explicit user launches of a specific launcher history tile. */
+/** Persistent count of explicit user launches/clicks for one exact launcher history tile. */
 public final class TileLaunchCounter {
     private static final String PREFS = "smart-s-tile-launch-counts";
     private static final String KEY_PREFIX = "count:";
@@ -94,8 +103,6 @@ public final class TileLaunchCounter {
 
           Path('app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java').write_text(r'''package fr.neamar.kiss.ui;
 
-import android.app.usage.UsageStats;
-import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
@@ -110,15 +117,13 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 import fr.neamar.kiss.MainActivity;
-import fr.neamar.kiss.appusage.AppUsageStore;
-import fr.neamar.kiss.appusage.AppUsageTracker;
+import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.CommunicationPojo;
@@ -127,11 +132,12 @@ import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.searcher.SearchHandler;
+import fr.neamar.kiss.searcher.Searcher;
 
 /**
- * Binds exact history metadata to every launcher history row without refreshing or reordering
- * the backing list. Background loads update only this metadata TextView and are guarded against
- * recycled rows, keeping Vertical Cards as stable as Vertical List.
+ * Restores verified history-tile metadata without refreshing or reordering the backing list.
+ * Background work updates only the metadata TextView and is guarded against recycled rows.
  */
 public final class UniversalHistoryTimestamp {
     private static final long DATA_REFRESH_MS = 30_000L;
@@ -141,7 +147,7 @@ public final class UniversalHistoryTimestamp {
 
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
     private static volatile Map<String, Long> usageTodayMs = Collections.emptyMap();
-    private static volatile Boolean usageAccessAvailable;
+    private static volatile Boolean usageAvailable;
     private static volatile long dataLoadedAt;
     private static volatile boolean loadInFlight;
 
@@ -160,16 +166,6 @@ public final class UniversalHistoryTimestamp {
             this.view = new WeakReference<>(view);
             this.pojo = pojo;
             this.generation = generation;
-        }
-    }
-
-    private static final class UsageSnapshot {
-        final boolean available;
-        final Map<String, Long> durations;
-
-        UsageSnapshot(boolean available, Map<String, Long> durations) {
-            this.available = available;
-            this.durations = durations;
         }
     }
 
@@ -197,7 +193,8 @@ public final class UniversalHistoryTimestamp {
     private static boolean isHistorySurface(Context context) {
         if (!(context instanceof MainActivity)) return false;
         MainActivity activity = (MainActivity) context;
-        return activity.searchEditText == null || activity.searchEditText.length() == 0;
+        return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                && (activity.searchEditText == null || activity.searchEditText.length() == 0);
     }
 
     private static void applyMetadataText(TextView view, Pojo pojo, Context context) {
@@ -211,7 +208,7 @@ public final class UniversalHistoryTimestamp {
                     .append(formatRelativeAge(System.currentTimeMillis(), timestamp))
                     .append("  •  ")
                     .append(formatExactTime(context, timestamp));
-        } else if (!notification && launchStats == null) {
+        } else if (launchStats == null && !notification) {
             out.append("Posted time loading");
         } else {
             out.append(notification ? "Received time unavailable" : "Posted time unavailable");
@@ -232,8 +229,7 @@ public final class UniversalHistoryTimestamp {
 
     private static long resolveTimestamp(Pojo pojo, LaunchStatsProvider.LaunchStats stats) {
         if (pojo instanceof NotificationPojo) {
-            long posted = ((NotificationPojo) pojo).postTime;
-            return Math.max(0L, posted);
+            return Math.max(0L, ((NotificationPojo) pojo).postTime);
         }
         if (pojo instanceof CommunicationPojo) {
             long eventTime = ((CommunicationPojo) pojo).timestamp;
@@ -245,7 +241,7 @@ public final class UniversalHistoryTimestamp {
     private static String formatUsageText(Pojo pojo) {
         String packageName = resolveUsagePackage(pojo);
         if (TextUtils.isEmpty(packageName)) return "Used today unavailable";
-        Boolean available = usageAccessAvailable;
+        Boolean available = usageAvailable;
         if (available == null) return "Used today loading";
         if (!available) return "Used today unavailable";
         long duration = Math.max(0L, usageTodayMs.getOrDefault(packageName, 0L));
@@ -259,8 +255,9 @@ public final class UniversalHistoryTimestamp {
             return formatLaunchCount(TileLaunchCounter.getTotal(context, historyId));
         }
         if (launchStats == null) return "Launch count loading";
-        long count = stats == null ? TileLaunchCounter.getTotal(context, historyId)
-                : Math.max(0, stats.totalLaunches);
+        long count = stats == null
+                ? TileLaunchCounter.getTotal(context, historyId)
+                : Math.max(0L, stats.totalLaunches);
         return formatLaunchCount(count);
     }
 
@@ -291,7 +288,7 @@ public final class UniversalHistoryTimestamp {
         if (seconds < 5L) return "just now";
         if (seconds < 60L) return seconds + " sec ago";
         long minutes = seconds / 60L;
-        if (minutes < 60L) return minutes + (minutes == 1L ? " min ago" : " min ago");
+        if (minutes < 60L) return minutes + " min ago";
         long hours = minutes / 60L;
         if (hours < 24L) return hours + (hours == 1L ? " hour ago" : " hours ago");
         long days = hours / 24L;
@@ -320,13 +317,12 @@ public final class UniversalHistoryTimestamp {
     }
 
     private static boolean dataFresh(long now) {
-        return launchStats != null && usageAccessAvailable != null
+        return launchStats != null && usageAvailable != null
                 && now - dataLoadedAt < DATA_REFRESH_MS;
     }
 
     private static void ensureDataLoaded(TextView view, Pojo pojo, Context context, long generation) {
-        long now = System.currentTimeMillis();
-        if (dataFresh(now)) return;
+        if (dataFresh(System.currentTimeMillis())) return;
 
         boolean startLoad = false;
         synchronized (UniversalHistoryTimestamp.class) {
@@ -342,22 +338,34 @@ public final class UniversalHistoryTimestamp {
         Context appContext = context.getApplicationContext();
         EXECUTOR.execute(() -> {
             Map<String, LaunchStatsProvider.LaunchStats> loadedStats;
+            AppUsageTodayStore.Snapshot usage;
             try {
                 loadedStats = LaunchStatsProvider.loadAll(appContext);
             } catch (RuntimeException ignored) {
                 loadedStats = Collections.emptyMap();
             }
-            UsageSnapshot usage = loadUsageToday(appContext);
+            try {
+                usage = AppUsageTodayStore.getToday(appContext);
+            } catch (RuntimeException ignored) {
+                usage = null;
+            }
+
             ArrayList<PendingBinding> pending;
             synchronized (UniversalHistoryTimestamp.class) {
                 launchStats = loadedStats;
-                usageTodayMs = usage.durations;
-                usageAccessAvailable = usage.available;
+                if (usage == null) {
+                    usageTodayMs = Collections.emptyMap();
+                    usageAvailable = false;
+                } else {
+                    usageTodayMs = usage.foregroundMsByPackage;
+                    usageAvailable = usage.available;
+                }
                 dataLoadedAt = System.currentTimeMillis();
                 loadInFlight = false;
                 pending = new ArrayList<>(PENDING);
                 PENDING.clear();
             }
+
             for (PendingBinding item : pending) {
                 TextView target = item.view.get();
                 if (target == null) continue;
@@ -365,38 +373,10 @@ public final class UniversalHistoryTimestamp {
                     Object rawTag = target.getTag();
                     if (!(rawTag instanceof BindingTag)) return;
                     if (((BindingTag) rawTag).generation != item.generation) return;
-                    applyMetadataText(target, item.pojo, appContext);
+                    applyMetadataText(target, item.pojo, target.getContext());
                 });
             }
         });
-    }
-
-    private static UsageSnapshot loadUsageToday(Context context) {
-        if (!AppUsageTracker.hasUsageAccess(context)) {
-            return new UsageSnapshot(false, Collections.emptyMap());
-        }
-        UsageStatsManager manager = (UsageStatsManager)
-                context.getSystemService(Context.USAGE_STATS_SERVICE);
-        if (manager == null) return new UsageSnapshot(false, Collections.emptyMap());
-
-        long now = System.currentTimeMillis();
-        long dayStart = AppUsageStore.startOfDay(now);
-        Map<String, UsageStats> stats;
-        try {
-            stats = manager.queryAndAggregateUsageStats(dayStart, now);
-        } catch (RuntimeException ignored) {
-            return new UsageSnapshot(false, Collections.emptyMap());
-        }
-
-        HashMap<String, Long> durations = new HashMap<>();
-        if (stats != null) {
-            for (UsageStats usage : stats.values()) {
-                if (usage == null || TextUtils.isEmpty(usage.getPackageName())) continue;
-                long duration = Math.max(0L, usage.getTotalTimeInForeground());
-                durations.put(usage.getPackageName(), duration);
-            }
-        }
-        return new UsageSnapshot(true, durations);
     }
 
     private static TextView ensureMetadataView(View row, Context context) {
@@ -410,6 +390,15 @@ public final class UniversalHistoryTimestamp {
         metadata.setTag(new BindingTag());
         metadata.setTextDirection(View.TEXT_DIRECTION_LOCALE);
         metadata.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        metadata.setSingleLine(true);
+        metadata.setMaxLines(1);
+        metadata.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        metadata.setMarqueeRepeatLimit(-1);
+        metadata.setHorizontallyScrolling(true);
+        metadata.setHorizontalFadingEdgeEnabled(true);
+        metadata.setSelected(true);
+        metadata.setFocusable(false);
+        metadata.setFocusableInTouchMode(false);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -482,7 +471,7 @@ class UniversalHistoryTimestampTest {
     }
 
     @Test
-    void usageDurationFormatsWithoutInventingPrecision() {
+    void usageDurationUsesRealStoredDuration() {
         assertThat(UniversalHistoryTimestamp.formatUsageDuration(0L), is("0 sec"));
         assertThat(UniversalHistoryTimestamp.formatUsageDuration(59_000L), is("59 sec"));
         assertThat(UniversalHistoryTimestamp.formatUsageDuration(60_000L), is("1 min"));
@@ -500,32 +489,41 @@ class UniversalHistoryTimestampTest {
 ''', encoding='utf-8')
 
           replace_once('app/build.gradle',
-          '''        // Smart S Launcher 3.30.54 - system DownloadManager fallback for in-app updates\n        versionCode 482\n        versionName "3.30.54"''',
-          '''        // Smart S Launcher 3.30.55 - restore exact tile timestamps, usage and launch counts\n        versionCode 483\n        versionName "3.30.55"''')
+          '''        // Smart S Launcher 3.30.55 - remove duplicate Vertical Cards captions\n        versionCode 483\n        versionName "3.30.55"''',
+          '''        // Smart S Launcher 3.30.56 - restore verified history tile timestamps, usage and launch counts\n        versionCode 484\n        versionName "3.30.56"''')
 
-      - name: Verify exact wiring and no list refresh regression
+      - name: Verify only requested app files changed
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
+          expected=$(cat <<'EOF' | sort
+          app/build.gradle
+          app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          app/src/main/java/fr/neamar/kiss/result/Result.java
+          app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java
+          app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
+          app/src/test/java/fr/neamar/kiss/ui/UniversalHistoryTimestampTest.java
+          EOF
+          )
+          actual=$(git diff --name-only | sort)
+          test "$actual" = "$expected"
+          grep -F 'versionName "3.30.56"' app/build.gradle
+          grep -F 'versionCode 484' app/build.gradle
           grep -F 'UniversalHistoryTimestamp.bind(view, result, parent.getContext());' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -F 'UniversalHistoryTimestamp.bind(center, result, mainActivity);' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
           grep -F 'TileLaunchCounter.record(context, pojo.getHistoryId());' app/src/main/java/fr/neamar/kiss/result/Result.java
-          grep -F 'pojo instanceof NotificationPojo' app/src/main/java/fr/neamar/kiss/result/Result.java
-          grep -F 'queryAndAggregateUsageStats(dayStart, now)' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
-          ! grep -F 'FIRST_SEEN' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
+          grep -F 'Received ' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
+          grep -F 'Used today ' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
+          grep -F 'Launched twice' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
           ! grep -F 'notifyDataSetChanged' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
           ! grep -F 'postDelayed' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
-          git diff -- app/build.gradle \
-            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
-            app/src/main/java/fr/neamar/kiss/result/Result.java \
-            app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java \
-            app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java \
-            app/src/test/java/fr/neamar/kiss/ui/UniversalHistoryTimestampTest.java
 
       - name: Run unit tests, lint and both APK builds
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease --stacktrace
 
-      - name: Commit verified 3.30.55 history metadata restoration
+      - name: Commit verified 3.30.56 timestamp restoration
         shell: bash
         run: |
           set -euo pipefail
@@ -533,9 +531,10 @@ class UniversalHistoryTimestampTest {
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add app/build.gradle \
             app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java \
             app/src/main/java/fr/neamar/kiss/result/Result.java \
             app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java \
             app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java \
             app/src/test/java/fr/neamar/kiss/ui/UniversalHistoryTimestampTest.java
-          git commit -m "Restore exact history tile metadata for 3.30.55"
+          git commit -m "Restore verified history tile metadata for 3.30.56"
           git push origin HEAD:feature/3.30.44-in-app-updater
