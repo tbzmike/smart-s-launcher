@@ -5,12 +5,12 @@ import java.util.List;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 
 /** Resolves the persisted history row that corresponds to the notification the user selected. */
-final class NotificationHistoryStartIndex {
+public final class NotificationHistoryStartIndex {
     private NotificationHistoryStartIndex() {}
 
-    static int resolve(List<NotificationHistoryRecord> records,
-                       String notificationId,
-                       long postTime) {
+    public static int resolve(List<NotificationHistoryRecord> records,
+                              String notificationId,
+                              long postTime) {
         if (records == null || records.isEmpty()) return -1;
 
         if (postTime > 0L && notificationId != null && !notificationId.isEmpty()) {
