@@ -42,7 +42,21 @@ public final class RichNotificationHistoryDialog {
         List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
                 context, packageName, null, 0);
         if (records.isEmpty()) return false;
-        new Session(context, packageName, records).show();
+        new Session(context, packageName, records, 0).show();
+        return true;
+    }
+
+    public static boolean showSelected(Context context,
+                                       String packageName,
+                                       String notificationId,
+                                       long postTime) {
+        if (context == null || packageName == null || packageName.isEmpty()) return false;
+        List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
+                context, packageName, null, 0);
+        if (records.isEmpty()) return false;
+        int startIndex = NotificationHistoryStartIndex.resolve(records, notificationId, postTime);
+        if (startIndex < 0) return false;
+        new Session(context, packageName, records, startIndex).show();
         return true;
     }
 
@@ -70,10 +84,12 @@ public final class RichNotificationHistoryDialog {
         private float downX;
         private float downY;
 
-        Session(Context context, String packageName, List<NotificationHistoryRecord> records) {
+        Session(Context context, String packageName, List<NotificationHistoryRecord> records,
+                int startIndex) {
             this.context = context;
             this.packageName = packageName;
             this.records = records;
+            this.index = startIndex;
             this.accent = AppNativeDialogStyle.accentForPackage(context, packageName);
 
             int pad = dp(16);
