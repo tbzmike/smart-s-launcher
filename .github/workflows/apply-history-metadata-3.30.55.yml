@@ -86,7 +86,7 @@ jobs:
             app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java \
             app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java \
             app/src/test/java/fr/neamar/kiss/ui/UniversalHistoryTimestampTest.java | sort)"
-          actual="$(git diff --name-only | sort)"
+          actual="$({ git diff --name-only; git ls-files --others --exclude-standard; } | sort)"
           test "$actual" = "$expected"
           grep -F 'versionName "3.30.56"' app/build.gradle
           grep -F 'versionCode 484' app/build.gradle
