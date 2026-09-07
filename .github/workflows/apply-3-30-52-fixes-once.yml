@@ -1,0 +1,144 @@
+name: Apply 3.30.52 fixes once
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-3-30-52-fixes-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    if: github.ref == 'refs/heads/feature/3.30.44-in-app-updater'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/3.30.44-in-app-updater
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Apply guarded source changes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly 1 guarded match, found {count}')
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/DataHandler.java',
+              '''    public void addToExcludedFromHistory(AppPojo app) {\n        Set<String> excluded = getExcludedFromHistory();\n        excluded.add(app.id);\n        PreferenceManager.getDefaultSharedPreferences(context).edit().putStringSet("excluded-apps-from-history", excluded).apply();\n        app.setExcludedFromHistory(true);\n    }''',
+              '''    public void addToExcludedFromHistory(AppPojo app) {\n        Set<String> excluded = getExcludedFromHistory();\n        excluded.add(app.id);\n        PreferenceManager.getDefaultSharedPreferences(context).edit().putStringSet("excluded-apps-from-history", excluded).apply();\n        app.setExcludedFromHistory(true);\n        // Exclusion is immediate: remove already-persisted rows as well as blocking future writes.\n        DBHelper.removeFromHistory(context, app.id);\n    }'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java',
+              '''        Set<String> excludedFromHistory = dataHandler.getExcludedFromHistory();\n        Set<String> excludedPojoById = new HashSet<>(excludedFromHistory);\n''',
+              '''        Set<String> excludedFromHistory = dataHandler.getExcludedFromHistory();\n        Set<String> excludedPojoById = new HashSet<>(excludedFromHistory);\n        Set<String> excludedPackages = new HashSet<>();\n        List<AppPojo> applications = dataHandler.getApplications();\n        if (applications != null) {\n            for (AppPojo app : applications) {\n                if (app != null && app.isExcludedFromHistory()) {\n                    excludedPackages.add(app.packageName);\n                }\n            }\n        }\n'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java',
+              '''        pinActiveNotificationTimeline(activity, pojos, excludedPojoById);\n        pinMostRecentPersistedLaunch(activity, dataHandler, pojos, excludedPojoById);\n\n        this.addResults(pojos);''',
+              '''        pinActiveNotificationTimeline(activity, pojos, excludedPojoById, excludedPackages);\n        pinMostRecentPersistedLaunch(activity, dataHandler, pojos, excludedPojoById);\n        pojos.removeIf(pojo -> belongsToExcludedApp(pojo, excludedPojoById, excludedPackages));\n\n        this.addResults(pojos);'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java',
+              '''    private void pinActiveNotificationTimeline(MainActivity activity, List<Pojo> pojos,\n                                               Set<String> excludedPojoById) {''',
+              '''    private void pinActiveNotificationTimeline(MainActivity activity, List<Pojo> pojos,\n                                               Set<String> excludedPojoById,\n                                               Set<String> excludedPackages) {'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java',
+              '''        for (NotificationPojo notification : newestFirst) {\n            if (excludedPojoById.contains(notification.id)) continue;''',
+              '''        for (NotificationPojo notification : newestFirst) {\n            if (excludedPojoById.contains(notification.id)\n                    || excludedPackages.contains(notification.packageName)) continue;'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java',
+              '''    @Override\n    public boolean addResults(List<? extends Pojo> pojos) {''',
+              '''    private boolean belongsToExcludedApp(Pojo pojo, Set<String> excludedPojoById,\n                                         Set<String> excludedPackages) {\n        if (pojo == null) return false;\n        if (excludedPojoById.contains(pojo.id)) return true;\n        if (pojo instanceof AppPojo) {\n            AppPojo app = (AppPojo) pojo;\n            return app.isExcludedFromHistory() || excludedPackages.contains(app.packageName);\n        }\n        if (pojo instanceof ShortcutPojo) {\n            ShortcutPojo shortcut = (ShortcutPojo) pojo;\n            return excludedPackages.contains(shortcut.packageName)\n                    || (shortcut.targetPackage != null\n                    && excludedPackages.contains(shortcut.targetPackage));\n        }\n        if (pojo instanceof NotificationPojo) {\n            return excludedPackages.contains(((NotificationPojo) pojo).packageName);\n        }\n        return false;\n    }\n\n    @Override\n    public boolean addResults(List<? extends Pojo> pojos) {'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''import android.view.Gravity;\nimport android.view.View;''',
+              '''import android.view.Gravity;\nimport android.view.MotionEvent;\nimport android.view.View;'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''    private View edgeEffect;\n''',
+              '''    private View edgeEffect;\n    private boolean pendingDataSetRefresh;\n'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''        scroller = new ScrollView(mainActivity);''',
+              '''        scroller = new StableCardScrollView();'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''    void onResume() {\n        migrateLegacySelection();\n        applyState(false);\n        if (isEnabled()) rebuild();\n    }\n\n    void onDataSetChanged() {\n        if (isEnabled()) rebuild();\n    }''',
+              '''    void onResume() {\n        migrateLegacySelection();\n        applyState(false);\n        if (isEnabled() && column != null && column.getChildCount() == 0) rebuild();\n    }\n\n    void onDataSetChanged() {\n        if (!isEnabled()) return;\n        // Search results are directly user-driven and must stay live while typing. Idle History\n        // updates, including provider/background reconciliation, are deferred until the user next\n        // touches the card viewport. This keeps Vertical Cards as visually stable as Vertical List.\n        if (isActiveQuery() || column == null || column.getChildCount() == 0) {\n            rebuild();\n        } else {\n            pendingDataSetRefresh = true;\n        }\n    }'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''    private void rebuild() {\n        if (column == null || mainActivity.adapter == null) return;\n        boolean activeQuery = isActiveQuery();''',
+              '''    private void rebuild() {\n        if (column == null || mainActivity.adapter == null) return;\n        pendingDataSetRefresh = false;\n        boolean activeQuery = isActiveQuery();'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''    private View createCardItem(View source, Result<?> result, int adapterPosition,\n''',
+              '''    private void refreshAfterUserTouch() {\n        if (!pendingDataSetRefresh || !isEnabled() || isActiveQuery()) return;\n        rebuild();\n    }\n\n    private final class StableCardScrollView extends ScrollView {\n        StableCardScrollView() {\n            super(mainActivity);\n        }\n\n        @Override\n        public boolean dispatchTouchEvent(MotionEvent event) {\n            boolean handled = super.dispatchTouchEvent(event);\n            int action = event.getActionMasked();\n            if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)\n                    && pendingDataSetRefresh) {\n                post(SmartCardListForwarder.this::refreshAfterUserTouch);\n            }\n            return handled;\n        }\n    }\n\n    private View createCardItem(View source, Result<?> result, int adapterPosition,\n'''
+          )
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''        edgeEffect = null;\n    }''',
+              '''        edgeEffect = null;\n        pendingDataSetRefresh = false;\n    }'''
+          )
+
+          replace_once(
+              'app/build.gradle',
+              '''        // Smart S Launcher 3.30.51 - versioned latest green public Release updater\n        versionCode 479\n        versionName "3.30.51"''',
+              '''        // Smart S Launcher 3.30.52 - fixed history exclusions and stable Vertical Cards\n        versionCode 480\n        versionName "3.30.52"'''
+          )
+
+      - name: Verify exact intended diff
+        run: |
+          git diff --check
+          git diff -- app/src/main/java/fr/neamar/kiss/DataHandler.java \
+            app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java \
+            app/build.gradle
+
+      - name: Run tests and build debug APK
+        run: ./gradlew testDebugUnitTest assembleDebug
+
+      - name: Commit verified 3.30.52 source
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/DataHandler.java \
+            app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          git commit -m "Fix history exclusions and stabilize Vertical Cards for 3.30.52"
+          git push origin HEAD:feature/3.30.44-in-app-updater
