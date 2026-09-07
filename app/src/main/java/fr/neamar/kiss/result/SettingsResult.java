@@ -40,6 +40,8 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
+import fr.neamar.kiss.searcher.SearchHandler;
+import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.AppLaunchUtils;
@@ -258,6 +260,19 @@ public class SettingsResult extends Result<SettingPojo> {
     }
 
     private void launchNotificationTarget(Context context, NotificationPojo notification) {
+        // Launcher History represents one stored notification event. A normal tap must therefore
+        // use that event's exact saved destination and must never open an app-wide notification
+        // picker/history popup. Long-press remains the separate rich-history action.
+        if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY) {
+            if (NotificationHistoryResolver.openExactForPojo(context, notification)) {
+                launchSucceeded = true;
+            } else {
+                Toast.makeText(context, "No exact notification destination is available.",
+                        Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+
         boolean individual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME);
         if (individual && NotificationListener.isNotificationActive(context, notification.id)
                 && NotificationListener.openNotification(context, notification.id)) {
@@ -437,7 +452,6 @@ public class SettingsResult extends Result<SettingPojo> {
         input.setHint("Type a reply");
         input.setSingleLine(false);
         input.setMinLines(2);
-
         AlertDialog replyDialog = new AlertDialog.Builder(context)
                 .setTitle("Reply")
                 .setView(input)
