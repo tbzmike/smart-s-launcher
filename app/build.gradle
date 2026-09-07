@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.51 - versioned latest green public Release updater
-        versionCode 479
-        versionName "3.30.51"
+        // Smart S Launcher 3.30.52 - fixed history exclusions and stable Vertical Cards
+        versionCode 480
+        versionName "3.30.52"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

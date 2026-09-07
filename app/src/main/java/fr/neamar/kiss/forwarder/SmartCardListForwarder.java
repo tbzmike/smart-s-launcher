@@ -7,6 +7,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -51,6 +52,7 @@ final class SmartCardListForwarder extends Forwarder {
     private ScrollView scroller;
     private LinearLayout column;
     private View edgeEffect;
+    private boolean pendingDataSetRefresh;
 
     SmartCardListForwarder(MainActivity mainActivity) {
         super(mainActivity);
@@ -61,7 +63,7 @@ final class SmartCardListForwarder extends Forwarder {
         container = (FrameLayout) mainActivity.listContainer;
         edgeEffect = mainActivity.findViewById(R.id.listEdgeEffect);
 
-        scroller = new ScrollView(mainActivity);
+        scroller = new StableCardScrollView();
         scroller.setFillViewport(false);
         scroller.setVerticalScrollBarEnabled(true);
         scroller.setScrollbarFadingEnabled(true);
@@ -88,11 +90,19 @@ final class SmartCardListForwarder extends Forwarder {
     void onResume() {
         migrateLegacySelection();
         applyState(false);
-        if (isEnabled()) rebuild();
+        if (isEnabled() && column != null && column.getChildCount() == 0) rebuild();
     }
 
     void onDataSetChanged() {
-        if (isEnabled()) rebuild();
+        if (!isEnabled()) return;
+        // Search results are directly user-driven and must stay live while typing. Idle History
+        // updates, including provider/background reconciliation, are deferred until the user next
+        // touches the card viewport. This keeps Vertical Cards as visually stable as Vertical List.
+        if (isActiveQuery() || column == null || column.getChildCount() == 0) {
+            rebuild();
+        } else {
+            pendingDataSetRefresh = true;
+        }
     }
 
     void onDestroy() {
@@ -101,6 +111,7 @@ final class SmartCardListForwarder extends Forwarder {
         scroller = null;
         column = null;
         edgeEffect = null;
+        pendingDataSetRefresh = false;
     }
 
     ScrollView getScroller() {
@@ -171,6 +182,7 @@ final class SmartCardListForwarder extends Forwarder {
 
     private void rebuild() {
         if (column == null || mainActivity.adapter == null) return;
+        pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
         boolean preserveSearchFocus = activeQuery
                 && mainActivity.searchEditText != null
@@ -207,6 +219,28 @@ final class SmartCardListForwarder extends Forwarder {
                     animateIn(child, visualIndex++);
                 }
             });
+        }
+    }
+
+    private void refreshAfterUserTouch() {
+        if (!pendingDataSetRefresh || !isEnabled() || isActiveQuery()) return;
+        rebuild();
+    }
+
+    private final class StableCardScrollView extends ScrollView {
+        StableCardScrollView() {
+            super(mainActivity);
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent event) {
+            boolean handled = super.dispatchTouchEvent(event);
+            int action = event.getActionMasked();
+            if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
+                    && pendingDataSetRefresh) {
+                post(SmartCardListForwarder.this::refreshAfterUserTouch);
+            }
+            return handled;
         }
     }
 
