@@ -18,7 +18,7 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.58 - open rich notification history at the selected entry
+        // Smart S Launcher 3.30.58 - exact tap and long-press notification history routing
         versionCode 486
         versionName "3.30.58"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
