@@ -419,14 +419,16 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         prepareSourceForDetails(source);
-        FrameLayout detailsPanel = new FrameLayout(mainActivity);
-        detailsPanel.setVisibility(View.GONE);
-        detailsPanel.setPadding(dp(4), dp(7), dp(4), dp(2));
-        detailsPanel.addView(source, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
         boolean hasDetails = hasMeaningfulVisibleContent(source);
+        // The original adapter row is needed only while extracting the lightweight card above.
+        // Keeping it hidden under every card doubles the view tree and can retain native
+        // notification RemoteViews/drawables. Release that tree now and recreate details lazily.
+        releaseDiscardedSource(source);
+
         if (hasDetails) {
+            FrameLayout detailsPanel = new FrameLayout(mainActivity);
+            detailsPanel.setVisibility(View.GONE);
+            detailsPanel.setPadding(dp(4), dp(7), dp(4), dp(2));
             card.addView(detailsPanel, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -441,7 +443,9 @@ final class SmartCardListForwarder extends Forwarder {
             detailsLp.gravity = Gravity.END;
             detailsLp.topMargin = dp(4);
             card.addView(details, detailsLp);
-            details.setOnClickListener(v -> toggleDetails(detailsPanel, details));
+            final String expectedPojoId = result.getPojoId();
+            details.setOnClickListener(v -> toggleDetails(
+                    detailsPanel, details, adapterPosition, expectedPojoId));
         }
 
         final TextView expandableMessage = messageView;
@@ -594,10 +598,12 @@ final class SmartCardListForwarder extends Forwarder {
         return false;
     }
 
-    private void toggleDetails(View detailsPanel, TextView control) {
+    private void toggleDetails(FrameLayout detailsPanel, TextView control,
+                               int adapterPosition, String expectedPojoId) {
         boolean opening = detailsPanel.getVisibility() != View.VISIBLE;
         detailsPanel.animate().cancel();
         if (opening) {
+            if (!populateDetails(detailsPanel, adapterPosition, expectedPojoId)) return;
             detailsPanel.setAlpha(0f);
             detailsPanel.setVisibility(View.VISIBLE);
             control.setText("⌃");
@@ -615,14 +621,66 @@ final class SmartCardListForwarder extends Forwarder {
                 detailsPanel.animate().alpha(0f)
                         .translationY(dp(6))
                         .setDuration(Math.max(80L, SmartAnimationEngine.duration(mainActivity) / 2))
-                        .withEndAction(() -> {
-                            detailsPanel.setVisibility(View.GONE);
-                            detailsPanel.setAlpha(1f);
-                            detailsPanel.setTranslationY(0f);
-                        }).start();
+                        .withEndAction(() -> clearDetailsPanel(detailsPanel)).start();
             } else {
-                detailsPanel.setVisibility(View.GONE);
+                clearDetailsPanel(detailsPanel);
             }
+        }
+    }
+
+    private boolean populateDetails(FrameLayout detailsPanel, int adapterPosition,
+                                    String expectedPojoId) {
+        if (detailsPanel.getChildCount() > 0) return true;
+        if (mainActivity.adapter == null
+                || adapterPosition < 0
+                || adapterPosition >= mainActivity.adapter.getCount()) {
+            return false;
+        }
+
+        Result<?> current = mainActivity.adapter.getItem(adapterPosition);
+        if (current == null || !TextUtils.equals(expectedPojoId, current.getPojoId())) {
+            // History can be re-ranked after a launch/notification. Never bind a stale position to
+            // a different card merely to populate optional details.
+            return false;
+        }
+
+        View detailSource = mainActivity.adapter.getView(adapterPosition, null, detailsPanel);
+        prepareSourceForDetails(detailSource);
+        if (!hasMeaningfulVisibleContent(detailSource)) {
+            releaseDiscardedSource(detailSource);
+            return false;
+        }
+        detailsPanel.addView(detailSource, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return true;
+    }
+
+    private void clearDetailsPanel(FrameLayout detailsPanel) {
+        detailsPanel.removeAllViews();
+        detailsPanel.setVisibility(View.GONE);
+        detailsPanel.setAlpha(1f);
+        detailsPanel.setTranslationY(0f);
+    }
+
+    private void releaseDiscardedSource(View source) {
+        if (source == null) return;
+        // AppResult's detached Mark-read control legitimately keeps its click listener. That
+        // listener references the old notification row, so empty that row before discarding the
+        // source to prevent it from pinning native notification content in memory.
+        View notification = source.findViewById(R.id.item_notification_row);
+        if (notification instanceof ViewGroup) {
+            ((ViewGroup) notification).removeAllViews();
+        }
+        source.animate().cancel();
+        source.setOnClickListener(null);
+        source.setOnLongClickListener(null);
+        source.setBackground(null);
+        if (source instanceof ViewGroup) {
+            ((ViewGroup) source).removeAllViews();
+        } else if (source instanceof ImageView) {
+            ((ImageView) source).setImageDrawable(null);
+        } else if (source instanceof TextView) {
+            ((TextView) source).setText(null);
         }
     }
 

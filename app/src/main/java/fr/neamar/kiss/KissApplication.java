@@ -13,6 +13,7 @@ import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.social.SocialContactIndexService;
 import fr.neamar.kiss.ui.GlobalTextStyler;
 import fr.neamar.kiss.update.AppUpdater;
+import fr.neamar.kiss.utils.AppIconMemoryCache;
 import fr.neamar.kiss.utils.IconPackCache;
 import fr.neamar.kiss.utils.Log;
 
@@ -118,6 +119,7 @@ public class KissApplication extends Application {
         }
 
         if (runningCritical || backgroundSevere) {
+            AppIconMemoryCache.clear();
             mIconPackCache.clearCache(this);
         }
     }
@@ -127,6 +129,7 @@ public class KissApplication extends Application {
         super.onLowMemory();
         SQLiteDatabase.releaseMemory();
         NotificationAvatarSupport.trimMemory(true);
+        AppIconMemoryCache.clear();
         mIconPackCache.clearCache(this);
         mimeTypeCache.clearCache();
     }

@@ -28,6 +28,7 @@ public final class AppUsageSync {
     private static final String META_LAST_DAILY_USAGE_SYNC = "last_daily_usage_sync";
     private static final String META_LAST_PHONE_STATE_SYNC = "last_phone_state_sync";
     private static final long EVENT_OVERLAP_MS = 24L * 60L * 60L * 1000L;
+    private static final long RAW_EVENT_QUERY_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L;
     private static final long AGGREGATE_OVERLAP_MS = 3L * 24L * 60L * 60L * 1000L;
 
     private AppUsageSync() {}
@@ -150,105 +151,117 @@ public final class AppUsageSync {
         long begin = lastSync <= 0L ? firstAllowed
                 : Math.max(firstAllowed, lastSync - EVENT_OVERLAP_MS);
 
-        UsageEvents events;
-        try {
-            events = manager.queryEvents(begin, now);
-        } catch (RuntimeException e) {
-            return;
-        }
-        if (events == null) return;
-
         PackageManager pm = context.getPackageManager();
         Map<String, SessionStart> foregroundStarts = new HashMap<>();
+        Map<String, PackageMeta> packageMetaCache = new HashMap<>();
         int screenState = 0; // 1 interactive, -1 non-interactive, 0 unknown
         long screenStateStart = 0L;
-        UsageEvents.Event event = new UsageEvents.Event();
+        long windowStart = begin;
 
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event);
-            long time = event.getTimeStamp();
-            if (time < firstAllowed || time > now) continue;
-            int type = event.getEventType();
-            String pkg = event.getPackageName();
-
-            // MOVE_TO_FOREGROUND / ACTIVITY_RESUMED share value 1 across supported Android versions.
-            if (type == 1 && !TextUtils.isEmpty(pkg)) {
-                foregroundStarts.put(pkg, new SessionStart(time, event.getClassName()));
-                continue;
-            }
-            // MOVE_TO_BACKGROUND / ACTIVITY_PAUSED share value 2.
-            if (type == 2 && !TextUtils.isEmpty(pkg)) {
-                SessionStart start = foregroundStarts.remove(pkg);
-                if (start != null && time >= start.timeMs) {
-                    PackageMeta meta = packageMeta(pm, pkg, null);
-                    String detail = TextUtils.isEmpty(start.className)
-                            ? "Foreground app session"
-                            : "Foreground app session · " + start.className;
-                    store.putTimeline(new AppUsageStore.TimelineEntry(
-                            "use:" + pkg + ":" + start.timeMs,
-                            start.timeMs, time, AppUsageStore.KIND_APP_USAGE, pkg, meta.label,
-                            time - start.timeMs, meta.system, detail, null, null));
-                }
-                continue;
+        while (windowStart < now) {
+            long windowEnd = Math.min(now, windowStart + RAW_EVENT_QUERY_WINDOW_MS);
+            UsageEvents events;
+            try {
+                events = manager.queryEvents(windowStart, windowEnd);
+            } catch (RuntimeException e) {
+                // Leave the watermark untouched. A later job retries the same data rather than
+                // silently creating a gap in the 365-day local timeline.
+                return;
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                    && type == UsageEvents.Event.SCREEN_INTERACTIVE) {
-                if (screenState == -1 && screenStateStart > 0L && time >= screenStateStart) {
-                    store.putTimeline(screenEntry(AppUsageStore.KIND_SCREEN_OFF,
-                            screenStateStart, time));
+            if (events != null) {
+                UsageEvents.Event event = new UsageEvents.Event();
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event);
+                    long time = event.getTimeStamp();
+                    if (time < firstAllowed || time > now) continue;
+                    int type = event.getEventType();
+                    String pkg = event.getPackageName();
+
+                    // MOVE_TO_FOREGROUND / ACTIVITY_RESUMED share value 1 across supported versions.
+                    if (type == 1 && !TextUtils.isEmpty(pkg)) {
+                        foregroundStarts.put(pkg, new SessionStart(time, event.getClassName()));
+                        continue;
+                    }
+                    // MOVE_TO_BACKGROUND / ACTIVITY_PAUSED share value 2.
+                    if (type == 2 && !TextUtils.isEmpty(pkg)) {
+                        SessionStart start = foregroundStarts.remove(pkg);
+                        if (start != null && time >= start.timeMs) {
+                            PackageMeta meta = packageMetaCache.computeIfAbsent(
+                                    pkg, p -> packageMeta(pm, p, null));
+                            String detail = TextUtils.isEmpty(start.className)
+                                    ? "Foreground app session"
+                                    : "Foreground app session · " + start.className;
+                            store.putTimeline(new AppUsageStore.TimelineEntry(
+                                    "use:" + pkg + ":" + start.timeMs,
+                                    start.timeMs, time, AppUsageStore.KIND_APP_USAGE, pkg, meta.label,
+                                    time - start.timeMs, meta.system, detail, null, null));
+                        }
+                        continue;
+                    }
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                            && type == UsageEvents.Event.SCREEN_INTERACTIVE) {
+                        if (screenState == -1 && screenStateStart > 0L && time >= screenStateStart) {
+                            store.putTimeline(screenEntry(AppUsageStore.KIND_SCREEN_OFF,
+                                    screenStateStart, time));
+                        }
+                        screenState = 1;
+                        screenStateStart = time;
+                        continue;
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                            && type == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
+                        if (screenState == 1 && screenStateStart > 0L && time >= screenStateStart) {
+                            store.putTimeline(screenEntry(AppUsageStore.KIND_SCREEN_ON,
+                                    screenStateStart, time));
+                        }
+                        screenState = -1;
+                        screenStateStart = time;
+                        continue;
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                            && type == UsageEvents.Event.KEYGUARD_SHOWN) {
+                        store.putTimeline(pointEntry("locked:" + time, time,
+                                AppUsageStore.KIND_LOCKED, "Phone locked"));
+                        continue;
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                            && type == UsageEvents.Event.KEYGUARD_HIDDEN) {
+                        store.putTimeline(pointEntry("unlocked:" + time, time,
+                                AppUsageStore.KIND_UNLOCKED, "Phone unlocked"));
+                        continue;
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                            && type == UsageEvents.Event.USER_INTERACTION && !TextUtils.isEmpty(pkg)) {
+                        long minute = time / 60_000L;
+                        PackageMeta meta = packageMetaCache.computeIfAbsent(
+                                pkg, p -> packageMeta(pm, p, null));
+                        String detail = interactionDetail(event);
+                        store.putTimeline(new AppUsageStore.TimelineEntry(
+                                "interaction:" + pkg + ":" + minute,
+                                time, 0L, AppUsageStore.KIND_APP_INTERACTION, pkg, meta.label,
+                                0L, meta.system, detail, null, null));
+                        continue;
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1
+                            && type == UsageEvents.Event.SHORTCUT_INVOCATION && !TextUtils.isEmpty(pkg)) {
+                        PackageMeta meta = packageMetaCache.computeIfAbsent(
+                                pkg, p -> packageMeta(pm, p, null));
+                        String detail = "App shortcut invoked";
+                        if (!TextUtils.isEmpty(event.getShortcutId())) {
+                            detail += " · " + event.getShortcutId();
+                        }
+                        store.putTimeline(new AppUsageStore.TimelineEntry(
+                                "shortcut:" + pkg + ":" + time,
+                                time, 0L, AppUsageStore.KIND_SHORTCUT, pkg, meta.label,
+                                0L, meta.system, detail, null, null));
+                    }
                 }
-                screenState = 1;
-                screenStateStart = time;
-                continue;
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                    && type == UsageEvents.Event.SCREEN_NON_INTERACTIVE) {
-                if (screenState == 1 && screenStateStart > 0L && time >= screenStateStart) {
-                    store.putTimeline(screenEntry(AppUsageStore.KIND_SCREEN_ON,
-                            screenStateStart, time));
-                }
-                screenState = -1;
-                screenStateStart = time;
-                continue;
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                    && type == UsageEvents.Event.KEYGUARD_SHOWN) {
-                store.putTimeline(pointEntry("locked:" + time, time,
-                        AppUsageStore.KIND_LOCKED, "Phone locked"));
-                continue;
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                    && type == UsageEvents.Event.KEYGUARD_HIDDEN) {
-                store.putTimeline(pointEntry("unlocked:" + time, time,
-                        AppUsageStore.KIND_UNLOCKED, "Phone unlocked"));
-                continue;
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                    && type == UsageEvents.Event.USER_INTERACTION && !TextUtils.isEmpty(pkg)) {
-                // Cap noisy interaction events to one row per app/minute. Android 15+ can also
-                // expose a category/action for the interaction; keep it when present.
-                long minute = time / 60_000L;
-                PackageMeta meta = packageMeta(pm, pkg, null);
-                String detail = interactionDetail(event);
-                store.putTimeline(new AppUsageStore.TimelineEntry(
-                        "interaction:" + pkg + ":" + minute,
-                        time, 0L, AppUsageStore.KIND_APP_INTERACTION, pkg, meta.label,
-                        0L, meta.system, detail, null, null));
-                continue;
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1
-                    && type == UsageEvents.Event.SHORTCUT_INVOCATION && !TextUtils.isEmpty(pkg)) {
-                PackageMeta meta = packageMeta(pm, pkg, null);
-                String detail = "App shortcut invoked";
-                if (!TextUtils.isEmpty(event.getShortcutId())) {
-                    detail += " · " + event.getShortcutId();
-                }
-                store.putTimeline(new AppUsageStore.TimelineEntry(
-                        "shortcut:" + pkg + ":" + time,
-                        time, 0L, AppUsageStore.KIND_SHORTCUT, pkg, meta.label,
-                        0L, meta.system, detail, null, null));
-            }
+
+            if (windowEnd >= now) break;
+            windowStart = windowEnd;
         }
 
         store.setMeta(META_LAST_EVENT_SYNC, now);

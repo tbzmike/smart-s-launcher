@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.58 - exact tap and long-press notification history routing
-        versionCode 486
-        versionName "3.30.58"
+        // Smart S Launcher 3.30.59 - bound runtime memory retention
+        versionCode 487
+        versionName "3.30.59"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
