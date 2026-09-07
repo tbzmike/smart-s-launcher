@@ -40,6 +40,17 @@ class AppUpdaterTest {
     }
 
     @Test
+    void parsesGitHubLatestReleaseAndUsesApiAsset() throws Exception {
+        String json = "{\"tag_name\":\"v3.30.53\",\"target_commitish\":\"0123456789abcdef\","
+                + "\"assets\":[{\"url\":\"https://api.github.com/repos/tbzmike/smart-s-launcher/releases/assets/123456\","
+                + "\"name\":\"app-debug.apk\"}]}";
+        AppUpdater.BuildInfo info = AppUpdater.parseLatestReleaseBuild(json);
+        assertEquals("3.30.53", info.version);
+        assertEquals("app-debug.apk", info.apkName);
+        assertEquals("https://api.github.com/repos/tbzmike/smart-s-launcher/releases/assets/123456", info.apkUrl);
+    }
+
+    @Test
     void rejectsReleaseAssetForDifferentVersion() {
         String json = "{\"version\":\"3.30.51\",\"runId\":1,\"runNumber\":2,"
                 + "\"sha\":\"0123456789abcdef\",\"variant\":\"debug\","

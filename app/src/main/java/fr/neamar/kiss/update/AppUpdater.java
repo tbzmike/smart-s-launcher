@@ -43,11 +43,16 @@ public final class AppUpdater {
     private static final String PREF_DOWNLOAD_ID = "smart-update-download-id";
     private static final long AUTO_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L;
 
+    private static final String LATEST_RELEASE_API_URL =
+            "https://api.github.com/repos/tbzmike/smart-s-launcher/releases/latest";
+    private static final String RAW_MANIFEST_URL =
+            "https://raw.githubusercontent.com/tbzmike/smart-s-launcher/updater-channel/latest-green.json";
     private static final String CDN_MANIFEST_URL =
             "https://cdn.jsdelivr.net/gh/tbzmike/smart-s-launcher@updater-channel/latest-green.json";
     private static final String GITHUB_MANIFEST_URL =
             "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/latest-green.json";
     private static final String GITHUB_APK_HOST = "github.com";
+    private static final String GITHUB_API_HOST = "api.github.com";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
     private static Handler mainHandler() {
@@ -108,18 +113,61 @@ public final class AppUpdater {
     private static BuildInfo fetchLatestGreenBuild() throws Exception {
         Exception firstFailure = null;
         String cacheBuster = Long.toString(System.currentTimeMillis());
-        String[] urls = new String[]{
+
+        try {
+            return fetchLatestReleaseBuild(LATEST_RELEASE_API_URL + "?check=" + cacheBuster);
+        } catch (Exception e) {
+            firstFailure = e;
+        }
+
+        String[] manifestUrls = new String[]{
+                RAW_MANIFEST_URL + "?check=" + cacheBuster,
                 CDN_MANIFEST_URL + "?check=" + cacheBuster,
                 GITHUB_MANIFEST_URL + "?check=" + cacheBuster
         };
-        for (String url : urls) {
+        for (String url : manifestUrls) {
             try {
                 return fetchBuildInfo(url);
-            } catch (Exception e) {
-                if (firstFailure == null) firstFailure = e;
+            } catch (Exception ignored) {
+                // Keep trying independent hosts. The Latest Release API is authoritative;
+                // manifests are only reachability fallbacks.
             }
         }
-        throw new IllegalStateException("Neither update manifest mirror could be reached", firstFailure);
+        throw new IllegalStateException("GitHub Latest Release and update fallbacks could not be reached", firstFailure);
+    }
+
+    private static BuildInfo fetchLatestReleaseBuild(String url) throws Exception {
+        HttpURLConnection connection = openConnection(url);
+        connection.setRequestProperty("Accept", "application/vnd.github+json");
+        connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
+        int code = connection.getResponseCode();
+        InputStream stream = code >= 200 && code < 300
+                ? connection.getInputStream() : connection.getErrorStream();
+        String body = readFully(stream);
+        connection.disconnect();
+        if (code < 200 || code >= 300) {
+            throw new IllegalStateException("GitHub Latest Release returned HTTP " + code);
+        }
+        return parseLatestReleaseBuild(body);
+    }
+
+    static BuildInfo parseLatestReleaseBuild(String body) throws Exception {
+        String version = normalizeVersion(jsonString(body, "tag_name"));
+        String sha = jsonString(body, "target_commitish").trim();
+        if (version.isEmpty()) throw new IllegalStateException("Latest Release has no version tag");
+        if (body == null) throw new IllegalStateException("Latest Release response is empty");
+
+        String nameMarker = "\"name\":\"app-debug.apk\"";
+        int nameIndex = body.indexOf(nameMarker);
+        if (nameIndex < 0) throw new IllegalStateException("Latest Release has no app-debug.apk asset");
+        int urlKey = body.lastIndexOf("\"url\":\"", nameIndex);
+        if (urlKey < 0) throw new IllegalStateException("Latest Release APK has no API URL");
+        int valueStart = urlKey + 7;
+        int valueEnd = body.indexOf('\"', valueStart);
+        if (valueEnd <= valueStart) throw new IllegalStateException("Latest Release APK URL is malformed");
+        String apkUrl = body.substring(valueStart, valueEnd);
+        validateApkUrl(apkUrl, version);
+        return new BuildInfo(version, 0L, 0L, sha, "debug", "app-debug.apk", apkUrl);
     }
 
     private static BuildInfo fetchBuildInfo(String url) throws Exception {
@@ -190,6 +238,12 @@ public final class AppUpdater {
         if (!"https".equalsIgnoreCase(url.getProtocol())) {
             throw new IllegalStateException("Green build APK URL is not HTTPS");
         }
+        if (GITHUB_API_HOST.equalsIgnoreCase(url.getHost())) {
+            if (!url.getPath().matches("/repos/tbzmike/smart-s-launcher/releases/assets/[0-9]+")) {
+                throw new IllegalStateException("GitHub API APK URL is not a Release asset");
+            }
+            return;
+        }
         if (!GITHUB_APK_HOST.equalsIgnoreCase(url.getHost())) {
             throw new IllegalStateException("Green build APK URL is not a GitHub Release asset");
         }
@@ -219,10 +273,12 @@ public final class AppUpdater {
 
     private static void showUpdateDialog(Activity activity, BuildInfo build, ApkAsset asset) {
         if (activity.isFinishing() || activity.isDestroyed()) return;
+        String source = build.runNumber > 0L
+                ? "Green App testing build " + build.version + " (#" + build.runNumber + ")"
+                : "Latest green GitHub Release " + build.version;
         new AlertDialog.Builder(activity)
                 .setTitle("Smart S Launcher update")
-                .setMessage("Green App testing build " + build.version + " (#" + build.runNumber
-                        + ") passed. Download and install it now?")
+                .setMessage(source + " is available. Download and install it now?")
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton("Download", (dialog, which) -> EXECUTOR.execute(() ->
                         enqueueDownload(activity.getApplicationContext(), build.version, asset)))
@@ -279,6 +335,10 @@ public final class AppUpdater {
         }
 
         DownloadManager.Request request = new DownloadManager.Request(Uri.parse(asset.url));
+        if (asset.url.startsWith("https://api.github.com/")) {
+            request.addRequestHeader("Accept", "application/octet-stream");
+            request.addRequestHeader("X-GitHub-Api-Version", "2022-11-28");
+        }
         request.setTitle("Smart S Launcher " + version);
         request.setDescription("Verified green Latest Release APK");
         request.setMimeType("application/vnd.android.package-archive");
