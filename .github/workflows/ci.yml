@@ -66,6 +66,28 @@ jobs:
           java-version: 21
       - name: Build APKs
         run: bash ./gradlew assembleDebug assembleRelease --stacktrace
+      - name: Verify APK version metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_CODE="$(sed -n 's/^[[:space:]]*versionCode \([0-9][0-9]*\).*/\1/p' app/build.gradle | head -n1)"
+          EXPECTED_NAME="$(sed -n 's/^[[:space:]]*versionName "\([^"]*\)".*/\1/p' app/build.gradle | head -n1)"
+          test -n "$EXPECTED_CODE"
+          test -n "$EXPECTED_NAME"
+
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n1)"
+          test -x "$AAPT"
+
+          for APK in \
+            app/build/outputs/apk/debug/app-debug.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk; do
+            PACKAGE_LINE="$("$AAPT" dump badging "$APK" | head -n1)"
+            ACTUAL_CODE="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")"
+            ACTUAL_NAME="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")"
+            echo "$APK -> versionName=$ACTUAL_NAME versionCode=$ACTUAL_CODE"
+            test "$ACTUAL_CODE" = "$EXPECTED_CODE"
+            test "$ACTUAL_NAME" = "$EXPECTED_NAME"
+          done
       - name: Upload debug APK ZIP
         if: ${{ github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v7
