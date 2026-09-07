@@ -25,7 +25,22 @@ jobs:
           java-version: '21'
 
       - name: Apply guarded source repair
-        run: python3 .github/scripts/apply_33057_full_vertical_card_timestamps.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply_33057_full_vertical_card_timestamps.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarderTest.java')
+          text = path.read_text(encoding='utf-8')
+          old_assert = 'import static org.junit.Assert.assertEquals;'
+          old_test = 'import org.junit.Test;'
+          if text.count(old_assert) != 1 or text.count(old_test) != 1:
+              raise SystemExit('Generated test did not match the verified JUnit 4 template')
+          text = text.replace(old_assert, 'import static org.junit.jupiter.api.Assertions.assertEquals;', 1)
+          text = text.replace(old_test, 'import org.junit.jupiter.api.Test;', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
 
       - name: Verify exact application change scope
         shell: bash
@@ -47,6 +62,8 @@ jobs:
           grep -q 'DateUtils.getRelativeTimeSpanString' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java
           grep -q 'TileLaunchCounter.getTotal' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java
           grep -q 'TileLaunchCounter.record' app/src/main/java/fr/neamar/kiss/result/Result.java
+          grep -q 'org.junit.jupiter.api.Test' app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarderTest.java
+          grep -q 'org.junit.jupiter.api.Assertions.assertEquals' app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarderTest.java
 
       - name: Full clean verification
         run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
