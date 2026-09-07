@@ -1,0 +1,550 @@
+name: Apply full Vertical Cards timestamps 3.30.57 once
+
+on:
+  push:
+    branches:
+      - fix/3.30.57-full-vertical-card-timestamps
+    paths:
+      - '.github/workflows/apply-full-vertical-card-timestamps-3.30.57.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/3.30.57-full-vertical-card-timestamps
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Apply only verified timestamp changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one guarded match, found {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          tile_counter = Path('app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java')
+          if tile_counter.exists():
+              raise SystemExit(f'{tile_counter}: refusing to overwrite an existing source file')
+          tile_counter.write_text(r'''package fr.neamar.kiss.ui;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.text.TextUtils;
+
+import androidx.annotation.NonNull;
+
+import fr.neamar.kiss.pojo.NotificationPojo;
+import fr.neamar.kiss.pojo.Pojo;
+
+/** Persistent count of explicit launcher tile launches/clicks for one exact history item. */
+public final class TileLaunchCounter {
+    private static final String PREFS = "smart-s-tile-launch-counts";
+    private static final String KEY_PREFIX = "count:";
+    private static final Object LOCK = new Object();
+
+    private TileLaunchCounter() {}
+
+    public static void record(@NonNull Context context, @NonNull Pojo pojo) {
+        String key = storageKey(pojo);
+        if (TextUtils.isEmpty(key)) return;
+        synchronized (LOCK) {
+            SharedPreferences prefs = context.getApplicationContext()
+                    .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            String storageKey = KEY_PREFIX + key;
+            long current = Math.max(0L, prefs.getLong(storageKey, 0L));
+            long next = current == Long.MAX_VALUE ? Long.MAX_VALUE : current + 1L;
+            prefs.edit().putLong(storageKey, next).apply();
+        }
+    }
+
+    public static long getTotal(@NonNull Context context, @NonNull Pojo pojo) {
+        String key = storageKey(pojo);
+        if (TextUtils.isEmpty(key)) return 0L;
+        synchronized (LOCK) {
+            return Math.max(0L, context.getApplicationContext()
+                    .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .getLong(KEY_PREFIX + key, 0L));
+        }
+    }
+
+    @NonNull
+    static String storageKey(@NonNull Pojo pojo) {
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            return notification.id + "|post:" + Math.max(0L, notification.postTime);
+        }
+        String historyId = pojo.getHistoryId();
+        return historyId == null ? "" : historyId;
+    }
+}
+''', encoding='utf-8')
+
+          binder = Path('app/src/main/java/fr/neamar/kiss/ui/VerticalCardTimestampBinder.java')
+          if binder.exists():
+              raise SystemExit(f'{binder}: refusing to overwrite an existing source file')
+          binder.write_text(r'''package fr.neamar.kiss.ui;
+
+import android.content.Context;
+import android.os.SystemClock;
+import android.text.TextUtils;
+import android.text.format.DateFormat;
+import android.text.format.DateUtils;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.db.AppUsageTodayStore;
+import fr.neamar.kiss.db.LaunchStatsProvider;
+import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.CommunicationPojo;
+import fr.neamar.kiss.pojo.DisabledAppPojo;
+import fr.neamar.kiss.pojo.NotificationPojo;
+import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.SettingPojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.result.ShortcutsResult;
+
+/**
+ * Renders complete history metadata as a sibling below each Vertical Card.
+ * Database and UsageStats reads are grouped off the UI thread and shared by all visible cards.
+ */
+public final class VerticalCardTimestampBinder {
+    private static final String VIEW_TAG = "smart_s_vertical_card_timestamp_metadata";
+    private static final long METADATA_REFRESH_MS = 30_000L;
+    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final Object LOAD_LOCK = new Object();
+    private static final Object PENDING_LOCK = new Object();
+    private static final WeakHashMap<View, PendingBinding> PENDING = new WeakHashMap<>();
+
+    private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
+    private static volatile AppUsageTodayStore.Snapshot usageSnapshot;
+    private static volatile long loadedAtElapsed;
+    private static volatile boolean loadedOnce;
+    private static volatile boolean loadInFlight;
+
+    private VerticalCardTimestampBinder() {}
+
+    public static void bind(@NonNull LinearLayout wrapper,
+                            @NonNull Result<?> result,
+                            @NonNull Context context) {
+        if (!isHistorySurface(context)) {
+            TextView existing = findDirectMetadataView(wrapper);
+            if (existing != null) existing.setVisibility(View.GONE);
+            return;
+        }
+
+        Pojo pojo = result.getPojo();
+        if (pojo == null) return;
+
+        TextView metadata = ensureDirectMetadataView(wrapper, context);
+        metadata.setVisibility(View.VISIBLE);
+
+        LaunchStatsProvider.LaunchStats stats = resolveStats(pojo);
+        String packageName = resolveUsagePackage(result, pojo, context);
+        metadata.setText(formatMetadata(context, pojo, stats, packageName));
+        metadata.setContentDescription(metadata.getText());
+        SmartTextAppearance.applyHistoryMetadata(metadata);
+
+        if (!isFresh()) {
+            queueBinding(wrapper, result, context);
+            ensureLoaded(context);
+        }
+    }
+
+    public static void invalidate() {
+        loadedAtElapsed = 0L;
+    }
+
+    private static boolean isHistorySurface(Context context) {
+        if (!(context instanceof MainActivity)) return false;
+        MainActivity activity = (MainActivity) context;
+        return activity.searchEditText == null || activity.searchEditText.length() == 0;
+    }
+
+    private static boolean isFresh() {
+        return loadedOnce
+                && loadedAtElapsed > 0L
+                && SystemClock.elapsedRealtime() - loadedAtElapsed < METADATA_REFRESH_MS;
+    }
+
+    @Nullable
+    private static LaunchStatsProvider.LaunchStats resolveStats(@NonNull Pojo pojo) {
+        Map<String, LaunchStatsProvider.LaunchStats> snapshot = launchStats;
+        if (snapshot == null) return null;
+        String historyId = pojo.getHistoryId();
+        if (TextUtils.isEmpty(historyId)) return null;
+        return snapshot.get(historyId);
+    }
+
+    @Nullable
+    private static String resolveUsagePackage(@NonNull Result<?> result,
+                                              @NonNull Pojo pojo,
+                                              @NonNull Context context) {
+        if (pojo instanceof NotificationPojo) {
+            String packageName = ((NotificationPojo) pojo).packageName;
+            return TextUtils.isEmpty(packageName) ? null : packageName;
+        }
+        if (pojo instanceof AppPojo) {
+            String packageName = ((AppPojo) pojo).packageName;
+            return TextUtils.isEmpty(packageName) ? null : packageName;
+        }
+        if (pojo instanceof DisabledAppPojo) {
+            String packageName = ((DisabledAppPojo) pojo).targetPackage;
+            return TextUtils.isEmpty(packageName) ? null : packageName;
+        }
+        if (pojo instanceof ShortcutPojo) {
+            if (result instanceof ShortcutsResult) {
+                String resolved = ((ShortcutsResult) result).resolveTargetPackageName(context);
+                if (!TextUtils.isEmpty(resolved)) return resolved;
+            }
+            return null;
+        }
+        if (pojo instanceof SettingPojo) {
+            String packageName = ((SettingPojo) pojo).packageName;
+            return TextUtils.isEmpty(packageName) ? null : packageName;
+        }
+        return null;
+    }
+
+    @NonNull
+    private static CharSequence formatMetadata(@NonNull Context context,
+                                               @NonNull Pojo pojo,
+                                               @Nullable LaunchStatsProvider.LaunchStats stats,
+                                               @Nullable String packageName) {
+        List<String> parts = new ArrayList<>(3);
+        parts.add(formatPostedTime(context, pojo, stats));
+        parts.add(formatUsage(packageName));
+        parts.add(formatLaunchCount(resolveLaunchCount(context, pojo, stats)));
+        return TextUtils.join("  •  ", parts);
+    }
+
+    @NonNull
+    private static String formatPostedTime(@NonNull Context context,
+                                           @NonNull Pojo pojo,
+                                           @Nullable LaunchStatsProvider.LaunchStats stats) {
+        long timestamp = resolveTimestamp(pojo, stats);
+        String label = pojo instanceof NotificationPojo ? "Received" : "Posted";
+        if (timestamp <= 0L) return label + ": unavailable";
+
+        long now = System.currentTimeMillis();
+        String relative;
+        long difference = timestamp - now;
+        if (Math.abs(difference) < DateUtils.MINUTE_IN_MILLIS) {
+            relative = difference <= 0L ? "just now" : "in <1m";
+        } else {
+            relative = DateUtils.getRelativeTimeSpanString(
+                    timestamp,
+                    now,
+                    DateUtils.MINUTE_IN_MILLIS,
+                    DateUtils.FORMAT_ABBREV_RELATIVE).toString();
+        }
+
+        Date date = new Date(timestamp);
+        String exactTime = DateFormat.getTimeFormat(context).format(date);
+        if (!DateUtils.isToday(timestamp)) {
+            exactTime = DateFormat.getMediumDateFormat(context).format(date) + " " + exactTime;
+        }
+        return label + " " + relative + " · " + exactTime;
+    }
+
+    private static long resolveTimestamp(@NonNull Pojo pojo,
+                                         @Nullable LaunchStatsProvider.LaunchStats stats) {
+        if (pojo instanceof NotificationPojo) {
+            long posted = ((NotificationPojo) pojo).postTime;
+            if (posted > 0L) return posted;
+        }
+        if (pojo instanceof CommunicationPojo) {
+            long eventTime = ((CommunicationPojo) pojo).timestamp;
+            if (eventTime > 0L) return eventTime;
+        }
+        return stats == null ? 0L : Math.max(0L, stats.lastLaunchTime);
+    }
+
+    @NonNull
+    private static String formatUsage(@Nullable String packageName) {
+        if (TextUtils.isEmpty(packageName)) return "Used today: n/a";
+        if (!loadedOnce) return "Used today: loading";
+
+        AppUsageTodayStore.Snapshot snapshot = usageSnapshot;
+        if (snapshot == null || !snapshot.available) return "Used today: unavailable";
+        long duration = Math.max(0L,
+                snapshot.foregroundMsByPackage.getOrDefault(packageName, 0L));
+        return "Used today: " + formatDuration(duration);
+    }
+
+    static String formatDuration(long durationMs) {
+        long safe = Math.max(0L, durationMs);
+        if (safe == 0L) return "0m";
+        long minutes = safe / DateUtils.MINUTE_IN_MILLIS;
+        if (minutes == 0L) return "<1m";
+        long hours = minutes / 60L;
+        long remainder = minutes % 60L;
+        if (hours == 0L) return minutes + "m";
+        if (remainder == 0L) return hours + "h";
+        return hours + "h " + remainder + "m";
+    }
+
+    private static long resolveLaunchCount(@NonNull Context context,
+                                           @NonNull Pojo pojo,
+                                           @Nullable LaunchStatsProvider.LaunchStats stats) {
+        long tracked = TileLaunchCounter.getTotal(context, pojo);
+        if (pojo instanceof NotificationPojo) return tracked;
+        long existingHistory = stats == null ? 0L : Math.max(0, stats.totalLaunches);
+        return Math.max(tracked, existingHistory);
+    }
+
+    static String formatLaunchCount(long count) {
+        long safe = Math.max(0L, count);
+        if (safe == 1L) return "Launched once";
+        if (safe == 2L) return "Launched twice";
+        return "Launched " + safe + " times";
+    }
+
+    private static TextView ensureDirectMetadataView(@NonNull LinearLayout wrapper,
+                                                     @NonNull Context context) {
+        TextView existing = findDirectMetadataView(wrapper);
+        if (existing != null) return existing;
+
+        TextView metadata = new TextView(context);
+        metadata.setTag(VIEW_TAG);
+        metadata.setGravity(Gravity.CENTER);
+        metadata.setTextDirection(View.TEXT_DIRECTION_LOCALE);
+        metadata.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        metadata.setSingleLine(false);
+        metadata.setMaxLines(3);
+        metadata.setEllipsize(null);
+        metadata.setClickable(false);
+        metadata.setFocusable(false);
+        metadata.setPadding(dp(context, 6), 0, dp(context, 6), 0);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.leftMargin = dp(context, 8);
+        params.rightMargin = dp(context, 8);
+        params.topMargin = dp(context, 4);
+        wrapper.addView(metadata, params);
+        return metadata;
+    }
+
+    @Nullable
+    private static TextView findDirectMetadataView(@NonNull LinearLayout wrapper) {
+        for (int i = 0; i < wrapper.getChildCount(); i++) {
+            View child = wrapper.getChildAt(i);
+            if (child instanceof TextView && VIEW_TAG.equals(child.getTag())) {
+                return (TextView) child;
+            }
+        }
+        return null;
+    }
+
+    private static void queueBinding(@NonNull LinearLayout wrapper,
+                                     @NonNull Result<?> result,
+                                     @NonNull Context context) {
+        synchronized (PENDING_LOCK) {
+            PENDING.put(wrapper, new PendingBinding(wrapper, result, context));
+        }
+    }
+
+    private static void ensureLoaded(@NonNull Context context) {
+        if (isFresh()) return;
+        synchronized (LOAD_LOCK) {
+            if (isFresh() || loadInFlight) return;
+            loadInFlight = true;
+        }
+
+        Context appContext = context.getApplicationContext();
+        EXECUTOR.execute(() -> {
+            Map<String, LaunchStatsProvider.LaunchStats> loadedStats;
+            AppUsageTodayStore.Snapshot loadedUsage = null;
+            try {
+                loadedStats = LaunchStatsProvider.loadAll(appContext);
+            } catch (RuntimeException ignored) {
+                loadedStats = Collections.emptyMap();
+            }
+            try {
+                loadedUsage = AppUsageTodayStore.getToday(appContext);
+            } catch (RuntimeException ignored) {
+                // A failed UsageStats read is rendered as unavailable; no synthetic duration is used.
+            }
+
+            launchStats = loadedStats;
+            usageSnapshot = loadedUsage;
+            loadedAtElapsed = SystemClock.elapsedRealtime();
+            loadedOnce = true;
+            synchronized (LOAD_LOCK) {
+                loadInFlight = false;
+            }
+            flushPendingBindings();
+        });
+    }
+
+    private static void flushPendingBindings() {
+        List<PendingBinding> pending;
+        synchronized (PENDING_LOCK) {
+            pending = new ArrayList<>(PENDING.values());
+            PENDING.clear();
+        }
+        for (PendingBinding binding : pending) {
+            LinearLayout wrapper = binding.wrapper.get();
+            Result<?> result = binding.result.get();
+            Context context = binding.context.get();
+            if (wrapper == null || result == null || context == null) continue;
+            wrapper.post(() -> {
+                if (wrapper.isAttachedToWindow()) bind(wrapper, result, context);
+            });
+        }
+    }
+
+    private static int dp(Context context, int value) {
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
+    }
+
+    private static final class PendingBinding {
+        final WeakReference<LinearLayout> wrapper;
+        final WeakReference<Result<?>> result;
+        final WeakReference<Context> context;
+
+        PendingBinding(LinearLayout wrapper, Result<?> result, Context context) {
+            this.wrapper = new WeakReference<>(wrapper);
+            this.result = new WeakReference<>(result);
+            this.context = new WeakReference<>(context);
+        }
+    }
+}
+''', encoding='utf-8')
+
+          test_file = Path('app/src/test/java/fr/neamar/kiss/ui/VerticalCardTimestampBinderTest.java')
+          if test_file.exists():
+              raise SystemExit(f'{test_file}: refusing to overwrite an existing test file')
+          test_file.parent.mkdir(parents=True, exist_ok=True)
+          test_file.write_text(r'''package fr.neamar.kiss.ui;
+
+import static org.junit.Assert.assertEquals;
+
+import org.junit.Test;
+
+public class VerticalCardTimestampBinderTest {
+    @Test
+    public void formatsUsageDurationWithoutInventingMinutes() {
+        assertEquals("0m", VerticalCardTimestampBinder.formatDuration(0L));
+        assertEquals("<1m", VerticalCardTimestampBinder.formatDuration(30_000L));
+        assertEquals("49m", VerticalCardTimestampBinder.formatDuration(49L * 60_000L));
+        assertEquals("1h", VerticalCardTimestampBinder.formatDuration(60L * 60_000L));
+        assertEquals("2h 5m", VerticalCardTimestampBinder.formatDuration(125L * 60_000L));
+    }
+
+    @Test
+    public void formatsLaunchCountsAsRequested() {
+        assertEquals("Launched 0 times", VerticalCardTimestampBinder.formatLaunchCount(0L));
+        assertEquals("Launched once", VerticalCardTimestampBinder.formatLaunchCount(1L));
+        assertEquals("Launched twice", VerticalCardTimestampBinder.formatLaunchCount(2L));
+        assertEquals("Launched 7 times", VerticalCardTimestampBinder.formatLaunchCount(7L));
+    }
+}
+''', encoding='utf-8')
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/result/Result.java',
+              'import fr.neamar.kiss.pojo.DisabledAppPojo;\nimport fr.neamar.kiss.pojo.PhonePojo;',
+              'import fr.neamar.kiss.pojo.DisabledAppPojo;\nimport fr.neamar.kiss.pojo.NotificationPojo;\nimport fr.neamar.kiss.pojo.PhonePojo;')
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/result/Result.java',
+              'import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;',
+              'import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.TileLaunchCounter;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;\nimport fr.neamar.kiss.ui.VerticalCardTimestampBinder;')
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/result/Result.java',
+              '''    protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {\n        // Save in history\n        if (canAddToHistory()) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n            UniversalHistoryTimestamp.invalidateStats();\n        }\n        // Record the launch after some period,''',
+              '''    protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {\n        // Only verified successful launches enter normal history. Notification arrivals already\n        // live in their own timeline, so notification tile clicks are counted separately.\n        boolean storedInHistory = canAddToHistory();\n        if (storedInHistory) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n        }\n        if (storedInHistory || pojo instanceof NotificationPojo) {\n            TileLaunchCounter.record(context, pojo);\n            UniversalHistoryTimestamp.invalidateStats();\n            VerticalCardTimestampBinder.invalidate();\n        }\n        // Record the launch after some period,''')
+
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              'import fr.neamar.kiss.ui.AutoMarqueeTextView;\nimport fr.neamar.kiss.ui.SmartAnimationEngine;',
+              'import fr.neamar.kiss.ui.AutoMarqueeTextView;\nimport fr.neamar.kiss.ui.SmartAnimationEngine;\nimport fr.neamar.kiss.ui.VerticalCardTimestampBinder;')
+          replace_once(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''        cardTitle.setFocusable(false);\n        cardTitle.setFocusableInTouchMode(false);\n        return wrapper;''',
+              '''        cardTitle.setFocusable(false);\n        cardTitle.setFocusableInTouchMode(false);\n\n        // Complete timestamp/usage/launch metadata belongs outside the rounded card.\n        VerticalCardTimestampBinder.bind(wrapper, result, mainActivity);\n        return wrapper;''')
+          PY
+
+      - name: Remove one-time workflow and verify exact source diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-full-vertical-card-timestamps-3.30.57.yml
+
+          expected="$(printf '%s\n' \
+            .github/workflows/apply-full-vertical-card-timestamps-3.30.57.yml \
+            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java \
+            app/src/main/java/fr/neamar/kiss/result/Result.java \
+            app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java \
+            app/src/main/java/fr/neamar/kiss/ui/VerticalCardTimestampBinder.java \
+            app/src/test/java/fr/neamar/kiss/ui/VerticalCardTimestampBinderTest.java | sort)"
+          actual="$({ git diff --name-only; git ls-files --others --exclude-standard; } | sort)"
+          test "$actual" = "$expected"
+
+          grep -F 'versionName "3.30.56"' app/build.gradle
+          grep -F 'versionCode 484' app/build.gradle
+          test "$(grep -Fc 'VerticalCardTimestampBinder.bind(wrapper, result, mainActivity);' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java)" -eq 1
+          test "$(grep -Fc 'TileLaunchCounter.record(context, pojo);' app/src/main/java/fr/neamar/kiss/result/Result.java)" -eq 1
+          git diff --check
+
+      - name: Lint, unit test and build patched source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./gradlew lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Commit only verified source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          expected="$(printf '%s\n' \
+            .github/workflows/apply-full-vertical-card-timestamps-3.30.57.yml \
+            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java \
+            app/src/main/java/fr/neamar/kiss/result/Result.java \
+            app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java \
+            app/src/main/java/fr/neamar/kiss/ui/VerticalCardTimestampBinder.java \
+            app/src/test/java/fr/neamar/kiss/ui/VerticalCardTimestampBinderTest.java | sort)"
+          actual="$(git diff --cached --name-only | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Add complete Vertical Cards timestamp metadata"
+          git push origin HEAD:fix/3.30.57-full-vertical-card-timestamps
