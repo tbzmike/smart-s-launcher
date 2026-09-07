@@ -23,10 +23,12 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Apply exact timestamp, usage and launch metadata wiring
-        shell: python
+      - name: Apply exact timestamp usage and launch metadata wiring
+        shell: bash
         run: |
+          python3 - <<'PY'
           from pathlib import Path
+          import base64
 
           def replace_once(path, old, new):
               p = Path(path)
@@ -36,478 +38,33 @@ jobs:
                   raise SystemExit(f'{path}: expected exactly one guarded match, found {count}')
               p.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-          adapter = 'app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java'
-          replace_once(adapter,
-          '''import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.TileVisualStyle;''',
-          '''import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.TileVisualStyle;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;''')
-          replace_once(adapter,
-          '''        }\n        return view;\n    }\n\n    private void configureSocialMessageCard''',
-          '''        }\n        if (parent instanceof AbsListView) {\n            UniversalHistoryTimestamp.bind(view, result, parent.getContext());\n        }\n        return view;\n    }\n\n    private void configureSocialMessageCard''')
-
-          result = 'app/src/main/java/fr/neamar/kiss/result/Result.java'
-          replace_once(result,
-          '''import fr.neamar.kiss.pojo.DisabledAppPojo;\nimport fr.neamar.kiss.pojo.PhonePojo;''',
-          '''import fr.neamar.kiss.pojo.DisabledAppPojo;\nimport fr.neamar.kiss.pojo.NotificationPojo;\nimport fr.neamar.kiss.pojo.PhonePojo;''')
-          replace_once(result,
-          '''import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;''',
-          '''import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.TileLaunchCounter;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;''')
-          replace_once(result,
-          '''    protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {\n        // Save in history\n        if (canAddToHistory()) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n            UniversalHistoryTimestamp.invalidateStats();\n        }''',
-          '''    protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {\n        // Save ordinary app/shortcut launches in history. Notification arrivals are already inserted\n        // by NotificationListener, so notification click counts are tracked separately below.\n        boolean storedInHistory = canAddToHistory();\n        if (storedInHistory) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n        }\n        if (storedInHistory || pojo instanceof NotificationPojo) {\n            TileLaunchCounter.record(context, pojo.getHistoryId());\n            UniversalHistoryTimestamp.invalidateStats();\n        }''')
-
-          cards = 'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java'
-          replace_once(cards,
-          '''import fr.neamar.kiss.ui.AutoMarqueeTextView;\nimport fr.neamar.kiss.ui.SmartAnimationEngine;''',
-          '''import fr.neamar.kiss.ui.AutoMarqueeTextView;\nimport fr.neamar.kiss.ui.SmartAnimationEngine;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;''')
-          replace_once(cards,
-          '''        if (call != null && call.kind == CommunicationPojo.Kind.CALL\n                && hasDistinctCallerName(call)) {\n            AutoMarqueeTextView callerName = new AutoMarqueeTextView(mainActivity);\n            callerName.setText(call.displayName);\n            callerName.setTextColor(Color.WHITE);\n            callerName.setTextSize(15f * namePercent / 100f);\n            callerName.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);\n            callerName.setPadding(0, dp(3), 0, dp(1));\n            callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));\n            callerName.setContentDescription("Caller: " + call.displayName);\n            center.addView(callerName, new LinearLayout.LayoutParams(\n                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));\n        }\n\n        prepareSourceForDetails(source);''',
-          '''        if (call != null && call.kind == CommunicationPojo.Kind.CALL\n                && hasDistinctCallerName(call)) {\n            AutoMarqueeTextView callerName = new AutoMarqueeTextView(mainActivity);\n            callerName.setText(call.displayName);\n            callerName.setTextColor(Color.WHITE);\n            callerName.setTextSize(15f * namePercent / 100f);\n            callerName.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);\n            callerName.setPadding(0, dp(3), 0, dp(1));\n            callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));\n            callerName.setContentDescription("Caller: " + call.displayName);\n            center.addView(callerName, new LinearLayout.LayoutParams(\n                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));\n        }\n\n        // Vertical Cards own renderer: bind the same verified metadata inside the card itself.\n        UniversalHistoryTimestamp.bind(center, result, mainActivity);\n\n        prepareSourceForDetails(source);''')
-
-          Path('app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java').write_text(r'''package fr.neamar.kiss.ui;
-
-import android.content.Context;
-import android.content.SharedPreferences;
-
-import androidx.annotation.NonNull;
-
-/** Persistent count of explicit user launches/clicks for one exact launcher history tile. */
-public final class TileLaunchCounter {
-    private static final String PREFS = "smart-s-tile-launch-counts";
-    private static final String KEY_PREFIX = "count:";
-    private static final Object LOCK = new Object();
-
-    private TileLaunchCounter() {}
-
-    public static void record(@NonNull Context context, String historyId) {
-        if (historyId == null || historyId.isEmpty()) return;
-        synchronized (LOCK) {
-            SharedPreferences prefs = context.getApplicationContext()
-                    .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            String key = KEY_PREFIX + historyId;
-            long current = Math.max(0L, prefs.getLong(key, 0L));
-            long next = current == Long.MAX_VALUE ? Long.MAX_VALUE : current + 1L;
-            prefs.edit().putLong(key, next).apply();
-        }
-    }
-
-    public static long getTotal(@NonNull Context context, String historyId) {
-        if (historyId == null || historyId.isEmpty()) return 0L;
-        synchronized (LOCK) {
-            return Math.max(0L, context.getApplicationContext()
-                    .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .getLong(KEY_PREFIX + historyId, 0L));
-        }
-    }
-}
-''', encoding='utf-8')
-
-          Path('app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java').write_text(r'''package fr.neamar.kiss.ui;
-
-import android.content.Context;
-import android.text.TextUtils;
-import android.text.format.DateFormat;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-
-import androidx.annotation.NonNull;
-
-import java.lang.ref.WeakReference;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicLong;
-
-import fr.neamar.kiss.MainActivity;
-import fr.neamar.kiss.db.AppUsageTodayStore;
-import fr.neamar.kiss.db.LaunchStatsProvider;
-import fr.neamar.kiss.pojo.AppPojo;
-import fr.neamar.kiss.pojo.CommunicationPojo;
-import fr.neamar.kiss.pojo.NotificationPojo;
-import fr.neamar.kiss.pojo.Pojo;
-import fr.neamar.kiss.pojo.SettingPojo;
-import fr.neamar.kiss.pojo.ShortcutPojo;
-import fr.neamar.kiss.result.Result;
-import fr.neamar.kiss.searcher.SearchHandler;
-import fr.neamar.kiss.searcher.Searcher;
-
-/**
- * Restores verified history-tile metadata without refreshing or reordering the backing list.
- * Background work updates only the metadata TextView and is guarded against recycled rows.
- */
-public final class UniversalHistoryTimestamp {
-    private static final long DATA_REFRESH_MS = 30_000L;
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
-    private static final AtomicLong BIND_SEQUENCE = new AtomicLong();
-    private static final ArrayList<PendingBinding> PENDING = new ArrayList<>();
-
-    private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
-    private static volatile Map<String, Long> usageTodayMs = Collections.emptyMap();
-    private static volatile Boolean usageAvailable;
-    private static volatile long dataLoadedAt;
-    private static volatile boolean loadInFlight;
-
-    private UniversalHistoryTimestamp() {}
-
-    private static final class BindingTag {
-        long generation;
-    }
-
-    private static final class PendingBinding {
-        final WeakReference<TextView> view;
-        final Pojo pojo;
-        final long generation;
-
-        PendingBinding(TextView view, Pojo pojo, long generation) {
-            this.view = new WeakReference<>(view);
-            this.pojo = pojo;
-            this.generation = generation;
-        }
-    }
-
-    public static void bind(@NonNull View row, @NonNull Result<?> result, @NonNull Context context) {
-        if (!isHistorySurface(context)) {
-            TextView existing = findTaggedMetadata(row);
-            if (existing != null) existing.setVisibility(View.GONE);
-            return;
-        }
-
-        Pojo pojo = result.getPojo();
-        if (pojo == null) return;
-
-        TextView metadata = ensureMetadataView(row, context);
-        if (metadata == null) return;
-
-        BindingTag tag = (BindingTag) metadata.getTag();
-        long generation = BIND_SEQUENCE.incrementAndGet();
-        tag.generation = generation;
-        metadata.setVisibility(View.VISIBLE);
-        applyMetadataText(metadata, pojo, context);
-        ensureDataLoaded(metadata, pojo, context, generation);
-    }
-
-    private static boolean isHistorySurface(Context context) {
-        if (!(context instanceof MainActivity)) return false;
-        MainActivity activity = (MainActivity) context;
-        return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
-                && (activity.searchEditText == null || activity.searchEditText.length() == 0);
-    }
-
-    private static void applyMetadataText(TextView view, Pojo pojo, Context context) {
-        LaunchStatsProvider.LaunchStats stats = resolveStats(pojo);
-        long timestamp = resolveTimestamp(pojo, stats);
-        boolean notification = pojo instanceof NotificationPojo;
-        StringBuilder out = new StringBuilder();
-
-        if (timestamp > 0L) {
-            out.append(notification ? "Received " : "Posted ")
-                    .append(formatRelativeAge(System.currentTimeMillis(), timestamp))
-                    .append("  •  ")
-                    .append(formatExactTime(context, timestamp));
-        } else if (launchStats == null && !notification) {
-            out.append("Posted time loading");
-        } else {
-            out.append(notification ? "Received time unavailable" : "Posted time unavailable");
-        }
-
-        out.append("  •  ").append(formatUsageText(pojo));
-        out.append("  •  ").append(formatLaunchText(context, pojo, stats));
-        view.setText(out);
-        SmartTextAppearance.applyHistoryMetadata(view);
-    }
-
-    private static LaunchStatsProvider.LaunchStats resolveStats(Pojo pojo) {
-        Map<String, LaunchStatsProvider.LaunchStats> snapshot = launchStats;
-        String historyId = pojo.getHistoryId();
-        if (snapshot == null || TextUtils.isEmpty(historyId)) return null;
-        return snapshot.get(historyId);
-    }
-
-    private static long resolveTimestamp(Pojo pojo, LaunchStatsProvider.LaunchStats stats) {
-        if (pojo instanceof NotificationPojo) {
-            return Math.max(0L, ((NotificationPojo) pojo).postTime);
-        }
-        if (pojo instanceof CommunicationPojo) {
-            long eventTime = ((CommunicationPojo) pojo).timestamp;
-            if (eventTime > 0L) return eventTime;
-        }
-        return stats == null ? 0L : Math.max(0L, stats.lastLaunchTime);
-    }
-
-    private static String formatUsageText(Pojo pojo) {
-        String packageName = resolveUsagePackage(pojo);
-        if (TextUtils.isEmpty(packageName)) return "Used today unavailable";
-        Boolean available = usageAvailable;
-        if (available == null) return "Used today loading";
-        if (!available) return "Used today unavailable";
-        long duration = Math.max(0L, usageTodayMs.getOrDefault(packageName, 0L));
-        return "Used today " + formatUsageDuration(duration);
-    }
-
-    private static String formatLaunchText(Context context, Pojo pojo,
-                                           LaunchStatsProvider.LaunchStats stats) {
-        String historyId = pojo.getHistoryId();
-        if (pojo instanceof NotificationPojo) {
-            return formatLaunchCount(TileLaunchCounter.getTotal(context, historyId));
-        }
-        if (launchStats == null) return "Launch count loading";
-        long count = stats == null
-                ? TileLaunchCounter.getTotal(context, historyId)
-                : Math.max(0L, stats.totalLaunches);
-        return formatLaunchCount(count);
-    }
-
-    private static String resolveUsagePackage(Pojo pojo) {
-        if (pojo instanceof ShortcutPojo) {
-            ShortcutPojo shortcut = (ShortcutPojo) pojo;
-            return !TextUtils.isEmpty(shortcut.targetPackage)
-                    ? shortcut.targetPackage : shortcut.packageName;
-        }
-        if (pojo instanceof AppPojo) return ((AppPojo) pojo).packageName;
-        if (pojo instanceof NotificationPojo) return ((NotificationPojo) pojo).packageName;
-        if (pojo instanceof CommunicationPojo) return ((CommunicationPojo) pojo).packageName;
-        if (pojo instanceof SettingPojo) return ((SettingPojo) pojo).packageName;
-        return "";
-    }
-
-    private static CharSequence formatExactTime(Context context, long timestamp) {
-        Date date = new Date(timestamp);
-        java.text.DateFormat dateFormat = DateFormat.getMediumDateFormat(context);
-        java.text.DateFormat timeFormat = DateFormat.getTimeFormat(context);
-        return dateFormat.format(date) + " " + timeFormat.format(date);
-    }
-
-    static String formatRelativeAge(long nowMs, long timestampMs) {
-        if (timestampMs <= 0L) return "time unavailable";
-        long diff = Math.max(0L, nowMs - timestampMs);
-        long seconds = diff / 1000L;
-        if (seconds < 5L) return "just now";
-        if (seconds < 60L) return seconds + " sec ago";
-        long minutes = seconds / 60L;
-        if (minutes < 60L) return minutes + " min ago";
-        long hours = minutes / 60L;
-        if (hours < 24L) return hours + (hours == 1L ? " hour ago" : " hours ago");
-        long days = hours / 24L;
-        return days + (days == 1L ? " day ago" : " days ago");
-    }
-
-    static String formatUsageDuration(long durationMs) {
-        long seconds = Math.max(0L, durationMs) / 1000L;
-        if (seconds < 60L) return seconds + " sec";
-        long minutes = seconds / 60L;
-        if (minutes < 60L) return minutes + " min";
-        long hours = minutes / 60L;
-        long remainderMinutes = minutes % 60L;
-        return remainderMinutes == 0L ? hours + "h" : hours + "h " + remainderMinutes + "m";
-    }
-
-    static String formatLaunchCount(long count) {
-        long safe = Math.max(0L, count);
-        if (safe == 1L) return "Launched once";
-        if (safe == 2L) return "Launched twice";
-        return "Launched " + safe + " times";
-    }
-
-    public static void invalidateStats() {
-        dataLoadedAt = 0L;
-    }
-
-    private static boolean dataFresh(long now) {
-        return launchStats != null && usageAvailable != null
-                && now - dataLoadedAt < DATA_REFRESH_MS;
-    }
-
-    private static void ensureDataLoaded(TextView view, Pojo pojo, Context context, long generation) {
-        if (dataFresh(System.currentTimeMillis())) return;
-
-        boolean startLoad = false;
-        synchronized (UniversalHistoryTimestamp.class) {
-            if (dataFresh(System.currentTimeMillis())) return;
-            PENDING.add(new PendingBinding(view, pojo, generation));
-            if (!loadInFlight) {
-                loadInFlight = true;
-                startLoad = true;
-            }
-        }
-        if (!startLoad) return;
-
-        Context appContext = context.getApplicationContext();
-        EXECUTOR.execute(() -> {
-            Map<String, LaunchStatsProvider.LaunchStats> loadedStats;
-            AppUsageTodayStore.Snapshot usage;
-            try {
-                loadedStats = LaunchStatsProvider.loadAll(appContext);
-            } catch (RuntimeException ignored) {
-                loadedStats = Collections.emptyMap();
-            }
-            try {
-                usage = AppUsageTodayStore.getToday(appContext);
-            } catch (RuntimeException ignored) {
-                usage = null;
-            }
-
-            ArrayList<PendingBinding> pending;
-            synchronized (UniversalHistoryTimestamp.class) {
-                launchStats = loadedStats;
-                if (usage == null) {
-                    usageTodayMs = Collections.emptyMap();
-                    usageAvailable = false;
-                } else {
-                    usageTodayMs = usage.foregroundMsByPackage;
-                    usageAvailable = usage.available;
-                }
-                dataLoadedAt = System.currentTimeMillis();
-                loadInFlight = false;
-                pending = new ArrayList<>(PENDING);
-                PENDING.clear();
-            }
-
-            for (PendingBinding item : pending) {
-                TextView target = item.view.get();
-                if (target == null) continue;
-                target.post(() -> {
-                    Object rawTag = target.getTag();
-                    if (!(rawTag instanceof BindingTag)) return;
-                    if (((BindingTag) rawTag).generation != item.generation) return;
-                    applyMetadataText(target, item.pojo, target.getContext());
-                });
-            }
-        });
-    }
-
-    private static TextView ensureMetadataView(View row, Context context) {
-        TextView existing = findTaggedMetadata(row);
-        if (existing != null) return existing;
-
-        LinearLayout container = findBestVerticalTextContainer(row);
-        if (container == null) return null;
-
-        TextView metadata = new AutoMarqueeTextView(context);
-        metadata.setTag(new BindingTag());
-        metadata.setTextDirection(View.TEXT_DIRECTION_LOCALE);
-        metadata.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
-        metadata.setSingleLine(true);
-        metadata.setMaxLines(1);
-        metadata.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        metadata.setMarqueeRepeatLimit(-1);
-        metadata.setHorizontallyScrolling(true);
-        metadata.setHorizontalFadingEdgeEnabled(true);
-        metadata.setSelected(true);
-        metadata.setFocusable(false);
-        metadata.setFocusableInTouchMode(false);
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.topMargin = dp(context, 2);
-        container.addView(metadata, params);
-        return metadata;
-    }
-
-    private static TextView findTaggedMetadata(View view) {
-        if (view instanceof TextView && view.getTag() instanceof BindingTag) {
-            return (TextView) view;
-        }
-        if (!(view instanceof ViewGroup)) return null;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            TextView found = findTaggedMetadata(group.getChildAt(i));
-            if (found != null) return found;
-        }
-        return null;
-    }
-
-    private static LinearLayout findBestVerticalTextContainer(View view) {
-        if (!(view instanceof ViewGroup)) return null;
-        ViewGroup group = (ViewGroup) view;
-        if (group instanceof LinearLayout) {
-            LinearLayout linear = (LinearLayout) group;
-            if (linear.getOrientation() == LinearLayout.VERTICAL && containsText(linear)) {
-                return linear;
-            }
-        }
-        for (int i = 0; i < group.getChildCount(); i++) {
-            LinearLayout found = findBestVerticalTextContainer(group.getChildAt(i));
-            if (found != null) return found;
-        }
-        return null;
-    }
-
-    private static boolean containsText(ViewGroup group) {
-        for (int i = 0; i < group.getChildCount(); i++) {
-            View child = group.getChildAt(i);
-            if (child instanceof TextView) return true;
-            if (child instanceof ViewGroup && containsText((ViewGroup) child)) return true;
-        }
-        return false;
-    }
-
-    private static int dp(Context context, int value) {
-        return Math.round(value * context.getResources().getDisplayMetrics().density);
-    }
-}
-''', encoding='utf-8')
-
-          Path('app/src/test/java/fr/neamar/kiss/ui/UniversalHistoryTimestampTest.java').write_text(r'''package fr.neamar.kiss.ui;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-
-import org.junit.jupiter.api.Test;
-
-class UniversalHistoryTimestampTest {
-    @Test
-    void relativeAgeUsesVerifiedTimestampDifference() {
-        long now = 1_000_000L;
-        assertThat(UniversalHistoryTimestamp.formatRelativeAge(now, now - 2_000L), is("just now"));
-        assertThat(UniversalHistoryTimestamp.formatRelativeAge(now, now - 10_000L), is("10 sec ago"));
-        assertThat(UniversalHistoryTimestamp.formatRelativeAge(now, now - 60_000L), is("1 min ago"));
-        assertThat(UniversalHistoryTimestamp.formatRelativeAge(now, now - 2L * 60L * 60L * 1000L), is("2 hours ago"));
-        assertThat(UniversalHistoryTimestamp.formatRelativeAge(now, now - 2L * 24L * 60L * 60L * 1000L), is("2 days ago"));
-    }
-
-    @Test
-    void usageDurationUsesRealStoredDuration() {
-        assertThat(UniversalHistoryTimestamp.formatUsageDuration(0L), is("0 sec"));
-        assertThat(UniversalHistoryTimestamp.formatUsageDuration(59_000L), is("59 sec"));
-        assertThat(UniversalHistoryTimestamp.formatUsageDuration(60_000L), is("1 min"));
-        assertThat(UniversalHistoryTimestamp.formatUsageDuration(65L * 60L * 1000L), is("1h 5m"));
-    }
-
-    @Test
-    void launchCountUsesRequestedNaturalWording() {
-        assertThat(UniversalHistoryTimestamp.formatLaunchCount(0L), is("Launched 0 times"));
-        assertThat(UniversalHistoryTimestamp.formatLaunchCount(1L), is("Launched once"));
-        assertThat(UniversalHistoryTimestamp.formatLaunchCount(2L), is("Launched twice"));
-        assertThat(UniversalHistoryTimestamp.formatLaunchCount(5L), is("Launched 5 times"));
-    }
-}
-''', encoding='utf-8')
-
-          replace_once('app/build.gradle',
-          '''        // Smart S Launcher 3.30.55 - remove duplicate Vertical Cards captions\n        versionCode 483\n        versionName "3.30.55"''',
-          '''        // Smart S Launcher 3.30.56 - restore verified history tile timestamps, usage and launch counts\n        versionCode 484\n        versionName "3.30.56"''')
+          replace_once('app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java', 'import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.TileVisualStyle;', 'import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.TileVisualStyle;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;')
+          replace_once('app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java', '        }\n        return view;\n    }\n\n    private void configureSocialMessageCard', '        }\n        if (parent instanceof AbsListView) {\n            UniversalHistoryTimestamp.bind(view, result, parent.getContext());\n        }\n        return view;\n    }\n\n    private void configureSocialMessageCard')
+          replace_once('app/src/main/java/fr/neamar/kiss/result/Result.java', 'import fr.neamar.kiss.pojo.DisabledAppPojo;\nimport fr.neamar.kiss.pojo.PhonePojo;', 'import fr.neamar.kiss.pojo.DisabledAppPojo;\nimport fr.neamar.kiss.pojo.NotificationPojo;\nimport fr.neamar.kiss.pojo.PhonePojo;')
+          replace_once('app/src/main/java/fr/neamar/kiss/result/Result.java', 'import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;', 'import fr.neamar.kiss.ui.ListPopup;\nimport fr.neamar.kiss.ui.TileLaunchCounter;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;')
+          replace_once('app/src/main/java/fr/neamar/kiss/result/Result.java', '    protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {\n        // Save in history\n        if (canAddToHistory()) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n            UniversalHistoryTimestamp.invalidateStats();\n        }', '    protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {\n        // Save ordinary app/shortcut launches in history. Notification arrivals are already inserted\n        // by NotificationListener, so notification click counts are tracked separately below.\n        boolean storedInHistory = canAddToHistory();\n        if (storedInHistory) {\n            KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());\n        }\n        if (storedInHistory || pojo instanceof NotificationPojo) {\n            TileLaunchCounter.record(context, pojo.getHistoryId());\n            UniversalHistoryTimestamp.invalidateStats();\n        }')
+          replace_once('app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java', 'import fr.neamar.kiss.ui.AutoMarqueeTextView;\nimport fr.neamar.kiss.ui.SmartAnimationEngine;', 'import fr.neamar.kiss.ui.AutoMarqueeTextView;\nimport fr.neamar.kiss.ui.SmartAnimationEngine;\nimport fr.neamar.kiss.ui.UniversalHistoryTimestamp;')
+          replace_once('app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java', '        if (call != null && call.kind == CommunicationPojo.Kind.CALL\n                && hasDistinctCallerName(call)) {\n            AutoMarqueeTextView callerName = new AutoMarqueeTextView(mainActivity);\n            callerName.setText(call.displayName);\n            callerName.setTextColor(Color.WHITE);\n            callerName.setTextSize(15f * namePercent / 100f);\n            callerName.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);\n            callerName.setPadding(0, dp(3), 0, dp(1));\n            callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));\n            callerName.setContentDescription("Caller: " + call.displayName);\n            center.addView(callerName, new LinearLayout.LayoutParams(\n                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));\n        }\n\n        prepareSourceForDetails(source);', '        if (call != null && call.kind == CommunicationPojo.Kind.CALL\n                && hasDistinctCallerName(call)) {\n            AutoMarqueeTextView callerName = new AutoMarqueeTextView(mainActivity);\n            callerName.setText(call.displayName);\n            callerName.setTextColor(Color.WHITE);\n            callerName.setTextSize(15f * namePercent / 100f);\n            callerName.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);\n            callerName.setPadding(0, dp(3), 0, dp(1));\n            callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));\n            callerName.setContentDescription("Caller: " + call.displayName);\n            center.addView(callerName, new LinearLayout.LayoutParams(\n                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));\n        }\n\n        // Vertical Cards own renderer: bind the same verified metadata inside the card itself.\n        UniversalHistoryTimestamp.bind(center, result, mainActivity);\n\n        prepareSourceForDetails(source);')
+          replace_once('app/build.gradle', '        // Smart S Launcher 3.30.55 - remove duplicate Vertical Cards captions\n        versionCode 483\n        versionName "3.30.55"', '        // Smart S Launcher 3.30.56 - restore verified history tile timestamps, usage and launch counts\n        versionCode 484\n        versionName "3.30.56"')
+          Path('app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java').write_bytes(base64.b64decode('cGFja2FnZSBmci5uZWFtYXIua2lzcy51aTsKCmltcG9ydCBhbmRyb2lkLmNvbnRlbnQuQ29udGV4dDsKaW1wb3J0IGFuZHJvaWQuY29udGVudC5TaGFyZWRQcmVmZXJlbmNlczsKCmltcG9ydCBhbmRyb2lkeC5hbm5vdGF0aW9uLk5vbk51bGw7CgovKiogUGVyc2lzdGVudCBjb3VudCBvZiBleHBsaWNpdCB1c2VyIGxhdW5jaGVzL2NsaWNrcyBmb3Igb25lIGV4YWN0IGxhdW5jaGVyIGhpc3RvcnkgdGlsZS4gKi8KcHVibGljIGZpbmFsIGNsYXNzIFRpbGVMYXVuY2hDb3VudGVyIHsKICAgIHByaXZhdGUgc3RhdGljIGZpbmFsIFN0cmluZyBQUkVGUyA9ICJzbWFydC1zLXRpbGUtbGF1bmNoLWNvdW50cyI7CiAgICBwcml2YXRlIHN0YXRpYyBmaW5hbCBTdHJpbmcgS0VZX1BSRUZJWCA9ICJjb3VudDoiOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgT2JqZWN0IExPQ0sgPSBuZXcgT2JqZWN0KCk7CgogICAgcHJpdmF0ZSBUaWxlTGF1bmNoQ291bnRlcigpIHt9CgogICAgcHVibGljIHN0YXRpYyB2b2lkIHJlY29yZChATm9uTnVsbCBDb250ZXh0IGNvbnRleHQsIFN0cmluZyBoaXN0b3J5SWQpIHsKICAgICAgICBpZiAoaGlzdG9yeUlkID09IG51bGwgfHwgaGlzdG9yeUlkLmlzRW1wdHkoKSkgcmV0dXJuOwogICAgICAgIHN5bmNocm9uaXplZCAoTE9DSykgewogICAgICAgICAgICBTaGFyZWRQcmVmZXJlbmNlcyBwcmVmcyA9IGNvbnRleHQuZ2V0QXBwbGljYXRpb25Db250ZXh0KCkKICAgICAgICAgICAgICAgICAgICAuZ2V0U2hhcmVkUHJlZmVyZW5jZXMoUFJFRlMsIENvbnRleHQuTU9ERV9QUklWQVRFKTsKICAgICAgICAgICAgU3RyaW5nIGtleSA9IEtFWV9QUkVGSVggKyBoaXN0b3J5SWQ7CiAgICAgICAgICAgIGxvbmcgY3VycmVudCA9IE1hdGgubWF4KDBMLCBwcmVmcy5nZXRMb25nKGtleSwgMEwpKTsKICAgICAgICAgICAgbG9uZyBuZXh0ID0gY3VycmVudCA9PSBMb25nLk1BWF9WQUxVRSA/IExvbmcuTUFYX1ZBTFVFIDogY3VycmVudCArIDFMOwogICAgICAgICAgICBwcmVmcy5lZGl0KCkucHV0TG9uZyhrZXksIG5leHQpLmFwcGx5KCk7CiAgICAgICAgfQogICAgfQoKICAgIHB1YmxpYyBzdGF0aWMgbG9uZyBnZXRUb3RhbChATm9uTnVsbCBDb250ZXh0IGNvbnRleHQsIFN0cmluZyBoaXN0b3J5SWQpIHsKICAgICAgICBpZiAoaGlzdG9yeUlkID09IG51bGwgfHwgaGlzdG9yeUlkLmlzRW1wdHkoKSkgcmV0dXJuIDBMOwogICAgICAgIHN5bmNocm9uaXplZCAoTE9DSykgewogICAgICAgICAgICByZXR1cm4gTWF0aC5tYXgoMEwsIGNvbnRleHQuZ2V0QXBwbGljYXRpb25Db250ZXh0KCkKICAgICAgICAgICAgICAgICAgICAuZ2V0U2hhcmVkUHJlZmVyZW5jZXMoUFJFRlMsIENvbnRleHQuTU9ERV9QUklWQVRFKQogICAgICAgICAgICAgICAgICAgIC5nZXRMb25nKEtFWV9QUkVGSVggKyBoaXN0b3J5SWQsIDBMKSk7CiAgICAgICAgfQogICAgfQp9Cg=='))
+          Path('app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java').write_bytes(base64.b64decode('cGFja2FnZSBmci5uZWFtYXIua2lzcy51aTsKCmltcG9ydCBhbmRyb2lkLmNvbnRlbnQuQ29udGV4dDsKaW1wb3J0IGFuZHJvaWQudGV4dC5UZXh0VXRpbHM7CmltcG9ydCBhbmRyb2lkLnRleHQuZm9ybWF0LkRhdGVGb3JtYXQ7CmltcG9ydCBhbmRyb2lkLnZpZXcuVmlldzsKaW1wb3J0IGFuZHJvaWQudmlldy5WaWV3R3JvdXA7CmltcG9ydCBhbmRyb2lkLndpZGdldC5MaW5lYXJMYXlvdXQ7CmltcG9ydCBhbmRyb2lkLndpZGdldC5UZXh0VmlldzsKCmltcG9ydCBhbmRyb2lkeC5hbm5vdGF0aW9uLk5vbk51bGw7CgppbXBvcnQgamF2YS5sYW5nLnJlZi5XZWFrUmVmZXJlbmNlOwppbXBvcnQgamF2YS51dGlsLkFycmF5TGlzdDsKaW1wb3J0IGphdmEudXRpbC5Db2xsZWN0aW9uczsKaW1wb3J0IGphdmEudXRpbC5EYXRlOwppbXBvcnQgamF2YS51dGlsLk1hcDsKaW1wb3J0IGphdmEudXRpbC5jb25jdXJyZW50LkV4ZWN1dG9yU2VydmljZTsKaW1wb3J0IGphdmEudXRpbC5jb25jdXJyZW50LkV4ZWN1dG9yczsKaW1wb3J0IGphdmEudXRpbC5jb25jdXJyZW50LmF0b21pYy5BdG9taWNMb25nOwoKaW1wb3J0IGZyLm5lYW1hci5raXNzLk1haW5BY3Rpdml0eTsKaW1wb3J0IGZyLm5lYW1hci5raXNzLmRiLkFwcFVzYWdlVG9kYXlTdG9yZTsKaW1wb3J0IGZyLm5lYW1hci5raXNzLmRiLkxhdW5jaFN0YXRzUHJvdmlkZXI7CmltcG9ydCBmci5uZWFtYXIua2lzcy5wb2pvLkFwcFBvam87CmltcG9ydCBmci5uZWFtYXIua2lzcy5wb2pvLkNvbW11bmljYXRpb25Qb2pvOwppbXBvcnQgZnIubmVhbWFyLmtpc3MucG9qby5Ob3RpZmljYXRpb25Qb2pvOwppbXBvcnQgZnIubmVhbWFyLmtpc3MucG9qby5Qb2pvOwppbXBvcnQgZnIubmVhbWFyLmtpc3MucG9qby5TZXR0aW5nUG9qbzsKaW1wb3J0IGZyLm5lYW1hci5raXNzLnBvam8uU2hvcnRjdXRQb2pvOwppbXBvcnQgZnIubmVhbWFyLmtpc3MucmVzdWx0LlJlc3VsdDsKaW1wb3J0IGZyLm5lYW1hci5raXNzLnNlYXJjaGVyLlNlYXJjaEhhbmRsZXI7CmltcG9ydCBmci5uZWFtYXIua2lzcy5zZWFyY2hlci5TZWFyY2hlcjsKCi8qKgogKiBSZXN0b3JlcyB2ZXJpZmllZCBoaXN0b3J5LXRpbGUgbWV0YWRhdGEgd2l0aG91dCByZWZyZXNoaW5nIG9yIHJlb3JkZXJpbmcgdGhlIGJhY2tpbmcgbGlzdC4KICogQmFja2dyb3VuZCB3b3JrIHVwZGF0ZXMgb25seSB0aGUgbWV0YWRhdGEgVGV4dFZpZXcgYW5kIGlzIGd1YXJkZWQgYWdhaW5zdCByZWN5Y2xlZCByb3dzLgogKi8KcHVibGljIGZpbmFsIGNsYXNzIFVuaXZlcnNhbEhpc3RvcnlUaW1lc3RhbXAgewogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgbG9uZyBEQVRBX1JFRlJFU0hfTVMgPSAzMF8wMDBMOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgRXhlY3V0b3JTZXJ2aWNlIEVYRUNVVE9SID0gRXhlY3V0b3JzLm5ld1NpbmdsZVRocmVhZEV4ZWN1dG9yKCk7CiAgICBwcml2YXRlIHN0YXRpYyBmaW5hbCBBdG9taWNMb25nIEJJTkRfU0VRVUVOQ0UgPSBuZXcgQXRvbWljTG9uZygpOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgQXJyYXlMaXN0PFBlbmRpbmdCaW5kaW5nPiBQRU5ESU5HID0gbmV3IEFycmF5TGlzdDw+KCk7CgogICAgcHJpdmF0ZSBzdGF0aWMgdm9sYXRpbGUgTWFwPFN0cmluZywgTGF1bmNoU3RhdHNQcm92aWRlci5MYXVuY2hTdGF0cz4gbGF1bmNoU3RhdHM7CiAgICBwcml2YXRlIHN0YXRpYyB2b2xhdGlsZSBNYXA8U3RyaW5nLCBMb25nPiB1c2FnZVRvZGF5TXMgPSBDb2xsZWN0aW9ucy5lbXB0eU1hcCgpOwogICAgcHJpdmF0ZSBzdGF0aWMgdm9sYXRpbGUgQm9vbGVhbiB1c2FnZUF2YWlsYWJsZTsKICAgIHByaXZhdGUgc3RhdGljIHZvbGF0aWxlIGxvbmcgZGF0YUxvYWRlZEF0OwogICAgcHJpdmF0ZSBzdGF0aWMgdm9sYXRpbGUgYm9vbGVhbiBsb2FkSW5GbGlnaHQ7CgogICAgcHJpdmF0ZSBVbml2ZXJzYWxIaXN0b3J5VGltZXN0YW1wKCkge30KCiAgICBwcml2YXRlIHN0YXRpYyBmaW5hbCBjbGFzcyBCaW5kaW5nVGFnIHsKICAgICAgICBsb25nIGdlbmVyYXRpb247CiAgICB9CgogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgY2xhc3MgUGVuZGluZ0JpbmRpbmcgewogICAgICAgIGZpbmFsIFdlYWtSZWZlcmVuY2U8VGV4dFZpZXc+IHZpZXc7CiAgICAgICAgZmluYWwgUG9qbyBwb2pvOwogICAgICAgIGZpbmFsIGxvbmcgZ2VuZXJhdGlvbjsKCiAgICAgICAgUGVuZGluZ0JpbmRpbmcoVGV4dFZpZXcgdmlldywgUG9qbyBwb2pvLCBsb25nIGdlbmVyYXRpb24pIHsKICAgICAgICAgICAgdGhpcy52aWV3ID0gbmV3IFdlYWtSZWZlcmVuY2U8Pih2aWV3KTsKICAgICAgICAgICAgdGhpcy5wb2pvID0gcG9qbzsKICAgICAgICAgICAgdGhpcy5nZW5lcmF0aW9uID0gZ2VuZXJhdGlvbjsKICAgICAgICB9CiAgICB9CgogICAgcHVibGljIHN0YXRpYyB2b2lkIGJpbmQoQE5vbk51bGwgVmlldyByb3csIEBOb25OdWxsIFJlc3VsdDw/PiByZXN1bHQsIEBOb25OdWxsIENvbnRleHQgY29udGV4dCkgewogICAgICAgIGlmICghaXNIaXN0b3J5U3VyZmFjZShjb250ZXh0KSkgewogICAgICAgICAgICBUZXh0VmlldyBleGlzdGluZyA9IGZpbmRUYWdnZWRNZXRhZGF0YShyb3cpOwogICAgICAgICAgICBpZiAoZXhpc3RpbmcgIT0gbnVsbCkgZXhpc3Rpbmcuc2V0VmlzaWJpbGl0eShWaWV3LkdPTkUpOwogICAgICAgICAgICByZXR1cm47CiAgICAgICAgfQoKICAgICAgICBQb2pvIHBvam8gPSByZXN1bHQuZ2V0UG9qbygpOwogICAgICAgIGlmIChwb2pvID09IG51bGwpIHJldHVybjsKCiAgICAgICAgVGV4dFZpZXcgbWV0YWRhdGEgPSBlbnN1cmVNZXRhZGF0YVZpZXcocm93LCBjb250ZXh0KTsKICAgICAgICBpZiAobWV0YWRhdGEgPT0gbnVsbCkgcmV0dXJuOwoKICAgICAgICBCaW5kaW5nVGFnIHRhZyA9IChCaW5kaW5nVGFnKSBtZXRhZGF0YS5nZXRUYWcoKTsKICAgICAgICBsb25nIGdlbmVyYXRpb24gPSBCSU5EX1NFUVVFTkNFLmluY3JlbWVudEFuZEdldCgpOwogICAgICAgIHRhZy5nZW5lcmF0aW9uID0gZ2VuZXJhdGlvbjsKICAgICAgICBtZXRhZGF0YS5zZXRWaXNpYmlsaXR5KFZpZXcuVklTSUJMRSk7CiAgICAgICAgYXBwbHlNZXRhZGF0YVRleHQobWV0YWRhdGEsIHBvam8sIGNvbnRleHQpOwogICAgICAgIGVuc3VyZURhdGFMb2FkZWQobWV0YWRhdGEsIHBvam8sIGNvbnRleHQsIGdlbmVyYXRpb24pOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIGJvb2xlYW4gaXNIaXN0b3J5U3VyZmFjZShDb250ZXh0IGNvbnRleHQpIHsKICAgICAgICBpZiAoIShjb250ZXh0IGluc3RhbmNlb2YgTWFpbkFjdGl2aXR5KSkgcmV0dXJuIGZhbHNlOwogICAgICAgIE1haW5BY3Rpdml0eSBhY3Rpdml0eSA9IChNYWluQWN0aXZpdHkpIGNvbnRleHQ7CiAgICAgICAgcmV0dXJuIFNlYXJjaEhhbmRsZXIuZ2V0SW5zdGFuY2UoKS5nZXRMYXN0U2VhcmNoVHlwZSgpID09IFNlYXJjaGVyLlR5cGUuSElTVE9SWQogICAgICAgICAgICAgICAgJiYgKGFjdGl2aXR5LnNlYXJjaEVkaXRUZXh0ID09IG51bGwgfHwgYWN0aXZpdHkuc2VhcmNoRWRpdFRleHQubGVuZ3RoKCkgPT0gMCk7CiAgICB9CgogICAgcHJpdmF0ZSBzdGF0aWMgdm9pZCBhcHBseU1ldGFkYXRhVGV4dChUZXh0VmlldyB2aWV3LCBQb2pvIHBvam8sIENvbnRleHQgY29udGV4dCkgewogICAgICAgIExhdW5jaFN0YXRzUHJvdmlkZXIuTGF1bmNoU3RhdHMgc3RhdHMgPSByZXNvbHZlU3RhdHMocG9qbyk7CiAgICAgICAgbG9uZyB0aW1lc3RhbXAgPSByZXNvbHZlVGltZXN0YW1wKHBvam8sIHN0YXRzKTsKICAgICAgICBib29sZWFuIG5vdGlmaWNhdGlvbiA9IHBvam8gaW5zdGFuY2VvZiBOb3RpZmljYXRpb25Qb2pvOwogICAgICAgIFN0cmluZ0J1aWxkZXIgb3V0ID0gbmV3IFN0cmluZ0J1aWxkZXIoKTsKCiAgICAgICAgaWYgKHRpbWVzdGFtcCA+IDBMKSB7CiAgICAgICAgICAgIG91dC5hcHBlbmQobm90aWZpY2F0aW9uID8gIlJlY2VpdmVkICIgOiAiUG9zdGVkICIpCiAgICAgICAgICAgICAgICAgICAgLmFwcGVuZChmb3JtYXRSZWxhdGl2ZUFnZShTeXN0ZW0uY3VycmVudFRpbWVNaWxsaXMoKSwgdGltZXN0YW1wKSkKICAgICAgICAgICAgICAgICAgICAuYXBwZW5kKCIgIOKAoiAgIikKICAgICAgICAgICAgICAgICAgICAuYXBwZW5kKGZvcm1hdEV4YWN0VGltZShjb250ZXh0LCB0aW1lc3RhbXApKTsKICAgICAgICB9IGVsc2UgaWYgKGxhdW5jaFN0YXRzID09IG51bGwgJiYgIW5vdGlmaWNhdGlvbikgewogICAgICAgICAgICBvdXQuYXBwZW5kKCJQb3N0ZWQgdGltZSBsb2FkaW5nIik7CiAgICAgICAgfSBlbHNlIHsKICAgICAgICAgICAgb3V0LmFwcGVuZChub3RpZmljYXRpb24gPyAiUmVjZWl2ZWQgdGltZSB1bmF2YWlsYWJsZSIgOiAiUG9zdGVkIHRpbWUgdW5hdmFpbGFibGUiKTsKICAgICAgICB9CgogICAgICAgIG91dC5hcHBlbmQoIiAg4oCiICAiKS5hcHBlbmQoZm9ybWF0VXNhZ2VUZXh0KHBvam8pKTsKICAgICAgICBvdXQuYXBwZW5kKCIgIOKAoiAgIikuYXBwZW5kKGZvcm1hdExhdW5jaFRleHQoY29udGV4dCwgcG9qbywgc3RhdHMpKTsKICAgICAgICB2aWV3LnNldFRleHQob3V0KTsKICAgICAgICBTbWFydFRleHRBcHBlYXJhbmNlLmFwcGx5SGlzdG9yeU1ldGFkYXRhKHZpZXcpOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIExhdW5jaFN0YXRzUHJvdmlkZXIuTGF1bmNoU3RhdHMgcmVzb2x2ZVN0YXRzKFBvam8gcG9qbykgewogICAgICAgIE1hcDxTdHJpbmcsIExhdW5jaFN0YXRzUHJvdmlkZXIuTGF1bmNoU3RhdHM+IHNuYXBzaG90ID0gbGF1bmNoU3RhdHM7CiAgICAgICAgU3RyaW5nIGhpc3RvcnlJZCA9IHBvam8uZ2V0SGlzdG9yeUlkKCk7CiAgICAgICAgaWYgKHNuYXBzaG90ID09IG51bGwgfHwgVGV4dFV0aWxzLmlzRW1wdHkoaGlzdG9yeUlkKSkgcmV0dXJuIG51bGw7CiAgICAgICAgcmV0dXJuIHNuYXBzaG90LmdldChoaXN0b3J5SWQpOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIGxvbmcgcmVzb2x2ZVRpbWVzdGFtcChQb2pvIHBvam8sIExhdW5jaFN0YXRzUHJvdmlkZXIuTGF1bmNoU3RhdHMgc3RhdHMpIHsKICAgICAgICBpZiAocG9qbyBpbnN0YW5jZW9mIE5vdGlmaWNhdGlvblBvam8pIHsKICAgICAgICAgICAgcmV0dXJuIE1hdGgubWF4KDBMLCAoKE5vdGlmaWNhdGlvblBvam8pIHBvam8pLnBvc3RUaW1lKTsKICAgICAgICB9CiAgICAgICAgaWYgKHBvam8gaW5zdGFuY2VvZiBDb21tdW5pY2F0aW9uUG9qbykgewogICAgICAgICAgICBsb25nIGV2ZW50VGltZSA9ICgoQ29tbXVuaWNhdGlvblBvam8pIHBvam8pLnRpbWVzdGFtcDsKICAgICAgICAgICAgaWYgKGV2ZW50VGltZSA+IDBMKSByZXR1cm4gZXZlbnRUaW1lOwogICAgICAgIH0KICAgICAgICByZXR1cm4gc3RhdHMgPT0gbnVsbCA/IDBMIDogTWF0aC5tYXgoMEwsIHN0YXRzLmxhc3RMYXVuY2hUaW1lKTsKICAgIH0KCiAgICBwcml2YXRlIHN0YXRpYyBTdHJpbmcgZm9ybWF0VXNhZ2VUZXh0KFBvam8gcG9qbykgewogICAgICAgIFN0cmluZyBwYWNrYWdlTmFtZSA9IHJlc29sdmVVc2FnZVBhY2thZ2UocG9qbyk7CiAgICAgICAgaWYgKFRleHRVdGlscy5pc0VtcHR5KHBhY2thZ2VOYW1lKSkgcmV0dXJuICJVc2VkIHRvZGF5IHVuYXZhaWxhYmxlIjsKICAgICAgICBCb29sZWFuIGF2YWlsYWJsZSA9IHVzYWdlQXZhaWxhYmxlOwogICAgICAgIGlmIChhdmFpbGFibGUgPT0gbnVsbCkgcmV0dXJuICJVc2VkIHRvZGF5IGxvYWRpbmciOwogICAgICAgIGlmICghYXZhaWxhYmxlKSByZXR1cm4gIlVzZWQgdG9kYXkgdW5hdmFpbGFibGUiOwogICAgICAgIGxvbmcgZHVyYXRpb24gPSBNYXRoLm1heCgwTCwgdXNhZ2VUb2RheU1zLmdldE9yRGVmYXVsdChwYWNrYWdlTmFtZSwgMEwpKTsKICAgICAgICByZXR1cm4gIlVzZWQgdG9kYXkgIiArIGZvcm1hdFVzYWdlRHVyYXRpb24oZHVyYXRpb24pOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIFN0cmluZyBmb3JtYXRaGF1bmNoVGV4dChDb250ZXh0IGNvbnRleHQsIFBvam8gcG9qbywKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIExhdW5jaFN0YXRzUHJvdmlkZXIuTGF1bmNoU3RhdHMgc3RhdHMpIHsKICAgICAgICBTdHJpbmcgaGlzdG9yeUlkID0gcG9qby5nZXRIaXN0b3J5SWQoKTsKICAgICAgICBpZiAocG9qbyBpbnN0YW5jZW9mIE5vdGlmaWNhdGlvblBvam8pIHsKICAgICAgICAgICAgcmV0dXJuIGZvcm1hdExhdW5jaENvdW50KFRpbGVMYXVuY2hDb3VudGVyLmdldFRvdGFsKGNvbnRleHQsIGhpc3RvcnlJZCkpOwogICAgICAgIH0KICAgICAgICBpZiAobGF1bmNoU3RhdHMgPT0gbnVsbCkgcmV0dXJuICJMYXVuY2ggY291bnQgbG9hZGluZyI7CiAgICAgICAgbG9uZyBjb3VudCA9IHN0YXRzID09IG51bGwKICAgICAgICAgICAgICAgID8gVGlsZUxhdW5jaENvdW50ZXIuZ2V0VG90YWwoY29udGV4dCwgaGlzdG9yeUlkKQogICAgICAgICAgICAgICAgOiBNYXRoLm1heCgwTCwgc3RhdHMudG90YWxMYXVuY2hlcyk7CiAgICAgICAgcmV0dXJuIGZvcm1hdExhdW5jaENvdW50KGNvdW50KTsKICAgIH0KCiAgICBwcml2YXRlIHN0YXRpYyBTdHJpbmcgcmVzb2x2ZVVzYWdlUGFja2FnZShQb2pvIHBvam8pIHsKICAgICAgICBpZiAocG9qbyBpbnN0YW5jZW9mIFNob3J0Y3V0UG9qbykgewogICAgICAgICAgICBTaG9ydGN1dFBvam8gc2hvcnRjdXQgPSAoU2hvcnRjdXRQb2pvKSBwb2pvOwogICAgICAgICAgICByZXR1cm4gIVRleHRVdGlscy5pc0VtcHR5KHNob3J0Y3V0LnRhcmdldFBhY2thZ2UpCiAgICAgICAgICAgICAgICAgICAgPyBzaG9ydGN1dC50YXJnZXRQYWNrYWdlIDogc2hvcnRjdXQucGFja2FnZU5hbWU7CiAgICAgICAgfQogICAgICAgIGlmIChwb2pvIGluc3RhbmNlb2YgQXBwUG9qbykgcmV0dXJuICgoQXBwUG9qbykgcG9qbykucGFja2FnZU5hbWU7CiAgICAgICAgaWYgKHBvam8gaW5zdGFuY2VvZiBOb3RpZmljYXRpb25Qb2pvKSByZXR1cm4gKChOb3RpZmljYXRpb25Qb2pvKSBwb2pvKS5wYWNrYWdlTmFtZTsKICAgICAgICBpZiAocG9qbyBpbnN0YW5jZW9mIENvbW11bmljYXRpb25Qb2pvKSByZXR1cm4gKChDb21tdW5pY2F0aW9uUG9qbykgcG9qbykucGFja2FnZU5hbWU7CiAgICAgICAgaWYgKHBvam8gaW5zdGFuY2VvZiBTZXR0aW5nUG9qbykgcmV0dXJuICgoU2V0dGluZ1Bvam8pIHBvam8pLnBhY2thZ2VOYW1lOwogICAgICAgIHJldHVybiAiIjsKICAgIH0KCiAgICBwcml2YXRlIHN0YXRpYyBDaGFyU2VxdWVuY2UgZm9ybWF0RXhhY3RUaW1lKENvbnRleHQgY29udGV4dCwgbG9uZyB0aW1lc3RhbXApIHsKICAgICAgICBEYXRlIGRhdGUgPSBuZXcgRGF0ZSh0aW1lc3RhbXApOwogICAgICAgIGphdmEudGV4dC5EYXRlRm9ybWF0IGRhdGVGb3JtYXQgPSBEYXRlRm9ybWF0LmdldE1lZGl1bURhdGVGb3JtYXQoY29udGV4dCk7CiAgICAgICAgamF2YS50ZXh0LkRhdGVGb3JtYXQgdGltZUZvcm1hdCA9IERhdGVGb3JtYXQuZ2V0VGltZUZvcm1hdChjb250ZXh0KTsKICAgICAgICByZXR1cm4gZGF0ZUZvcm1hdC5mb3JtYXQoZGF0ZSkgKyAiICIgKyB0aW1lRm9ybWF0LmZvcm1hdChkYXRlKTsKICAgIH0KCiAgICBzdGF0aWMgU3RyaW5nIGZvcm1hdFJlbGF0aXZlQWdlKGxvbmcgbm93TXMsIGxvbmcgdGltZXN0YW1wTXMpIHsKICAgICAgICBpZiAodGltZXN0YW1wTXMgPD0gMEwpIHJldHVybiAidGltZSB1bmF2YWlsYWJsZSI7CiAgICAgICAgbG9uZyBkaWZmID0gTWF0aC5tYXgoMEwsIG5vd01zIC0gdGltZXN0YW1wTXMpOwogICAgICAgIGxvbmcgc2Vjb25kcyA9IGRpZmYgLyAxMDAwTDsKICAgICAgICBpZiAoc2Vjb25kcyA8IDVMKSByZXR1cm4gImp1c3Qgbm93IjsKICAgICAgICBpZiAoc2Vjb25kcyA8IDYwTCkgcmV0dXJuIHNlY29uZHMgKyAiIHNlYyBhZ28iOwogICAgICAgIGxvbmcgbWludXRlcyA9IHNlY29uZHMgLyA2MEw7CiAgICAgICAgaWYgKG1pbnV0ZXMgPCA2MEwpIHJldHVybiBtaW51dGVzICsgIiBtaW4gYWdvIjsKICAgICAgICBsb25nIGhvdXJzID0gbWludXRlcyAvIDYwTDsKICAgICAgICBpZiAoaG91cnMgPCAyNEwpIHJldHVybiBob3VycyArIChob3VycyA9PSAxTCA/ICIgaG91ciBhZ28iIDogIiBob3VycyBhZ28iKTsKICAgICAgICBsb25nIGRheXMgPSBob3VycyAvIDI0TDsKICAgICAgICByZXR1cm4gZGF5cyArIChkYXlzID09IDFMID8gIiBkYXkgYWdvIiA6ICIgZGF5cyBhZ28iKTsKICAgIH0KCiAgICBzdGF0aWMgU3RyaW5nIGZvcm1hdFVzYWdlRHVyYXRpb24obG9uZyBkdXJhdGlvbk1zKSB7CiAgICAgICAgbG9uZyBzZWNvbmRzID0gTWF0aC5tYXgoMEwsIGR1cmF0aW9uTXMpIC8gMTAwMEw7CiAgICAgICAgaWYgKHNlY29uZHMgPCA2MEwpIHJldHVybiBzZWNvbmRzICsgIiBzZWMiOwogICAgICAgIGxvbmcgbWludXRlcyA9IHNlY29uZHMgLyA2MEw7CiAgICAgICAgaWYgKG1pbnV0ZXMgPCA2MEwpIHJldHVybiBtaW51dGVzICsgIiBtaW4iOwogICAgICAgIGxvbmcgaG91cnMgPSBtaW51dGVzIC8gNjBMOwogICAgICAgIGxvbmcgcmVtYWluZGVyTWludXRlcyA9IG1pbnV0ZXMgJSA2MEw7CiAgICAgICAgcmV0dXJuIHJlbWFpbmRlck1pbnV0ZXMgPT0gMEwgPyBob3VycyArICJoIiA6IGhvdXJzICsgImggIiArIHJlbWFpbmRlck1pbnV0ZXMgKyAibSI7CiAgICB9CgogICAgc3RhdGljIFN0cmluZyBmb3JtYXRaGF1bmNoQ291bnQobG9uZyBjb3VudCkgewogICAgICAgIGxvbmcgc2FmZSA9IE1hdGgubWF4KDBMLCBjb3VudCk7CiAgICAgICAgaWYgKHNhZmUgPT0gMUwpIHJldHVybiAiTGF1bmNoZWQgb25jZSI7CiAgICAgICAgaWYgKHNhZmUgPT0gMkwpIHJldHVybiAiTGF1bmNoZWQgdHdpY2UiOwogICAgICAgIHJldHVybiAiTGF1bmNoZWQgIiArIHNhZmUgKyAiIHRpbWVzIjsKICAgIH0KCiAgICBwdWJsaWMgc3RhdGljIHZvaWQgaW52YWxpZGF0ZVN0YXRzKCkgewogICAgICAgIGRhdGFMb2FkZWRBdCA9IDBMOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIGJvb2xlYW4gZGF0YUZyZXNoKGxvbmcgbm93KSB7CiAgICAgICAgcmV0dXJuIGxhdW5jaFN0YXRzICE9IG51bGwgJiYgdXNhZ2VBdmFpbGFibGUgIT0gbnVsbAogICAgICAgICAgICAgICAgJiYgbm93IC0gZGF0YUxvYWRlZEF0IDwgREFUQV9SRUZSRVNIX01TOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIHZvaWQgZW5zdXJlRGF0YUxvYWRlZChUZXh0VmlldyB2aWV3LCBQb2pvIHBvam8sIENvbnRleHQgY29udGV4dCwgbG9uZyBnZW5lcmF0aW9uKSB7CiAgICAgICAgaWYgKGRhdGFGcmVzaChTeXN0ZW0uY3VycmVudFRpbWVNaWxsaXMoKSkpIHJldHVybjsKCiAgICAgICAgYm9vbGVhbiBzdGFydExvYWQgPSBmYWxzZTsKICAgICAgICBzeW5jaHJvbml6ZWQgKFVuaXZlcnNhbEhpc3RvcnlUaW1lc3RhbXAuY2xhc3MpIHsKICAgICAgICAgICAgaWYgKGRhdGFGcmVzaChTeXN0ZW0uY3VycmVudFRpbWVNaWxsaXMoKSkpIHJldHVybjsKICAgICAgICAgICAgUEVORElORy5hZGQobmV3IFBlbmRpbmdCaW5kaW5nKHZpZXcsIHBvam8sIGdlbmVyYXRpb24pKTsKICAgICAgICAgICAgaWYgKCFsb2FkSW5GbGlnaHQpIHsKICAgICAgICAgICAgICAgIGxvYWRJbkZsaWdodCA9IHRydWU7CiAgICAgICAgICAgICAgICBzdGFydExvYWQgPSB0cnVlOwogICAgICAgICAgICB9CiAgICAgICAgfQogICAgICAgIGlmICghc3RhcnRMb2FkKSByZXR1cm47CgogICAgICAgIENvbnRleHQgYXBwQ29udGV4dCA9IGNvbnRleHQuZ2V0QXBwbGljYXRpb25Db250ZXh0KCk7CiAgICAgICAgRVhFQ1VUT1IuZXhlY3V0ZSgoKSAtPiB7CiAgICAgICAgICAgIE1hcDxTdHJpbmcsIExhdW5jaFN0YXRzUHJvdmlkZXIuTGF1bmNoU3RhdHM+IGxvYWRlZFN0YXRzOwogICAgICAgICAgICBBcHBVc2FnZVRvZGF5U3RvcmUuU25hcHNob3QgdXNhZ2U7CiAgICAgICAgICAgIHRyeSB7CiAgICAgICAgICAgICAgICBsb2FkZWRTdGF0cyA9IExhdW5jaFN0YXRzUHJvdmlkZXIubG9hZEFsbChhcHBDb250ZXh0KTsKICAgICAgICAgICAgfSBjYXRjaCAoUnVudGltZUV4Y2VwdGlvbiBpZ25vcmVkKSB7CiAgICAgICAgICAgICAgICBsb2FkZWRTdGF0cyA9IENvbGxlY3Rpb25zLmVtcHR5TWFwKCk7CiAgICAgICAgICAgIH0KICAgICAgICAgICAgdHJ5IHsKICAgICAgICAgICAgICAgIHVzYWdlID0gQXBwVXNhZ2VUb2RheVN0b3JlLmdldFRvZGF5KGFwcENvbnRleHQpOwogICAgICAgICAgICB9IGNhdGNoIChSdW50aW1lRXhjZXB0aW9uIGlnbm9yZWQpIHsKICAgICAgICAgICAgICAgIHVzYWdlID0gbnVsbDsKICAgICAgICAgICAgfQoKICAgICAgICAgICAgQXJyYXlMaXN0PFBlbmRpbmdCaW5kaW5nPiBwZW5kaW5nOwogICAgICAgICAgICBzeW5jaHJvbml6ZWQgKFVuaXZlcnNhbEhpc3RvcnlUaW1lc3RhbXAuY2xhc3MpIHsKICAgICAgICAgICAgICAgIGxhdW5jaFN0YXRzID0gbG9hZGVkU3RhdHM7CiAgICAgICAgICAgICAgICBpZiAodXNhZ2UgPT0gbnVsbCkgewogICAgICAgICAgICAgICAgICAgIHVzYWdlVG9kYXlNcyA9IENvbGxlY3Rpb25zLmVtcHR5TWFwKCk7CiAgICAgICAgICAgICAgICAgIHVzYWdlQXZhaWxhYmxlID0gZmFsc2U7CiAgICAgICAgICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAgICAgICAgIHVzYWdlVG9kYXlNcyA9IHVzYWdlLmZvcmVncm91bmRNc0J5UGFja2FnZTsKICAgICAgICAgICAgICAgICAgICB1c2FnZUF2YWlsYWJsZSA9IHVzYWdlLmF2YWlsYWJsZTsKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIGRhdGFMb2FkZWRBdCA9IFN5c3RlbS5jdXJyZW50VGltZU1pbGxpcygpOwogICAgICAgICAgICAgICAgbG9hZEluRmxpZ2h0ID0gZmFsc2U7CiAgICAgICAgICAgICAgICBwZW5kaW5nID0gbmV3IEFycmF5TGlzdDw+KFBFTkRJTkcpOwogICAgICAgICAgICAgICAgUEVORElORy5jbGVhcigpOwogICAgICAgICAgICB9CgogICAgICAgICAgICBmb3IgKFBlbmRpbmdCaW5kaW5nIGl0ZW0gOiBwZW5kaW5nKSB7CiAgICAgICAgICAgICAgICBUZXh0VmlldyB0YXJnZXQgPSBpdGVtLnZpZXcuZ2V0KCk7CiAgICAgICAgICAgICAgICBpZiAodGFyZ2V0ID09IG51bGwpIGNvbnRpbnVlOwogICAgICAgICAgICAgICAgdGFyZ2V0LnBvc3QoKCkgLT4gewogICAgICAgICAgICAgICAgICAgIE9iamVjdCByYXdUYWcgPSB0YXJnZXQuZ2V0VGFnKCk7CiAgICAgICAgICAgICAgICAgICAgaWYgKCEocmF3VGFnIGluc3RhbmNlb2YgQmluZGluZ1RhZykpIHJldHVybjsKICAgICAgICAgICAgICAgICAgICBpZiAoKChCaW5kaW5nVGFnKSByYXdUYWcpLmdlbmVyYXRpb24gIT0gaXRlbS5nZW5lcmF0aW9uKSByZXR1cm47CiAgICAgICAgICAgICAgICAgICAgYXBwbHlNZXRhZGF0YVRleHQodGFyZ2V0LCBpdGVtLnBvam8sIHRhcmdldC5nZXRDb250ZXh0KCkpOwogICAgICAgICAgICAgICAgfSk7CiAgICAgICAgICAgIH0KICAgICAgICB9KTsKICAgIH0KCiAgICBwcml2YXRlIHN0YXRpYyBUZXh0VmlldyBlbnN1cmVNZXRhZGF0YVZpZXcoVmlldyByb3csIENvbnRleHQgY29udGV4dCkgewogICAgICAgIFRleHRWaWV3IGV4aXN0aW5nID0gZmluZFRhZ2dlZE1ldGFkYXRhKHJvdyk7CiAgICAgICAgaWYgKGV4aXN0aW5nICE9IG51bGwpIHJldHVybiBleGlzdGluZzsKCiAgICAgICAgTGluZWFyTGF5b3V0IGNvbnRhaW5lciA9IGZpbmRCZXN0VmVydGljYWxUZXh0Q29udGFpbmVyKHJvdyk7CiAgICAgICAgaWYgKGNvbnRhaW5lciA9PSBudWxsKSByZXR1cm4gbnVsbDsKCiAgICAgICAgVGV4dFZpZXcgbWV0YWRhdGEgPSBuZXcgQXV0b01hcnF1ZWVUZXh0Vmlldyhjb250ZXh0KTsKICAgICAgICBtZXRhZGF0YS5zZXRUYWcobmV3IEJpbmRpbmdUYWcoKSk7CiAgICAgICAgbWV0YWRhdGEuc2V0VGV4dERpcmVjdGlvbihWaWV3LlRFWFRfRElSRUNUSU9OX0xPQ0FMRSk7CiAgICAgICAgbWV0YWRhdGEuc2V0SW1wb3J0YW50Rm9yQWNjZXNzaWJpbGl0eShWaWV3LklNUE9SVEFOVF9GT1JfQUNDRVNTSUJJTElUWV9ZRVMpOwogICAgICAgIG1ldGFkYXRhLnNldFNpbmdsZUxpbmUodHJ1ZSk7CiAgICAgICAgbWV0YWRhdGEuc2V0TWF4TGluZXMoMSk7CiAgICAgICAgbWV0YWRhdGEuc2V0RWxsaXBzaXplKFRleHRVdGlscy5UcnVuY2F0ZS5hdC5NQVJRVUVFKTsKICAgICAgICBtZXRhZGF0YS5zZXRNYXJxdWVlUmVwZWF0TGltaXQoLTEpOwogICAgICAgIG1ldGFkYXRhLnNldEhvcml6b250YWxseVNjcm9sbGluZyh0cnVlKTsKICAgICAgICBtZXRhZGF0YS5zZXRIb3Jpem9udGFsRmFkaW5nRWRnZUVuYWJsZWQodHJ1ZSk7CiAgICAgICAgbWV0YWRhdGEuc2V0U2VsZWN0ZWQodHJ1ZSk7CiAgICAgICAgbWV0YWRhdGEuc2V0Rm9jdXNhYmxlKGZhbHNlKTsKICAgICAgICBtZXRhZGF0YS5zZXRGb2N1c2FibGVJblRvdWNoTW9kZShmYWxzZSk7CgogICAgICAgIExpbmVhckxheW91dC5MYXlvdXRQYXJhbXMgcGFyYW1zID0gbmV3IExpbmVhckxheW91dC5MYXlvdXRQYXJhbXMoCiAgICAgICAgICAgICAgICBWaWV3R3JvdXAuTGF5b3V0UGFyYW1zLk1BVENIX1BBUkVOVCwKICAgICAgICAgICAgICAgIFZpZXdHcm91cC5MYXlvdXRQYXJhbXMuV1JBUF9DT05URU5UKTsKICAgICAgICBwYXJhbXMudG9wTWFyZ2luID0gZHAoY29udGV4dCwgMik7CiAgICAgICAgY29udGFpbmVyLmFkZFZpZXcobWV0YWRhdGEsIHBhcmFtcyk7CiAgICAgICAgcmV0dXJuIG1ldGFkYXRhOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIFRleHRWaWV3IGZpbmRUYWdnZWRNZXRhZGF0YShWaWV3IHZpZXcpIHsKICAgICAgICBpZiAodmlldyBpbnN0YW5jZW9mIFRleHRWaWV3ICYmIHZpZXcuZ2V0VGFnKCkgaW5zdGFuY2VvZiBCaW5kaW5nVGFnKSB7CiAgICAgICAgICAgIHJldHVybiAoVGV4dFZpZXcpIHZpZXc7CiAgICAgICAgfQogICAgICAgIGlmICghKHZpZXcgaW5zdGFuY2VvZiBWaWV3R3JvdXApKSByZXR1cm4gbnVsbDsKICAgICAgICBWaWV3R3JvdXAgZ3JvdXAgPSAoVmlld0dyb3VwKSB2aWV3OwogICAgICAgIGZvciAoaW50IGkgPSAwOyBpIDwgZ3JvdXAuZ2V0Q2hpbGRDb3VudCgpOyBpKyspIHsKICAgICAgICAgICAgVGV4dFZpZXcgZm91bmQgPSBmaW5kVGFnZ2VkTWV0YWRhdGEoZ3JvdXAuZ2V0Q2hpbGRBdChpKSk7CiAgICAgICAgICAgIGlmIChmb3VuZCAhPSBudWxsKSByZXR1cm4gZm91bmQ7CiAgICAgICAgfQogICAgICAgIHJldHVybiBudWxsOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIExpbmVhckxheW91dCBmaW5kQmVzdFZlcnRpY2FsVGV4dENvbnRhaW5lcihWaWV3IHZpZXcpIHsKICAgICAgICBpZiAoISh2aWV3IGluc3RhbmNlb2YgVmlld0dyb3VwKSkgcmV0dXJuIG51bGw7CiAgICAgICAgVmlld0dyb3VwIGdyb3VwID0gKFZpZXdHcm91cCkgdmlldzsKICAgICAgICBpZiAoZ3JvdXAgaW5zdGFuY2VvZiBMaW5lYXJMYXlvdXQpIHsKICAgICAgICAgICAgTGluZWFyTGF5b3V0IGxpbmVhciA9IChMaW5lYXJMYXlvdXQpIGdyb3VwOwogICAgICAgICAgICBpZiAobGluZWFyLmdldE9yaWVudGF0aW9uKCkgPT0gTGluZWFyTGF5b3V0LlZFUlRJQ0FMICYmIGNvbnRhaW5zVGV4dChsaW5lYXIpKSB7CiAgICAgICAgICAgICAgICByZXR1cm4gbGluZWFyOwogICAgICAgICAgICB9CiAgICAgICAgfQogICAgICAgIGZvciAoaW50IGkgPSAwOyBpIDwgZ3JvdXAuZ2V0Q2hpbGRDb3VudCgpOyBpKyspIHsKICAgICAgICAgICAgTGluZWFyTGF5b3V0IGZvdW5kID0gZmluZEJlc3RWZXJ0aWNhbFRleHRDb250YWluZXIoZ3JvdXAuZ2V0Q2hpbGRBdChpKSk7CiAgICAgICAgICAgIGlmIChmb3VuZCAhPSBudWxsKSByZXR1cm4gZm91bmQ7CiAgICAgICAgfQogICAgICAgIHJldHVybiBudWxsOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIGJvb2xlYW4gY29udGFpbnNUZXh0KFZpZXdHcm91cCBncm91cCkgewogICAgICAgIGZvciAoaW50IGkgPSAwOyBpIDwgZ3JvdXAuZ2V0Q2hpbGRDb3VudCgpOyBpKyspIHsKICAgICAgICAgICAgVmlldyBjaGlsZCA9IGdyb3VwLmdldENoaWxkQXQoaSk7CiAgICAgICAgICAgIGlmIChjaGlsZCBpbnN0YW5jZW9mIFRleHRWaWV3KSByZXR1cm4gdHJ1ZTsKICAgICAgICAgICAgaWYgKGNoaWxkIGluc3RhbmNlb2YgVmlld0dyb3VwICYmIGNvbnRhaW5zVGV4dCgoVmlld0dyb3VwKSBjaGlsZCkpIHJldHVybiB0cnVlOwogICAgICAgIH0KICAgICAgICByZXR1cm4gZmFsc2U7CiAgICB9CgogICAgcHJpdmF0ZSBzdGF0aWMgaW50IGRwKENvbnRleHQgY29udGV4dCwgaW50IHZhbHVlKSB7CiAgICAgICAgcmV0dXJuIE1hdGgucm91bmQodmFsdWUgKiBjb250ZXh0LmdldFJlc291cmNlcygpLmdldERpc3BsYXlNZXRyaWNzKCkuZGVuc2l0eSk7CiAgICB9Cn0K'))
+          Path('app/src/test/java/fr/neamar/kiss/ui/UniversalHistoryTimestampTest.java').write_bytes(base64.b64decode('cGFja2FnZSBmci5uZWFtYXIua2lzcy51aTsKCmltcG9ydCBzdGF0aWMgb3JnLmhhbWNyZXN0Lk1hdGNoZXJBc3NlcnQuYXNzZXJ0VGhhdDsKaW1wb3J0IHN0YXRpYyBvcmcuaGFtY3Jlc3QuTWF0Y2hlcnMuaXM7CgppbXBvcnQgb3JnLmp1bml0Lmp1cGl0ZXIuYXBpLlRlc3Q7CgpjbGFzcyBVbml2ZXJzYWxIaXN0b3J5VGltZXN0YW1wVGVzdCB7CiAgICBAVGVzdAogICAgdm9pZCByZWxhdGl2ZUFnZVVzZXNWZXJpZmllZFRpbWVzdGFtcERpZmZlcmVuY2UoKSB7CiAgICAgICAgbG9uZyBub3cgPSAxXzAwMF8wMDBMOwogICAgICAgIGFzc2VydFRoYXQoVW5pdmVyc2FsSGlzdG9yeVRpbWVzdGFtcC5mb3JtYXRSZWxhdGl2ZUFnZShub3csIG5vdyAtIDJfMDAwTCksIGlzKCJqdXN0IG5vdyIpKTsKICAgICAgICBhc3NlcnRUaGF0KFVuaXZlcnNhbEhpc3RvcnlUaW1lc3RhbXAuZm9ybWF0UmVsYXRpdmVBZ2Uobm93LCBub3cgLSAxMF8wMDBMKSwgaXMoIjEwIHNlYyBhZ28iKSk7CiAgICAgICAgYXNzZXJ0VGhhdChVbml2ZXJzYWxIaXN0b3J5VGltZXN0YW1wLmZvcm1hdFJlbGF0aXZlQWdlKG5vdywgbm93IC0gNjBfMDAwTCksIGlzKCIxIG1pbiBhZ28iKSk7CiAgICAgICAgYXNzZXJ0VGhhdChVbml2ZXJzYWxIaXN0b3J5VGltZXN0YW1wLmZvcm1hdFJlbGF0aXZlQWdlKG5vdywgbm93IC0gMkwgKiA2MEwgKiA2MEwgKiAxMDAwTCksIGlzKCIyIGhvdXJzIGFnbyIpKTsKICAgICAgICBhc3NlcnRUaGF0KFVuaXZlcnNhbEhpc3RvcnlUaW1lc3RhbXAuZm9ybWF0UmVsYXRpdmVBZ2Uobm93LCBub3cgLSAyTCAqIDI0TCAqIDYwTCAqIDYwTCAqIDEwMDBMKSwgaXMoIjIgZGF5cyBhZ28iKSk7CiAgICB9CgogICAgQFRlc3QKICAgIHZvaWQgdXNhZ2VEdXJhdGlvblVzZXNSZWFsU3RvcmVkRHVyYXRpb24oKSB7CiAgICAgICAgYXNzZXJ0VGhhdChVbml2ZXJzYWxIaXN0b3J5VGltZXN0YW1wLmZvcm1hdFVzYWdlRHVyYXRpb24oMEwpLCBpcygiMCBzZWMiKSk7CiAgICAgICAgYXNzZXJ0VGhhdChVbml2ZXJzYWxIaXN0b3J5VGltZXN0YW1wLmZvcm1hdFVzYWdlRHVyYXRpb24oNTlfMDAwTCksIGlzKCI1OSBzZWMiKSk7CiAgICAgICAgYXNzZXJ0VGhhdChVbml2ZXJzYWxIaXN0b3J5VGltZXN0YW1wLmZvcm1hdFVzYWdlRHVyYXRpb24oNjBfMDAwTCksIGlzKCIxIG1pbiIpKTsKICAgICAgICBhc3NlcnRUaGF0KFVuaXZlcnNhbEhpc3RvcnlUaW1lc3RhbXAuZm9ybWF0VXNhZ2VEdXJhdGlvbig2NUwgKiA2MEwgKiAxMDAwTCksIGlzKCIxaCA1bSIpKTsKICAgIH0KCiAgICBAVGVzdAogICAgdm9pZCBsYXVuY2hDb3VudFVzZXNSZXF1ZXN0ZWROYXR1cmFsV29yZGluZygpIHsKICAgICAgICBhc3NlcnRUaGF0KFVuaXZlcnNhbEhpc3RvcnlUaW1lc3RhbXAuZm9ybWF0TGF1bmNoQ291bnQoMEwpLCBpcygiTGF1bmNoZWQgMCB0aW1lcyIpKTsKICAgICAgICBhc3NlcnRUaGF0KFVuaXZlcnNhbEhpc3RvcnlUaW1lc3RhbXAuZm9ybWF0TGF1bmNoQ291bnQoMUwpLCBpcygiTGF1bmNoZWQgb25jZSIpKTsKICAgICAgICBhc3NlcnRUaGF0KFVuaXZlcnNhbEhpc3RvcnlUaW1lc3RhbXAuZm9ybWF0TGF1bmNoQ291bnQoMkwpLCBpcygiTGF1bmNoZWQgdHdpY2UiKSk7CiAgICAgICAgYXNzZXJ0VGhhdChVbml2ZXJzYWxIaXN0b3J5VGltZXN0YW1wLmZvcm1hdExhdW5jaENvdW50KDVMKSwgaXMoIkxhdW5jaGVkIDUgdGltZXMiKSk7CiAgICB9Cn0K'))
+          PY
 
       - name: Verify only requested app files changed
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          expected=$(cat <<'EOF' | sort
-          app/build.gradle
-          app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
-          app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
-          app/src/main/java/fr/neamar/kiss/result/Result.java
-          app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java
-          app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
-          app/src/test/java/fr/neamar/kiss/ui/UniversalHistoryTimestampTest.java
-          EOF
-          )
-          actual=$(git diff --name-only | sort)
+          expected="$(printf '%s\n' \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java \
+            app/src/main/java/fr/neamar/kiss/result/Result.java \
+            app/src/main/java/fr/neamar/kiss/ui/TileLaunchCounter.java \
+            app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java \
+            app/src/test/java/fr/neamar/kiss/ui/UniversalHistoryTimestampTest.java | sort)"
+          actual="$(git diff --name-only | sort)"
           test "$actual" = "$expected"
           grep -F 'versionName "3.30.56"' app/build.gradle
           grep -F 'versionCode 484' app/build.gradle
@@ -520,7 +77,7 @@ class UniversalHistoryTimestampTest {
           ! grep -F 'notifyDataSetChanged' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
           ! grep -F 'postDelayed' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
 
-      - name: Run unit tests, lint and both APK builds
+      - name: Run unit tests lint and both APK builds
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease --stacktrace
 
       - name: Commit verified 3.30.56 timestamp restoration
