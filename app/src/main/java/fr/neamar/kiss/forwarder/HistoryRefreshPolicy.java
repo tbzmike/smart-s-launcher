@@ -8,7 +8,8 @@ package fr.neamar.kiss.forwarder;
 final class HistoryRefreshPolicy {
     private HistoryRefreshPolicy() { }
 
-    static boolean shouldSkip(boolean initialResumeComplete, boolean sameQuery, boolean historySearch) {
-        return initialResumeComplete && sameQuery && !historySearch;
+    static boolean shouldSkip(boolean initialResumeComplete, boolean sameQuery,
+                              boolean historySearch, boolean emptyQuery) {
+        return initialResumeComplete && sameQuery && !historySearch && !emptyQuery;
     }
 }

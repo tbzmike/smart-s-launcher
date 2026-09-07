@@ -16,6 +16,7 @@ import fr.neamar.kiss.preference.ColorPreference;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.preference.UiLivePreviewPreference;
 import fr.neamar.kiss.ui.SmartTextAppearance;
+import fr.neamar.kiss.update.AppUpdater;
 
 /**
  * Adds Smart S configuration entries to the relevant existing KISS settings category.
@@ -66,6 +67,7 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
                     "Scrolling, windows, popups, notifications, switching and numeric animation speed");
         } else if ("advanced".equals(rootKey)) {
             addBackgroundFeatureToggles();
+            addUpdatePreferences();
             addEntry("frozen", "Frozen apps & app state",
                     "IceBox-safe detection, disabled app launching and background state refresh");
         }
@@ -91,27 +93,16 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
     }
 
     private void addHistoryLayoutPreference() {
-        String key = "smart-history-layout";
-        if (findPreference(key) != null) return;
-
-        ListPreference preference = new ListPreference(requireContext());
-        preference.setKey(key);
-        preference.setTitle("App history layout");
-        preference.setEntries(new CharSequence[]{
-                "Vertical list", "Vertical cards", "Horizontal icons", "Horizontal cards",
-                "Horizontal app names", "Square-U cards"
-        });
-        preference.setEntryValues(new CharSequence[]{
-                "vertical", "vertical_cards", "horizontal_icons", "horizontal_cards",
-                "horizontal_names", "square_u"
-        });
-        preference.setDefaultValue("vertical");
+        // The selector is XML-backed so it is always present, including after Settings recreation
+        // and when this category is reached through Settings search. This fragment only attaches
+        // Smart S live-refresh behavior; it no longer owns creation of the preference.
+        ListPreference preference = findPreference("smart-history-layout");
+        if (preference == null) return;
         preference.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
         preference.setOnPreferenceChangeListener((changedPreference, newValue) -> {
             markLayoutDirty();
             return true;
         });
-        getPreferenceScreen().addPreference(preference);
     }
 
     private void addHistorySizingPreferences() {
@@ -277,6 +268,32 @@ public class SmartCategorySettingsFragment extends SettingsFragment {
             return true;
         });
         category.addPreference(batteryMonitor);
+    }
+
+    private void addUpdatePreferences() {
+        if (findPreference("smart-update-category") != null) return;
+
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("smart-update-category");
+        category.setTitle("App updates");
+        getPreferenceScreen().addPreference(category);
+
+        SwitchPreference automatic = new SwitchPreference(requireContext());
+        automatic.setKey(AppUpdater.PREF_AUTO_UPDATE);
+        automatic.setTitle("Automatic updates");
+        automatic.setSummary("Automatically check GitHub Releases and download a newer compatible APK. Android will still ask you to approve installation.");
+        automatic.setDefaultValue(false);
+        category.addPreference(automatic);
+
+        Preference manual = new Preference(requireContext());
+        manual.setKey("smart-check-for-updates-now");
+        manual.setTitle("Check for updates now");
+        manual.setSummary("Manually check the latest Smart S Launcher GitHub release");
+        manual.setOnPreferenceClickListener(preference -> {
+            AppUpdater.checkForUpdates(requireContext(), true);
+            return true;
+        });
+        category.addPreference(manual);
     }
 
     private void addDefaultSearchAppearancePreferences() {

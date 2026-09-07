@@ -144,10 +144,8 @@ public final class UniversalHistoryTimestamp {
         LinearLayout container = findBestVerticalTextContainer(row);
         if (container == null) return null;
 
-        TextView timestamp = new TextView(context);
+        TextView timestamp = new AutoMarqueeTextView(context);
         timestamp.setTag(VIEW_TAG);
-        timestamp.setSingleLine(true);
-        timestamp.setEllipsize(TextUtils.TruncateAt.END);
         timestamp.setTextDirection(View.TEXT_DIRECTION_LOCALE);
         timestamp.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
 

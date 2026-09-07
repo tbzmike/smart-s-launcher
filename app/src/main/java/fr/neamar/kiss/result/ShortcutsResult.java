@@ -42,6 +42,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationPopupDialog;
+import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
@@ -158,6 +159,8 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         }
         if (!active.isEmpty()) {
             View.OnClickListener exactNotificationClick = v -> {
+                TileLaunchCounter.recordNotification(
+                        context, latestActive.id, latestActive.postTime);
                 if (!NotificationListener.openLatestNotification(context, groupKey)) {
                     NotificationPopupDialog.showGroup(context, groupKey);
                 }
@@ -176,6 +179,8 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             if (latestSaved != null
                     && SavedNotificationDestinationResolver.hasExactTarget(context, latestSaved)) {
                 View.OnClickListener exactSavedNotificationClick = v -> {
+                    TileLaunchCounter.recordNotification(
+                            context, latestSaved.notificationId, latestSaved.postTime);
                     if (!SavedNotificationDestinationResolver.openExact(context, latestSaved)) {
                         Toast.makeText(context, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();
                     }
