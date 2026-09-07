@@ -444,18 +444,6 @@ final class SmartCardListForwarder extends Forwarder {
             details.setOnClickListener(v -> toggleDetails(detailsPanel, details));
         }
 
-        AutoMarqueeTextView name = new AutoMarqueeTextView(mainActivity);
-        name.setText(label);
-        name.setTextColor(Color.WHITE);
-        name.setTextSize(15f * namePercent / 100f);
-        name.setGravity(Gravity.CENTER);
-        name.setPadding(dp(8), dp(5), dp(8), dp(3));
-        name.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);
-        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(34) * Math.max(90, namePercent) / 100);
-        nameLp.setMargins(dp(10), dp(3), dp(10), 0);
-        wrapper.addView(name, nameLp);
-
         final TextView expandableMessage = messageView;
         final boolean[] messageExpanded = {false};
         View.OnClickListener launchOrExpand = v -> {
@@ -474,19 +462,14 @@ final class SmartCardListForwarder extends Forwarder {
         };
         card.setOnClickListener(launchOrExpand);
         cardTitle.setOnClickListener(launchOrExpand);
-        name.setOnClickListener(launchOrExpand);
         card.setOnLongClickListener(longPress);
         cardTitle.setOnLongClickListener(longPress);
-        name.setOnLongClickListener(longPress);
         card.setClickable(true);
         cardTitle.setClickable(true);
-        name.setClickable(true);
         card.setFocusable(false);
         card.setFocusableInTouchMode(false);
         cardTitle.setFocusable(false);
         cardTitle.setFocusableInTouchMode(false);
-        name.setFocusable(false);
-        name.setFocusableInTouchMode(false);
         return wrapper;
     }
 
