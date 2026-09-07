@@ -26,14 +26,22 @@ public final class NotificationHistoryResolver {
     public static boolean showForPojo(Context context, Pojo pojo) {
         if (context == null || pojo == null) return false;
 
-        // History is authoritative when it exists: this keeps tap and long-press on the same
-        // swipeable rich dialog, including album art, notification pictures and saved media.
+        // History is authoritative when it exists. Notification rows retain their exact persisted
+        // identity so long-press opens the selected entry rather than silently jumping to latest.
         String packageName = resolvePackage(context, pojo);
-        if (packageName != null && RichNotificationHistoryDialog.showLatest(context, packageName)) {
-            return true;
+        if (packageName != null) {
+            if (pojo instanceof NotificationPojo) {
+                NotificationPojo notification = (NotificationPojo) pojo;
+                if (RichNotificationHistoryDialog.showSelected(
+                        context, packageName, notification.id, notification.postTime)) {
+                    return true;
+                }
+            } else if (RichNotificationHistoryDialog.showLatest(context, packageName)) {
+                return true;
+            }
         }
 
-        // A live notification can still be opened when no persisted record exists yet.
+        // A live notification can still be opened when no matching persisted record exists yet.
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;
             boolean liveIndividual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
