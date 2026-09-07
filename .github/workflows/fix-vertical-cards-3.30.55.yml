@@ -1,0 +1,111 @@
+name: Fix Vertical Cards duplicate captions 3.30.55
+
+on:
+  push:
+    branches:
+      - feature/3.30.44-in-app-updater
+    paths:
+      - '.github/workflows/fix-vertical-cards-3.30.55.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/3.30.44-in-app-updater
+          fetch-depth: 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Apply guarded duplicate-caption fix
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source_path = Path('app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java')
+          gradle_path = Path('app/build.gradle')
+
+          source = source_path.read_text()
+          gradle = gradle_path.read_text()
+
+          duplicate_block = '''        AutoMarqueeTextView name = new AutoMarqueeTextView(mainActivity);\n        name.setText(label);\n        name.setTextColor(Color.WHITE);\n        name.setTextSize(15f * namePercent / 100f);\n        name.setGravity(Gravity.CENTER);\n        name.setPadding(dp(8), dp(5), dp(8), dp(3));\n        name.setShadowLayer(dp(2), 0f, dp(1), Color.BLACK);\n        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(\n                ViewGroup.LayoutParams.MATCH_PARENT, dp(34) * Math.max(90, namePercent) / 100);\n        nameLp.setMargins(dp(10), dp(3), dp(10), 0);\n        wrapper.addView(name, nameLp);\n\n'''
+          if source.count(duplicate_block) != 1:
+              raise SystemExit(f'Expected duplicate outside-card caption block exactly once, found {source.count(duplicate_block)}')
+          source = source.replace(duplicate_block, '', 1)
+
+          old_wiring = '''        card.setOnClickListener(launchOrExpand);\n        cardTitle.setOnClickListener(launchOrExpand);\n        name.setOnClickListener(launchOrExpand);\n        card.setOnLongClickListener(longPress);\n        cardTitle.setOnLongClickListener(longPress);\n        name.setOnLongClickListener(longPress);\n        card.setClickable(true);\n        cardTitle.setClickable(true);\n        name.setClickable(true);\n        card.setFocusable(false);\n        card.setFocusableInTouchMode(false);\n        cardTitle.setFocusable(false);\n        cardTitle.setFocusableInTouchMode(false);\n        name.setFocusable(false);\n        name.setFocusableInTouchMode(false);\n'''
+          new_wiring = '''        card.setOnClickListener(launchOrExpand);\n        cardTitle.setOnClickListener(launchOrExpand);\n        card.setOnLongClickListener(longPress);\n        cardTitle.setOnLongClickListener(longPress);\n        card.setClickable(true);\n        cardTitle.setClickable(true);\n        card.setFocusable(false);\n        card.setFocusableInTouchMode(false);\n        cardTitle.setFocusable(false);\n        cardTitle.setFocusableInTouchMode(false);\n'''
+          if source.count(old_wiring) != 1:
+              raise SystemExit(f'Expected duplicate-caption interaction wiring exactly once, found {source.count(old_wiring)}')
+          source = source.replace(old_wiring, new_wiring, 1)
+
+          # Positive wiring guards: the legitimate in-card title and card interaction must remain.
+          required = [
+              'AutoMarqueeTextView cardTitle = new AutoMarqueeTextView(mainActivity);',
+              'cardTitle.setText(label);',
+              'center.addView(cardTitle, new LinearLayout.LayoutParams(',
+              'card.setOnClickListener(launchOrExpand);',
+              'cardTitle.setOnClickListener(launchOrExpand);',
+              'card.setOnLongClickListener(longPress);',
+              'cardTitle.setOnLongClickListener(longPress);',
+              'mainActivity.adapter.onClick(adapterPosition, card);',
+              'mainActivity.adapter.onLongClick(adapterPosition, card);'
+          ]
+          for marker in required:
+              if marker not in source:
+                  raise SystemExit(f'Required Vertical Cards wiring disappeared: {marker}')
+          if 'wrapper.addView(name, nameLp);' in source or 'name.setOnClickListener(launchOrExpand);' in source:
+              raise SystemExit('Duplicate outside-card caption wiring still present after repair')
+
+          old_version = '''        // Smart S Launcher 3.30.54 - system DownloadManager fallback for in-app updates\n        versionCode 482\n        versionName "3.30.54"'''
+          new_version = '''        // Smart S Launcher 3.30.55 - remove duplicate Vertical Cards captions\n        versionCode 483\n        versionName "3.30.55"'''
+          if gradle.count(old_version) != 1:
+              raise SystemExit(f'Expected current 3.30.54 version block exactly once, found {gradle.count(old_version)}')
+          gradle = gradle.replace(old_version, new_version, 1)
+
+          source_path.write_text(source)
+          gradle_path.write_text(gradle)
+
+      - name: Verify only intended source files changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only)"
+          printf '%s\n' "$changed"
+          test "$changed" = $'app/build.gradle\napp/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java'
+          git diff --check
+
+      - name: Verify duplicate caption is absent and title wiring remains
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Fq 'wrapper.addView(name, nameLp);' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          ! grep -Fq 'name.setOnClickListener(launchOrExpand);' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -Fq 'cardTitle.setText(label);' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -Fq 'card.setOnClickListener(launchOrExpand);' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -Fq 'cardTitle.setOnLongClickListener(longPress);' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -Fq 'versionCode 483' app/build.gradle
+          grep -Fq 'versionName "3.30.55"' app/build.gradle
+
+      - name: Run unit tests, lint, and debug APK build
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug
+
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/build.gradle app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          git diff --cached --check
+          git commit -m 'Fix duplicate Vertical Cards captions in 3.30.55'
+          git push origin HEAD:feature/3.30.44-in-app-updater
