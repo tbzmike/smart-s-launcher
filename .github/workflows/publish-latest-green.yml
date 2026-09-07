@@ -1,0 +1,156 @@
+name: Publish latest green release
+
+on:
+  workflow_run:
+    workflows:
+      - App testing
+    types:
+      - completed
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: smart-s-latest-green-release
+  cancel-in-progress: false
+
+jobs:
+  publish-green:
+    name: Publish newest versioned green build
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch != 'updater-channel'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact tested source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Download APK produced by the successful App testing run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          rm -rf run-artifacts
+          mkdir -p run-artifacts
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir run-artifacts
+          APK="$(find run-artifacts -type f -name 'app-debug.apk' -print -quit)"
+          test -n "$APK"
+          cp "$APK" app-debug.apk
+
+      - name: Prepare verified green manifest
+        shell: bash
+        env:
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          gradle = Path("app/build.gradle").read_text(encoding="utf-8")
+          version_match = re.search(r'^\s*versionName\s+["\']([^"\']+)["\']\s*$', gradle, re.MULTILINE)
+          code_match = re.search(r'^\s*versionCode\s+(\d+)\s*$', gradle, re.MULTILINE)
+          if not version_match or not code_match:
+              raise SystemExit("Unable to read versionName/versionCode from app/build.gradle")
+
+          version = version_match.group(1)
+          code = int(code_match.group(1))
+          data = {
+              "version": version,
+              "versionCode": code,
+              "runId": int(os.environ["SOURCE_RUN_ID"]),
+              "runNumber": int(os.environ["SOURCE_RUN_NUMBER"]),
+              "sha": os.environ["SOURCE_SHA"],
+              "variant": "debug",
+              "apkName": "app-debug.apk",
+              "apkUrl": f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}/app-debug.apk"
+          }
+          Path("latest-green.json").write_text(
+              json.dumps(data, separators=(",", ":")) + "\n",
+              encoding="utf-8"
+          )
+          PY
+
+      - name: Refuse stale or unversioned green builds
+        id: guard
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          NEW_VERSION="$(python3 -c 'import json; print(json.load(open("latest-green.json"))["version"])')"
+          NEW_CODE="$(python3 -c 'import json; print(json.load(open("latest-green.json"))["versionCode"])')"
+          LATEST_TAG="$(gh release view --json tagName -q .tagName 2>/dev/null || true)"
+
+          if [ -n "$LATEST_TAG" ]; then
+            rm -rf previous-green
+            mkdir -p previous-green
+            if gh release download "$LATEST_TAG" --pattern latest-green.json --dir previous-green >/dev/null 2>&1; then
+              PREVIOUS_VERSION="$(python3 -c 'import json; print(json.load(open("previous-green/latest-green.json"))["version"])')"
+              PREVIOUS_CODE="$(python3 -c 'import json; print(json.load(open("previous-green/latest-green.json"))["versionCode"])')"
+              if [ "$NEW_CODE" -le "$PREVIOUS_CODE" ]; then
+                echo "Not publishing v$NEW_VERSION (versionCode $NEW_CODE): Latest Release is v$PREVIOUS_VERSION (versionCode $PREVIOUS_CODE)."
+                echo "publish=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+          fi
+
+          if gh release view "v${NEW_VERSION}" >/dev/null 2>&1; then
+            echo "Not publishing v$NEW_VERSION: that versioned release already exists. Bump versionName/versionCode before publishing another build."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      - name: Publish green APK as public Latest Release
+        if: ${{ steps.guard.outputs.publish == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 -c 'import json; print(json.load(open("latest-green.json"))["version"])')"
+          TAG="v${VERSION}"
+          gh release create "$TAG" \
+            --target "$SOURCE_SHA" \
+            --latest \
+            --title "Smart S Launcher v${VERSION}" \
+            --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully: lint passed, unit tests passed, and APK generation passed. This public release APK is also the APK used by manual and automatic in-app updates." \
+            latest-green.json \
+            app-debug.apk
+
+      - name: Mirror latest manifest for updater reachability
+        if: ${{ steps.guard.outputs.publish == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+        run: |
+          set -euo pipefail
+          PUBLISH_DIR="$RUNNER_TEMP/smart-s-updater-channel"
+          rm -rf "$PUBLISH_DIR"
+          mkdir -p "$PUBLISH_DIR"
+          cp latest-green.json "$PUBLISH_DIR/"
+          cd "$PUBLISH_DIR"
+          git init
+          git checkout -b updater-channel
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest-green.json
+          git commit -m "Latest green Smart S Launcher run #${SOURCE_RUN_NUMBER}"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin HEAD:updater-channel
