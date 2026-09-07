@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.53 - resilient GitHub Latest Release in-app updater
-        versionCode 481
-        versionName "3.30.53"
+        // Smart S Launcher 3.30.54 - system DownloadManager fallback for in-app updates
+        versionCode 482
+        versionName "3.30.54"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

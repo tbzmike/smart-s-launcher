@@ -41,6 +41,9 @@ public final class AppUpdater {
     private static final String PREF_LAST_CHECK_MS = "smart-update-last-check-ms";
     private static final String PREF_DOWNLOAD_VERSION = "smart-update-download-version";
     private static final String PREF_DOWNLOAD_ID = "smart-update-download-id";
+    private static final String PREF_CHECK_DOWNLOAD_ID = "smart-update-check-download-id";
+    private static final String PREF_CHECK_URL_INDEX = "smart-update-check-url-index";
+    private static final String PREF_CHECK_USER_INITIATED = "smart-update-check-user-initiated";
     private static final long AUTO_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L;
 
     private static final String LATEST_RELEASE_API_URL =
@@ -53,6 +56,11 @@ public final class AppUpdater {
             "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/latest-green.json";
     private static final String GITHUB_APK_HOST = "github.com";
     private static final String GITHUB_API_HOST = "api.github.com";
+    private static final String LATEST_RELEASE_PAGE_URL =
+            "https://github.com/tbzmike/smart-s-launcher/releases/latest";
+    private static final String[] SYSTEM_MANIFEST_URLS = new String[]{
+            GITHUB_MANIFEST_URL, RAW_MANIFEST_URL, CDN_MANIFEST_URL
+    };
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
     private static Handler mainHandler() {
@@ -103,11 +111,112 @@ public final class AppUpdater {
                     enqueueIfNeeded(app, build.version, asset);
                 }
             } catch (Exception e) {
-                if (userInitiated) {
-                    postToast(app, "Update check failed: " + userFacingNetworkMessage(e));
-                }
+                enqueueSystemManifestCheck(app, userInitiated, 0);
             }
         });
+    }
+
+    private static void enqueueSystemManifestCheck(Context context, boolean userInitiated, int urlIndex) {
+        if (urlIndex < 0 || urlIndex >= SYSTEM_MANIFEST_URLS.length) {
+            if (userInitiated) {
+                postToast(context, "Android could not reach the update endpoints. Opening the Latest Release page instead.");
+                Intent browser = new Intent(Intent.ACTION_VIEW, Uri.parse(LATEST_RELEASE_PAGE_URL));
+                browser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    context.startActivity(browser);
+                } catch (Exception ignored) {
+                    postToast(context, "Unable to open the GitHub Latest Release page");
+                }
+            }
+            return;
+        }
+
+        DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+        if (manager == null) {
+            if (userInitiated) postToast(context, "Android Download Manager is unavailable");
+            return;
+        }
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        long existingId = prefs.getLong(PREF_CHECK_DOWNLOAD_ID, -1L);
+        if (existingId >= 0L && isDownloadActiveOrSuccessful(context, existingId)) return;
+
+        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(SYSTEM_MANIFEST_URLS[urlIndex]));
+        request.setTitle("Checking Smart S Launcher updates");
+        request.setDescription("Checking the latest verified release");
+        request.setMimeType("application/json");
+        request.setAllowedOverMetered(true);
+        request.setAllowedOverRoaming(false);
+        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
+
+        long id = manager.enqueue(request);
+        prefs.edit()
+                .putLong(PREF_CHECK_DOWNLOAD_ID, id)
+                .putInt(PREF_CHECK_URL_INDEX, urlIndex)
+                .putBoolean(PREF_CHECK_USER_INITIATED, userInitiated)
+                .apply();
+        if (userInitiated && urlIndex == 0) {
+            postToast(context, "Direct check failed; retrying through Android Download Manager");
+        }
+    }
+
+    private static void handleSystemManifestDownload(Context context, long completedId) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        long expectedId = prefs.getLong(PREF_CHECK_DOWNLOAD_ID, -1L);
+        if (completedId < 0L || completedId != expectedId) return;
+
+        int urlIndex = prefs.getInt(PREF_CHECK_URL_INDEX, 0);
+        boolean userInitiated = prefs.getBoolean(PREF_CHECK_USER_INITIATED, false);
+        DownloadManager manager = (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
+        if (manager == null) return;
+
+        int status = downloadStatus(context, completedId);
+        if (status != DownloadManager.STATUS_SUCCESSFUL) {
+            manager.remove(completedId);
+            prefs.edit().remove(PREF_CHECK_DOWNLOAD_ID).apply();
+            enqueueSystemManifestCheck(context, userInitiated, urlIndex + 1);
+            return;
+        }
+
+        try {
+            Uri manifestUri = manager.getUriForDownloadedFile(completedId);
+            if (manifestUri == null) throw new IllegalStateException("Downloaded update manifest is unavailable");
+            String body;
+            try (InputStream stream = context.getContentResolver().openInputStream(manifestUri)) {
+                body = readFully(stream);
+            }
+            BuildInfo build = parseBuildInfo(body);
+            manager.remove(completedId);
+            prefs.edit()
+                    .remove(PREF_CHECK_DOWNLOAD_ID)
+                    .remove(PREF_CHECK_URL_INDEX)
+                    .remove(PREF_CHECK_USER_INITIATED)
+                    .apply();
+
+            if (!isCompatibleVariant(build.variant)) {
+                if (userInitiated) postToast(context, "Latest green build is not compatible with this installed variant");
+                return;
+            }
+            if (compareVersions(build.version, BuildConfig.VERSION_NAME) <= 0) {
+                if (userInitiated) {
+                    postToast(context, "Smart S Launcher " + BuildConfig.VERSION_NAME
+                            + " is already on the latest green build");
+                }
+                return;
+            }
+
+            ApkAsset asset = new ApkAsset(build.apkName, build.apkUrl);
+            if (userInitiated) {
+                postToast(context, "Update " + build.version + " found; downloading verified APK");
+                enqueueDownload(context, build.version, asset);
+            } else {
+                enqueueIfNeeded(context, build.version, asset);
+            }
+        } catch (Exception e) {
+            manager.remove(completedId);
+            prefs.edit().remove(PREF_CHECK_DOWNLOAD_ID).apply();
+            enqueueSystemManifestCheck(context, userInitiated, urlIndex + 1);
+        }
     }
 
     private static BuildInfo fetchLatestGreenBuild() throws Exception {
@@ -356,6 +465,11 @@ public final class AppUpdater {
 
     static void onDownloadComplete(Context context, long completedId) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        long checkId = prefs.getLong(PREF_CHECK_DOWNLOAD_ID, -1L);
+        if (completedId >= 0L && completedId == checkId) {
+            handleSystemManifestDownload(context.getApplicationContext(), completedId);
+            return;
+        }
         long expectedId = prefs.getLong(PREF_DOWNLOAD_ID, -1L);
         if (completedId < 0L || completedId != expectedId) return;
         if (!isDownloadSuccessful(context, completedId)) {

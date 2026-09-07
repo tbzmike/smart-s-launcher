@@ -12,6 +12,7 @@ class AppUpdaterTest {
         assertTrue(AppUpdater.compareVersions("3.30.51", "3.30.50") > 0);
         assertTrue(AppUpdater.compareVersions("3.31.0", "3.30.99") > 0);
         assertTrue(AppUpdater.compareVersions("4.0.0", "3.99.99") > 0);
+        assertTrue(AppUpdater.compareVersions("3.30.54", "3.30.53") > 0);
     }
 
     @Test
