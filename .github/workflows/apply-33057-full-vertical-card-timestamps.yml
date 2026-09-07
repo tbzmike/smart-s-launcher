@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          git diff --name-only | sort > /tmp/changed
+          { git diff --name-only; git ls-files --others --exclude-standard; } | sort -u > /tmp/changed
           cat > /tmp/expected <<'EOF'
           app/build.gradle
           app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java
@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff --name-only | sort > /tmp/final-changed
+          { git diff --name-only; git ls-files --others --exclude-standard; } | sort -u > /tmp/final-changed
           cat > /tmp/final-expected <<'EOF'
           .github/scripts/apply_33057_full_vertical_card_timestamps.py
           .github/workflows/apply-33057-full-vertical-card-timestamps.yml
