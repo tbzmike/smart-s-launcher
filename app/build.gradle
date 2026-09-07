@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.55 - remove duplicate Vertical Cards captions
-        versionCode 483
-        versionName "3.30.55"
+        // Smart S Launcher 3.30.56 - verified build version correction
+        versionCode 484
+        versionName "3.30.56"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
