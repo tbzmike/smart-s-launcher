@@ -31,6 +31,9 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewAnimationUtils;
 import android.view.ViewGroup;
+import android.util.TypedValue;
+import android.widget.SeekBar;
+import android.widget.TextView;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.AbsListView;
 import android.widget.ImageView;
@@ -335,6 +338,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 }
 
                 forwarderManager.onDataSetChanged();
+                applyGlobalTextScale(findViewById(android.R.id.content));
 
             }
         });
@@ -402,6 +406,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
          * Defer everything else to the forwarders
          */
         forwarderManager.onCreate();
+        applyGlobalTextScale(findViewById(android.R.id.content));
     }
 
     /** Restrict launcher lifecycle/data broadcasts to this application package. */
@@ -457,6 +462,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
 
         AppProvider.setLauncherUiVisible(true);
+        // Settings may have changed while the launcher was paused. Synchronize input mode
+        // before any later focus request can give Android IME a chance to appear.
+        if (searchEditText != null) searchEditText.syncKeyboardMode();
         dismissPopup();
 
         if (KissApplication.getApplication(this).getDataHandler().isAllProvidersLoaded()) {
@@ -560,6 +568,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     private void handleOnBackPressed() {
+        if (searchEditText != null && searchEditText.isBuiltInKeyboardVisible()) {
+            searchEditText.hideBuiltInKeyboard();
+            return;
+        }
         if (mPopup != null) {
             mPopup.dismiss();
         } else if (isViewingAllApps()) {
@@ -606,6 +618,12 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             Intent intent = new Intent(Intent.ACTION_SET_WALLPAPER);
             startActivity(Intent.createChooser(intent, getString(R.string.menu_wallpaper)));
             return true;
+        } else if (itemId == R.id.global_text_size) {
+            showGlobalTextSizeDialog();
+            return true;
+        } else if (itemId == R.id.search_keyboard) {
+            showSearchKeyboardDialog();
+            return true;
         } else if (itemId == R.id.load_avatars) {
             Toast.makeText(this, "Loading avatars for recent history…", Toast.LENGTH_SHORT).show();
             NotificationAvatarSupport.loadHistoryAvatarsAsync(this, (scanned, linked, fresh) -> {
@@ -622,6 +640,93 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void showSearchKeyboardDialog() {
+        final boolean builtIn = searchEditText.isBuiltInKeyboardEnabled();
+        final String[] choices = {"Built-in keyboard", "System keyboard"};
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Search keyboard")
+                .setSingleChoiceItems(choices, builtIn ? 0 : 1, (dialog, which) -> {
+                    dialog.dismiss();
+                    if (which == 0) {
+                        searchEditText.useBuiltInKeyboard();
+                    } else {
+                        searchEditText.useSystemKeyboard(true);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private static final String PREF_GLOBAL_TEXT_SIZE_PERCENT = "global-text-size-percent";
+    private static final int TAG_GLOBAL_TEXT_BASELINE = 0x4b495353;
+
+    private void showGlobalTextSizeDialog() {
+        final int min = 70;
+        final int max = 160;
+        final int current = Math.max(min, Math.min(max, prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));
+        android.widget.LinearLayout box = new android.widget.LinearLayout(this);
+        box.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = Math.round(20 * getResources().getDisplayMetrics().density);
+        box.setPadding(pad, pad / 2, pad, 0);
+        TextView value = new TextView(this);
+        value.setText(current + "%");
+        value.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        SeekBar slider = new SeekBar(this);
+        slider.setMax(max - min);
+        slider.setProgress(current - min);
+        box.addView(value);
+        box.addView(slider);
+        final int[] selected = { current };
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                selected[0] = min + progress;
+                value.setText(selected[0] + "%");
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+            @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+        });
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Global text size")
+                .setMessage("Adjust launcher text only. Icons, cards and spacing stay unchanged.")
+                .setView(box)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setNeutralButton("Reset", (dialog, which) -> setGlobalTextSizePercent(100))
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> setGlobalTextSizePercent(selected[0]))
+                .show();
+    }
+
+    private void setGlobalTextSizePercent(int percent) {
+        int clamped = Math.max(70, Math.min(160, percent));
+        prefs.edit().putInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, clamped).apply();
+        recreate();
+    }
+
+    private void applyGlobalTextScale(View view) {
+        int percent = Math.max(70, Math.min(160, prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));
+        applyGlobalTextScale(view, percent / 100f);
+    }
+
+    private void applyGlobalTextScale(View view, float scale) {
+        if (view instanceof TextView) {
+            TextView textView = (TextView) view;
+            Object baseline = textView.getTag(TAG_GLOBAL_TEXT_BASELINE);
+            float basePx;
+            if (baseline instanceof Float) {
+                basePx = (Float) baseline;
+            } else {
+                basePx = textView.getTextSize();
+                textView.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx);
+            }
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, basePx * scale);
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                applyGlobalTextScale(group.getChildAt(i), scale);
+            }
+        }
     }
 
     @Override
@@ -992,6 +1097,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         systemUiVisibilityHelper.onWindowFocusChanged(hasFocus);
+        if (hasFocus && searchEditText != null) searchEditText.syncKeyboardMode();
         if (showKeyboardOnFocus != null) {
             if (showKeyboardOnFocus) {
                 showKeyboard();
@@ -1015,9 +1121,16 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
         showKeyboardOnFocus = null;
 
+        // Keyboard mode must be established before requestFocus(); otherwise Android may
+        // open the system IME first and the built-in keyboard will then stack above it.
+        searchEditText.syncKeyboardMode();
         if (searchEditText.requestFocus()) {
             searchEditText.setCursorVisible(true);
-            WindowCompat.getInsetsController(getWindow(), searchEditText).show(WindowInsetsCompat.Type.ime());
+            if (searchEditText.isBuiltInKeyboardEnabled()) {
+                searchEditText.showBuiltInKeyboard();
+            } else {
+                WindowCompat.getInsetsController(getWindow(), searchEditText).show(WindowInsetsCompat.Type.ime());
+            }
             showHistoryWithKeyboard(true);
         }
     }
@@ -1025,6 +1138,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     @Override
     public void hideKeyboard() {
         showKeyboardOnFocus = null;
+        searchEditText.hideBuiltInKeyboard();
 
         // Check if no view has focus:
         View view = this.getCurrentFocus();
@@ -1040,6 +1154,17 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             searchEditText.setCursorVisible(false);
             searchEditText.clearFocus();
         }
+    }
+
+    @Override
+    public void hideKeyboardOnScroll() {
+        // The launcher-owned keyboard is part of Smart S layout, not a transient IME.
+        // Scrolling search results must not collapse it. System IMEs retain the legacy
+        // scroll-to-hide behavior.
+        if (searchEditText != null && searchEditText.isBuiltInKeyboardVisible()) {
+            return;
+        }
+        hideKeyboard();
     }
 
     @Override

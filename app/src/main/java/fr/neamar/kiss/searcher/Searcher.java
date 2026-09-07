@@ -11,8 +11,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.PriorityQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
@@ -50,8 +51,25 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         void execute(Searcher searcher, boolean isCancelled);
     }
 
-    // define a different thread than the default AsyncTask thread or else we will block everything else that uses AsyncTask while we search
-    public static final ExecutorService SEARCH_THREAD = Executors.newSingleThreadExecutor();
+    /**
+     * Search is intentionally serialized, but its pending queue must stay bounded. Rapid typing can
+     * cancel searches faster than a long provider pass exits; Executors.newSingleThreadExecutor()
+     * uses an unbounded queue and keeps those cancelled AsyncTasks (and everything they reference)
+     * alive until the worker eventually dequeues them. Keep only the newest pending generation.
+     */
+    public static final ThreadPoolExecutor SEARCH_THREAD = new ThreadPoolExecutor(
+            1,
+            1,
+            30L,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(1),
+            runnable -> new Thread(runnable, "smart-s-search"),
+            new ThreadPoolExecutor.DiscardOldestPolicy());
+
+    static {
+        SEARCH_THREAD.allowCoreThreadTimeOut(true);
+    }
+
     protected static final int DEFAULT_MAX_RESULTS = 50;
     protected final WeakReference<MainActivity> activityWeakReference;
     private final PriorityQueue<Pojo> processedPojos;
@@ -72,6 +90,11 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         this.query = query == null ? null : query.trim();
         this.activityWeakReference = new WeakReference<>(activity);
         this.processedPojos = getPojoProcessor(activity);
+    }
+
+    /** Remove cancelled FutureTasks immediately instead of retaining them in the worker queue. */
+    public static void purgeCancelledSearches() {
+        SEARCH_THREAD.purge();
     }
 
     PriorityQueue<Pojo> getPojoProcessor(Context context) {
@@ -228,6 +251,8 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         if (searchDoneCallback != null) {
             searchDoneCallback.execute(this, isCancelled);
         }
+        // The callback may reference generation-specific state. Drop it as soon as this task ends.
+        searchDoneCallback = null;
     }
 
     @Override

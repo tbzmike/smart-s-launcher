@@ -36,6 +36,7 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
@@ -51,6 +52,7 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
     private static final String STATS_MARKER = "  •  Last: ";
     private static final String TIMELINE_PREVIEW_TAG = "smart-notification-timeline-preview";
+    private static final String DETAILS_TOGGLE_DESCRIPTION = "Show card details";
     private static final float BOTTOM_SWIPE_THRESHOLD_DP = 28f;
     private static final float BOTTOM_SWIPE_AXIS_BIAS = 1.15f;
     private static final long ATTENTION_PULSE_MS = 550L;
@@ -170,7 +172,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             applyBottomSwipeTouchRecursively(wrapper);
 
             View.OnLongClickListener historyFirstLongPress = v -> {
-                if (mainActivity.adapter.showNotificationHistoryIfAvailable(adapterPosition, v)) {
+                if (UiEditLock.isLocked(mainActivity)
+                        && mainActivity.adapter.showNotificationHistoryIfAvailable(adapterPosition, v)) {
                     return true;
                 }
                 mainActivity.adapter.onLongClick(adapterPosition, v);
@@ -476,8 +479,13 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         strip.setContentDescription(appName + ", last launched " + last + ", launched " + times);
     }
 
+    private boolean isDetailsToggle(View view) {
+        return view != null
+                && TextUtils.equals(DETAILS_TOGGLE_DESCRIPTION, view.getContentDescription());
+    }
+
     private void applyLongPressRecursively(View view, View.OnLongClickListener listener) {
-        if (view == null || view instanceof Button) return;
+        if (view == null || view instanceof Button || isDetailsToggle(view)) return;
         view.setLongClickable(true);
         view.setOnLongClickListener(listener);
         if (!(view instanceof ViewGroup)) return;
@@ -488,7 +496,7 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void applyNotificationClickRecursively(View view, View.OnClickListener listener) {
-        if (view == null || view instanceof Button) return;
+        if (view == null || view instanceof Button || isDetailsToggle(view)) return;
         view.setClickable(true);
         view.setOnClickListener(listener);
         if (!(view instanceof ViewGroup)) return;

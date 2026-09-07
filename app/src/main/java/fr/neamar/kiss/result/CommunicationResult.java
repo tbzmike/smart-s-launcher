@@ -28,6 +28,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Set;
 
+import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationListener;
@@ -107,9 +108,16 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
     }
 
     private void openMessageAndRecord(Context context, View view) {
-        if (!openMessage(context, view, true)) return;
         RecentLaunchTracker.remember(pojo);
+        promoteVisibleHistoryItem(context);
         recordLaunch(context, null);
+        openMessage(context, view, true);
+    }
+
+    private void promoteVisibleHistoryItem(Context context) {
+        if (!(context instanceof MainActivity)) return;
+        MainActivity activity = (MainActivity) context;
+        if (activity.adapter != null) activity.adapter.promoteHistoryPojo(pojo);
     }
 
     private void configureVerifiedMarkRead(Button markRead, String notificationId) {
@@ -214,6 +222,9 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
     }
 
     private void markMessageRead(Context context) {
+        RecentLaunchTracker.remember(pojo);
+        promoteVisibleHistoryItem(context);
+        recordLaunch(context, null);
         String notificationId = effectiveNotificationId(context);
         if (!TextUtils.isEmpty(notificationId)
                 && NotificationListener.markNotificationRead(context, notificationId)) {

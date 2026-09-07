@@ -61,6 +61,15 @@ public class HistorySearcher extends Searcher {
         DataHandler dataHandler = KissApplication.getApplication(activity).getDataHandler();
         Set<String> excludedFromHistory = dataHandler.getExcludedFromHistory();
         Set<String> excludedPojoById = new HashSet<>(excludedFromHistory);
+        Set<String> excludedPackages = new HashSet<>();
+        List<AppPojo> applications = dataHandler.getApplications();
+        if (applications != null) {
+            for (AppPojo app : applications) {
+                if (app != null && app.isExcludedFromHistory()) {
+                    excludedPackages.add(app.packageName);
+                }
+            }
+        }
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             for (String id : excludedFromHistory) {
@@ -89,8 +98,9 @@ public class HistorySearcher extends Searcher {
 
         List<Pojo> pojos = getStrictRecencyHistory(activity, dataHandler, excludedPojoById);
         restoreMissingHistoryEntries(activity, dataHandler, pojos, excludedPojoById);
-        pinActiveNotificationTimeline(activity, pojos, excludedPojoById);
+        pinActiveNotificationTimeline(activity, pojos, excludedPojoById, excludedPackages);
         pinMostRecentPersistedLaunch(activity, dataHandler, pojos, excludedPojoById);
+        pojos.removeIf(pojo -> belongsToExcludedApp(pojo, excludedPojoById, excludedPackages));
 
         this.addResults(pojos);
         return null;
@@ -261,7 +271,8 @@ public class HistorySearcher extends Searcher {
      * newest persisted user launch is pinned after this band and therefore remains the final item.
      */
     private void pinActiveNotificationTimeline(MainActivity activity, List<Pojo> pojos,
-                                               Set<String> excludedPojoById) {
+                                               Set<String> excludedPojoById,
+                                               Set<String> excludedPackages) {
         if (!prefs.getBoolean("enable-notification-history", false)) return;
 
         int max = getMaxResultCount();
@@ -291,7 +302,8 @@ public class HistorySearcher extends Searcher {
 
         int order = 0;
         for (NotificationPojo notification : newestFirst) {
-            if (excludedPojoById.contains(notification.id)) continue;
+            if (excludedPojoById.contains(notification.id)
+                    || excludedPackages.contains(notification.packageName)) continue;
             Pojo existing = null;
             for (Pojo pojo : pojos) {
                 if (notification.id.equals(pojo.id)) {
@@ -318,6 +330,26 @@ public class HistorySearcher extends Searcher {
 
             existing.relevance = base + 1 + order++;
         }
+    }
+
+    private boolean belongsToExcludedApp(Pojo pojo, Set<String> excludedPojoById,
+                                         Set<String> excludedPackages) {
+        if (pojo == null) return false;
+        if (excludedPojoById.contains(pojo.id)) return true;
+        if (pojo instanceof AppPojo) {
+            AppPojo app = (AppPojo) pojo;
+            return app.isExcludedFromHistory() || excludedPackages.contains(app.packageName);
+        }
+        if (pojo instanceof ShortcutPojo) {
+            ShortcutPojo shortcut = (ShortcutPojo) pojo;
+            return excludedPackages.contains(shortcut.packageName)
+                    || (shortcut.targetPackage != null
+                    && excludedPackages.contains(shortcut.targetPackage));
+        }
+        if (pojo instanceof NotificationPojo) {
+            return excludedPackages.contains(((NotificationPojo) pojo).packageName);
+        }
+        return false;
     }
 
     @Override

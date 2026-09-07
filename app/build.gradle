@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.37
-        versionCode 465
-        versionName "3.30.37"
+        // Smart S Launcher 3.30.57 - complete Vertical Cards timestamps and launch metadata
+        versionCode 485
+        versionName "3.30.57"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

@@ -663,6 +663,8 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         excluded.add(app.id);
         PreferenceManager.getDefaultSharedPreferences(context).edit().putStringSet("excluded-apps-from-history", excluded).apply();
         app.setExcludedFromHistory(true);
+        // Exclusion is immediate: remove already-persisted rows as well as blocking future writes.
+        DBHelper.removeFromHistory(context, app.id);
     }
 
     public void removeFromExcludedFromHistory(AppPojo app) {

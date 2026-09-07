@@ -251,8 +251,19 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             promoteHistoryResult(result);
             result.launch(v.getContext(), v, parent);
         };
-        View.OnLongClickListener openRichNotification = v ->
-                NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo());
+        View.OnLongClickListener openRichNotification = v -> {
+            int position = results.indexOf(result);
+            if (UiEditLock.isLocked(v.getContext())) {
+                recordExplicitSelection(v.getContext(), result.getPojo());
+                promoteHistoryResult(result);
+                return NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo());
+            }
+            if (position >= 0) {
+                onLongClick(position, v);
+                return true;
+            }
+            return false;
+        };
 
         view.setOnClickListener(openExactTarget);
         view.setOnLongClickListener(openRichNotification);
@@ -485,7 +496,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     private boolean isVerticalHistory(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        return "vertical".equals(prefs.getString("smart-history-layout", "vertical"))
+        String layout = prefs.getString("smart-history-layout", "vertical");
+        return ("vertical".equals(layout) || "wheel_3d".equals(layout))
                 && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
     }
 
@@ -670,8 +682,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (pos < 0 || pos >= getCount()) return;
         Result<?> result = getItem(pos);
         Context context = v.getContext();
-        if (showNotificationHistoryIfAvailable(pos, v)) return;
-        if (UiEditLock.isLocked(context)) return;
+        recordExplicitSelection(context, result.getPojo());
+        promoteHistoryResult(result);
+        if (UiEditLock.isLocked(context)) {
+            showNotificationHistoryIfAvailable(pos, v);
+            return;
+        }
         ListPopup menu = result.getPopupMenu(context, this, v);
         if (menu.getAdapter().getCount() > 0) {
             parent.registerPopup(menu);
@@ -714,6 +730,20 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
      * This is click-driven rather than lifecycle-driven so a later Home restoration cannot
      * lose the identity of the selected row.
      */
+    public void promoteHistoryPojo(Pojo pojo) {
+        if (pojo == null) return;
+        String historyId = pojo.getHistoryId();
+        for (Result<?> candidate : results) {
+            if (candidate == null || candidate.getPojo() == null) continue;
+            Pojo candidatePojo = candidate.getPojo();
+            if (candidatePojo == pojo
+                    || (historyId != null && historyId.equals(candidatePojo.getHistoryId()))) {
+                promoteHistoryResult(candidate);
+                return;
+            }
+        }
+    }
+
     private void promoteHistoryResult(Result<?> selected) {
         if (SearchHandler.getInstance().getLastSearchType() != Searcher.Type.HISTORY
                 || selected == null || results.size() < 2) return;

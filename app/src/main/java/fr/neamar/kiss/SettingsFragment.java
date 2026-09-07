@@ -7,6 +7,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -46,6 +47,7 @@ import fr.neamar.kiss.preference.LaunchPojoSelectPreference;
 import fr.neamar.kiss.preference.SelectCustomSearchProvidersPreference;
 import fr.neamar.kiss.searcher.QuerySearcher;
 import fr.neamar.kiss.searcher.SemanticEmbeddingScorer;
+import fr.neamar.kiss.ui.SearchEditText;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.Permission;
@@ -55,6 +57,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     private static final String TAG = SettingsFragment.class.getSimpleName();
     private static final int REQUEST_CALL_SCREENING_APP = 1;
     private static final String DIALOG_FRAGMENT_TAG = "androidx.preference.PreferenceFragment.DIALOG";
+    private static final String PREF_CHOOSE_SYSTEM_KEYBOARD = "choose-system-keyboard";
 
     private static final List<String> PREF_LISTS_WITH_DEPENDENCY = Arrays.asList(
             "gesture-up", "gesture-down",
@@ -75,6 +78,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
 
         setPreferencesFromResource(R.xml.preferences, rootKey);
+        addSearchKeyboardPreferences();
         try {
             addSemanticSearchPreferences(rootKey);
         } catch (RuntimeException e) {
@@ -121,6 +125,47 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         }
 
         permissionManager = new Permission(getActivity());
+    }
+
+    private void addSearchKeyboardPreferences() {
+        PreferenceGroup keyboardOptions = findPreference("keyboard-options");
+        if (keyboardOptions == null) return;
+
+        ListPreference mode = new ListPreference(requireContext());
+        mode.setKey(SearchEditText.PREF_SEARCH_KEYBOARD_MODE);
+        mode.setTitle("Search keyboard");
+        mode.setEntries(new CharSequence[]{"Built-in Smart S keyboard", "System keyboard"});
+        mode.setEntryValues(new CharSequence[]{
+                SearchEditText.KEYBOARD_MODE_BUILT_IN,
+                SearchEditText.KEYBOARD_MODE_SYSTEM
+        });
+        mode.setDefaultValue(SearchEditText.KEYBOARD_MODE_BUILT_IN);
+        mode.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        keyboardOptions.addPreference(mode);
+
+        Preference chooser = new Preference(requireContext());
+        chooser.setKey(PREF_CHOOSE_SYSTEM_KEYBOARD);
+        chooser.setTitle("Choose installed system keyboard");
+        chooser.setOnPreferenceClickListener(preference -> {
+            InputMethodManager imm = ContextCompat.getSystemService(requireContext(), InputMethodManager.class);
+            if (imm != null) imm.showInputMethodPicker();
+            else Toast.makeText(requireContext(), "Android keyboard picker is unavailable", Toast.LENGTH_SHORT).show();
+            return true;
+        });
+        keyboardOptions.addPreference(chooser);
+        refreshSearchKeyboardPicker();
+    }
+
+    private void refreshSearchKeyboardPicker() {
+        Preference chooser = findPreference(PREF_CHOOSE_SYSTEM_KEYBOARD);
+        if (chooser == null) return;
+        boolean useSystem = SearchEditText.KEYBOARD_MODE_SYSTEM.equals(
+                prefs.getString(SearchEditText.PREF_SEARCH_KEYBOARD_MODE,
+                        SearchEditText.KEYBOARD_MODE_BUILT_IN));
+        chooser.setEnabled(useSystem);
+        chooser.setSummary(useSystem
+                ? "Tap to switch between keyboards installed and enabled in Android."
+                : "Select System keyboard above to use an installed Android keyboard.");
     }
 
     private void addSemanticSearchPreferences(@Nullable String rootKey) {
@@ -210,12 +255,17 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     public void onResume() {
         super.onResume();
         prefs.registerOnSharedPreferenceChangeListener(this);
+        refreshSearchKeyboardPicker();
     }
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if (key != null) {
             KissApplication.getApplication(requireContext()).getIconsHandler().onPrefChanged(sharedPreferences, key);
+
+            if (SearchEditText.PREF_SEARCH_KEYBOARD_MODE.equals(key)) {
+                refreshSearchKeyboardPicker();
+            }
 
             if (PREF_LISTS_WITH_DEPENDENCY.contains(key)) {
                 updateItemToRun(key);

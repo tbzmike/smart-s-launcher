@@ -55,6 +55,7 @@ import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.ContactsPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
+import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.PhonePojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.SearchPojo;
@@ -65,6 +66,7 @@ import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.utils.ClipboardUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
@@ -469,7 +471,14 @@ public abstract class Result<T extends Pojo> {
     }
 
     protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {
-        // Save in history
+        // Notification tiles intentionally stay out of normal launch history: notification
+        // arrivals and notification clicks are different facts. Count the explicit card click
+        // separately so Vertical Cards can report it without corrupting history statistics.
+        if (pojo instanceof NotificationPojo) {
+            TileLaunchCounter.record(context, pojo);
+        }
+
+        // Save successful normal launches in history.
         if (canAddToHistory()) {
             KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());
             UniversalHistoryTimestamp.invalidateStats();
