@@ -19,7 +19,38 @@ public final class TileLaunchCounter {
 
     /** Record one explicit click on an exact tile. */
     public static void record(@NonNull Context context, @NonNull Pojo pojo) {
-        String key = storageKey(pojo);
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            recordNotification(context, notification.id, notification.postTime);
+            return;
+        }
+        increment(context, storageKey(pojo));
+    }
+
+    /** Return the number of clicks recorded for this exact tile since tracking became available. */
+    public static long getTotal(@NonNull Context context, @NonNull Pojo pojo) {
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            return getNotificationTotal(context, notification.id, notification.postTime);
+        }
+        return read(context, storageKey(pojo));
+    }
+
+    /** Record a click on the exact notification currently rendered inside an app/shortcut card. */
+    public static void recordNotification(@NonNull Context context,
+                                          String notificationId,
+                                          long postTime) {
+        increment(context, notificationStorageKey(notificationId, postTime));
+    }
+
+    /** Return clicks for one exact notification identity. */
+    public static long getNotificationTotal(@NonNull Context context,
+                                            String notificationId,
+                                            long postTime) {
+        return read(context, notificationStorageKey(notificationId, postTime));
+    }
+
+    private static void increment(@NonNull Context context, String key) {
         if (TextUtils.isEmpty(key)) return;
         synchronized (LOCK) {
             SharedPreferences prefs = context.getApplicationContext()
@@ -31,9 +62,7 @@ public final class TileLaunchCounter {
         }
     }
 
-    /** Return the number of clicks recorded for this exact tile since tracking became available. */
-    public static long getTotal(@NonNull Context context, @NonNull Pojo pojo) {
-        String key = storageKey(pojo);
+    private static long read(@NonNull Context context, String key) {
         if (TextUtils.isEmpty(key)) return 0L;
         synchronized (LOCK) {
             return Math.max(0L, context.getApplicationContext()
@@ -46,12 +75,13 @@ public final class TileLaunchCounter {
      * A notification ID can be reused by an app. Including post time keeps a newly posted
      * notification from inheriting the click count of an older notification with the same ID.
      */
+    private static String notificationStorageKey(String notificationId, long postTime) {
+        if (TextUtils.isEmpty(notificationId)) return "";
+        return notificationId + "|post:" + Math.max(0L, postTime);
+    }
+
     @NonNull
     static String storageKey(@NonNull Pojo pojo) {
-        if (pojo instanceof NotificationPojo) {
-            NotificationPojo notification = (NotificationPojo) pojo;
-            return notification.id + "|post:" + Math.max(0L, notification.postTime);
-        }
         String historyId = pojo.getHistoryId();
         return historyId == null ? "" : historyId;
     }

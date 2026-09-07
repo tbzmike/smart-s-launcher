@@ -42,6 +42,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationPopupDialog;
+import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.utils.AppIconMemoryCache;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
@@ -142,6 +143,12 @@ public class AppResult extends ResultWithTags<AppPojo> {
         text.setText(message);
         row.setVisibility(View.VISIBLE);
         View.OnClickListener exactNotificationClick = v -> {
+            java.util.List<NotificationListener.NotificationSnapshot> active =
+                    NotificationListener.getGroupNotifications(context, packageKey);
+            if (!active.isEmpty()) {
+                NotificationListener.NotificationSnapshot latest = active.get(0);
+                TileLaunchCounter.recordNotification(context, latest.id, latest.postTime);
+            }
             if (!NotificationListener.openLatestNotification(context, packageKey)) {
                 NotificationPopupDialog.showGroup(context, packageKey);
             }

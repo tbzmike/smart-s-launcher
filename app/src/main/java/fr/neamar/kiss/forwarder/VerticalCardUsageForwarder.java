@@ -13,6 +13,7 @@ import android.widget.TextView;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -22,6 +23,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.HistoryItemUsageTodayStore;
 import fr.neamar.kiss.db.LaunchStatsProvider;
+import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
@@ -287,23 +289,49 @@ final class VerticalCardUsageForwarder extends Forwarder {
                                  LaunchStatsProvider.LaunchStats stats,
                                  AppUsageTodayStore.Snapshot currentSnapshot,
                                  HistoryItemUsageTodayStore.Snapshot currentShortcutSnapshot) {
+        NotificationIdentity notification = resolveVisibleNotification(pojo, packageName);
         StringBuilder metadata = new StringBuilder();
-        appendMetadata(metadata, formatPostedTime(pojo, stats));
+        if (notification != null) {
+            appendMetadata(metadata, formatEventTime("Received", notification.postTime));
+        } else {
+            appendMetadata(metadata, formatEventTime("Posted", resolveHistoryTimestamp(pojo, stats)));
+        }
 
         String usage = formatUsage(
                 pojo, packageName, currentSnapshot, currentShortcutSnapshot);
         appendMetadata(metadata, usage);
 
-        long launches = pojo instanceof NotificationPojo
-                ? TileLaunchCounter.getTotal(mainActivity, pojo)
+        long launches = notification != null
+                ? TileLaunchCounter.getNotificationTotal(
+                        mainActivity, notification.notificationId, notification.postTime)
                 : stats == null ? 0L : Math.max(0, stats.totalLaunches);
         appendMetadata(metadata, formatLaunchCount(launches));
         return metadata.toString();
     }
 
-    private String formatPostedTime(Pojo pojo, LaunchStatsProvider.LaunchStats stats) {
-        long timestamp = resolveTimestamp(pojo, stats);
-        String label = pojo instanceof NotificationPojo ? "Received" : "Posted";
+    private NotificationIdentity resolveVisibleNotification(Pojo pojo, String packageName) {
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            return new NotificationIdentity(notification.id, notification.postTime);
+        }
+
+        String groupKey = null;
+        if (pojo instanceof AppPojo) {
+            groupKey = ((AppPojo) pojo).getPackageKey();
+        } else if (pojo instanceof ShortcutPojo && !TextUtils.isEmpty(packageName)) {
+            ShortcutPojo shortcut = (ShortcutPojo) pojo;
+            groupKey = shortcut.getUserHandle().getRealHandle().hashCode() + "|" + packageName;
+        }
+        if (TextUtils.isEmpty(groupKey)) return null;
+
+        List<NotificationListener.NotificationSnapshot> active =
+                NotificationListener.getGroupNotifications(mainActivity, groupKey);
+        if (active.isEmpty()) return null;
+        NotificationListener.NotificationSnapshot latest = active.get(0);
+        return new NotificationIdentity(latest.id, latest.postTime);
+    }
+
+    private String formatEventTime(String label, long timestamp) {
         if (timestamp <= 0L) return label + ": unavailable";
 
         long now = System.currentTimeMillis();
@@ -326,11 +354,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
         return label + " " + relative + " · " + exact;
     }
 
-    private long resolveTimestamp(Pojo pojo, LaunchStatsProvider.LaunchStats stats) {
-        if (pojo instanceof NotificationPojo) {
-            long postTime = ((NotificationPojo) pojo).postTime;
-            if (postTime > 0L) return postTime;
-        }
+    private long resolveHistoryTimestamp(Pojo pojo, LaunchStatsProvider.LaunchStats stats) {
         if (pojo instanceof CommunicationPojo) {
             long eventTime = ((CommunicationPojo) pojo).timestamp;
             if (eventTime > 0L) return eventTime;
@@ -437,6 +461,16 @@ final class VerticalCardUsageForwarder extends Forwarder {
 
     private int dp(int value) {
         return Math.round(value * mainActivity.getResources().getDisplayMetrics().density);
+    }
+
+    private static final class NotificationIdentity {
+        final String notificationId;
+        final long postTime;
+
+        NotificationIdentity(String notificationId, long postTime) {
+            this.notificationId = notificationId;
+            this.postTime = postTime;
+        }
     }
 
     private static final class UsageView {
