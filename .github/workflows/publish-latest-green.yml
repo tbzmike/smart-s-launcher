@@ -29,18 +29,18 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Download APK produced by the successful App testing run
+      - name: Download artifacts from successful App testing run
+        uses: actions/download-artifact@v8
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: run-artifacts
+          merge-multiple: true
+
+      - name: Select verified debug APK
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          rm -rf run-artifacts
-          mkdir -p run-artifacts
-          gh run download "$SOURCE_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --dir run-artifacts
           APK="$(find run-artifacts -type f -name 'app-debug.apk' -print -quit)"
           test -n "$APK"
           cp "$APK" app-debug.apk
