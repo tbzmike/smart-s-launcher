@@ -7,8 +7,10 @@ import android.text.TextUtils;
 
 import java.net.URISyntaxException;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
+import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -16,6 +18,7 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.ui.NotificationHistoryStartIndex;
 import fr.neamar.kiss.ui.NotificationPopupDialog;
 import fr.neamar.kiss.ui.RichNotificationHistoryDialog;
 
@@ -23,17 +26,43 @@ import fr.neamar.kiss.ui.RichNotificationHistoryDialog;
 public final class NotificationHistoryResolver {
     private NotificationHistoryResolver() {}
 
+    /**
+     * Open the exact saved destination represented by one notification-history tile. The same
+     * id/post-time selection used by the rich history popup is used here, so a group-history tile
+     * cannot silently open another notification from the same app.
+     */
+    public static boolean openExactForPojo(Context context, NotificationPojo notification) {
+        if (context == null || notification == null) return false;
+        String packageName = resolvePackage(context, notification);
+        if (packageName == null) return false;
+
+        List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
+                context, packageName, null, 0);
+        int index = NotificationHistoryStartIndex.resolve(
+                records, notification.id, notification.postTime);
+        if (index < 0 || index >= records.size()) return false;
+        return SavedNotificationDestinationResolver.openExact(context, records.get(index));
+    }
+
     public static boolean showForPojo(Context context, Pojo pojo) {
         if (context == null || pojo == null) return false;
 
-        // History is authoritative when it exists: this keeps tap and long-press on the same
-        // swipeable rich dialog, including album art, notification pictures and saved media.
+        // History is authoritative when it exists. Notification rows retain their exact persisted
+        // identity so long-press opens the selected entry rather than silently jumping to latest.
         String packageName = resolvePackage(context, pojo);
-        if (packageName != null && RichNotificationHistoryDialog.showLatest(context, packageName)) {
-            return true;
+        if (packageName != null) {
+            if (pojo instanceof NotificationPojo) {
+                NotificationPojo notification = (NotificationPojo) pojo;
+                if (RichNotificationHistoryDialog.showSelected(
+                        context, packageName, notification.id, notification.postTime)) {
+                    return true;
+                }
+            } else if (RichNotificationHistoryDialog.showLatest(context, packageName)) {
+                return true;
+            }
         }
 
-        // A live notification can still be opened when no persisted record exists yet.
+        // A live notification can still be opened when no matching persisted record exists yet.
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;
             boolean liveIndividual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)

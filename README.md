@@ -9,7 +9,7 @@ From your home screen, type the first letters of apps, contacts, shortcuts, or o
 Smart S Launcher keeps the search-first foundation of KISS while adding and extending features for users who want more information and control directly from their launcher. Current Smart S-specific additions include:
 
 - Launch/open/click history and usage information
-- Notification history with content previews when Android makes that content available
+- Notification history with content previews when Android makes that content available; tapping a history notification opens that selected notification directly, while long-press opens the rich history viewer at that selected entry
 - Extensive text, appearance, and wallpaper-readability controls
 - Battery monitoring and battery widgets
 - Optional accessibility-based double-tap-to-lock support
