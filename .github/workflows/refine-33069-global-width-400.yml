@@ -6,6 +6,7 @@ on:
       - fix/3.30.69-all-history-edge-width
     paths:
       - .github/workflows/refine-33069-global-width-400.yml
+      - .github/scripts/refine_33069_width_400.py
 
 permissions:
   contents: write
@@ -24,8 +25,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git merge-base HEAD 3ae7421da1830b71a8b985f0d96da6c889d1270a)" = "3ae7421da1830b71a8b985f0d96da6c889d1270a"
-          test "$(git diff --name-only 3ae7421da1830b71a8b985f0d96da6c889d1270a HEAD)" = ".github/workflows/refine-33069-global-width-400.yml"
+          BASE=3ae7421da1830b71a8b985f0d96da6c889d1270a
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          printf '%s\n' \
+            .github/scripts/refine_33069_width_400.py \
+            .github/workflows/refine-33069-global-width-400.yml | sort > /tmp/expected-temp
+          git diff --name-only "$BASE" HEAD | sort > /tmp/actual-temp
+          diff -u /tmp/expected-temp /tmp/actual-temp
           grep -F 'versionCode 497' app/build.gradle
           grep -F 'versionName "3.30.69"' app/build.gradle
           test -z "$(git status --porcelain)"
@@ -34,4 +40,74 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKZGVmIHJlcGxhY2VfZXhhY3QocGF0aCwgb2xkLCBuZXcsIGNvdW50PTEpOgogICAgcCA9IFBhdGgocGF0aCkKICAgIHRleHQgPSBwLnJlYWRfdGV4dCgpCiAgICBhY3R1YWwgPSB0ZXh0LmNvdW50KG9sZCkKICAgIGlmIGFjdHVhbCAhPSBjb3VudDoKICAgICAgICByYWlzZSBTeXN0ZW1FeGl0KGYie3BhdGh9OiBleHBlY3RlZCB7Y291bnR9IG9jY3VycmVuY2UocyksIGZvdW5kIHthY3R1YWx9OiB7b2xkWzoxMDBdIXJ9IikKICAgIHAud3JpdGVfdGV4dCh0ZXh0LnJlcGxhY2Uob2xkLCBuZXcsIGNvdW50KSkKClBhdGgoJ2FwcC9zcmMvbWFpbi9qYXZhL2ZyL25lYW1hci9raXNzL2ZvcndhcmRlci9IaXN0b3J5RWRnZVdpZHRoUG9saWN5LmphdmEnKS53cml0ZV90ZXh0KCIiInBhY2thZ2UgZnIubmVhbWFyLmtpc3MuZm9yd2FyZGVyOwoKLyoqCiAqIFNoYXJlZCB3aWR0aCBydWxlcyBmb3IgZXZlcnkgaGlzdG9yeSByZW5kZXJlci4KICogMTAwJSBwcmVzZXJ2ZXMgdGhlIHJlbmRlcmVyJ3Mgbm9ybWFsIHdpZHRoLCAyMDAlIHJlYWNoZXMgdGhlIHBoeXNpY2FsIHZpZXdwb3J0IGVkZ2VzLCBhbmQKICogNDAwJSBpbnRlbnRpb25hbGx5IHNwYW5zIHR3byB2aWV3cG9ydCB3aWR0aHMgc28gdGhlIHJlbmRlcmVkIGl0ZW0gY2FuIGNvbnRpbnVlIGJleW9uZCBib3RoCiAqIHNjcmVlbiBlZGdlcyBvbiBoaWdoLXJlc29sdXRpb24gZGlzcGxheXMuCiAqLwpwdWJsaWMgZmluYWwgY2xhc3MgSGlzdG9yeUVkZ2VXaWR0aFBvbGljeSB7CiAgICBwcml2YXRlIHN0YXRpYyBmaW5hbCBpbnQgTk9STUFMX1BFUkNFTlQgPSAxMDA7CiAgICBwcml2YXRlIHN0YXRpYyBmaW5hbCBpbnQgRURHRV9QRVJDRU5UID0gMjAwOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgaW50IE1BWF9QRVJDRU5UID0gNDAwOwoKICAgIHByaXZhdGUgSGlzdG9yeUVkZ2VXaWR0aFBvbGljeSgpIHsgfQoKICAgIHB1YmxpYyBzdGF0aWMgaW50IHRhcmdldFdpZHRoKGludCBub3JtYWxXaWR0aFB4LCBpbnQgdmlld3BvcnRXaWR0aFB4LCBpbnQgd2lkdGhQZXJjZW50KSB7CiAgICAgICAgaWYgKG5vcm1hbFdpZHRoUHggPD0gMCB8fCB2aWV3cG9ydFdpZHRoUHggPD0gMCkgcmV0dXJuIDA7CiAgICAgICAgaW50IHBlcmNlbnQgPSBjbGFtcFBlcmNlbnQod2lkdGhQZXJjZW50KTsKICAgICAgICBpbnQgbm9ybWFsID0gTWF0aC5taW4obm9ybWFsV2lkdGhQeCwgdmlld3BvcnRXaWR0aFB4KTsKICAgICAgICBpZiAocGVyY2VudCA8PSBOT1JNQUxfUEVSQ0VOVCkgewogICAgICAgICAgICByZXR1cm4gTWF0aC5tYXgoMSwgTWF0aC5yb3VuZChub3JtYWwgKiBwZXJjZW50IC8gMTAwZikpOwogICAgICAgIH0KICAgICAgICBpZiAocGVyY2VudCA8PSBFREdFX1BFUkNFTlQpIHsKICAgICAgICAgICAgZmxvYXQgcHJvZ3Jlc3MgPSAocGVyY2VudCAtIE5PUk1BTF9QRVJDRU5UKQogICAgICAgICAgICAgICAgICAgIC8gKGZsb2F0KSAoRURHRV9QRVJDRU5UIC0gTk9STUFMX1BFUkNFTlQpOwogICAgICAgICAgICByZXR1cm4gTWF0aC5tYXgoMSwgTWF0aC5yb3VuZChub3JtYWwgKyAodmlld3BvcnRXaWR0aFB4IC0gbm9ybWFsKSAqIHByb2dyZXNzKSk7CiAgICAgICAgfQogICAgICAgIGZsb2F0IG92ZXJzY2FuID0gKHBlcmNlbnQgLSBFREdFX1BFUkNFTlQpCiAgICAgICAgICAgICAgICAvIChmbG9hdCkgKE1BWF9QRVJDRU5UIC0gRURHRV9QRVJDRU5UKTsKICAgICAgICByZXR1cm4gTWF0aC5tYXgoMSwgTWF0aC5yb3VuZCh2aWV3cG9ydFdpZHRoUHggKiAoMWYgKyBvdmVyc2NhbikpKTsKICAgIH0KCiAgICAvKiogUmVsZWFzZSBhbiBleGlzdGluZyBzaWRlIGluc2V0IGJ5IDIwMCU7IG92ZXJzY2FuIGJleW9uZCAyMDAlIGtlZXBzIGl0IGF0IHplcm8uICovCiAgICBwdWJsaWMgc3RhdGljIGludCBpbnNldEZvclBlcmNlbnQoaW50IGJhc2VJbnNldFB4LCBpbnQgd2lkdGhQZXJjZW50KSB7CiAgICAgICAgaWYgKGJhc2VJbnNldFB4IDw9IDApIHJldHVybiAwOwogICAgICAgIGludCBwZXJjZW50ID0gY2xhbXBQZXJjZW50KHdpZHRoUGVyY2VudCk7CiAgICAgICAgaWYgKHBlcmNlbnQgPD0gTk9STUFMX1BFUkNFTlQpIHJldHVybiBiYXNlSW5zZXRQeDsKICAgICAgICBpZiAocGVyY2VudCA+PSBFREdFX1BFUkNFTlQpIHJldHVybiAwOwogICAgICAgIGZsb2F0IHJlbWFpbmluZyA9IChFREdFX1BFUkNFTlQgLSBwZXJjZW50KQogICAgICAgICAgICAgICAgLyAoZmxvYXQpIChFREdFX1BFUkNFTlQgLSBOT1JNQUxfUEVSQ0VOVCk7CiAgICAgICAgcmV0dXJuIE1hdGgubWF4KDAsIE1hdGgucm91bmQoYmFzZUluc2V0UHggKiByZW1haW5pbmcpKTsKICAgIH0KCiAgICAvKiogMjAwJSByZWFjaGVzIHg9MDsgNDAwJSBleHRlbmRzIHRoZSBsZWZ0IGJvdW5kIHRvIGhhbGYgYSB2aWV3cG9ydCBiZXlvbmQgdGhlIHNjcmVlbi4gKi8KICAgIHB1YmxpYyBzdGF0aWMgZmxvYXQgbGVmdEJvdW5kRm9yUGVyY2VudChmbG9hdCBiYXNlTGVmdCwgaW50IHdpZHRoUGVyY2VudCkgewogICAgICAgIGZsb2F0IGJhc2UgPSBjbGFtcDAxKGJhc2VMZWZ0KTsKICAgICAgICBpbnQgcGVyY2VudCA9IGNsYW1wUGVyY2VudCh3aWR0aFBlcmNlbnQpOwogICAgICAgIGlmIChwZXJjZW50IDw9IE5PUk1BTF9QRVJDRU5UKSByZXR1cm4gYmFzZTsKICAgICAgICBpZiAocGVyY2VudCA8PSBFREdFX1BFUkNFTlQpIHsKICAgICAgICAgICAgZmxvYXQgcmVtYWluaW5nID0gKEVER0VfUEVSQ0VOVCAtIHBlcmNlbnQpCiAgICAgICAgICAgICAgICAgICAgLyAoZmxvYXQpIChFREdFX1BFUkNFTlQgLSBOT1JNQUxfUEVSQ0VOVCk7CiAgICAgICAgICAgIHJldHVybiBiYXNlICogcmVtYWluaW5nOwogICAgICAgIH0KICAgICAgICBmbG9hdCBvdmVyc2NhbiA9IChwZXJjZW50IC0gRURHRV9QRVJDRU5UKQogICAgICAgICAgICAgICAgLyAoZmxvYXQpIChNQVhfUEVSQ0VOVCAtIEVER0VfUEVSQ0VOVCk7CiAgICAgICAgcmV0dXJuIC0wLjVmICogb3ZlcnNjYW47CiAgICB9CgogICAgLyoqIDIwMCUgcmVhY2hlcyB4PTE7IDQwMCUgZXh0ZW5kcyB0aGUgcmlnaHQgYm91bmQgdG8gaGFsZiBhIHZpZXdwb3J0IGJleW9uZCB0aGUgc2NyZWVuLiAqLwogICAgcHVibGljIHN0YXRpYyBmbG9hdCByaWdodEJvdW5kRm9yUGVyY2VudChmbG9hdCBiYXNlUmlnaHQsIGludCB3aWR0aFBlcmNlbnQpIHsKICAgICAgICBmbG9hdCBiYXNlID0gY2xhbXAwMShiYXNlUmlnaHQpOwogICAgICAgIGludCBwZXJjZW50ID0gY2xhbXBQZXJjZW50KHdpZHRoUGVyY2VudCk7CiAgICAgICAgaWYgKHBlcmNlbnQgPD0gTk9STUFMX1BFUkNFTlQpIHJldHVybiBiYXNlOwogICAgICAgIGlmIChwZXJjZW50IDw9IEVER0VfUEVSQ0VOVCkgewogICAgICAgICAgICBmbG9hdCBwcm9ncmVzcyA9IChwZXJjZW50IC0gTk9STUFMX1BFUkNFTlQpCiAgICAgICAgICAgICAgICAgICAgLyAoZmxvYXQpIChFREdFX1BFUkNFTlQgLSBOT1JNQUxfUEVSQ0VOVCk7CiAgICAgICAgICAgIHJldHVybiBiYXNlICsgKDFmIC0gYmFzZSkgKiBwcm9ncmVzczsKICAgICAgICB9CiAgICAgICAgZmxvYXQgb3ZlcnNjYW4gPSAocGVyY2VudCAtIEVER0VfUEVSQ0VOVCkKICAgICAgICAgICAgICAgIC8gKGZsb2F0KSAoTUFYX1BFUkNFTlQgLSBFREdFX1BFUkNFTlQpOwogICAgICAgIHJldHVybiAxZiArIDAuNWYgKiBvdmVyc2NhbjsKICAgIH0KCiAgICAvKiogU2NhbGUgb2YgYSBmdWxsIHZpZXdwb3J0IGFmdGVyIHRoZSBwaHlzaWNhbCBlZGdlcyBoYXZlIGFscmVhZHkgYmVlbiByZWFjaGVkLiAqLwogICAgcHVibGljIHN0YXRpYyBmbG9hdCB2aWV3cG9ydFNjYWxlRm9yUGVyY2VudChpbnQgd2lkdGhQZXJjZW50KSB7CiAgICAgICAgaW50IHBlcmNlbnQgPSBjbGFtcFBlcmNlbnQod2lkdGhQZXJjZW50KTsKICAgICAgICBpZiAocGVyY2VudCA8PSBFREdFX1BFUkNFTlQpIHJldHVybiAxZjsKICAgICAgICByZXR1cm4gMWYgKyAocGVyY2VudCAtIEVER0VfUEVSQ0VOVCkKICAgICAgICAgICAgICAgIC8gKGZsb2F0KSAoTUFYX1BFUkNFTlQgLSBFREdFX1BFUkNFTlQpOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIGludCBjbGFtcFBlcmNlbnQoaW50IHZhbHVlKSB7CiAgICAgICAgcmV0dXJuIE1hdGgubWF4KDEsIE1hdGgubWluKE1BWF9QRVJDRU5ULCB2YWx1ZSkpOwogICAgfQoKICAgIHByaXZhdGUgc3RhdGljIGZsb2F0IGNsYW1wMDEoZmxvYXQgdmFsdWUpIHsKICAgICAgICByZXR1cm4gTWF0aC5tYXgoMGYsIE1hdGgubWluKDFmLCB2YWx1ZSkpOwogICAgfQp9CiIiIikKClBhdGgoJ2FwcC9zcmMvbWFpbi9qYXZhL2ZyL25lYW1hci9raXNzL2ZvcndhcmRlci9WZXJ0aWNhbENhcmRXaWR0aFBvbGljeS5qYXZhJykud3JpdGVfdGV4dCgiIiJwYWNrYWdlIGZyLm5lYW1hci5raXNzLmZvcndhcmRlcjsKCi8qKiBQdXJlIHNpemluZyBydWxlcyBmb3IgdGhlIFZlcnRpY2FsIENhcmRzIHdpZHRoIGVkaXRvci4gKi8KZmluYWwgY2xhc3MgVmVydGljYWxDYXJkV2lkdGhQb2xpY3kgewogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgaW50IE5PUk1BTF9QRVJDRU5UID0gMTAwOwogICAgcHJpdmF0ZSBzdGF0aWMgZmluYWwgaW50IEVER0VfUEVSQ0VOVCA9IDIwMDsKICAgIHByaXZhdGUgc3RhdGljIGZpbmFsIGludCBNQVhfUEVSQ0VOVCA9IDQwMDsKCiAgICBwcml2YXRlIFZlcnRpY2FsQ2FyZFdpZHRoUG9saWN5KCkgeyB9CgogICAgc3RhdGljIGludCB0YXJnZXRXaWR0aChpbnQgYXZhaWxhYmxlUHgsIGludCB3aWR0aFBlcmNlbnQpIHsKICAgICAgICBpZiAoYXZhaWxhYmxlUHggPD0gMCkgcmV0dXJuIDA7CiAgICAgICAgaW50IHBlcmNlbnQgPSBNYXRoLm1heCgxLCBNYXRoLm1pbihNQVhfUEVSQ0VOVCwgd2lkdGhQZXJjZW50KSk7CiAgICAgICAgaWYgKHBlcmNlbnQgPD0gTk9STUFMX1BFUkNFTlQpIHsKICAgICAgICAgICAgcmV0dXJuIE1hdGgubWF4KDEsIE1hdGgucm91bmQoYXZhaWxhYmxlUHggKiBwZXJjZW50IC8gMTAwZikpOwogICAgICAgIH0KICAgICAgICBpZiAocGVyY2VudCA8PSBFREdFX1BFUkNFTlQpIHJldHVybiBhdmFpbGFibGVQeDsKICAgICAgICByZXR1cm4gTWF0aC5tYXgoMSwgTWF0aC5yb3VuZChhdmFpbGFibGVQeAogICAgICAgICAgICAgICAgKiBIaXN0b3J5RWRnZVdpZHRoUG9saWN5LnZpZXdwb3J0U2NhbGVGb3JQZXJjZW50KHBlcmNlbnQpKSk7CiAgICB9CgogICAgLyoqIDEwMC0yMDAlIHJlbGVhc2VzIHRoZSBvbGQgZ3V0dGVyczsgMjAwLTQwMCUga2VlcHMgemVybyBndXR0ZXJzIHdoaWxlIG92ZXJzY2FubmluZy4gKi8KICAgIHN0YXRpYyBpbnQgaW5zZXRGb3JQZXJjZW50KGludCBiYXNlSW5zZXRQeCwgaW50IHdpZHRoUGVyY2VudCkgewogICAgICAgIHJldHVybiBIaXN0b3J5RWRnZVdpZHRoUG9saWN5Lmluc2V0Rm9yUGVyY2VudChiYXNlSW5zZXRQeCwgd2lkdGhQZXJjZW50KTsKICAgIH0KfQoiIiIpCgpyZXBsYWNlX2V4YWN0KAogICAgJ2FwcC9zcmMvbWFpbi9qYXZhL2ZyL25lYW1hci9raXNzL2ZvcndhcmRlci9WZXJ0aWNhbENhcmRHcm91cFJlc2l6ZUNvbnRyb2xsZXIuamF2YScsCiAgICAnICAgIHByaXZhdGUgc3RhdGljIGZpbmFsIGludCBNQVhfV0lEVEggPSAyMDA7XG4nLAogICAgJyAgICBwcml2YXRlIHN0YXRpYyBmaW5hbCBpbnQgTUFYX1dJRFRIID0gNDAwO1xuJykKcmVwbGFjZV9leGFjdCgKICAgICdhcHAvc3JjL21haW4vamF2YS9mci9uZWFtYXIva2lzcy9mb3J3YXJkZXIvVmVydGljYWxDYXJkR3JvdXBSZXNpemVDb250cm9sbGVyLmphdmEnLAogICAgIiIiICAgICAgICAvLyBBYm92ZSAxMDAlLCBjb25zdW1lIHRoZSByZW5kZXJlcidzIG93biBob3Jpem9udGFsIGd1dHRlcnMgaW5zdGVhZCBvZiBjcmVhdGluZyBhIGNoaWxkCiAgICAgICAgLy8gd2lkZXIgdGhhbiBpdHMgdmlld3BvcnQuIEF0IDIwMCUgZXZlcnkgVmVydGljYWwgQ2FyZCBjYW4gdXNlIHRoZSBjb21wbGV0ZSByZXN1bHQgd2lkdGgKICAgICAgICAvLyB3aXRob3V0IGJlaW5nIGNlbnRlcmVkIGJlaGluZCAoYW5kIGNsaXBwZWQgYnkpIGEgbmFycm93ZXIgU2Nyb2xsVmlldy4KIiIiLAogICAgIiIiICAgICAgICAvLyAxMDAtMjAwJSBwcm9ncmVzc2l2ZWx5IGNvbnN1bWVzIHRoZSByZW5kZXJlcidzIG93biBob3Jpem9udGFsIGd1dHRlcnMuIDIwMCUgaXMgdGhlCiAgICAgICAgLy8gZXhhY3QgcGh5c2ljYWwgdmlld3BvcnQgd2lkdGguIDIwMS00MDAlIGludGVudGlvbmFsbHkgY3JlYXRlcyBhIGNlbnRlcmVkIGNoaWxkIHdpZGVyCiAgICAgICAgLy8gdGhhbiB0aGUgdmlld3BvcnQ7IHRoZSBvZmYtc2NyZWVuIHBvcnRpb24gaXMgY2xpcHBlZCBieSB0aGUgc2NyZWVuLCBub3QgYnkgY2FyZCBndXR0ZXJzLgoiIiIpCnJlcGxhY2VfZXhhY3QoCiAgICAnYXBwL3NyYy9tYWluL2phdmEvZnIvbmVhbWFyL2tpc3MvZm9yd2FyZGVyL1ZlcnRpY2FsQ2FyZEdyb3VwUmVzaXplQ29udHJvbGxlci5qYXZhJywKICAgICIiIiAgICAgICAgICAgIGludCBkZXNpcmVkID0gd2lkdGhQZXJjZW50ID49IDEwMAogICAgICAgICAgICAgICAgICAgID8gVmlld0dyb3VwLkxheW91dFBhcmFtcy5NQVRDSF9QQVJFTlQgOiB0YXJnZXRXaWR0aDsKIiIiLAogICAgIiIiICAgICAgICAgICAgaW50IGRlc2lyZWQ7CiAgICAgICAgICAgIGlmICh3aWR0aFBlcmNlbnQgPCAxMDApIGRlc2lyZWQgPSB0YXJnZXRXaWR0aDsKICAgICAgICAgICAgZWxzZSBpZiAod2lkdGhQZXJjZW50IDw9IDIwMCkgZGVzaXJlZCA9IFZpZXdHcm91cC5MYXlvdXRQYXJhbXMuTUFUQ0hfUEFSRU5UOwogICAgICAgICAgICBlbHNlIGRlc2lyZWQgPSB0YXJnZXRXaWR0aDsKIiIiKQpyZXBsYWNlX2V4YWN0KAogICAgJ2FwcC9zcmMvbWFpbi9qYXZhL2ZyL25lYW1hci9raXNzL2ZvcndhcmRlci9WZXJ0aWNhbENhcmRHcm91cFJlc2l6ZUNvbnRyb2xsZXIuamF2YScsCiAgICAiIiIgICAgICAgIGV4cGxhbmF0aW9uLnNldFRleHQodmVydGljYWxDYXJkcwogICAgICAgICAgICAgICAgPyBcIlJlc2l6ZSBldmVyeSBWZXJ0aWNhbCBDYXJkIHRvZ2V0aGVyXCIKICAgICAgICAgICAgICAgIDogXCJSZXNpemUgdGhpcyBoaXN0b3J5IHN0eWxlIGFjcm9zcyB0aGUgZnVsbCBzY3JlZW5cIik7CiIiIiwKICAgICIiIiAgICAgICAgZXhwbGFuYXRpb24uc2V0VGV4dCh2ZXJ0aWNhbENhcmRzCiAgICAgICAgICAgICAgICA/IFwiUmVzaXplIGV2ZXJ5IFZlcnRpY2FsIENhcmQgdG9nZXRoZXIgwrsgMjAwJSA9IHNjcmVlbiBlZGdlcyDCtyA0MDAlID0gYmV5b25kIHNjcmVlblwiCiAgICAgICAgICAgICAgICA6IFwiUmVzaXplIHRoaXMgaGlzdG9yeSBzdHlsZSDCtyAyMDAlID0gc2NyZWVuIGVkZ2VzIMK3IDQwMCUgPSBiZXlvbmQgc2NyZWVuXCIpOwoiIiIpCgpyZXBsYWNlX2V4YWN0KAogICAgJ2FwcC9zcmMvbWFpbi9qYXZhL2ZyL25lYW1hci9raXNzL2ZvcndhcmRlci9IaXN0b3J5RGlzcGxheUZvcndhcmRlci5qYXZhJywKICAgICcgICAgICAgIGludCBuYXJyb3dlcldpZHRoID0gSGlzdG9yeUVkZ2VXaWR0aFBvbGljeS50YXJnZXRXaWR0aChhdmFpbGFibGUsIGF2YWlsYWJsZSwgd2lkdGhQZXJjZW50KTtcbicsCiAgICAnICAgICAgICBpbnQgdGFyZ2V0Um93V2lkdGggPSBIaXN0b3J5RWRnZVdpZHRoUG9saWN5LnRhcmdldFdpZHRoKGF2YWlsYWJsZSwgYXZhaWxhYmxlLCB3aWR0aFBlcmNlbnQpO1xuJykKcmVwbGFjZV9leGFjdCgKICAgICdhcHAvc3JjL21haW4vamF2YS9mci9uZWFtYXIva2lzcy9mb3J3YXJkZXIvSGlzdG9yeURpc3BsYXlGb3J3YXJkZXIuamF2YScsCiAgICAiIiIgICAgICAgICAgICBpbnQgZGVzaXJlZFdpZHRoID0gd2lkdGhQZXJjZW50ID49IDEwMAogICAgICAgICAgICAgICAgICAgID8gVmlld0dyb3VwLkxheW91dFBhcmFtcy5NQVRDSF9QQVJFTlQgOiBuYXJyb3dlcldpZHRoOwoiIiIsCiAgICAiIiIgICAgICAgICAgICBpbnQgZGVzaXJlZFdpZHRoOwogICAgICAgICAgICBpZiAod2lkdGhQZXJjZW50IDwgMTAwKSBkZXNpcmVkV2lkdGggPSB0YXJnZXRSb3dXaWR0aDsKICAgICAgICAgICAgZWxzZSBpZiAod2lkdGhQZXJjZW50IDw9IDIwMCkgZGVzaXJlZFdpZHRoID0gVmlld0dyb3VwLkxheW91dFBhcmFtcy5NQVRDSF9QQVJFTlQ7CiAgICAgICAgICAgIGVsc2UgZGVzaXJlZFdpZHRoID0gdGFyZ2V0Um93V2lkdGg7CiIiIikKcmVwbGFjZV9leGFjdCgKICAgICdhcHAvc3JjL21haW4vamF2YS9mci9uZWFtYXIva2lzcy9mb3J3YXJkZXIvSGlzdG9yeURpc3BsYXlGb3J3YXJkZXIuamF2YScsCiAgICAnICAgICAgICBpbnQgd2lkdGggPSBNYXRoLm1pbihzY3JlZW5XaWR0aCAtIGRwKDI0KSwgTWF0aC5tYXgoZHAoMTUwKSwgYmFzZVdpZHRoICogc2l6ZVBlcmNlbnQgLyAxMDApKTtcbicsCiAgICAiIiIgICAgICAgIGludCBub3JtYWxXaWR0aCA9IE1hdGgubWluKHNjcmVlbldpZHRoIC0gZHAoMjQpLAogICAgICAgICAgICAgICAgTWF0aC5tYXgoZHAoMTUwKSwgYmFzZVdpZHRoICogc2l6ZVBlcmNlbnQgLyAxMDApKTsKICAgICAgICBpbnQgd2lkdGggPSBIaXN0b3J5RWRnZVdpZHRoUG9saWN5LnRhcmdldFdpZHRoKAogICAgICAgICAgICAgICAgbm9ybWFsV2lkdGgsIHNjcmVlbldpZHRoLCBoaXN0b3J5V2lkdGhQZXJjZW50KCkpOwoiIiIpCnJlcGxhY2VfZXhhY3QoCiAgICAnYXBwL3NyYy9tYWluL2phdmEvZnIvbmVhbWFyL2tpc3MvZm9yd2FyZGVyL0hpc3RvcnlEaXNwbGF5Rm9yd2FyZGVyLmphdmEnLAogICAgJyAgICAgICAgcmV0dXJuIHNhZmVQcmVmSW50KFB...'(truncated due to size)
+          python3 .github/scripts/refine_33069_width_400.py
+          git diff --check
+
+      - name: Verify exact intended source edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=3ae7421da1830b71a8b985f0d96da6c889d1270a
+          printf '%s\n' \
+            .github/scripts/refine_33069_width_400.py \
+            .github/workflows/refine-33069-global-width-400.yml \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicy.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicy.java \
+            app/src/test/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicyTest.java \
+            app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicyTest.java | sort > /tmp/expected-all
+          git diff --name-only "$BASE" | sort > /tmp/actual-all
+          diff -u /tmp/expected-all /tmp/actual-all
+          grep -F 'private static final int MAX_WIDTH = 400;' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -F 'private static final int MAX_PERCENT = 400;' app/src/main/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicy.java
+          grep -F 'private static final int MAX_PERCENT = 400;' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicy.java
+          grep -F 'return safePrefInt(PREF_HISTORY_WIDTH, 100, 48, 400);' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -F 'applyVerticalHistoryWidth(view, parent, context);' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -F 'Math.min(400, prefs.getInt(PREF_HISTORY_WIDTH, 100))' app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java
+          grep -F 'versionCode 497' app/build.gradle
+          grep -F 'versionName "3.30.69"' app/build.gradle
+
+      - name: Focused width policy tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest \
+            --tests fr.neamar.kiss.forwarder.HistoryEdgeWidthPolicyTest \
+            --tests fr.neamar.kiss.forwarder.VerticalCardWidthPolicyTest \
+            --stacktrace
+
+      - name: Full clean verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Commit verified source without temporary verifier files
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=3ae7421da1830b71a8b985f0d96da6c889d1270a
+          rm .github/scripts/refine_33069_width_400.py
+          rm .github/workflows/refine-33069-global-width-400.yml
+          git diff --check
+          printf '%s\n' \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicy.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicy.java \
+            app/src/test/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicyTest.java \
+            app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicyTest.java | sort > /tmp/expected-final
+          git diff --name-only "$BASE" | sort > /tmp/actual-final
+          diff -u /tmp/expected-final /tmp/actual-final
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Extend global history width to 400 percent in 3.30.69'
+          git push origin HEAD:fix/3.30.69-all-history-edge-width
