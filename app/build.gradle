@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.64 - stationary Vertical Cards viewport and explicit latest navigation
-        versionCode 492
-        versionName "3.30.64"
+        // Smart S Launcher 3.30.65 - reliable search return, durable notification routes and reinstall source
+        versionCode 493
+        versionName "3.30.65"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

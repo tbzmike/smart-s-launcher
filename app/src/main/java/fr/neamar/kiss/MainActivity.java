@@ -187,6 +187,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     private OnBackPressedCallback onBackPressedCallback;
     private final LauncherHomeLifecycleState homeLifecycleState =
             new LauncherHomeLifecycleState();
+    private final SearchLaunchReturnState searchLaunchReturnState =
+            new SearchLaunchReturnState();
     private boolean launcherUiResumed;
     private boolean pendingBackgroundRefresh;
     private boolean pendingBackgroundFavoriteRefresh;
@@ -507,6 +509,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             displayLoader(false);
         }
 
+        boolean resetDefaultHistoryAfterSearchLaunch =
+                searchLaunchReturnState.consumeDefaultHistoryReset();
         boolean refreshDeferredBackground = pendingBackgroundRefresh;
         boolean refreshDeferredFavorites = pendingBackgroundFavoriteRefresh;
         String deferredNotificationTargetId = pendingNotificationTargetId;
@@ -522,10 +526,20 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // normal refresh when the background verification completes.
         NotificationListener.reconcileActiveNotificationsAsync();
 
-        // Coalesce everything that arrived while an external launch transition owned the screen.
-        // Refresh the existing search type so a queued notification event becomes a real timeline
-        // card without resetting history navigation to a different search mode.
-        if (refreshDeferredBackground
+        // A successful launch from a query must return to the real default History tree, not a
+        // visually frozen copy of the old query results. Arm the Vertical Cards renderer before
+        // publishing the empty query so the QUERY -> HISTORY result set is rebuilt and bottom-pinned.
+        if (resetDefaultHistoryAfterSearchLaunch) {
+            forwarderManager.prepareDefaultHistoryAfterSearchLaunch();
+            cancelSearch();
+            if (!TextUtils.isEmpty(searchEditText.getText())) {
+                clearSearchText();
+            } else {
+                updateSearchRecords(false, "");
+            }
+            displayClearOnInput();
+            hideKeyboard();
+        } else if (refreshDeferredBackground
                 && SearchHandler.getInstance().getLastSearchType() != null) {
             updateSearchRecords(true, searchEditText.getText().toString());
         } else {
@@ -1122,6 +1136,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     public void externalResultLaunchStarting() {
+        // Record whether this verified external transition started from a real query before the
+        // delayed launch cleanup can clear the EditText while Smart S is in the background.
+        searchLaunchReturnState.onExternalLaunchStarting(
+                searchEditText != null && !TextUtils.isEmpty(searchEditText.getText()));
         // Capture the currently visible Vertical Cards viewport before Android begins the external
         // transition. A later history recency update must not relocate the tile the user tapped.
         forwarderManager.onExternalResultLaunchStarting();
@@ -1130,11 +1148,13 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     public void externalResultLaunchOccurred() {
+        searchLaunchReturnState.onExternalLaunchSucceeded();
         homeLifecycleState.onExternalResultLaunched();
     }
 
     @Override
     public void externalResultLaunchCancelled() {
+        searchLaunchReturnState.onExternalLaunchCancelled();
         launcherUiResumed = true;
         forwarderManager.onExternalResultLaunchCancelled();
     }

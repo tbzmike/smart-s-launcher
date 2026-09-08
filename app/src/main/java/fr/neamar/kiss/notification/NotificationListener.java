@@ -224,13 +224,15 @@ public class NotificationListener extends NotificationListenerService {
         CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
         if (text == null || text.length() == 0) text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
         String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? n.getShortcutId() : null;
+        String routeUri = SavedNotificationDestinationResolver.capturePublishedShortcutRoute(
+                this, sbn.getPackageName(), shortcutId, sbn.getUser());
         long userSerial = -1L;
         android.os.UserManager userManager =
                 (android.os.UserManager) getSystemService(Context.USER_SERVICE);
         if (userManager != null) userSerial = userManager.getSerialNumberForUser(sbn.getUser());
         SmartStateStore.saveNotification(this, id, sbn.getPackageName(), getAppName(sbn.getPackageName()),
                 title == null ? "" : title.toString(), text == null ? "" : text.toString(), sbn.getPostTime(),
-                isPermanentForHistory(sbn), shortcutId, userSerial);
+                isPermanentForHistory(sbn), shortcutId, userSerial, routeUri);
     }
 
     private String getAppName(String packageName) {

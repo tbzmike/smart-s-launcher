@@ -13,4 +13,6 @@ public class NotificationHistoryRecord {
     public String shortcutId;
     /** Android profile serial that posted the notification; -1 when unavailable. */
     public long userSerial = -1L;
+    /** Verified explicit route captured from the app-published conversation shortcut. */
+    public String routeUri;
 }

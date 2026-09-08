@@ -32,6 +32,8 @@ import java.util.Set;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.NotificationHistoryActivity;
+import fr.neamar.kiss.db.NotificationHistoryRecord;
+import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationAvatarSupport;
@@ -45,8 +47,10 @@ import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
+import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class SettingsResult extends Result<SettingPojo> {
@@ -222,6 +226,16 @@ public class SettingsResult extends Result<SettingPojo> {
         }
         if (pojo instanceof NotificationHistorySearchPojo) {
             NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;
+            NotificationHistoryRecord record = NotificationTimelineStore.findByDbId(
+                    context, history.historyDbId);
+            if (record != null) {
+                SavedNotificationDestinationResolver.OpenResult result =
+                        SavedNotificationDestinationResolver.openExactResult(context, record);
+                if (handleExactNotificationResult(context, record.appName,
+                        record.packageName, result)) return;
+            }
+            // The message is still retained even when Android never exposed a durable app route.
+            // Fall back to the exact saved row instead of claiming the notification was deleted.
             Intent intent = new Intent(context, NotificationHistoryActivity.class);
             intent.putExtra(NotificationHistoryActivity.EXTRA_HISTORY_DB_ID, history.historyDbId);
             intent.putExtra(NotificationHistoryActivity.EXTRA_SEARCH_QUERY, history.searchQuery);
@@ -260,14 +274,19 @@ public class SettingsResult extends Result<SettingPojo> {
     }
 
     private void launchNotificationTarget(Context context, NotificationPojo notification) {
-        // Launcher History represents one stored notification event. A normal tap must therefore
-        // use that event's exact saved destination and must never open an app-wide notification
-        // picker/history popup. Long-press remains the separate rich-history action.
+        // Use the persisted exact row first in every mode. This path distinguishes frozen from
+        // uninstalled packages and enables a frozen package before attempting its saved route.
+        SavedNotificationDestinationResolver.OpenResult exactResult =
+                NotificationHistoryResolver.openExactResultForPojo(context, notification);
+        if (handleExactNotificationResult(context, notification.appName,
+                notification.packageName, exactResult)) return;
+
+        // Launcher History represents one stored notification event. If Android never exposed a
+        // durable target, keep the selected saved message available instead of misreporting it as
+        // deleted or silently launching a different notification.
         if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY) {
-            if (NotificationHistoryResolver.openExactForPojo(context, notification)) {
-                launchSucceeded = true;
-            } else {
-                Toast.makeText(context, "No exact notification destination is available.",
+            if (!NotificationHistoryResolver.showForPojo(context, notification)) {
+                Toast.makeText(context, "Saved message has no durable app route.",
                         Toast.LENGTH_SHORT).show();
             }
             return;
@@ -295,6 +314,25 @@ public class SettingsResult extends Result<SettingPojo> {
             Toast.makeText(context, "No exact notification destination is available.",
                     Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private boolean handleExactNotificationResult(
+            Context context, String appName, String packageName,
+            SavedNotificationDestinationResolver.OpenResult result) {
+        if (result.accepted()) {
+            launchSucceeded = true;
+            return true;
+        }
+        if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
+            AppReinstallSupport.showUninstalledDialog(context, packageName, appName);
+            return true;
+        }
+        if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
+            Toast.makeText(context, "The frozen app could not be re-enabled.",
+                    Toast.LENGTH_SHORT).show();
+            return true;
+        }
+        return false;
     }
 
     private void showNotificationGroup(Context context, NotificationPojo notification) {

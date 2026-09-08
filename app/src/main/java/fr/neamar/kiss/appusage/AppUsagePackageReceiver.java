@@ -8,6 +8,7 @@ import android.content.pm.InstallSourceInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.text.TextUtils;
@@ -102,6 +103,7 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
                     system,
                     info.firstInstallTime,
                     info.lastUpdateTime,
+                    install.installerPackage,
                     install.source,
                     install.sourceUri));
             store.prune(System.currentTimeMillis());
@@ -144,9 +146,30 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
         } else if (!TextUtils.isEmpty(sourceType)) {
             source = sourceType;
         }
-        String sourceUri = "com.android.vending".equals(installer)
-                ? "https://play.google.com/store/apps/details?id=" + packageName : null;
-        return new InstallMeta(source, sourceUri);
+        String sourceUri = verifiedStorePageUri(pm, installer, packageName);
+        return new InstallMeta(installer, source, sourceUri);
+    }
+
+    private static String verifiedStorePageUri(PackageManager pm, String installer,
+                                               String packageName) {
+        if (TextUtils.isEmpty(installer)) return null;
+        String market = "market://details?id=" + Uri.encode(packageName);
+        if (resolvesToInstaller(pm, installer, market)) return market;
+        if ("com.android.vending".equals(installer)) {
+            return "https://play.google.com/store/apps/details?id=" + Uri.encode(packageName);
+        }
+        return null;
+    }
+
+    private static boolean resolvesToInstaller(PackageManager pm, String installer, String uri) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri)).setPackage(installer);
+            ResolveInfo resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+            return resolved != null && resolved.activityInfo != null
+                    && TextUtils.equals(installer, resolved.activityInfo.packageName);
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private static String packageSourceLabel(int source) {
@@ -166,9 +189,11 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
     }
 
     private static final class InstallMeta {
+        final String installerPackage;
         final String source;
         final String sourceUri;
-        InstallMeta(String source, String sourceUri) {
+        InstallMeta(String installerPackage, String source, String sourceUri) {
+            this.installerPackage = installerPackage;
             this.source = source;
             this.sourceUri = sourceUri;
         }

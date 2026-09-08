@@ -61,6 +61,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import fr.neamar.kiss.appusage.AppUsageStore;
 import fr.neamar.kiss.appusage.AppUsageTimelineCompactor;
 import fr.neamar.kiss.appusage.AppUsageTracker;
+import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
 /**
@@ -666,6 +667,7 @@ public final class AppUsageActivity extends AppCompatActivity {
         AppUsageStore.PackageState state = AppUsageStore.get(this).getPackageState(packageName);
 
         String currentVersion = "Not currently installed";
+        boolean currentlyInstalled = false;
         try {
             PackageInfo info;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -679,6 +681,7 @@ public final class AppUsageActivity extends AppCompatActivity {
                     ? info.getLongVersionCode() : info.versionCode;
             currentVersion = (TextUtils.isEmpty(info.versionName) ? "version" : "v" + info.versionName)
                     + " · code " + code;
+            currentlyInstalled = true;
         } catch (PackageManager.NameNotFoundException | RuntimeException ignored) { }
 
         StringBuilder details = new StringBuilder();
@@ -729,6 +732,11 @@ public final class AppUsageActivity extends AppCompatActivity {
                 .setView(scroller)
                 .setPositiveButton("Close", null)
                 .setNeutralButton("App info", (d, which) -> openAppInfo(packageName));
+        if (!currentlyInstalled
+                && AppReinstallSupport.hasVerifiedReinstallRoute(this, packageName)) {
+            dialog.setNegativeButton("Reinstall", (d, which) ->
+                    AppReinstallSupport.openOriginalStore(this, packageName));
+        }
         Intent launch = getPackageManager().getLaunchIntentForPackage(packageName);
         if (launch != null) {
             dialog.setNegativeButton("Open", (d, which) -> {

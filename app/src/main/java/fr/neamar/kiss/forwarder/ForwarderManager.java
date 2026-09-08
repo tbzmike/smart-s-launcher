@@ -310,6 +310,13 @@ public class ForwarderManager extends Forwarder {
         experienceTweaks.updateSearchRecords(query);
     }
 
+    /** Force QUERY -> default HISTORY after a verified successful external search launch. */
+    public void prepareDefaultHistoryAfterSearchLaunch() {
+        if (!isVerticalCardsMode()) return;
+        smartCardListForwarder.forceHistoryRebuildOnNextDataSetChange();
+        verticalCardViewportController.beginExplicitBottomNavigation();
+    }
+
     /** Route the exact Android HOME intent with verified foreground/background lifecycle state. */
     public void onNewIntent(@NonNull Intent intent, boolean launcherWasForeground) {
         if (isVerticalCardsMode() && isHomeIntent(intent)) {

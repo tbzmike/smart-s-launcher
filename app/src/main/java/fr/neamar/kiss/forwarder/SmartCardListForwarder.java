@@ -54,6 +54,7 @@ final class SmartCardListForwarder extends Forwarder {
     private LinearLayout column;
     private View edgeEffect;
     private boolean pendingDataSetRefresh;
+    private boolean forceNextHistoryRebuild;
     private boolean renderedActiveQuery;
     private boolean suppressNextHistoryAnimation;
     private Runnable deferredHistoryRefreshCallback;
@@ -159,6 +160,7 @@ final class SmartCardListForwarder extends Forwarder {
         column = null;
         edgeEffect = null;
         pendingDataSetRefresh = false;
+        forceNextHistoryRebuild = false;
         renderedActiveQuery = false;
         suppressNextHistoryAnimation = false;
     }
@@ -183,11 +185,15 @@ final class SmartCardListForwarder extends Forwarder {
         if (!isEnabled()) return false;
         boolean activeQuery = isActiveQuery();
         return column == null || column.getChildCount() == 0
-                || (!activeQuery && renderedActiveQuery);
+                || (!activeQuery && (renderedActiveQuery || forceNextHistoryRebuild));
     }
 
     boolean hasPendingDataSetRefresh() {
         return pendingDataSetRefresh;
+    }
+
+    void forceHistoryRebuildOnNextDataSetChange() {
+        forceNextHistoryRebuild = true;
     }
 
     boolean rebuildPendingDataSetRefresh() {
@@ -303,6 +309,7 @@ final class SmartCardListForwarder extends Forwarder {
         deferredRefreshIdlePolicy.clear();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
+        if (!activeQuery) forceNextHistoryRebuild = false;
         boolean animateHistoryItems = !activeQuery && !suppressNextHistoryAnimation;
         suppressNextHistoryAnimation = false;
         renderedActiveQuery = activeQuery;

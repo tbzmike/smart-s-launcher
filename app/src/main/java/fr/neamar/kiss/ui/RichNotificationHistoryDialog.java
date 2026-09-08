@@ -28,6 +28,7 @@ import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 
 /**
@@ -306,10 +307,17 @@ public final class RichNotificationHistoryDialog {
             open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                boolean opened = SavedNotificationDestinationResolver.openExact(context, record);
-                if (opened) SmartAnimationEngine.dismissDialog(dialog);
-                else Toast.makeText(context, "Unable to open this exact notification",
-                        Toast.LENGTH_SHORT).show();
+                SavedNotificationDestinationResolver.OpenResult result =
+                        SavedNotificationDestinationResolver.openExactResult(context, record);
+                if (result.accepted()) {
+                    SmartAnimationEngine.dismissDialog(dialog);
+                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
+                    AppReinstallSupport.showUninstalledDialog(
+                            context, record.packageName, record.appName);
+                } else {
+                    Toast.makeText(context, "Unable to open this exact notification",
+                            Toast.LENGTH_SHORT).show();
+                }
             });
             buttons.addView(open);
             actionArea.addView(buttons);
@@ -323,9 +331,19 @@ public final class RichNotificationHistoryDialog {
             open.setText(exactTarget ? "Open notification" : "Open app");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                boolean opened = exactTarget
-                        ? SavedNotificationDestinationResolver.openExact(context, record)
-                        : AppLaunchUtils.launchPackage(context, packageName);
+                if (!AppLaunchUtils.isPackageInstalled(context, packageName)) {
+                    AppReinstallSupport.showUninstalledDialog(
+                            context, packageName, record.appName);
+                    return;
+                }
+                boolean opened;
+                if (exactTarget) {
+                    SavedNotificationDestinationResolver.OpenResult result =
+                            SavedNotificationDestinationResolver.openExactResult(context, record);
+                    opened = result.accepted();
+                } else {
+                    opened = AppLaunchUtils.launchPackage(context, packageName);
+                }
                 if (!opened) {
                     Toast.makeText(context, exactTarget
                                     ? "Unable to open this exact notification" : "App cannot be opened",

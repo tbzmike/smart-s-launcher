@@ -5,11 +5,14 @@ import android.app.usage.UsageEvents;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.InstallSourceInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.net.Uri;
 import android.os.Build;
 import android.os.PersistableBundle;
 import android.text.TextUtils;
@@ -444,10 +447,33 @@ public final class AppUsageSync {
             source = sourceType;
         }
 
-        String sourceUri = "com.android.vending".equals(installer)
-                ? "https://play.google.com/store/apps/details?id=" + packageName : null;
+        String sourceUri = verifiedStorePageUri(pm, installer, packageName);
         return new PackageMeta(packageName, label, system, firstInstall, lastUpdate,
-                source, sourceUri);
+                installer, source, sourceUri);
+    }
+
+    @Nullable
+    private static String verifiedStorePageUri(PackageManager pm, @Nullable String installer,
+                                               String packageName) {
+        if (TextUtils.isEmpty(installer)) return null;
+        String market = "market://details?id=" + Uri.encode(packageName);
+        if (resolvesToInstaller(pm, installer, market)) return market;
+
+        // Preserve the already-supported Play listing, but still bind it to Play when opened.
+        String play = "https://play.google.com/store/apps/details?id=" + Uri.encode(packageName);
+        if ("com.android.vending".equals(installer)) return play;
+        return null;
+    }
+
+    private static boolean resolvesToInstaller(PackageManager pm, String installer, String uri) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri)).setPackage(installer);
+            ResolveInfo resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+            return resolved != null && resolved.activityInfo != null
+                    && TextUtils.equals(installer, resolved.activityInfo.packageName);
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private static String packageSourceLabel(int source) {
@@ -488,23 +514,25 @@ public final class AppUsageSync {
         final boolean system;
         final long firstInstall;
         final long lastUpdate;
+        final String installerPackage;
         final String source;
         final String sourceUri;
 
         PackageMeta(String packageName, String label, boolean system, long firstInstall,
-                    long lastUpdate, String source, String sourceUri) {
+                    long lastUpdate, String installerPackage, String source, String sourceUri) {
             this.packageName = packageName;
             this.label = label;
             this.system = system;
             this.firstInstall = firstInstall;
             this.lastUpdate = lastUpdate;
+            this.installerPackage = installerPackage;
             this.source = source;
             this.sourceUri = sourceUri;
         }
 
         AppUsageStore.PackageState toState() {
             return new AppUsageStore.PackageState(packageName, label, system, firstInstall,
-                    lastUpdate, source, sourceUri);
+                    lastUpdate, installerPackage, source, sourceUri);
         }
     }
 }

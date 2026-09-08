@@ -32,16 +32,27 @@ public final class NotificationHistoryResolver {
      * cannot silently open another notification from the same app.
      */
     public static boolean openExactForPojo(Context context, NotificationPojo notification) {
-        if (context == null || notification == null) return false;
+        return openExactResultForPojo(context, notification).accepted();
+    }
+
+    public static SavedNotificationDestinationResolver.OpenResult openExactResultForPojo(
+            Context context, NotificationPojo notification) {
+        if (context == null || notification == null) {
+            return SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET;
+        }
         String packageName = resolvePackage(context, notification);
-        if (packageName == null) return false;
+        if (packageName == null) {
+            return SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET;
+        }
 
         List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
                 context, packageName, null, 0);
         int index = NotificationHistoryStartIndex.resolve(
                 records, notification.id, notification.postTime);
-        if (index < 0 || index >= records.size()) return false;
-        return SavedNotificationDestinationResolver.openExact(context, records.get(index));
+        if (index < 0 || index >= records.size()) {
+            return SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET;
+        }
+        return SavedNotificationDestinationResolver.openExactResult(context, records.get(index));
     }
 
     public static boolean showForPojo(Context context, Pojo pojo) {

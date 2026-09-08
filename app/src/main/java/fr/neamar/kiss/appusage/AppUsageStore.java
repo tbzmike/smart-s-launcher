@@ -26,7 +26,7 @@ public final class AppUsageStore extends SQLiteOpenHelper {
     public static final String KIND_UNINSTALLED = "APP_UNINSTALLED";
 
     private static final String DB_NAME = "smart_s_app_usage.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
     public static final long RETENTION_MS = 365L * 24L * 60L * 60L * 1000L;
 
     private static volatile AppUsageStore instance;
@@ -79,6 +79,7 @@ public final class AppUsageStore extends SQLiteOpenHelper {
                 "is_system INTEGER NOT NULL DEFAULT 0," +
                 "first_install_ms INTEGER NOT NULL DEFAULT 0," +
                 "last_update_ms INTEGER NOT NULL DEFAULT 0," +
+                "installer_package TEXT," +
                 "source TEXT," +
                 "source_uri TEXT)");
 
@@ -98,6 +99,9 @@ public final class AppUsageStore extends SQLiteOpenHelper {
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) createDailyPhoneStateTable(db);
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE package_state ADD COLUMN installer_package TEXT");
+        }
     }
 
     public synchronized void putTimeline(@NonNull TimelineEntry entry) {
@@ -148,6 +152,7 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         values.put("is_system", state.systemApp ? 1 : 0);
         values.put("first_install_ms", state.firstInstallMs);
         values.put("last_update_ms", state.lastUpdateMs);
+        values.put("installer_package", state.installerPackage);
         values.put("source", state.source);
         values.put("source_uri", state.sourceUri);
         getWritableDatabase().insertWithOnConflict(
@@ -159,11 +164,11 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().query(
                 "package_state",
                 new String[]{"package_name", "app_label", "is_system", "first_install_ms",
-                        "last_update_ms", "source", "source_uri"},
+                        "last_update_ms", "installer_package", "source", "source_uri"},
                 "package_name=?", new String[]{packageName}, null, null, null, "1")) {
             if (!c.moveToFirst()) return null;
             return new PackageState(c.getString(0), c.getString(1), c.getInt(2) != 0,
-                    c.getLong(3), c.getLong(4), c.getString(5), c.getString(6));
+                    c.getLong(3), c.getLong(4), c.getString(5), c.getString(6), c.getString(7));
         }
     }
 
@@ -379,17 +384,20 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         public final boolean systemApp;
         public final long firstInstallMs;
         public final long lastUpdateMs;
+        @Nullable public final String installerPackage;
         @Nullable public final String source;
         @Nullable public final String sourceUri;
 
         public PackageState(@NonNull String packageName, @Nullable String appLabel,
                             boolean systemApp, long firstInstallMs, long lastUpdateMs,
-                            @Nullable String source, @Nullable String sourceUri) {
+                            @Nullable String installerPackage, @Nullable String source,
+                            @Nullable String sourceUri) {
             this.packageName = packageName;
             this.appLabel = appLabel;
             this.systemApp = systemApp;
             this.firstInstallMs = firstInstallMs;
             this.lastUpdateMs = lastUpdateMs;
+            this.installerPackage = installerPackage;
             this.source = source;
             this.sourceUri = sourceUri;
         }
