@@ -1,4 +1,4 @@
-# Trigger exact guarded 3.30.68 verification
+# Trigger corrected guarded 3.30.68 verification
 name: Guarded 3.30.68 edge-to-edge history
 on:
   push:
@@ -27,7 +27,11 @@ jobs:
           grep -Fq 'android:layout_marginStart="@dimen/list_margin_horizontal"' app/src/main/res/layout/main.xml
           grep -Fq 'int targetWidth = Math.round(available * widthPercent / 100f);' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
       - name: Apply guarded 3.30.68 source
-        run: python3 .github/scripts/apply_33068_edge_to_edge_history.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply_33068_edge_to_edge_history.py
+          python3 .github/scripts/fix_33068_test_api.py
       - name: Verify exact source scope and invariants
         shell: bash
         run: |
@@ -47,6 +51,9 @@ jobs:
           ! grep -Fq 'int targetWidth = Math.round(available * widthPercent / 100f);' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
           grep -Fq 'if (percent >= NORMAL_PERCENT) return availablePx;' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicy.java
           grep -Fq 'if (percent <= NORMAL_PERCENT) return baseInsetPx;' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicy.java
+          grep -Fq 'org.junit.jupiter.api.Test' app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicyTest.java
+          grep -Fq 'org.hamcrest.MatcherAssert.assertThat' app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicyTest.java
+          ! grep -Fq 'org.junit.Assert' app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicyTest.java
       - name: Focused regression tests
         run: >-
           ./gradlew testDebugUnitTest
@@ -66,6 +73,7 @@ jobs:
           set -euo pipefail
           rm .github/workflows/apply-33068-edge-to-edge-history.yml
           rm .github/scripts/apply_33068_edge_to_edge_history.py
+          rm .github/scripts/fix_33068_test_api.py
           mapfile -t final_files < <({ git diff --name-only 6c5578953f61dc7cc0e572a971d3cb4ec153813e -- app; git ls-files --others --exclude-standard app; } | sort -u)
           printf '%s\n' "${final_files[@]}"
           test ${#final_files[@]} -eq 5
@@ -73,6 +81,7 @@ jobs:
           ! grep -Fq '@dimen/list_margin_horizontal' app/src/main/res/layout/main.xml
           test ! -e .github/workflows/apply-33068-edge-to-edge-history.yml
           test ! -e .github/scripts/apply_33068_edge_to_edge_history.py
+          test ! -e .github/scripts/fix_33068_test_api.py
       - name: Commit verified 3.30.68 source
         shell: bash
         run: |
