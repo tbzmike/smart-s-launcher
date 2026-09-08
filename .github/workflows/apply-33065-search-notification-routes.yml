@@ -1,0 +1,309 @@
+name: Guarded 3.30.65 search return and durable notification routes
+on:
+  push:
+    branches: [fix/3.30.65-search-notification-routes]
+    paths: ['.github/workflows/apply-33065-search-notification-routes.yml']
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify exact baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "a6bd91534c0d29d9be3e09b2f3f1dc9231687552"
+          grep -Fq 'versionName "3.30.64"' app/build.gradle
+          grep -Fq 'private final VerticalCardUserScrollGesturePolicy userScrollGesturePolicy' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+      - name: Apply guarded 3.30.65 changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def p(path): return Path(path)
+          def read(path): return p(path).read_text()
+          def write(path, text): p(path).write_text(text)
+          def rep(path, old, new, count=1):
+              text = read(path)
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f"{path}: expected {count} occurrence(s), found {actual}: {old[:100]!r}")
+              write(path, text.replace(old, new, count))
+
+          # Version.
+          rep('app/build.gradle',
+              '// Smart S Launcher 3.30.64 - stationary Vertical Cards viewport and explicit latest navigation\n        versionCode 492\n        versionName "3.30.64"',
+              '// Smart S Launcher 3.30.65 - reliable search return, durable notification routes and reinstall source\n        versionCode 493\n        versionName "3.30.65"')
+
+          # One-shot lifecycle state for a successful external launch that began from a search.
+          write('app/src/main/java/fr/neamar/kiss/SearchLaunchReturnState.java', '''package fr.neamar.kiss;\n\n/**\n * Tracks only the launcher transition that matters for search cleanup: a verified successful\n * external launch that began while the user had a non-empty search query. The reset is consumed\n * exactly once on the next launcher resume.\n */\nfinal class SearchLaunchReturnState {\n    private boolean startedFromSearch;\n    private boolean defaultHistoryResetPending;\n\n    void onExternalLaunchStarting(boolean activeSearch) {\n        startedFromSearch = activeSearch;\n    }\n\n    void onExternalLaunchSucceeded() {\n        if (startedFromSearch) defaultHistoryResetPending = true;\n        startedFromSearch = false;\n    }\n\n    void onExternalLaunchCancelled() {\n        startedFromSearch = false;\n    }\n\n    boolean consumeDefaultHistoryReset() {\n        if (!defaultHistoryResetPending) return false;\n        defaultHistoryResetPending = false;\n        return true;\n    }\n}\n''')
+          write('app/src/test/java/fr/neamar/kiss/SearchLaunchReturnStateTest.java', '''package fr.neamar.kiss;\n\nimport static org.hamcrest.MatcherAssert.assertThat;\nimport static org.hamcrest.Matchers.is;\n\nimport org.junit.jupiter.api.Test;\n\nclass SearchLaunchReturnStateTest {\n    @Test void successfulSearchLaunchRequestsExactlyOneDefaultHistoryReset() {\n        SearchLaunchReturnState state = new SearchLaunchReturnState();\n        state.onExternalLaunchStarting(true);\n        state.onExternalLaunchSucceeded();\n        assertThat(state.consumeDefaultHistoryReset(), is(true));\n        assertThat(state.consumeDefaultHistoryReset(), is(false));\n    }\n\n    @Test void nonSearchLaunchNeverRequestsSearchReset() {\n        SearchLaunchReturnState state = new SearchLaunchReturnState();\n        state.onExternalLaunchStarting(false);\n        state.onExternalLaunchSucceeded();\n        assertThat(state.consumeDefaultHistoryReset(), is(false));\n    }\n\n    @Test void cancelledSearchLaunchDoesNotResetHistory() {\n        SearchLaunchReturnState state = new SearchLaunchReturnState();\n        state.onExternalLaunchStarting(true);\n        state.onExternalLaunchCancelled();\n        assertThat(state.consumeDefaultHistoryReset(), is(false));\n    }\n}\n''')
+
+          # MainActivity: make return from a launched search result an explicit state transition.
+          rep('app/src/main/java/fr/neamar/kiss/MainActivity.java',
+              'private final LauncherHomeLifecycleState homeLifecycleState =\n            new LauncherHomeLifecycleState();\n    private boolean launcherUiResumed;',
+              'private final LauncherHomeLifecycleState homeLifecycleState =\n            new LauncherHomeLifecycleState();\n    private final SearchLaunchReturnState searchLaunchReturnState =\n            new SearchLaunchReturnState();\n    private boolean launcherUiResumed;')
+          rep('app/src/main/java/fr/neamar/kiss/MainActivity.java',
+              'boolean refreshDeferredBackground = pendingBackgroundRefresh;\n        boolean refreshDeferredFavorites = pendingBackgroundFavoriteRefresh;',
+              'boolean resetDefaultHistoryAfterSearchLaunch =\n                searchLaunchReturnState.consumeDefaultHistoryReset();\n        boolean refreshDeferredBackground = pendingBackgroundRefresh;\n        boolean refreshDeferredFavorites = pendingBackgroundFavoriteRefresh;')
+          rep('app/src/main/java/fr/neamar/kiss/MainActivity.java',
+              '''        // Coalesce everything that arrived while an external launch transition owned the screen.\n        // Refresh the existing search type so a queued notification event becomes a real timeline\n        // card without resetting history navigation to a different search mode.\n        if (refreshDeferredBackground\n                && SearchHandler.getInstance().getLastSearchType() != null) {\n            updateSearchRecords(true, searchEditText.getText().toString());\n        } else {\n            updateSearchRecords(false, searchEditText.getText().toString());\n        }''',
+              '''        // A successful launch from a query must return to the real default History tree, not a\n        // visually frozen copy of the old query results. Arm the Vertical Cards renderer before\n        // publishing the empty query so the QUERY -> HISTORY result set is rebuilt and bottom-pinned.\n        if (resetDefaultHistoryAfterSearchLaunch) {\n            forwarderManager.prepareDefaultHistoryAfterSearchLaunch();\n            cancelSearch();\n            if (!TextUtils.isEmpty(searchEditText.getText())) {\n                clearSearchText();\n            } else {\n                updateSearchRecords(false, "");\n            }\n            displayClearOnInput();\n            hideKeyboard();\n        } else if (refreshDeferredBackground\n                && SearchHandler.getInstance().getLastSearchType() != null) {\n            updateSearchRecords(true, searchEditText.getText().toString());\n        } else {\n            updateSearchRecords(false, searchEditText.getText().toString());\n        }''')
+          rep('app/src/main/java/fr/neamar/kiss/MainActivity.java',
+              '''    public void externalResultLaunchStarting() {\n        // Capture the currently visible Vertical Cards viewport before Android begins the external\n        // transition. A later history recency update must not relocate the tile the user tapped.\n        forwarderManager.onExternalResultLaunchStarting();\n        launcherUiResumed = false;\n    }\n\n    @Override\n    public void externalResultLaunchOccurred() {\n        homeLifecycleState.onExternalResultLaunched();\n    }\n\n    @Override\n    public void externalResultLaunchCancelled() {\n        launcherUiResumed = true;\n        forwarderManager.onExternalResultLaunchCancelled();\n    }''',
+              '''    public void externalResultLaunchStarting() {\n        // Record whether this verified external transition started from a real query before the\n        // delayed launch cleanup can clear the EditText while Smart S is in the background.\n        searchLaunchReturnState.onExternalLaunchStarting(\n                searchEditText != null && !TextUtils.isEmpty(searchEditText.getText()));\n        // Capture the currently visible Vertical Cards viewport before Android begins the external\n        // transition. A later history recency update must not relocate the tile the user tapped.\n        forwarderManager.onExternalResultLaunchStarting();\n        launcherUiResumed = false;\n    }\n\n    @Override\n    public void externalResultLaunchOccurred() {\n        searchLaunchReturnState.onExternalLaunchSucceeded();\n        homeLifecycleState.onExternalResultLaunched();\n    }\n\n    @Override\n    public void externalResultLaunchCancelled() {\n        searchLaunchReturnState.onExternalLaunchCancelled();\n        launcherUiResumed = true;\n        forwarderManager.onExternalResultLaunchCancelled();\n    }''')
+
+          # Vertical Cards: explicit search return outranks passive frozen-history behavior.
+          rep('app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              'private boolean pendingDataSetRefresh;\n    private boolean renderedActiveQuery;',
+              'private boolean pendingDataSetRefresh;\n    private boolean forceNextHistoryRebuild;\n    private boolean renderedActiveQuery;')
+          rep('app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              'pendingDataSetRefresh = false;\n        renderedActiveQuery = false;',
+              'pendingDataSetRefresh = false;\n        forceNextHistoryRebuild = false;\n        renderedActiveQuery = false;')
+          rep('app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''    boolean hasPendingDataSetRefresh() {\n        return pendingDataSetRefresh;\n    }''',
+              '''    boolean hasPendingDataSetRefresh() {\n        return pendingDataSetRefresh;\n    }\n\n    void forceHistoryRebuildOnNextDataSetChange() {\n        forceNextHistoryRebuild = true;\n    }''')
+          rep('app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''        return column == null || column.getChildCount() == 0\n                || (!activeQuery && renderedActiveQuery);''',
+              '''        return column == null || column.getChildCount() == 0\n                || (!activeQuery && (renderedActiveQuery || forceNextHistoryRebuild));''')
+          rep('app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java',
+              '''        boolean activeQuery = isActiveQuery();\n        boolean animateHistoryItems = !activeQuery && !suppressNextHistoryAnimation;''',
+              '''        boolean activeQuery = isActiveQuery();\n        if (!activeQuery) forceNextHistoryRebuild = false;\n        boolean animateHistoryItems = !activeQuery && !suppressNextHistoryAnimation;''')
+
+          rep('app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java',
+              '''    /** Route the exact Android HOME intent with verified foreground/background lifecycle state. */\n    public void onNewIntent(@NonNull Intent intent, boolean launcherWasForeground) {''',
+              '''    /** Force QUERY -> default HISTORY after a verified successful external search launch. */\n    public void prepareDefaultHistoryAfterSearchLaunch() {\n        if (!isVerticalCardsMode()) return;\n        smartCardListForwarder.forceHistoryRebuildOnNextDataSetChange();\n        verticalCardViewportController.beginExplicitBottomNavigation();\n    }\n\n    /** Route the exact Android HOME intent with verified foreground/background lifecycle state. */\n    public void onNewIntent(@NonNull Intent intent, boolean launcherWasForeground) {''')
+
+          # Main notification DB: persist an app-exposed durable route in addition to shortcut id.
+          rep('app/src/main/java/fr/neamar/kiss/db/NotificationHistoryRecord.java',
+              'public long userSerial = -1L;\n}',
+              'public long userSerial = -1L;\n    /** Verified explicit route captured from the app-published conversation shortcut. */\n    public String routeUri;\n}')
+          rep('app/src/main/java/fr/neamar/kiss/db/DB.java',
+              'private final static int DB_VERSION = 15;',
+              'private final static int DB_VERSION = 16;')
+          rep('app/src/main/java/fr/neamar/kiss/db/DB.java',
+              '''shortcut_id TEXT NOT NULL DEFAULT '', user_serial INTEGER NOT NULL DEFAULT -1)''',
+              '''shortcut_id TEXT NOT NULL DEFAULT '', user_serial INTEGER NOT NULL DEFAULT -1, route_uri TEXT NOT NULL DEFAULT '')''')
+          rep('app/src/main/java/fr/neamar/kiss/db/DB.java',
+              '''                case 14:\n                    database.execSQL("ALTER TABLE notification_history ADD COLUMN shortcut_id TEXT NOT NULL DEFAULT ''");\n                    database.execSQL("ALTER TABLE notification_history ADD COLUMN user_serial INTEGER NOT NULL DEFAULT -1");\n                    break;''',
+              '''                case 14:\n                    database.execSQL("ALTER TABLE notification_history ADD COLUMN shortcut_id TEXT NOT NULL DEFAULT ''");\n                    database.execSQL("ALTER TABLE notification_history ADD COLUMN user_serial INTEGER NOT NULL DEFAULT -1");\n                    // fall through\n                case 15:\n                    database.execSQL("ALTER TABLE notification_history ADD COLUMN route_uri TEXT NOT NULL DEFAULT ''");\n                    break;''')
+
+          # SmartStateStore columns/signature/read and route backfill.
+          s='app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java'
+          text=read(s)
+          text=text.replace('n.post_time,n.is_permanent,n.shortcut_id,n.user_serial FROM notification_history',
+                            'n.post_time,n.is_permanent,n.shortcut_id,n.user_serial,n.route_uri FROM notification_history')
+          text=text.replace('boolean permanent, @Nullable String shortcutId, long userSerial) {',
+                            'boolean permanent, @Nullable String shortcutId, long userSerial,\n                                        @Nullable String routeUri) {')
+          text=text.replace('values.put("user_serial", userSerial);',
+                            'values.put("user_serial", userSerial);\n        values.put("route_uri", routeUri == null ? "" : routeUri);')
+          text=text.replace('"post_time", "is_permanent", "shortcut_id", "user_serial"},',
+                            '"post_time", "is_permanent", "shortcut_id", "user_serial", "route_uri"},')
+          text=text.replace('record.userSerial = cursor.getLong(9);\n        return record;',
+                            'record.userSerial = cursor.getLong(9);\n        record.routeUri = cursor.getString(10);\n        return record;')
+          marker='''    private static NotificationHistoryRecord readNotificationRecord(Cursor cursor) {'''
+          if text.count(marker)!=1: raise SystemExit('SmartStateStore read marker mismatch')
+          method='''    public static void updateNotificationRoute(@NonNull Context context, long dbId,\n                                               @Nullable String routeUri) {\n        if (dbId <= 0L || routeUri == null || routeUri.isEmpty()) return;\n        ContentValues values = new ContentValues(1);\n        values.put("route_uri", routeUri);\n        db(context).update("notification_history", values, "_id=?",\n                new String[]{Long.toString(dbId)});\n    }\n\n'''
+          text=text.replace(marker, method+marker)
+          write(s,text)
+
+          # Timeline exact lookup by id and route column.
+          s='app/src/main/java/fr/neamar/kiss/db/NotificationTimelineStore.java'
+          text=read(s)
+          text=text.replace('"post_time", "is_permanent", "shortcut_id", "user_serial"},',
+                            '"post_time", "is_permanent", "shortcut_id", "user_serial", "route_uri"},')
+          text=text.replace('record.userSerial = cursor.getLong(9);\n        return record;',
+                            'record.userSerial = cursor.getLong(9);\n        record.routeUri = cursor.getString(10);\n        return record;')
+          marker='''    /**\n     * Reads persisted notifications newer than the last launcher timeline scan.'''
+          if text.count(marker)!=1: raise SystemExit('NotificationTimelineStore marker mismatch')
+          method='''    @Nullable\n    public static NotificationHistoryRecord findByDbId(@NonNull Context context, long dbId) {\n        if (dbId <= 0L) return null;\n        try (Cursor cursor = db(context).query("notification_history",\n                new String[]{"_id", "notification_id", "package", "app_name", "title", "body",\n                        "post_time", "is_permanent", "shortcut_id", "user_serial", "route_uri"},\n                "_id=?", new String[]{Long.toString(dbId)}, null, null, null, "1")) {\n            return cursor.moveToFirst() ? read(cursor) : null;\n        }\n    }\n\n'''
+          text=text.replace(marker, method+marker)
+          write(s,text)
+
+          # App/package state: distinguish missing packages from frozen packages.
+          rep('app/src/main/java/fr/neamar/kiss/utils/AppLaunchUtils.java',
+              '''    public static boolean isPackageEnabled(Context context, String packageName) {''',
+              '''    public static boolean isPackageInstalled(Context context, String packageName) {\n        if (context == null || packageName == null || packageName.isEmpty()) return false;\n        try {\n            context.getPackageManager().getApplicationInfo(\n                    packageName, PackageManager.MATCH_DISABLED_COMPONENTS);\n            return true;\n        } catch (PackageManager.NameNotFoundException | RuntimeException e) {\n            return false;\n        }\n    }\n\n    public static boolean isPackageEnabled(Context context, String packageName) {''')
+          rep('app/src/main/java/fr/neamar/kiss/utils/AppLaunchUtils.java',
+              '''    public static boolean ensurePackageEnabled(Context context, String packageName) {\n        if (isPackageEnabled(context, packageName)) return true;''',
+              '''    public static boolean ensurePackageEnabled(Context context, String packageName) {\n        if (!isPackageInstalled(context, packageName)) return false;\n        if (isPackageEnabled(context, packageName)) return true;''')
+
+          # Durable notification destination resolver.
+          s='app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java'
+          text=read(s)
+          text=text.replace('import android.content.Context;\n', 'import android.content.Context;\nimport android.content.Intent;\n')
+          text=text.replace('import android.content.pm.LauncherApps;\n', 'import android.content.pm.LauncherApps;\nimport android.content.pm.PackageManager;\nimport android.content.pm.ResolveInfo;\n')
+          text=text.replace('import fr.neamar.kiss.db.NotificationHistoryRecord;\n', 'import fr.neamar.kiss.db.NotificationHistoryRecord;\nimport fr.neamar.kiss.db.SmartStateStore;\n')
+          text=text.replace('''    private SavedNotificationDestinationResolver() {}\n''', '''    private SavedNotificationDestinationResolver() {}\n\n    public enum OpenResult {\n        OPENED,\n        ENABLE_RETRY_STARTED,\n        APP_NOT_INSTALLED,\n        APP_DISABLED_CANNOT_ENABLE,\n        NO_EXACT_TARGET;\n\n        public boolean accepted() {\n            return this == OPENED || this == ENABLE_RETRY_STARTED;\n        }\n    }\n''')
+          text=text.replace('''        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O\n                && !TextUtils.isEmpty(record.shortcutId);''', '''        return !TextUtils.isEmpty(record.routeUri)\n                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O\n                && !TextUtils.isEmpty(record.shortcutId));''')
+          old='''    public static boolean openExact(@NonNull Context context,\n                                    @Nullable NotificationHistoryRecord record) {\n        if (record == null) return false;\n\n        if (!TextUtils.isEmpty(record.packageName)) {\n            // Do not trust the short enabled-state cache here: the user may have frozen the app\n            // seconds after it was last observed as enabled. Force a current PackageManager read.\n            AppLaunchUtils.invalidatePackageState(record.packageName);\n            if (!AppLaunchUtils.isPackageEnabled(context, record.packageName)) {\n                if (!AppLaunchUtils.ensurePackageEnabled(context, record.packageName)) return false;\n                scheduleExactOpenAfterEnable(context.getApplicationContext(), record, 0,\n                        ENABLE_SETTLE_DELAY_MS);\n                return true;\n            }\n        }\n\n        return openExactNow(context, record);\n    }'''
+          new='''    public static boolean openExact(@NonNull Context context,\n                                    @Nullable NotificationHistoryRecord record) {\n        return openExactResult(context, record).accepted();\n    }\n\n    @NonNull\n    public static OpenResult openExactResult(@NonNull Context context,\n                                             @Nullable NotificationHistoryRecord record) {\n        if (record == null) return OpenResult.NO_EXACT_TARGET;\n\n        if (!TextUtils.isEmpty(record.packageName)) {\n            if (!AppLaunchUtils.isPackageInstalled(context, record.packageName)) {\n                return OpenResult.APP_NOT_INSTALLED;\n            }\n            // Do not trust the short enabled-state cache here: the user may have frozen the app\n            // seconds after it was last observed as enabled. Force a current PackageManager read.\n            AppLaunchUtils.invalidatePackageState(record.packageName);\n            if (!AppLaunchUtils.isPackageEnabled(context, record.packageName)) {\n                if (!AppLaunchUtils.ensurePackageEnabled(context, record.packageName)) {\n                    return OpenResult.APP_DISABLED_CANNOT_ENABLE;\n                }\n                scheduleExactOpenAfterEnable(context.getApplicationContext(), record, 0,\n                        ENABLE_SETTLE_DELAY_MS);\n                return OpenResult.ENABLE_RETRY_STARTED;\n            }\n        }\n\n        return openExactNow(context, record)\n                ? OpenResult.OPENED : OpenResult.NO_EXACT_TARGET;\n    }'''
+          if text.count(old)!=1: raise SystemExit('openExact source mismatch')
+          text=text.replace(old,new)
+          text=text.replace('''        if (openPublishedShortcut(context, record)) return true;\n\n        return !TextUtils.isEmpty(record.notificationId)''', '''        if (openPublishedShortcut(context, record)) return true;\n        if (openPersistedRoute(context, record)) return true;\n\n        return !TextUtils.isEmpty(record.notificationId)''')
+          # Inject capture/persisted-route helpers before openPublishedShortcut docs.
+          marker='''    /**\n     * Try only the durable app-published conversation shortcut represented by a saved notification.'''
+          if text.count(marker)!=1: raise SystemExit('saved resolver shortcut marker mismatch')
+          helpers='''    @Nullable\n    public static String capturePublishedShortcutRoute(@NonNull Context context,\n                                                       @NonNull String packageName,\n                                                       @Nullable String shortcutId,\n                                                       @Nullable android.os.UserHandle user) {\n        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || TextUtils.isEmpty(shortcutId)\n                || TextUtils.isEmpty(packageName) || user == null) return null;\n        ShortcutInfo shortcut = ShortcutUtil.getShortCut(\n                context, user, packageName, shortcutId);\n        return shortcut == null ? null : routeUriFromShortcut(context, shortcut, packageName);\n    }\n\n    private static boolean openPersistedRoute(@NonNull Context context,\n                                              @NonNull NotificationHistoryRecord record) {\n        if (TextUtils.isEmpty(record.routeUri) || TextUtils.isEmpty(record.packageName)) return false;\n        if (record.userSerial >= 0L) {\n            UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);\n            if (userManager == null) return false;\n            long currentSerial = userManager.getSerialNumberForUser(android.os.Process.myUserHandle());\n            if (currentSerial != record.userSerial) return false;\n        }\n        try {\n            Intent intent = Intent.parseUri(record.routeUri, Intent.URI_INTENT_SCHEME);\n            if (!isRouteOwnedByPackage(context, intent, record.packageName)) return false;\n            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);\n            context.startActivity(intent);\n            return true;\n        } catch (java.net.URISyntaxException | RuntimeException e) {\n            Log.w(TAG, "Unable to open persisted exact notification route", e);\n            return false;\n        }\n    }\n\n    @RequiresApi(Build.VERSION_CODES.O)\n    @Nullable\n    private static String routeUriFromShortcut(@NonNull Context context,\n                                               @NonNull ShortcutInfo shortcut,\n                                               @NonNull String expectedPackage) {\n        Intent[] intents = shortcut.getIntents();\n        if (intents == null) return null;\n        for (int i = intents.length - 1; i >= 0; i--) {\n            Intent candidate = intents[i];\n            if (candidate == null || !isRouteOwnedByPackage(context, candidate, expectedPackage)) {\n                continue;\n            }\n            return candidate.toUri(Intent.URI_INTENT_SCHEME);\n        }\n        return null;\n    }\n\n    private static boolean isRouteOwnedByPackage(@NonNull Context context,\n                                                 @NonNull Intent intent,\n                                                 @NonNull String expectedPackage) {\n        if (intent.getComponent() != null) {\n            return TextUtils.equals(expectedPackage, intent.getComponent().getPackageName());\n        }\n        if (!TextUtils.isEmpty(intent.getPackage())) {\n            return TextUtils.equals(expectedPackage, intent.getPackage());\n        }\n        try {\n            ResolveInfo resolved = context.getPackageManager().resolveActivity(\n                    intent, PackageManager.MATCH_DEFAULT_ONLY);\n            return resolved != null && resolved.activityInfo != null\n                    && TextUtils.equals(expectedPackage, resolved.activityInfo.packageName);\n        } catch (RuntimeException e) {\n            return false;\n        }\n    }\n\n    @RequiresApi(Build.VERSION_CODES.O)\n    private static void persistRouteIfMissing(@NonNull Context context,\n                                              @NonNull NotificationHistoryRecord record,\n                                              @NonNull ShortcutInfo shortcut) {\n        if (!TextUtils.isEmpty(record.routeUri)) return;\n        String route = routeUriFromShortcut(context, shortcut, record.packageName);\n        if (TextUtils.isEmpty(route)) return;\n        record.routeUri = route;\n        SmartStateStore.updateNotificationRoute(context, record.dbId, route);\n    }\n\n'''
+          text=text.replace(marker, helpers+marker)
+          # Ensure shortcut launch path backfills route for old rows while the shortcut still exists.
+          text=text.replace('''            if (preferred != null) return launch(launcherApps, preferred);''', '''            if (preferred != null) {\n                persistRouteIfMissing(context, record, preferred);\n                return launch(launcherApps, preferred);\n            }''')
+          text=text.replace('''        return matches.size() == 1 && launch(launcherApps, matches.get(0));''', '''        if (matches.size() != 1) return false;\n        persistRouteIfMissing(context, record, matches.get(0));\n        return launch(launcherApps, matches.get(0));''')
+          write(s,text)
+
+          # Capture the durable app-exposed route when the notification is live.
+          rep('app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java',
+              '''        String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? n.getShortcutId() : null;\n        long userSerial = -1L;''',
+              '''        String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? n.getShortcutId() : null;\n        String routeUri = SavedNotificationDestinationResolver.capturePublishedShortcutRoute(\n                this, sbn.getPackageName(), shortcutId, sbn.getUser());\n        long userSerial = -1L;''')
+          rep('app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java',
+              '''                isPermanentForHistory(sbn), shortcutId, userSerial);''',
+              '''                isPermanentForHistory(sbn), shortcutId, userSerial, routeUri);''')
+
+          # Resolver exposes rich result and direct DB-id lookup to search results.
+          rep('app/src/main/java/fr/neamar/kiss/utils/NotificationHistoryResolver.java',
+              '''    public static boolean openExactForPojo(Context context, NotificationPojo notification) {\n        if (context == null || notification == null) return false;''',
+              '''    public static boolean openExactForPojo(Context context, NotificationPojo notification) {\n        return openExactResultForPojo(context, notification).accepted();\n    }\n\n    public static SavedNotificationDestinationResolver.OpenResult openExactResultForPojo(\n            Context context, NotificationPojo notification) {\n        if (context == null || notification == null) {\n            return SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET;\n        }''')
+          rep('app/src/main/java/fr/neamar/kiss/utils/NotificationHistoryResolver.java',
+              '''        if (packageName == null) return false;''',
+              '''        if (packageName == null) {\n            return SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET;\n        }''',1)
+          rep('app/src/main/java/fr/neamar/kiss/utils/NotificationHistoryResolver.java',
+              '''        if (index < 0 || index >= records.size()) return false;\n        return SavedNotificationDestinationResolver.openExact(context, records.get(index));''',
+              '''        if (index < 0 || index >= records.size()) {\n            return SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET;\n        }\n        return SavedNotificationDestinationResolver.openExactResult(context, records.get(index));''')
+
+          # App-usage package state: persist the installer package structurally and a verified store page.
+          s='app/src/main/java/fr/neamar/kiss/appusage/AppUsageStore.java'
+          text=read(s)
+          text=text.replace('private static final int DB_VERSION = 2;', 'private static final int DB_VERSION = 3;')
+          text=text.replace('''                "last_update_ms INTEGER NOT NULL DEFAULT 0," +\n                "source TEXT," +''', '''                "last_update_ms INTEGER NOT NULL DEFAULT 0," +\n                "installer_package TEXT," +\n                "source TEXT," +''')
+          text=text.replace('''        if (oldVersion < 2) createDailyPhoneStateTable(db);''', '''        if (oldVersion < 2) createDailyPhoneStateTable(db);\n        if (oldVersion < 3) {\n            db.execSQL("ALTER TABLE package_state ADD COLUMN installer_package TEXT");\n        }''')
+          text=text.replace('''        values.put("last_update_ms", state.lastUpdateMs);\n        values.put("source", state.source);''', '''        values.put("last_update_ms", state.lastUpdateMs);\n        values.put("installer_package", state.installerPackage);\n        values.put("source", state.source);''')
+          text=text.replace('''                        "last_update_ms", "source", "source_uri"},''', '''                        "last_update_ms", "installer_package", "source", "source_uri"},''')
+          text=text.replace('''            return new PackageState(c.getString(0), c.getString(1), c.getInt(2) != 0,\n                    c.getLong(3), c.getLong(4), c.getString(5), c.getString(6));''', '''            return new PackageState(c.getString(0), c.getString(1), c.getInt(2) != 0,\n                    c.getLong(3), c.getLong(4), c.getString(5), c.getString(6), c.getString(7));''')
+          text=text.replace('''        @Nullable public final String source;\n        @Nullable public final String sourceUri;\n\n        public PackageState(@NonNull String packageName, @Nullable String appLabel,\n                            boolean systemApp, long firstInstallMs, long lastUpdateMs,\n                            @Nullable String source, @Nullable String sourceUri) {''', '''        @Nullable public final String installerPackage;\n        @Nullable public final String source;\n        @Nullable public final String sourceUri;\n\n        public PackageState(@NonNull String packageName, @Nullable String appLabel,\n                            boolean systemApp, long firstInstallMs, long lastUpdateMs,\n                            @Nullable String installerPackage, @Nullable String source,\n                            @Nullable String sourceUri) {''')
+          text=text.replace('''            this.lastUpdateMs = lastUpdateMs;\n            this.source = source;''', '''            this.lastUpdateMs = lastUpdateMs;\n            this.installerPackage = installerPackage;\n            this.source = source;''')
+          write(s,text)
+
+          s='app/src/main/java/fr/neamar/kiss/appusage/AppUsageSync.java'
+          text=read(s)
+          text=text.replace('import android.content.Context;\n', 'import android.content.Context;\nimport android.content.Intent;\n')
+          text=text.replace('import android.content.pm.PackageManager;\n', 'import android.content.pm.PackageManager;\nimport android.content.pm.ResolveInfo;\n')
+          text=text.replace('import android.os.Build;\n', 'import android.net.Uri;\nimport android.os.Build;\n')
+          text=text.replace('''        String sourceUri = "com.android.vending".equals(installer)\n                ? "https://play.google.com/store/apps/details?id=" + packageName : null;\n        return new PackageMeta(packageName, label, system, firstInstall, lastUpdate,\n                source, sourceUri);''', '''        String sourceUri = verifiedStorePageUri(pm, installer, packageName);\n        return new PackageMeta(packageName, label, system, firstInstall, lastUpdate,\n                installer, source, sourceUri);''')
+          marker='''    private static String packageSourceLabel(int source) {'''
+          helper='''    @Nullable\n    private static String verifiedStorePageUri(PackageManager pm, @Nullable String installer,\n                                               String packageName) {\n        if (TextUtils.isEmpty(installer)) return null;\n        String market = "market://details?id=" + Uri.encode(packageName);\n        if (resolvesToInstaller(pm, installer, market)) return market;\n\n        // Preserve the already-supported Play listing, but still bind it to Play when opened.\n        String play = "https://play.google.com/store/apps/details?id=" + Uri.encode(packageName);\n        if ("com.android.vending".equals(installer)) return play;\n        return null;\n    }\n\n    private static boolean resolvesToInstaller(PackageManager pm, String installer, String uri) {\n        try {\n            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri)).setPackage(installer);\n            ResolveInfo resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);\n            return resolved != null && resolved.activityInfo != null\n                    && TextUtils.equals(installer, resolved.activityInfo.packageName);\n        } catch (RuntimeException e) {\n            return false;\n        }\n    }\n\n'''
+          if text.count(marker)!=1: raise SystemExit('AppUsageSync package source marker mismatch')
+          text=text.replace(marker,helper+marker)
+          text=text.replace('''        final String source;\n        final String sourceUri;\n\n        PackageMeta(String packageName, String label, boolean system, long firstInstall,\n                    long lastUpdate, String source, String sourceUri) {''', '''        final String installerPackage;\n        final String source;\n        final String sourceUri;\n\n        PackageMeta(String packageName, String label, boolean system, long firstInstall,\n                    long lastUpdate, String installerPackage, String source, String sourceUri) {''')
+          text=text.replace('''            this.lastUpdate = lastUpdate;\n            this.source = source;''', '''            this.lastUpdate = lastUpdate;\n            this.installerPackage = installerPackage;\n            this.source = source;''')
+          text=text.replace('''            return new AppUsageStore.PackageState(packageName, label, system, firstInstall,\n                    lastUpdate, source, sourceUri);''', '''            return new AppUsageStore.PackageState(packageName, label, system, firstInstall,\n                    lastUpdate, installerPackage, source, sourceUri);''')
+          write(s,text)
+
+          # Reinstall helper uses only the recorded installer and a route that resolves back to it.
+          write('app/src/main/java/fr/neamar/kiss/utils/AppReinstallSupport.java', '''package fr.neamar.kiss.utils;\n\nimport android.app.AlertDialog;\nimport android.content.Context;\nimport android.content.Intent;\nimport android.content.pm.PackageManager;\nimport android.content.pm.ResolveInfo;\nimport android.net.Uri;\nimport android.text.TextUtils;\nimport android.widget.Toast;\n\nimport androidx.annotation.NonNull;\nimport androidx.annotation.Nullable;\n\nimport fr.neamar.kiss.appusage.AppUsageStore;\n\n/** Reopens the exact recorded installer only when Android can verify the stored store route. */\npublic final class AppReinstallSupport {\n    private AppReinstallSupport() {}\n\n    public static boolean hasVerifiedReinstallRoute(@NonNull Context context,\n                                                    @NonNull String packageName) {\n        return buildVerifiedStoreIntent(context, packageName) != null;\n    }\n\n    public static boolean openOriginalStore(@NonNull Context context,\n                                            @NonNull String packageName) {\n        Intent intent = buildVerifiedStoreIntent(context, packageName);\n        if (intent == null) return false;\n        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);\n        try {\n            context.startActivity(intent);\n            return true;\n        } catch (RuntimeException e) {\n            Log.w("AppReinstallSupport", "Unable to open recorded installer route", e);\n            return false;\n        }\n    }\n\n    public static void showUninstalledDialog(@NonNull Context context,\n                                             @NonNull String packageName,\n                                             @Nullable String appName) {\n        AppUsageStore.PackageState state = AppUsageStore.get(context).getPackageState(packageName);\n        String label = TextUtils.isEmpty(appName) ? packageName : appName;\n        String source = state == null || TextUtils.isEmpty(state.source)\n                ? "The original install source was not retained."\n                : "Original install source: " + state.source;\n        boolean canReinstall = hasVerifiedReinstallRoute(context, packageName);\n        AlertDialog.Builder dialog = new AlertDialog.Builder(context)\n                .setTitle(label + " is uninstalled")\n                .setMessage(source + (canReinstall\n                        ? "\\n\\nSmart S can reopen the verified original store page."\n                        : "\\n\\nNo verified reinstall route is available for that source."))\n                .setNegativeButton(android.R.string.cancel, null);\n        if (canReinstall) {\n            dialog.setPositiveButton("Reinstall", (d, which) -> {\n                if (!openOriginalStore(context, packageName)) {\n                    Toast.makeText(context, "The original store could not be opened.",\n                            Toast.LENGTH_SHORT).show();\n                }\n            });\n        } else {\n            dialog.setPositiveButton(android.R.string.ok, null);\n        }\n        dialog.show();\n    }\n\n    @Nullable\n    private static Intent buildVerifiedStoreIntent(@NonNull Context context,\n                                                   @NonNull String packageName) {\n        AppUsageStore.PackageState state = AppUsageStore.get(context).getPackageState(packageName);\n        if (state == null) return null;\n        String installer = state.installerPackage;\n        if (TextUtils.isEmpty(installer) && !TextUtils.isEmpty(state.sourceUri)\n                && state.sourceUri.contains("play.google.com/store/apps/details")) {\n            // Older Smart S package-state rows predate the structured installer column; this\n            // canonical Play URL is sufficient evidence that the recorded installer was Play.\n            installer = "com.android.vending";\n        }\n        if (TextUtils.isEmpty(installer)) return null;\n\n        String[] candidates = TextUtils.isEmpty(state.sourceUri)\n                ? new String[]{"market://details?id=" + Uri.encode(packageName)}\n                : new String[]{state.sourceUri, "market://details?id=" + Uri.encode(packageName)};\n        PackageManager pm = context.getPackageManager();\n        for (String uri : candidates) {\n            try {\n                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri)).setPackage(installer);\n                ResolveInfo resolved = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);\n                if (resolved != null && resolved.activityInfo != null\n                        && TextUtils.equals(installer, resolved.activityInfo.packageName)) {\n                    return intent;\n                }\n            } catch (RuntimeException ignored) { }\n        }\n        return null;\n    }\n}\n''')
+
+          # SettingsResult: exact notification first, unfreeze through resolver, distinguish uninstall,
+          # and make persisted notification search results direct-open when an exact route exists.
+          s='app/src/main/java/fr/neamar/kiss/result/SettingsResult.java'
+          text=read(s)
+          text=text.replace('import fr.neamar.kiss.NotificationHistoryActivity;\n', 'import fr.neamar.kiss.NotificationHistoryActivity;\nimport fr.neamar.kiss.db.NotificationHistoryRecord;\nimport fr.neamar.kiss.db.NotificationTimelineStore;\n')
+          text=text.replace('import fr.neamar.kiss.utils.AppLaunchUtils;\n', 'import fr.neamar.kiss.utils.AppLaunchUtils;\nimport fr.neamar.kiss.utils.AppReinstallSupport;\n')
+          text=text.replace('import fr.neamar.kiss.utils.NotificationHistoryResolver;\n', 'import fr.neamar.kiss.utils.NotificationHistoryResolver;\nimport fr.neamar.kiss.utils.SavedNotificationDestinationResolver;\n')
+          old='''        if (pojo instanceof NotificationHistorySearchPojo) {\n            NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;\n            Intent intent = new Intent(context, NotificationHistoryActivity.class);\n            intent.putExtra(NotificationHistoryActivity.EXTRA_HISTORY_DB_ID, history.historyDbId);\n            intent.putExtra(NotificationHistoryActivity.EXTRA_SEARCH_QUERY, history.searchQuery);\n            intent.putExtra(NotificationHistoryActivity.EXTRA_PERMANENT, history.permanent);\n            setSourceBounds(intent, v);\n            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);\n            try {\n                context.startActivity(intent);\n                launchSucceeded = true;\n            } catch (ActivityNotFoundException | SecurityException e) {\n                Log.w(TAG, "Unable to open notification history search result", e);\n                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();\n            }\n            return;\n        }'''
+          new='''        if (pojo instanceof NotificationHistorySearchPojo) {\n            NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;\n            NotificationHistoryRecord record = NotificationTimelineStore.findByDbId(\n                    context, history.historyDbId);\n            if (record != null) {\n                SavedNotificationDestinationResolver.OpenResult result =\n                        SavedNotificationDestinationResolver.openExactResult(context, record);\n                if (handleExactNotificationResult(context, record.appName,\n                        record.packageName, result)) return;\n            }\n            // The message is still retained even when Android never exposed a durable app route.\n            // Fall back to the exact saved row instead of claiming the notification was deleted.\n            Intent intent = new Intent(context, NotificationHistoryActivity.class);\n            intent.putExtra(NotificationHistoryActivity.EXTRA_HISTORY_DB_ID, history.historyDbId);\n            intent.putExtra(NotificationHistoryActivity.EXTRA_SEARCH_QUERY, history.searchQuery);\n            intent.putExtra(NotificationHistoryActivity.EXTRA_PERMANENT, history.permanent);\n            setSourceBounds(intent, v);\n            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);\n            try {\n                context.startActivity(intent);\n                launchSucceeded = true;\n            } catch (ActivityNotFoundException | SecurityException e) {\n                Log.w(TAG, "Unable to open notification history search result", e);\n                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();\n            }\n            return;\n        }'''
+          if text.count(old)!=1: raise SystemExit('SettingsResult history search branch mismatch')
+          text=text.replace(old,new)
+          old='''    private void launchNotificationTarget(Context context, NotificationPojo notification) {\n        // Launcher History represents one stored notification event. A normal tap must therefore\n        // use that event's exact saved destination and must never open an app-wide notification\n        // picker/history popup. Long-press remains the separate rich-history action.\n        if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY) {\n            if (NotificationHistoryResolver.openExactForPojo(context, notification)) {\n                launchSucceeded = true;\n            } else {\n                Toast.makeText(context, "No exact notification destination is available.",\n                        Toast.LENGTH_SHORT).show();\n            }\n            return;\n        }\n\n        boolean individual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME);'''
+          new='''    private void launchNotificationTarget(Context context, NotificationPojo notification) {\n        // Use the persisted exact row first in every mode. This path distinguishes frozen from\n        // uninstalled packages and enables a frozen package before attempting its saved route.\n        SavedNotificationDestinationResolver.OpenResult exactResult =\n                NotificationHistoryResolver.openExactResultForPojo(context, notification);\n        if (handleExactNotificationResult(context, notification.appName,\n                notification.packageName, exactResult)) return;\n\n        // Launcher History represents one stored notification event. If Android never exposed a\n        // durable target, keep the selected saved message available instead of misreporting it as\n        // deleted or silently launching a different notification.\n        if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY) {\n            if (!NotificationHistoryResolver.showForPojo(context, notification)) {\n                Toast.makeText(context, "Saved message has no durable app route.",\n                        Toast.LENGTH_SHORT).show();\n            }\n            return;\n        }\n\n        boolean individual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME);'''
+          if text.count(old)!=1: raise SystemExit('SettingsResult notification branch mismatch')
+          text=text.replace(old,new)
+          # Before class' showNotificationGroup insert handler method.
+          marker='''    private void showNotificationGroup(Context context, NotificationPojo notification) {'''
+          handler='''    private boolean handleExactNotificationResult(\n            Context context, String appName, String packageName,\n            SavedNotificationDestinationResolver.OpenResult result) {\n        if (result.accepted()) {\n            launchSucceeded = true;\n            return true;\n        }\n        if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {\n            AppReinstallSupport.showUninstalledDialog(context, packageName, appName);\n            return true;\n        }\n        if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {\n            Toast.makeText(context, "The frozen app could not be re-enabled.",\n                    Toast.LENGTH_SHORT).show();\n            return true;\n        }\n        return false;\n    }\n\n'''
+          if text.count(marker)!=1: raise SystemExit('SettingsResult show group marker mismatch')
+          text=text.replace(marker,handler+marker)
+          write(s,text)
+
+          # Notification history screens also distinguish uninstall from a missing route.
+          s='app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java'
+          text=read(s)
+          text=text.replace('import fr.neamar.kiss.utils.AppLaunchUtils;\n', 'import fr.neamar.kiss.utils.AppLaunchUtils;\nimport fr.neamar.kiss.utils.AppReinstallSupport;\n')
+          text=text.replace('''    private void openApp(NotificationHistoryRecord record) {\n        if (!AppLaunchUtils.launchPackage(this, record.packageName)) {\n            Toast.makeText(this, "Unable to open " + record.appName, Toast.LENGTH_SHORT).show();\n        }\n    }''', '''    private void openApp(NotificationHistoryRecord record) {\n        if (!AppLaunchUtils.isPackageInstalled(this, record.packageName)) {\n            AppReinstallSupport.showUninstalledDialog(\n                    this, record.packageName, record.appName);\n            return;\n        }\n        if (!AppLaunchUtils.launchPackage(this, record.packageName)) {\n            Toast.makeText(this, "Unable to open " + record.appName, Toast.LENGTH_SHORT).show();\n        }\n    }''')
+          text=text.replace('''                if (!SavedNotificationDestinationResolver.openExact(this, record)) {\n                    Toast.makeText(this, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();\n                }''', '''                SavedNotificationDestinationResolver.OpenResult result =\n                        SavedNotificationDestinationResolver.openExactResult(this, record);\n                if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {\n                    AppReinstallSupport.showUninstalledDialog(\n                            this, record.packageName, record.appName);\n                } else if (!result.accepted()) {\n                    Toast.makeText(this, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();\n                }''')
+          write(s,text)
+
+          s='app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java'
+          text=read(s)
+          text=text.replace('import fr.neamar.kiss.utils.AppLaunchUtils;\n', 'import fr.neamar.kiss.utils.AppLaunchUtils;\nimport fr.neamar.kiss.utils.AppReinstallSupport;\n')
+          text=text.replace('''                boolean opened = SavedNotificationDestinationResolver.openExact(context, record);\n                if (opened) SmartAnimationEngine.dismissDialog(dialog);\n                else Toast.makeText(context, "Unable to open this exact notification",\n                        Toast.LENGTH_SHORT).show();''', '''                SavedNotificationDestinationResolver.OpenResult result =\n                        SavedNotificationDestinationResolver.openExactResult(context, record);\n                if (result.accepted()) {\n                    SmartAnimationEngine.dismissDialog(dialog);\n                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {\n                    AppReinstallSupport.showUninstalledDialog(\n                            context, record.packageName, record.appName);\n                } else {\n                    Toast.makeText(context, "Unable to open this exact notification",\n                            Toast.LENGTH_SHORT).show();\n                }''',1)
+          # Saved/inactive action uses same result instead of collapsing uninstall to generic failure.
+          old='''                boolean opened = exactTarget\n                        ? SavedNotificationDestinationResolver.openExact(context, record)\n                        : AppLaunchUtils.launchPackage(context, packageName);\n                if (!opened) {\n                    Toast.makeText(context, exactTarget\n                                    ? "Unable to open this exact notification" : "App cannot be opened",\n                            Toast.LENGTH_SHORT).show();\n                    return;\n                }\n                SmartAnimationEngine.dismissDialog(dialog);'''
+          new='''                if (!AppLaunchUtils.isPackageInstalled(context, packageName)) {\n                    AppReinstallSupport.showUninstalledDialog(\n                            context, packageName, record.appName);\n                    return;\n                }\n                boolean opened;\n                if (exactTarget) {\n                    SavedNotificationDestinationResolver.OpenResult result =\n                            SavedNotificationDestinationResolver.openExactResult(context, record);\n                    opened = result.accepted();\n                } else {\n                    opened = AppLaunchUtils.launchPackage(context, packageName);\n                }\n                if (!opened) {\n                    Toast.makeText(context, exactTarget\n                                    ? "Unable to open this exact notification" : "App cannot be opened",\n                            Toast.LENGTH_SHORT).show();\n                    return;\n                }\n                SmartAnimationEngine.dismissDialog(dialog);'''
+          if text.count(old)!=1: raise SystemExit('Rich notification saved action mismatch')
+          text=text.replace(old,new)
+          write(s,text)
+
+          # App Usage details: expose verified original-store reinstall for retained uninstall history.
+          s='app/src/main/java/fr/neamar/kiss/AppUsageActivity.java'
+          text=read(s)
+          text=text.replace('import fr.neamar.kiss.appusage.AppUsageTracker;\n', 'import fr.neamar.kiss.appusage.AppUsageTracker;\nimport fr.neamar.kiss.utils.AppReinstallSupport;\n')
+          text=text.replace('''        String currentVersion = "Not currently installed";\n        try {''', '''        String currentVersion = "Not currently installed";\n        boolean currentlyInstalled = false;\n        try {''')
+          text=text.replace('''            currentVersion = (TextUtils.isEmpty(info.versionName) ? "version" : "v" + info.versionName)\n                    + " · code " + code;''', '''            currentVersion = (TextUtils.isEmpty(info.versionName) ? "version" : "v" + info.versionName)\n                    + " · code " + code;\n            currentlyInstalled = true;''')
+          marker='''        Intent launch = getPackageManager().getLaunchIntentForPackage(packageName);\n        if (launch != null) {'''
+          replacement='''        if (!currentlyInstalled\n                && AppReinstallSupport.hasVerifiedReinstallRoute(this, packageName)) {\n            dialog.setNegativeButton("Reinstall", (d, which) ->\n                    AppReinstallSupport.openOriginalStore(this, packageName));\n        }\n        Intent launch = getPackageManager().getLaunchIntentForPackage(packageName);\n        if (launch != null) {'''
+          if text.count(marker)!=1: raise SystemExit('AppUsage dialog button marker mismatch')
+          text=text.replace(marker,replacement)
+          write(s,text)
+          PY
+      - name: Verify intended source scope and invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git status --short | sed -E 's/^.. //' | sort)
+          printf '%s\n' "${files[@]}"
+          allowed='^(app/build.gradle|app/src/main/java/fr/neamar/kiss/(MainActivity.java|NotificationHistoryActivity.java|SearchLaunchReturnState.java|AppUsageActivity.java|appusage/AppUsageStore.java|appusage/AppUsageSync.java|db/DB.java|db/NotificationHistoryRecord.java|db/NotificationTimelineStore.java|db/SmartStateStore.java|forwarder/ForwarderManager.java|forwarder/SmartCardListForwarder.java|notification/NotificationListener.java|result/SettingsResult.java|ui/RichNotificationHistoryDialog.java|utils/AppLaunchUtils.java|utils/AppReinstallSupport.java|utils/NotificationHistoryResolver.java|utils/SavedNotificationDestinationResolver.java)|app/src/test/java/fr/neamar/kiss/SearchLaunchReturnStateTest.java)$'
+          for f in "${files[@]}"; do [[ "$f" =~ $allowed ]] || { echo "Unexpected file: $f"; exit 1; }; done
+          grep -Fq 'versionCode 493' app/build.gradle
+          grep -Fq 'versionName "3.30.65"' app/build.gradle
+          grep -Fq 'private final static int DB_VERSION = 16;' app/src/main/java/fr/neamar/kiss/db/DB.java
+          grep -Fq 'private static final int DB_VERSION = 3;' app/src/main/java/fr/neamar/kiss/appusage/AppUsageStore.java
+          grep -Fq 'forceHistoryRebuildOnNextDataSetChange' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -Fq 'capturePublishedShortcutRoute' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -Fq 'APP_NOT_INSTALLED' app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          grep -Fq 'installer_package' app/src/main/java/fr/neamar/kiss/appusage/AppUsageStore.java
+      - name: Focused search return and viewport tests
+        run: >-
+          ./gradlew testDebugUnitTest
+          --tests 'fr.neamar.kiss.SearchLaunchReturnStateTest'
+          --tests 'fr.neamar.kiss.LauncherHomeLifecycleStateTest'
+          --tests 'fr.neamar.kiss.forwarder.VerticalCardViewportPolicyTest'
+          --tests 'fr.neamar.kiss.forwarder.VerticalCardUserScrollGesturePolicyTest'
+          --stacktrace
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+      - name: Remove temporary guard and verify final diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-33065-search-notification-routes.yml
+          git status --short
+          test ! -e .github/workflows/apply-33065-search-notification-routes.yml
+          grep -Fq 'versionName "3.30.65"' app/build.gradle
+      - name: Commit verified 3.30.65 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix search return and persist verified notification routes in 3.30.65'
+          git push origin HEAD:fix/3.30.65-search-notification-routes
