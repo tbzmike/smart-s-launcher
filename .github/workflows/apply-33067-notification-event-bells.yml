@@ -1,0 +1,91 @@
+name: Guarded 3.30.67 notification event bells
+on:
+  push:
+    branches: [fix/3.30.67-notification-event-bells]
+    paths: ['.github/workflows/apply-33067-notification-event-bells.yml']
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 8
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify exact green 3.30.66 app baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git diff --name-only a51e4aa1e04bdaeb31eb9434135dd7b6750a12ba HEAD -- app)"
+          grep -Fq 'versionCode 494' app/build.gradle
+          grep -Fq 'versionName "3.30.66"' app/build.gradle
+          grep -Fq '|| hasActiveNotification || hasMessage' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -Fq 'addToHistory(getGroupId(packageKey))' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -Fq 'pojo instanceof AppPojo' app/src/main/java/fr/neamar/kiss/ui/NotificationBellStyle.java
+      - name: Apply guarded 3.30.67 source
+        run: python3 .github/scripts/apply_33067_notification_event_bells.py
+      - name: Verify exact source scope and invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git status --short | sed -E 's/^.. //' | grep '^app/' | sort)
+          printf '%s\n' "${files[@]}"
+          allowed='^(app/build.gradle|app/src/main/java/fr/neamar/kiss/(adapter/RecordAdapter.java|forwarder/SmartCardListForwarder.java|notification/NotificationListener.java|notification/NotificationUnreadStore.java|ui/NotificationBellPolicy.java|ui/NotificationBellStyle.java)|app/src/test/java/fr/neamar/kiss/ui/NotificationBellPolicyTest.java)$'
+          for f in "${files[@]}"; do [[ "$f" =~ $allowed ]] || { echo "Unexpected app file: $f"; exit 1; }; done
+          test ${#files[@]} -eq 8
+          grep -Fq 'versionCode 495' app/build.gradle
+          grep -Fq 'versionName "3.30.67"' app/build.gradle
+          grep -Fq 'applyToResult(view, result, parent instanceof AbsListView)' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -Fq 'NotificationBellStyle.isNotificationItem(mainActivity, result, source));' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          ! grep -Fq '|| hasActiveNotification || hasMessage' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -Fq 'NotificationUnreadStore.markUnread(this, id);' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -Fq 'NotificationUnreadStore.markRemoved(this, id);' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -Fq 'NotificationUnreadStore.reconcileActive(this, activeIds);' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -Fq 'addToHistory(id);' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -Fq 'addToHistory(getTimelineId(sbn));' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          ! grep -Fq 'addToHistory(getGroupId(packageKey))' app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java
+          grep -Fq 'pojo instanceof NotificationPojo' app/src/main/java/fr/neamar/kiss/ui/NotificationBellStyle.java
+          grep -Fq 'pojo instanceof NotificationHistorySearchPojo' app/src/main/java/fr/neamar/kiss/ui/NotificationBellStyle.java
+          ! grep -Fq 'pojo instanceof AppPojo' app/src/main/java/fr/neamar/kiss/ui/NotificationBellStyle.java
+          ! grep -Fq 'SmartStateStore' app/src/main/java/fr/neamar/kiss/ui/NotificationBellStyle.java
+          grep -Fq 'Color.YELLOW' app/src/main/java/fr/neamar/kiss/ui/NotificationBellStyle.java
+          grep -Fq 'ValueAnimator.INFINITE' app/src/main/java/fr/neamar/kiss/ui/NotificationBellStyle.java
+          grep -Fq 'return showBell && unread && verticalList;' app/src/main/java/fr/neamar/kiss/ui/NotificationBellPolicy.java
+      - name: Focused regression tests
+        run: >-
+          ./gradlew testDebugUnitTest
+          --tests 'fr.neamar.kiss.ui.NotificationBellPolicyTest'
+          --tests 'fr.neamar.kiss.notification.MediaControlClassifierTest'
+          --tests 'fr.neamar.kiss.SearchLaunchReturnStateTest'
+          --tests 'fr.neamar.kiss.LauncherHomeLifecycleStateTest'
+          --tests 'fr.neamar.kiss.forwarder.VerticalCardViewportPolicyTest'
+          --tests 'fr.neamar.kiss.forwarder.VerticalCardUserScrollGesturePolicyTest'
+          --tests 'fr.neamar.kiss.forwarder.VerticalCardRefreshIdlePolicyTest'
+          --stacktrace
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+      - name: Remove temporary helpers and verify final app-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-33067-notification-event-bells.yml
+          rm .github/scripts/apply_33067_notification_event_bells.py
+          mapfile -t final_files < <({ git diff --name-only a51e4aa1e04bdaeb31eb9434135dd7b6750a12ba -- app; git ls-files --others --exclude-standard app; } | sort -u)
+          printf '%s\n' "${final_files[@]}"
+          test ${#final_files[@]} -eq 8
+          grep -Fq 'versionName "3.30.67"' app/build.gradle
+          test ! -e .github/workflows/apply-33067-notification-event-bells.yml
+          test ! -e .github/scripts/apply_33067_notification_event_bells.py
+      - name: Commit verified 3.30.67 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Keep notification events distinct and flash unread bells in 3.30.67'
+          git push origin HEAD:fix/3.30.67-notification-event-bells
