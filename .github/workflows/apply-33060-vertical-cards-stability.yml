@@ -1,0 +1,100 @@
+name: Apply verified 3.30.60 Vertical Cards stability repair
+
+on:
+  push:
+    branches:
+      - fix/3.30.60-vertical-cards-stability
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact green 3.30.59 baseline branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Apply guarded 3.30.60 repair
+        run: python3 .github/scripts/apply_33060_vertical_cards_stability.py
+
+      - name: Verify exact source scope and invariants
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git diff --name-only | sort > /tmp/changed
+          cat > /tmp/expected <<'EOF'
+          app/build.gradle
+          app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+          app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardRefreshIdlePolicy.java
+          app/src/main/java/fr/neamar/kiss/forwarder/VerticalMapsCardForwarder.java
+          app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardRefreshIdlePolicyTest.java
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/changed
+
+          grep -q 'versionCode 488' app/build.gradle
+          grep -q 'versionName "3.30.60"' app/build.gradle
+          grep -q 'VerticalCardRefreshIdlePolicy' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'rebuildDeferredVerticalCards' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+          grep -q 'decorateVerticalCardsAfterRebuild' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+          grep -q 'if (isHistorySearch() && !verticalCards) historyVisualEnhancer.onDataSetChanged();' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+          grep -q 'refreshMapsCard(false)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalMapsCardForwarder.java
+          grep -q 'rebuildCardsCallback.run()' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+
+          if grep -q 'refreshAfterUserTouch' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java; then
+            echo 'Forbidden post-touch private rebuild is still present' >&2
+            exit 1
+          fi
+          if grep -q 'post(SmartCardListForwarder.this::refreshAfterUserTouch)' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java; then
+            echo 'ACTION_UP still schedules a card-only rebuild' >&2
+            exit 1
+          fi
+          if grep -q 'viewportController.beforeDataSetChanged()' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java; then
+            echo 'Resize controller still owns an incomplete rebuild transaction' >&2
+            exit 1
+          fi
+
+      - name: Run focused refresh-policy tests first
+        run: ./gradlew testDebugUnitTest --tests 'fr.neamar.kiss.forwarder.VerticalCardRefreshIdlePolicyTest' --stacktrace
+
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Remove temporary repair helpers
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git rm .github/scripts/apply_33060_vertical_cards_stability.py
+          git rm .github/workflows/apply-33060-vertical-cards-stability.yml
+
+      - name: Verify final source-only scope and version
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -q 'versionCode 488' app/build.gradle
+          grep -q 'versionName "3.30.60"' app/build.gradle
+          test ! -e .github/scripts/apply_33060_vertical_cards_stability.py
+          test ! -e .github/workflows/apply-33060-vertical-cards-stability.yml
+          git status --short
+
+      - name: Commit verified 3.30.60 repair
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Stabilize Vertical Cards refreshes in 3.30.60'
+          git push origin HEAD:fix/3.30.60-vertical-cards-stability
