@@ -1,0 +1,105 @@
+name: Guarded 3.30.69 all-history edge width
+on:
+  push:
+    branches: [fix/3.30.69-all-history-edge-width]
+    paths: ['.github/workflows/apply-33069-all-history-edge-width.yml']
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 12
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Verify exact green 3.30.68 application baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=a5186b4cf2d2a64bbf2f1980f23bb1f11bcf0598
+          test -z "$(git diff --name-only "$BASE" HEAD -- app)"
+          grep -Fq 'versionCode 496' app/build.gradle
+          grep -Fq 'versionName "3.30.68"' app/build.gradle
+          grep -Fq 'private static final int MAX_WIDTH = 200;' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -Fq 'scroller.setPadding(dp(4), dp(4), dp(4), dp(4));' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -Fq 'lp.setMargins(dp(5), dp(4), dp(5), dp(4));' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -Fq 'wheelColumn.setPadding(dp(4), verticalPadding, dp(4), verticalPadding);' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -Fq 'float leftBound = snapLeft(prefs.getFloat(PREF_LEFT, 0f));' app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java
+          grep -Fq 'row.setPadding(base[0], base[1], base[2], base[3] + dp(context, spacing));' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+      - name: Apply guarded 3.30.69 source
+        run: python3 .github/scripts/apply_33069_all_history_edge_width.py
+      - name: Verify exact source scope and all-mode wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=a5186b4cf2d2a64bbf2f1980f23bb1f11bcf0598
+          mapfile -t files < <(git status --short | sed -E 's/^.. //' | grep '^app/' | sort)
+          printf '%s\n' "${files[@]}"
+          allowed='^(app/build.gradle|app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java|app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java|app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java|app/src/main/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicy.java|app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java|app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java|app/src/test/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicyTest.java)$'
+          for f in "${files[@]}"; do [[ "$f" =~ $allowed ]] || { echo "Unexpected app file: $f"; exit 1; }; done
+          test ${#files[@]} -eq 8
+          grep -Fq 'versionCode 497' app/build.gradle
+          grep -Fq 'versionName "3.30.69"' app/build.gradle
+          grep -Fq 'public final class HistoryEdgeWidthPolicy' app/src/main/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicy.java
+          grep -Fq 'if (percent >= NORMAL_PERCENT) return baseInsetPx;' app/src/main/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicy.java || true
+          grep -Fq 'HistoryEdgeWidthPolicy.insetForPercent(base[0], widthPercent)' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -Fq 'smart-list-card-width-percent' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -Fq 'void onSharedWidthChanged()' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -Fq 'HistoryEdgeWidthPolicy.insetForPercent(dp(4), widthPercent)' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -Fq 'HistoryEdgeWidthPolicy.insetForPercent(dp(5), widthPercent)' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -Fq 'private void applyWheelWidth()' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -Fq 'HistoryEdgeWidthPolicy.leftBoundForPercent' app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java
+          grep -Fq 'HistoryEdgeWidthPolicy.rightBoundForPercent' app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java
+          grep -Fq 'HistoryDisplayForwarder.VERTICAL.equals(layout)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -Fq 'HistoryDisplayForwarder.ICONS.equals(layout)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -Fq 'HistoryDisplayForwarder.CARDS.equals(layout)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -Fq 'HistoryDisplayForwarder.NAMES.equals(layout)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -Fq 'HistoryDisplayForwarder.SQUARE_U.equals(layout)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -Fq 'HistoryDisplayForwarder.WHEEL_3D.equals(layout)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -Fq 'this::applySharedHistoryWidth' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+          grep -Fq 'squareUEdgeBoundsController.onSharedWidthChanged();' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+          git diff --quiet "$BASE" -- app/src/main/res/layout/main.xml
+      - name: Focused width and history regression tests
+        run: >-
+          ./gradlew testDebugUnitTest
+          --tests 'fr.neamar.kiss.forwarder.HistoryEdgeWidthPolicyTest'
+          --tests 'fr.neamar.kiss.forwarder.VerticalCardWidthPolicyTest'
+          --tests 'fr.neamar.kiss.forwarder.VerticalCardViewportPolicyTest'
+          --tests 'fr.neamar.kiss.forwarder.VerticalCardUserScrollGesturePolicyTest'
+          --tests 'fr.neamar.kiss.forwarder.VerticalCardRefreshIdlePolicyTest'
+          --tests 'fr.neamar.kiss.forwarder.HistoryIconPolicyTest'
+          --tests 'fr.neamar.kiss.forwarder.HistoryRefreshPolicyTest'
+          --tests 'fr.neamar.kiss.ui.NotificationBellPolicyTest'
+          --tests 'fr.neamar.kiss.SearchLaunchReturnStateTest'
+          --tests 'fr.neamar.kiss.LauncherHomeLifecycleStateTest'
+          --stacktrace
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+      - name: Remove temporary helpers and verify final app-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=a5186b4cf2d2a64bbf2f1980f23bb1f11bcf0598
+          rm .github/workflows/apply-33069-all-history-edge-width.yml
+          rm .github/scripts/apply_33069_all_history_edge_width.py
+          mapfile -t final_files < <({ git diff --name-only "$BASE" -- app; git ls-files --others --exclude-standard app; } | sort -u)
+          printf '%s\n' "${final_files[@]}"
+          test ${#final_files[@]} -eq 8
+          grep -Fq 'versionName "3.30.69"' app/build.gradle
+          grep -Fq 'versionCode 497' app/build.gradle
+          git diff --quiet "$BASE" -- app/src/main/res/layout/main.xml
+          test ! -e .github/workflows/apply-33069-all-history-edge-width.yml
+          test ! -e .github/scripts/apply_33069_all_history_edge_width.py
+      - name: Commit verified 3.30.69 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Apply shared edge-to-edge width to every history style in 3.30.69'
+          git push origin HEAD:fix/3.30.69-all-history-edge-width
