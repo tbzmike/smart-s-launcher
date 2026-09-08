@@ -22,6 +22,10 @@ final class SearchLaunchReturnState {
         startedFromSearch = false;
     }
 
+    void onHomeIntent(boolean searchResultsActive) {
+        if (searchResultsActive) defaultHistoryResetPending = true;
+    }
+
     boolean consumeDefaultHistoryReset() {
         if (!defaultHistoryResetPending) return false;
         defaultHistoryResetPending = false;

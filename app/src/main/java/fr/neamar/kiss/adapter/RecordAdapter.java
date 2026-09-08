@@ -48,6 +48,7 @@ import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.TileVisualStyle;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
@@ -103,6 +104,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
         Result<?> result = getItem(position);
         View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
+        NotificationBellStyle.applyToResult(view, result);
         if (result.getPojo() instanceof NotificationPojo) {
             configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
             applyBestNotificationPreview(view, (NotificationPojo) result.getPojo());

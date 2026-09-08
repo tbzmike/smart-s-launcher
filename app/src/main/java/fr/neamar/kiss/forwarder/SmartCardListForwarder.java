@@ -17,6 +17,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -28,6 +29,7 @@ import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.result.AppResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
+import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 
 /**
@@ -40,8 +42,9 @@ final class SmartCardListForwarder extends Forwarder {
     private static final String LEGACY_PREF_ENABLED = "smart-card-list-enabled";
     private static final int ACCENT_SAMPLE_SIZE = 10;
     private static final int MAX_ACCENT_CACHE_SIZE = 256;
-    private static final long ACTIVE_QUERY_REBUILD_DEBOUNCE_MS = 64L;
+    private static final long ACTIVE_QUERY_REBUILD_DEBOUNCE_MS = 120L;
 
+    private final Map<String, String> activeQueryCardSignatures = new HashMap<>();
     private final Map<Long, Integer> accentCache =
             new LinkedHashMap<Long, Integer>(MAX_ACCENT_CACHE_SIZE, 0.75f, true) {
                 @Override
@@ -63,7 +66,7 @@ final class SmartCardListForwarder extends Forwarder {
     private final VerticalCardRefreshIdlePolicy deferredRefreshIdlePolicy =
             new VerticalCardRefreshIdlePolicy();
     private final Runnable activeQueryRebuildRunnable = () -> {
-        if (isEnabled() && isActiveQuery()) rebuild();
+        if (isEnabled() && isActiveQuery()) rebuild(true);
     };
     private final Runnable deferredRefreshIdleProbe = () -> {
         deferredRefreshIdleProbeScheduled = false;
@@ -154,6 +157,7 @@ final class SmartCardListForwarder extends Forwarder {
         deferredRefreshIdlePolicy.clear();
         deferredHistoryRefreshCallback = null;
         userScrollStartedCallback = null;
+        activeQueryCardSignatures.clear();
         accentCache.clear();
         container = null;
         scroller = null;
@@ -303,12 +307,17 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void rebuild() {
+        rebuild(false);
+    }
+
+    private void rebuild(boolean allowActiveQueryReuse) {
         if (column == null || mainActivity.adapter == null) return;
         cancelPendingActiveQueryRebuild();
         cancelDeferredRefreshIdleProbe();
         deferredRefreshIdlePolicy.clear();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
+        boolean previouslyRenderedActiveQuery = renderedActiveQuery;
         if (!activeQuery) forceNextHistoryRebuild = false;
         boolean animateHistoryItems = !activeQuery && !suppressNextHistoryAnimation;
         suppressNextHistoryAnimation = false;
@@ -317,18 +326,28 @@ final class SmartCardListForwarder extends Forwarder {
                 && mainActivity.searchEditText != null
                 && mainActivity.searchEditText.hasFocus();
         applySearchFocusIsolation(activeQuery);
-        Map<String, NotificationHistoryRecord> latestNotifications =
-                !activeQuery && prefs.getBoolean("enable-notification-history", false)
-                        ? SmartStateStore.queryLatestNotificationsByPackage(mainActivity)
-                        : Collections.emptyMap();
-        column.removeAllViews();
 
-        int count = mainActivity.adapter.getCount();
-        for (int position = 0; position < count; position++) {
-            Result<?> result = mainActivity.adapter.getItem(position);
-            View source = mainActivity.adapter.getView(position, null, column);
-            View item = createCardItem(source, result, position, latestNotifications);
-            column.addView(item);
+        if (activeQuery && allowActiveQueryReuse && previouslyRenderedActiveQuery) {
+            reconcileActiveQueryCards();
+        } else {
+            Map<String, NotificationHistoryRecord> latestNotifications =
+                    !activeQuery && prefs.getBoolean("enable-notification-history", false)
+                            ? SmartStateStore.queryLatestNotificationsByPackage(mainActivity)
+                            : Collections.emptyMap();
+            activeQueryCardSignatures.clear();
+            column.removeAllViews();
+
+            int count = mainActivity.adapter.getCount();
+            for (int position = 0; position < count; position++) {
+                Result<?> result = mainActivity.adapter.getItem(position);
+                View source = mainActivity.adapter.getView(position, null, column);
+                View item = createCardItem(source, result, position, latestNotifications);
+                column.addView(item);
+                if (activeQuery) {
+                    activeQueryCardSignatures.put(
+                            result.getPojoId(), activeQueryCardSignature(result));
+                }
+            }
         }
 
         if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
@@ -349,6 +368,74 @@ final class SmartCardListForwarder extends Forwarder {
                 }
             });
         }
+    }
+
+    /**
+     * Active search used to destroy and recreate the complete Vertical Cards hierarchy after every
+     * debounce. Reconcile by stable POJO identity instead: unchanged cards keep their Views, click
+     * listeners and drawables; only inserted/changed results are materialized from the adapter.
+     */
+    private void reconcileActiveQueryCards() {
+        if (column == null || mainActivity.adapter == null) return;
+
+        Map<String, View> existingById = new HashMap<>();
+        for (int i = 0; i < column.getChildCount(); i++) {
+            View child = column.getChildAt(i);
+            Object tag = child.getTag();
+            if (tag instanceof String && !existingById.containsKey((String) tag)) {
+                existingById.put((String) tag, child);
+            }
+        }
+
+        Map<String, String> nextSignatures = new HashMap<>();
+        int targetCount = mainActivity.adapter.getCount();
+        for (int position = 0; position < targetCount; position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
+            String id = result.getPojoId();
+            String signature = activeQueryCardSignature(result);
+            nextSignatures.put(id, signature);
+
+            View desired = existingById.remove(id);
+            if (desired != null
+                    && !TextUtils.equals(activeQueryCardSignatures.get(id), signature)) {
+                if (desired.getParent() == column) column.removeView(desired);
+                desired = null;
+            }
+            if (desired == null) {
+                View source = mainActivity.adapter.getView(position, null, column);
+                desired = createCardItem(
+                        source, result, position, Collections.emptyMap());
+            }
+            placeActiveQueryChild(desired, position);
+        }
+
+        // Entries left in the map disappeared from the new query result set. Remove those exact
+        // stale Views rather than trimming arbitrary children from the end after reordering.
+        for (View stale : existingById.values()) {
+            if (stale.getParent() == column) column.removeView(stale);
+        }
+        while (column.getChildCount() > targetCount) {
+            column.removeViewAt(column.getChildCount() - 1);
+        }
+        activeQueryCardSignatures.clear();
+        activeQueryCardSignatures.putAll(nextSignatures);
+        column.requestLayout();
+        column.invalidate();
+    }
+
+    private void placeActiveQueryChild(View child, int targetPosition) {
+        if (child.getParent() == column) {
+            int currentPosition = column.indexOfChild(child);
+            if (currentPosition == targetPosition) return;
+            if (currentPosition >= 0) column.removeViewAt(currentPosition);
+        } else if (child.getParent() instanceof ViewGroup) {
+            ((ViewGroup) child.getParent()).removeView(child);
+        }
+        column.addView(child, Math.min(targetPosition, column.getChildCount()));
+    }
+
+    private String activeQueryCardSignature(Result<?> result) {
+        return result.getClass().getName() + "|" + result.getPojoId() + "|" + result.toString();
     }
 
     private final class StableCardScrollView extends ScrollView {
@@ -485,6 +572,9 @@ final class SmartCardListForwarder extends Forwarder {
         cardTitle.setTextSize(16f * namePercent / 100f);
         cardTitle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         cardTitle.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
+        NotificationBellStyle.apply(cardTitle,
+                NotificationBellStyle.isNotificationItem(mainActivity, result, source)
+                        || hasActiveNotification || hasMessage);
         center.addView(cardTitle, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
 

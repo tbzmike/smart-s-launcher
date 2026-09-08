@@ -27,4 +27,17 @@ class SearchLaunchReturnStateTest {
         state.onExternalLaunchCancelled();
         assertThat(state.consumeDefaultHistoryReset(), is(false));
     }
+
+    @Test void homeFromQueryRequestsExactlyOneDefaultHistoryReset() {
+        SearchLaunchReturnState state = new SearchLaunchReturnState();
+        state.onHomeIntent(true);
+        assertThat(state.consumeDefaultHistoryReset(), is(true));
+        assertThat(state.consumeDefaultHistoryReset(), is(false));
+    }
+
+    @Test void homeFromRealHistoryDoesNotRequestSearchReset() {
+        SearchLaunchReturnState state = new SearchLaunchReturnState();
+        state.onHomeIntent(false);
+        assertThat(state.consumeDefaultHistoryReset(), is(false));
+    }
 }

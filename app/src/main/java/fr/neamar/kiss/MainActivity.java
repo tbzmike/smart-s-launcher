@@ -534,9 +534,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             cancelSearch();
             if (!TextUtils.isEmpty(searchEditText.getText())) {
                 clearSearchText();
-            } else {
-                updateSearchRecords(false, "");
             }
+            // Emptying the EditText only changes UI chrome; it does not publish HISTORY. Always
+            // replace the old QUERY adapter with the actual default history result set.
+            showHistory();
             displayClearOnInput();
             hideKeyboard();
         } else if (refreshDeferredBackground
@@ -603,6 +604,17 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // fullscreen activity passes through onStop(); a second Home redelivery does not.
         boolean launcherWasForeground =
                 homeLifecycleState.launcherWasForegroundBeforeHomeIntent();
+
+        // Capture search-result state before HOME clears the EditText. A completed external
+        // launch may already have blanked the field while SearchHandler still owns QUERY results.
+        boolean homeIntent = Intent.ACTION_MAIN.equals(intent.getAction())
+                && intent.hasCategory(Intent.CATEGORY_HOME);
+        if (homeIntent) {
+            Searcher.Type lastSearchType = SearchHandler.getInstance().getLastSearchType();
+            boolean searchResultsActive = !TextUtils.isEmpty(searchEditText.getText())
+                    || lastSearchType == Searcher.Type.QUERY;
+            searchLaunchReturnState.onHomeIntent(searchResultsActive);
+        }
 
         //Set the intent so KISS can tell when it was launched as an assistant
         setIntent(intent);

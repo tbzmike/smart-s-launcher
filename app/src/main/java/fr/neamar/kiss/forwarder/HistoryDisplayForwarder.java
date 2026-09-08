@@ -29,6 +29,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
+import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 
 final class HistoryDisplayForwarder extends Forwarder {
@@ -555,7 +556,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         tile.addView(icon, iconParams);
         bindRenderedIcon(result, icon, tile, dp(16), false);
 
-        addFullLabel(tile, label, 12f, dp(44) * tilePercent / 100, 1);
+        TextView labelView = addFullLabel(tile, label, 12f, dp(44) * tilePercent / 100, 1);
+        NotificationBellStyle.apply(labelView,
+                NotificationBellStyle.isNotificationItem(mainActivity, result, source));
         return tile;
     }
 
@@ -577,6 +580,8 @@ final class HistoryDisplayForwarder extends Forwarder {
         bindRenderedIcon(result, icon, tile, dp(16), false);
 
         TextView name = buildMarqueeLabel(extractLabel(source), 16f);
+        NotificationBellStyle.apply(name,
+                NotificationBellStyle.isNotificationItem(mainActivity, result, source));
         name.setPadding(dp(8), dp(7), dp(8), dp(7));
         FrameLayout.LayoutParams nameParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
@@ -600,8 +605,10 @@ final class HistoryDisplayForwarder extends Forwarder {
                 && notificationRow.getVisibility() == View.VISIBLE;
         if (hasRichPreview) addMutedPreview(card, source);
 
+        boolean notificationItem = NotificationBellStyle.isNotificationItem(
+                mainActivity, result, source);
         ImageView icon = addForegroundIconAndLabel(card, iconDrawable, label,
-                dp(58) * iconPercent / 100, 14f, dp(14));
+                dp(58) * iconPercent / 100, 14f, dp(14), notificationItem);
         bindRenderedIcon(result, icon, card, dp(18), false);
         return card;
     }
@@ -627,7 +634,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         card.addView(icon, iconParams);
         bindRenderedIcon(result, icon, card, dp(18), true);
 
-        addFullLabel(card, label, 14f, dp(42), 1);
+        TextView labelView = addFullLabel(card, label, 14f, dp(42), 1);
+        NotificationBellStyle.apply(labelView,
+                NotificationBellStyle.isNotificationItem(mainActivity, result, source));
         return card;
     }
 
@@ -641,7 +650,8 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private ImageView addForegroundIconAndLabel(FrameLayout card, Drawable iconDrawable,
                                                 CharSequence label, int iconSize,
-                                                float textSize, int topMargin) {
+                                                float textSize, int topMargin,
+                                                boolean notificationItem) {
         ImageView icon = new ImageView(mainActivity);
         icon.setImageDrawable(iconDrawable);
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -649,7 +659,8 @@ final class HistoryDisplayForwarder extends Forwarder {
                 iconSize, iconSize, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
         iconParams.topMargin = topMargin;
         card.addView(icon, iconParams);
-        addFullLabel(card, label, textSize, dp(42), 1);
+        TextView labelView = addFullLabel(card, label, textSize, dp(42), 1);
+        NotificationBellStyle.apply(labelView, notificationItem);
         return icon;
     }
 
@@ -675,7 +686,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         return name;
     }
 
-    private void addFullLabel(FrameLayout card, CharSequence label, float textSize,
+    private TextView addFullLabel(FrameLayout card, CharSequence label, float textSize,
                               int labelHeight, int maxLines) {
         TextView name = buildMarqueeLabel(label, textSize);
         name.setPadding(dp(6), dp(2), dp(6), dp(5));
@@ -690,6 +701,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         nameParams.rightMargin = dp(5);
         nameParams.bottomMargin = dp(5);
         card.addView(name, nameParams);
+        return name;
     }
 
     private CharSequence extractLabel(View source) {
