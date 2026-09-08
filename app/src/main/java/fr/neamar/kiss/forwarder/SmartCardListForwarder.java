@@ -345,6 +345,9 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private final class StableCardScrollView extends ScrollView {
+        private final VerticalCardUserScrollGesturePolicy userScrollGesturePolicy =
+                new VerticalCardUserScrollGesturePolicy();
+
         StableCardScrollView() {
             super(mainActivity);
         }
@@ -355,11 +358,16 @@ final class SmartCardListForwarder extends Forwarder {
             if (action == MotionEvent.ACTION_DOWN) {
                 deferredRefreshIdlePolicy.onTouchDown();
                 cancelDeferredRefreshIdleProbe();
+                userScrollGesturePolicy.onTouchDown(getScrollY());
+            }
+            boolean handled = super.dispatchTouchEvent(event);
+            if (action == MotionEvent.ACTION_MOVE
+                    && userScrollGesturePolicy.onTouchMove(getScrollY())) {
                 Runnable callback = userScrollStartedCallback;
                 if (callback != null) callback.run();
             }
-            boolean handled = super.dispatchTouchEvent(event);
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                userScrollGesturePolicy.onTouchEnd();
                 if (pendingDataSetRefresh) {
                     deferredRefreshIdlePolicy.request(getScrollY(), false);
                     deferredRefreshIdlePolicy.onTouchReleased(getScrollY());
