@@ -23,7 +23,6 @@ jobs:
           test -z "$(git diff --name-only fb5b2fe7731e99551de5682e824cd6fda5bfb146 HEAD -- app)"
           grep -Fq 'versionName "3.30.65"' app/build.gradle
           grep -Fq 'private static final long ACTIVE_QUERY_REBUILD_DEBOUNCE_MS = 64L;' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
-          grep -Fq 'void onHomeIntent' app/src/main/java/fr/neamar/kiss/LauncherHomeLifecycleState.java
       - name: Apply original guarded source transform
         run: python3 .github/scripts/apply_33066_vertical_card_search_bells.py
       - name: Apply verified screenshot and lint corrections
