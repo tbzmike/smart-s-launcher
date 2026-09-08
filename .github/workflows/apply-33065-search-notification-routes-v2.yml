@@ -45,15 +45,11 @@ jobs:
                   raise SystemExit(f"{path}: expected {count}, found {found}: {old[:100]!r}")
               p.write_text(text.replace(old, new, count))
 
-          # The first transformation wrote route_uri beside both user_serial writes. Keep the
-          # saveNotification write (it already owns routeUri) and remove only the invalid rememberApp write.
           path = 'app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java'
           patch(path,
                 '''        values.put("user_serial", userSerial);\n        values.put("route_uri", routeUri == null ? "" : routeUri);\n        SQLiteDatabase database = db(context);''',
                 '''        values.put("user_serial", userSerial);\n        SQLiteDatabase database = db(context);''')
 
-          # The live package receiver also constructs PackageState. Carry the already-observed
-          # installer through InstallMeta and verify its store route exactly like the full sync.
           path = 'app/src/main/java/fr/neamar/kiss/appusage/AppUsagePackageReceiver.java'
           patch(path,
                 'import android.content.pm.PackageManager;\n',
@@ -106,7 +102,7 @@ jobs:
           test ! -e .github/workflows/apply-33065-search-notification-routes.yml
           test ! -e .github/workflows/diagnose-33065.yml
           test ! -e .github/workflows/apply-33065-search-notification-routes-v2.yml
-          mapfile -t final_files < <(git diff --name-only a6bd91534c0d29d9be3e09b2f3f1dc9231687552 -- app | sort)
+          mapfile -t final_files < <({ git diff --name-only a6bd91534c0d29d9be3e09b2f3f1dc9231687552 -- app; git ls-files --others --exclude-standard app; } | sort -u)
           printf '%s\n' "${final_files[@]}"
           test ${#final_files[@]} -eq 22
           grep -Fq 'versionName "3.30.65"' app/build.gradle
