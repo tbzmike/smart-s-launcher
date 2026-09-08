@@ -1,0 +1,76 @@
+name: Apply verified 3.30.59 Vertical Cards follow-up
+
+on:
+  push:
+    branches:
+      - fix/3.30.59-runtime-memory
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Apply guarded Vertical Cards follow-up
+        run: python3 .github/scripts/apply_33059_vertical_cards_followup.py
+
+      - name: Verify exact source scope and invariants
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git diff --name-only | sort > /tmp/changed
+          cat > /tmp/expected <<'EOF'
+          app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java
+          EOF
+          sort -o /tmp/expected /tmp/expected
+          diff -u /tmp/expected /tmp/changed
+
+          grep -q 'ACTIVE_QUERY_REBUILD_DEBOUNCE_MS = 64L' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'scheduleActiveQueryRebuild()' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'renderedActiveQuery = activeQuery' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'resultsByPojoId.put(result.getPojoId(), result)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java
+          grep -q 'resultsByPojoId.get((String) wrapperId)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java
+          grep -q 'releaseDiscardedSource(source)' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'RAW_EVENT_QUERY_WINDOW_MS = 7L' app/src/main/java/fr/neamar/kiss/appusage/AppUsageSync.java
+          grep -q 'AppIconMemoryCache.clear()' app/src/main/java/fr/neamar/kiss/KissApplication.java
+          grep -q 'versionCode 487' app/build.gradle
+          grep -q 'versionName "3.30.59"' app/build.gradle
+
+          if grep -q 'detailsPanel.addView(source' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java; then
+            echo 'Eager hidden adapter-row retention returned' >&2
+            exit 1
+          fi
+
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Remove temporary follow-up helpers
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git rm .github/scripts/apply_33059_vertical_cards_followup.py
+          git rm .github/workflows/apply-33059-vertical-cards-followup.yml
+
+      - name: Commit verified follow-up
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Stabilize Vertical Cards and typing in 3.30.59'
+          git push origin HEAD:fix/3.30.59-runtime-memory
