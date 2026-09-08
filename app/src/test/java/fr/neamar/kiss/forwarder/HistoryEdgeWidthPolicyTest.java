@@ -52,6 +52,14 @@ class HistoryEdgeWidthPolicyTest {
         assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 500), closeTo(1.50, 0.0001));
     }
 
+    @Test void outerFortyDpResultMarginIsReleasedAtThePhysicalEdges() {
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 100), is(40));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 150), is(20));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 200), is(0));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 300), is(0));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 400), is(0));
+    }
+
     @Test void valuesBelowOneHundredShrinkFromNormalWidth() {
         assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 50), is(300));
         assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 50), is(8));

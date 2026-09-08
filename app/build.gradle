@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.69 - global 48-400% history width, 200% edge-to-edge
-        versionCode 497
-        versionName "3.30.69"
+        // Smart S Launcher 3.30.70 - physical screen-edge history width across all styles
+        versionCode 498
+        versionName "3.30.70"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

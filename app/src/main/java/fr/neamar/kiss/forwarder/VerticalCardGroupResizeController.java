@@ -17,6 +17,7 @@ import android.widget.TextView;
 import androidx.preference.PreferenceManager;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.preference.UiEditLock;
 
 /**
@@ -50,6 +51,7 @@ final class VerticalCardGroupResizeController {
     private LinearLayout column;
     private TextView resizeButton;
     private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
+    private View.OnLayoutChangeListener pendingHostLayoutListener;
     private AlertDialog dialog;
 
     VerticalCardGroupResizeController(MainActivity activity,
@@ -86,6 +88,7 @@ final class VerticalCardGroupResizeController {
     void onConfigurationChanged() {
         dismissDialog();
         detachObserver();
+        cancelPendingHostWidthApply();
         host = null;
         column = null;
         resolveViews();
@@ -101,6 +104,7 @@ final class VerticalCardGroupResizeController {
     void onDestroy() {
         dismissDialog();
         detachObserver();
+        cancelPendingHostWidthApply();
         if (resizeButton != null && resizeButton.getParent() instanceof ViewGroup) {
             ((ViewGroup) resizeButton.getParent()).removeView(resizeButton);
         }
@@ -129,12 +133,15 @@ final class VerticalCardGroupResizeController {
     private void resolveViews() {
         FrameLayout nextHost = activity.listContainer instanceof FrameLayout
                 ? (FrameLayout) activity.listContainer : null;
+        if (nextHost != host) {
+            cancelPendingHostWidthApply();
+            host = nextHost;
+        }
         LinearLayout nextColumn = cardForwarder.getColumn();
         if (nextColumn != column) {
             detachObserver();
             column = nextColumn;
         }
-        host = nextHost;
     }
 
     private void installButton() {
@@ -200,11 +207,66 @@ final class VerticalCardGroupResizeController {
     }
 
     private void applyWidthSoon() {
-        if (isVerticalCards()) {
-            if (column != null) column.post(this::applyWidthToAllCards);
-        } else if (sharedWidthChangedCallback != null && host != null) {
-            host.post(sharedWidthChangedCallback);
+        if (host == null || !isEnabled()) return;
+        int widthPercent = prefInt(PREF_WIDTH, 100, MIN_WIDTH, MAX_WIDTH);
+        cancelPendingHostWidthApply();
+
+        Runnable rendererApply = isVerticalCards()
+                ? this::applyWidthToAllCards : sharedWidthChangedCallback;
+        boolean hostChanged = applyOuterResultMargins(widthPercent);
+        if (rendererApply == null) return;
+        if (!hostChanged) {
+            host.post(rendererApply);
+            return;
         }
+
+        // resultLayout itself can be narrower than the display. Wait for its exact new bounds so
+        // renderer children are measured against the physical-edge viewport, not the old 40dp clip.
+        pendingHostLayoutListener = new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                       int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                v.removeOnLayoutChangeListener(this);
+                pendingHostLayoutListener = null;
+                rendererApply.run();
+            }
+        };
+        host.addOnLayoutChangeListener(pendingHostLayoutListener);
+        host.requestLayout();
+    }
+
+    private boolean applyOuterResultMargins(int widthPercent) {
+        if (host == null) return false;
+        ViewGroup.LayoutParams raw = host.getLayoutParams();
+        if (!(raw instanceof ViewGroup.MarginLayoutParams)) return false;
+        ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) raw;
+
+        // InterfaceTweaks applies a separate 40dp margin to the ancestor resultLayout when the
+        // large-results-margin preference is enabled. Release that outer clip from 100% to 200%;
+        // 200-400% keeps it at zero so the physical display edge is the only visible boundary.
+        int baseMargin = prefs.getBoolean("large-result-list-margins", false)
+                ? activity.getResources().getDimensionPixelSize(R.dimen.list_margin_horizontal_large)
+                : 0;
+        int desiredMargin = HistoryEdgeWidthPolicy.insetForPercent(baseMargin, widthPercent);
+        if (lp.leftMargin == desiredMargin && lp.rightMargin == desiredMargin
+                && lp.getMarginStart() == desiredMargin && lp.getMarginEnd() == desiredMargin) {
+            return false;
+        }
+
+        int topMargin = lp.topMargin;
+        int bottomMargin = lp.bottomMargin;
+        lp.setMargins(desiredMargin, topMargin, desiredMargin, bottomMargin);
+        lp.setMarginStart(desiredMargin);
+        lp.setMarginEnd(desiredMargin);
+        host.setLayoutParams(lp);
+        return true;
+    }
+
+    private void cancelPendingHostWidthApply() {
+        if (host != null && pendingHostLayoutListener != null) {
+            host.removeOnLayoutChangeListener(pendingHostLayoutListener);
+        }
+        pendingHostLayoutListener = null;
     }
 
     private void applyWidthToAllCards() {
