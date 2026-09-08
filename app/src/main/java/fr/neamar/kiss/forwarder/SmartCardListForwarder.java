@@ -55,6 +55,7 @@ final class SmartCardListForwarder extends Forwarder {
     private View edgeEffect;
     private boolean pendingDataSetRefresh;
     private boolean renderedActiveQuery;
+    private boolean suppressNextHistoryAnimation;
     private Runnable deferredHistoryRefreshCallback;
     private boolean deferredRefreshIdleProbeScheduled;
     private final VerticalCardRefreshIdlePolicy deferredRefreshIdlePolicy =
@@ -149,6 +150,7 @@ final class SmartCardListForwarder extends Forwarder {
         edgeEffect = null;
         pendingDataSetRefresh = false;
         renderedActiveQuery = false;
+        suppressNextHistoryAnimation = false;
     }
 
     ScrollView getScroller() {
@@ -176,6 +178,8 @@ final class SmartCardListForwarder extends Forwarder {
 
     boolean rebuildPendingDataSetRefresh() {
         if (!pendingDataSetRefresh || !isEnabled() || isActiveQuery()) return false;
+        // Passive provider/notification refreshes must not replay tile entrance animations.
+        suppressNextHistoryAnimation = true;
         rebuild();
         return true;
     }
@@ -285,6 +289,8 @@ final class SmartCardListForwarder extends Forwarder {
         deferredRefreshIdlePolicy.clear();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
+        boolean animateHistoryItems = !activeQuery && !suppressNextHistoryAnimation;
+        suppressNextHistoryAnimation = false;
         renderedActiveQuery = activeQuery;
         boolean preserveSearchFocus = activeQuery
                 && mainActivity.searchEditText != null
@@ -311,7 +317,7 @@ final class SmartCardListForwarder extends Forwarder {
             mainActivity.showKeyboard();
         }
 
-        if (!activeQuery) {
+        if (animateHistoryItems) {
             scroller.post(() -> {
                 int childCount = column.getChildCount();
                 int first = Math.max(0, childCount - 16);

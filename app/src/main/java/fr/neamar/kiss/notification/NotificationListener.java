@@ -206,7 +206,14 @@ public class NotificationListener extends NotificationListenerService {
         if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
             KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(packageKey));
         }
-        sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
+        sendTimelineRefresh(id, true);
+    }
+
+    private void sendTimelineRefresh(String notificationId, boolean posted) {
+        Intent refresh = MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER)
+                .putExtra(MainActivity.EXTRA_NOTIFICATION_TIMELINE_ID, notificationId)
+                .putExtra(MainActivity.EXTRA_NOTIFICATION_POSTED, posted);
+        sendBroadcast(refresh);
     }
 
     private void persistHistory(StatusBarNotification sbn, String id) {
@@ -300,7 +307,7 @@ public class NotificationListener extends NotificationListenerService {
             }
         }
         edit.apply();
-        sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
+        sendTimelineRefresh(id, false);
     }
 
     public Set<String> getCurrentNotificationsForPackage(String packageKey) {

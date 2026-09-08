@@ -81,6 +81,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     public static final String START_LOAD = "fr.neamar.summon.START_LOAD";
     public static final String LOAD_OVER = "fr.neamar.summon.LOAD_OVER";
+    public static final String EXTRA_NOTIFICATION_TIMELINE_ID =
+            "fr.neamar.summon.extra.NOTIFICATION_TIMELINE_ID";
+    public static final String EXTRA_NOTIFICATION_POSTED =
+            "fr.neamar.summon.extra.NOTIFICATION_POSTED";
     public static final String REFRESH_FAVORITES = "fr.neamar.summon.REFRESH_FAVORITES";
 
     protected static final String TAG = MainActivity.class.getSimpleName();
@@ -183,6 +187,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     private OnBackPressedCallback onBackPressedCallback;
     private final LauncherHomeLifecycleState homeLifecycleState =
             new LauncherHomeLifecycleState();
+    private boolean launcherUiResumed;
+    private boolean pendingBackgroundRefresh;
+    private boolean pendingBackgroundFavoriteRefresh;
+    @Nullable private String pendingNotificationTargetId;
 
     /**
      * Called when the activity is first created.
@@ -239,16 +247,41 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                         updateSearchRecords();
                     }
                 } else if (LOAD_OVER.equalsIgnoreCase(intent.getAction())) {
+                    String notificationId = intent.getStringExtra(EXTRA_NOTIFICATION_TIMELINE_ID);
+                    boolean notificationEvent = !TextUtils.isEmpty(notificationId);
+                    boolean notificationPosted = notificationEvent
+                            && intent.getBooleanExtra(EXTRA_NOTIFICATION_POSTED, false);
+
+                    // Do not rebuild/redecorate launcher results while Android is starting an app,
+                    // shortcut or notification target. Persisted provider state remains authoritative;
+                    // one coalesced refresh is applied when Home owns the foreground again.
+                    if (!launcherUiResumed) {
+                        pendingBackgroundRefresh = true;
+                        if (!notificationEvent) pendingBackgroundFavoriteRefresh = true;
+                        if (notificationPosted) {
+                            pendingNotificationTargetId = notificationId;
+                        } else if (notificationEvent
+                                && TextUtils.equals(pendingNotificationTargetId, notificationId)) {
+                            pendingNotificationTargetId = null;
+                        }
+                        return;
+                    }
+
+                    if (notificationEvent) {
+                        forwarderManager.onNotificationTimelineChanged(
+                                notificationId, notificationPosted);
+                        updateSearchRecords();
+                        return;
+                    }
+
                     updateSearchRecords();
                     if (!KissApplication.getApplication(context).getDataHandler().isAllProvidersLoaded()) {
                         displayLoader(true);
                     } else {
                         Log.v(TAG, "All providers are done loading.");
-
                         displayLoader(false);
-
                     }
-                    // New provider might mean new favorites
+                    // Provider changes can affect favorites; notification timeline changes cannot.
                     onFavoriteChange();
                 } else if (START_LOAD.equalsIgnoreCase(intent.getAction())) {
                     displayLoader(true);
@@ -461,6 +494,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return;
         }
 
+        launcherUiResumed = true;
         AppProvider.setLauncherUiVisible(true);
         // Settings may have changed while the launcher was paused. Synchronize input mode
         // before any later focus request can give Android IME a chance to appear.
@@ -471,14 +505,31 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             displayLoader(false);
         }
 
+        boolean refreshDeferredBackground = pendingBackgroundRefresh;
+        boolean refreshDeferredFavorites = pendingBackgroundFavoriteRefresh;
+        String deferredNotificationTargetId = pendingNotificationTargetId;
+        pendingBackgroundRefresh = false;
+        pendingBackgroundFavoriteRefresh = false;
+        pendingNotificationTargetId = null;
+        if (!TextUtils.isEmpty(deferredNotificationTargetId)) {
+            forwarderManager.onNotificationTimelineChanged(deferredNotificationTargetId, true);
+        }
+
         // Persistent notification details are only a rendering cache. Reconcile them against
         // Android's panel without delaying the first Home frame; a changed active set requests a
         // normal refresh when the background verification completes.
         NotificationListener.reconcileActiveNotificationsAsync();
 
-        // We need to update the history in case an external event created new items
-        // (for instance, installed a new app, got a phone call or simply clicked on a favorite)
-        updateSearchRecords(false, searchEditText.getText().toString());
+        // Coalesce everything that arrived while an external launch transition owned the screen.
+        // Refresh the existing search type so a queued notification event becomes a real timeline
+        // card without resetting history navigation to a different search mode.
+        if (refreshDeferredBackground
+                && SearchHandler.getInstance().getLastSearchType() != null) {
+            updateSearchRecords(true, searchEditText.getText().toString());
+        } else {
+            updateSearchRecords(false, searchEditText.getText().toString());
+        }
+        if (refreshDeferredFavorites) onFavoriteChange();
 
         if (isViewingAllApps()) {
             displayKissBar(false);
@@ -508,6 +559,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     protected void onPause() {
+        launcherUiResumed = false;
         forwarderManager.onPause();
         super.onPause();
     }
@@ -719,7 +771,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 basePx = textView.getTextSize();
                 textView.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx);
             }
-            textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, basePx * scale);
+            float targetPx = basePx * scale;
+            if (Math.abs(textView.getTextSize() - targetPx) > 0.5f) {
+                textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, targetPx);
+            }
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
@@ -1064,8 +1119,20 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     @Override
+    public void externalResultLaunchStarting() {
+        // This runs before doLaunch(), not after it: no provider/notification refresh is allowed
+        // to rebuild Vertical Cards in the same frame Android begins the launch animation.
+        launcherUiResumed = false;
+    }
+
+    @Override
     public void externalResultLaunchOccurred() {
         homeLifecycleState.onExternalResultLaunched();
+    }
+
+    @Override
+    public void externalResultLaunchCancelled() {
+        launcherUiResumed = true;
     }
 
     public void registerPopup(ListPopup popup) {

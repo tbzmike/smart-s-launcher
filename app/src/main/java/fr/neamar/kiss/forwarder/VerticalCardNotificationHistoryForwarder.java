@@ -23,9 +23,13 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.LaunchHistoryStatsStore;
@@ -59,10 +63,19 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
     private final SmartCardListForwarder smartCardListForwarder;
     private final Handler attentionHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService launchStatsExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "smart-s-card-launch-stats");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
+    private final AtomicBoolean launchStatsRefreshInFlight = new AtomicBoolean(false);
     private final List<AttentionBorder> attentionBorders = new ArrayList<>();
     private ViewGroup column;
     private ScrollView scroller;
     private Map<String, LaunchHistoryStatsStore.Stats> launchStats = Collections.emptyMap();
+    private boolean launchStatsRefreshRequested;
+    private boolean paused;
+    private volatile boolean destroyed;
     private boolean attentionBright;
 
     private float bottomSwipeDownRawX;
@@ -103,17 +116,21 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         this.smartCardListForwarder = smartCardListForwarder;
     }
 
-    void onCreate() { refresh(); }
-    void onResume() { refresh(); }
+    void onCreate() { paused = false; refresh(); }
+    void onResume() { paused = false; refresh(); }
     void onDataSetChanged() { refresh(); }
     void onConfigurationChanged() { refresh(); }
 
     void onPause() {
+        paused = true;
         resetBottomSwipe();
         resetAttentionBorders();
     }
 
     void onDestroy() {
+        destroyed = true;
+        paused = true;
+        launchStatsExecutor.shutdownNow();
         resetBottomSwipe();
         resetAttentionBorders();
         column = null;
@@ -135,9 +152,38 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             resetAttentionBorders();
             return;
         }
-        launchStats = LaunchHistoryStatsStore.getAll(mainActivity);
         resolveViews();
-        if (column != null) column.post(this::apply);
+        if (!paused && column != null) column.post(this::apply);
+        refreshLaunchStatsAsync();
+    }
+
+    private void refreshLaunchStatsAsync() {
+        if (destroyed || paused || !isEnabled()) return;
+        if (!launchStatsRefreshInFlight.compareAndSet(false, true)) {
+            launchStatsRefreshRequested = true;
+            return;
+        }
+        final android.content.Context appContext = mainActivity.getApplicationContext();
+        launchStatsExecutor.execute(() -> {
+            Map<String, LaunchHistoryStatsStore.Stats> fresh;
+            try {
+                fresh = LaunchHistoryStatsStore.getAll(appContext);
+            } catch (RuntimeException ignored) {
+                fresh = Collections.emptyMap();
+            }
+            final Map<String, LaunchHistoryStatsStore.Stats> result = fresh;
+            mainActivity.runOnUiThread(() -> {
+                launchStatsRefreshInFlight.set(false);
+                if (destroyed) return;
+                launchStats = result;
+                resolveViews();
+                if (!paused && column != null) column.post(this::apply);
+                if (launchStatsRefreshRequested) {
+                    launchStatsRefreshRequested = false;
+                    refreshLaunchStatsAsync();
+                }
+            });
+        });
     }
 
     private void resolveViews() {
@@ -150,13 +196,26 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void apply() {
-        if (!isEnabled() || column == null || mainActivity.adapter == null) return;
+        if (paused || destroyed || !isEnabled() || column == null || mainActivity.adapter == null) return;
         resetAttentionBorders();
-        int count = Math.min(column.getChildCount(), mainActivity.adapter.getCount());
+        Map<String, Result<?>> resultsByPojoId = new HashMap<>();
+        Map<String, Integer> positionsByPojoId = new HashMap<>();
+        for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
+            if (result == null) continue;
+            resultsByPojoId.put(result.getPojoId(), result);
+            positionsByPojoId.put(result.getPojoId(), position);
+        }
+
+        int count = column.getChildCount();
         for (int position = 0; position < count; position++) {
             View wrapper = column.getChildAt(position);
-            Result<?> result = mainActivity.adapter.getItem(position);
-            final int adapterPosition = position;
+            Object wrapperId = wrapper.getTag();
+            if (!(wrapperId instanceof String)) continue;
+            Result<?> result = resultsByPojoId.get((String) wrapperId);
+            Integer resolvedPosition = positionsByPojoId.get((String) wrapperId);
+            if (result == null || resolvedPosition == null) continue;
+            final int adapterPosition = resolvedPosition;
 
             applyLaunchStats(wrapper, result);
             applyEasyIconTap(wrapper, result, adapterPosition);

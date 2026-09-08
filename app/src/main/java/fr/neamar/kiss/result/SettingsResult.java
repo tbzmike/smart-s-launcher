@@ -535,6 +535,12 @@ public class SettingsResult extends Result<SettingPojo> {
     }
 
     @Override
+    protected boolean didLaunchExternalActivity() {
+        if (pojo instanceof NotificationPojo) return launchSucceeded;
+        return super.didLaunchExternalActivity();
+    }
+
+    @Override
     protected boolean isAllowedAsFavorite() {
         return !(pojo instanceof DisabledAppPojo) && !(pojo instanceof NotificationPojo);
     }

@@ -125,7 +125,10 @@ public class ForwarderManager extends Forwarder {
 
         if (initialResumeComplete) {
             if (verticalCards && uiEditLockChanged) verticalCardGroupResizeController.onResume();
-            if (verticalCards) verticalCardUsageForwarder.onResume();
+            if (verticalCards) {
+                verticalCardNotificationHistoryForwarder.onResume();
+                verticalCardUsageForwarder.onResume();
+            }
             return;
         }
 
@@ -161,6 +164,9 @@ public class ForwarderManager extends Forwarder {
         if (isVerticalCardsMode()) {
             // Capture only when Vertical Cards actually owns the visible history viewport.
             verticalCardViewportController.onLauncherPaused();
+            // Stop Vertical Cards UI mutation/attention work before Android's external transition.
+            verticalCardNotificationHistoryForwarder.onPause();
+            verticalCardUsageForwarder.onPause();
         }
         experienceTweaks.onPause();
         notificationForwarder.onPause();
@@ -240,7 +246,8 @@ public class ForwarderManager extends Forwarder {
 
     private void rebuildDeferredVerticalCards() {
         if (!isVerticalCardsMode() || !smartCardListForwarder.hasPendingDataSetRefresh()) return;
-        if (smartCardListForwarder.consumeDeferredKeepBottom()) {
+        boolean keepBottom = smartCardListForwarder.consumeDeferredKeepBottom();
+        if (keepBottom && !verticalCardViewportController.hasPendingNotificationTarget()) {
             verticalCardViewportController.forceBottomForNextRebuild();
         }
         verticalCardViewportController.beforeDataSetChanged();
@@ -281,6 +288,21 @@ public class ForwarderManager extends Forwarder {
         if (isVerticalCardsMode() && isHomeIntent(intent)) {
             verticalCardViewportController.onHomeIntent(launcherWasForeground);
         }
+    }
+
+    public void onNotificationTimelineChanged(@Nullable String notificationId, boolean posted) {
+        if (!isVerticalCardsMode() || TextUtils.isEmpty(notificationId)) return;
+        if (!posted) {
+            verticalCardViewportController.cancelNotificationTarget(notificationId);
+            return;
+        }
+        if (!prefs.getBoolean("enable-notification-history", false)
+                || !isHistorySearch()
+                || !mainActivity.isViewingSearchResults()
+                || !TextUtils.isEmpty(mainActivity.searchEditText.getText())) {
+            return;
+        }
+        verticalCardViewportController.requestNotificationTarget(notificationId);
     }
 
     public void onFavoriteChange() { favoritesForwarder.onFavoriteChange(); experienceTweaks.onFavoriteChange(); }

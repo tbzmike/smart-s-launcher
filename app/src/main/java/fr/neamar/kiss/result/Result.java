@@ -454,17 +454,21 @@ public abstract class Result<T extends Pojo> {
     public final void launch(Context context, View v, @Nullable QueryInterface queryInterface) {
         Log.i(this.getClass().getSimpleName(), "Launching " + pojo.id);
 
-        // Launch
-        doLaunch(context, v);
-
-        // LauncherApps can start a translucent target that pauses but does not stop MainActivity.
-        // Report only a verified successful app/shortcut launch so first-Home restoration does not
-        // depend solely on whether Android happened to call onStop().
-        if (queryInterface != null && canAddToHistory()
+        boolean externalTarget = queryInterface != null
                 && (pojo instanceof AppPojo
                 || pojo instanceof ShortcutPojo
-                || pojo instanceof DisabledAppPojo)) {
-            queryInterface.externalResultLaunchOccurred();
+                || pojo instanceof DisabledAppPojo
+                || pojo instanceof NotificationPojo);
+        if (externalTarget) queryInterface.externalResultLaunchStarting();
+
+        // Start the target only after the launcher has stopped accepting background card mutation.
+        doLaunch(context, v);
+
+        // LauncherApps/PendingIntent targets can be translucent and may pause without stopping
+        // MainActivity. Keep the protection only for a verified successful external launch.
+        if (externalTarget) {
+            if (didLaunchExternalActivity()) queryInterface.externalResultLaunchOccurred();
+            else queryInterface.externalResultLaunchCancelled();
         }
 
         recordLaunch(context, queryInterface);
@@ -502,6 +506,11 @@ public abstract class Result<T extends Pojo> {
      */
     protected boolean canAddToHistory() {
         return !pojo.isDisabled();
+    }
+
+    /** Whether doLaunch() actually transferred control to an external target. */
+    protected boolean didLaunchExternalActivity() {
+        return canAddToHistory();
     }
 
     /**

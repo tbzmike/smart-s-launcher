@@ -65,6 +65,7 @@ final class VerticalCardViewportController extends Forwarder {
     private ImageButton rightLatestCardButton;
     private ViewportSnapshot pendingRebuildSnapshot;
     private ViewportSnapshot savedReturnSnapshot;
+    private String pendingNotificationTargetId;
     private boolean returnRestoreRequested;
     private boolean bottomPassScheduled;
     private boolean latestControlsUpdateScheduled;
@@ -108,6 +109,10 @@ final class VerticalCardViewportController extends Forwarder {
             return;
         }
 
+        if (hasPendingNotificationTarget()) {
+            return;
+        }
+
         if (returnRestoreRequested && savedReturnSnapshot != null
                 && !policy.preventsPositionRestore()) {
             pendingRebuildSnapshot = savedReturnSnapshot;
@@ -124,11 +129,37 @@ final class VerticalCardViewportController extends Forwarder {
         policy.requestBottomOnNextRebuild();
     }
 
+    void requestNotificationTarget(@Nullable String notificationId) {
+        if (TextUtils.isEmpty(notificationId)) return;
+        pendingNotificationTargetId = notificationId;
+        // A real notification arrival is an explicit destination, not a passive bottom request.
+        policy.onPositionRestoreApplied();
+        returnRestoreRequested = false;
+        generation++;
+        pendingRebuildSnapshot = null;
+        setLatestCardControlsVisible(false);
+        scheduleLatestCardControlsUpdate();
+    }
+
+    boolean hasPendingNotificationTarget() {
+        return !TextUtils.isEmpty(pendingNotificationTargetId);
+    }
+
+    void cancelNotificationTarget(@Nullable String notificationId) {
+        if (!TextUtils.equals(pendingNotificationTargetId, notificationId)) return;
+        pendingNotificationTargetId = null;
+        scheduleLatestCardControlsUpdate();
+    }
+
     /** Restore after the card rebuild and all synchronous decorators have been queued. */
     void afterDataSetChanged() {
         ViewportSnapshot snapshot = pendingRebuildSnapshot;
         pendingRebuildSnapshot = null;
-        if (snapshot != null && canControlViewport()) scheduleRestore(snapshot, generation);
+        if (hasPendingNotificationTarget() && canControlViewport()) {
+            scheduleNotificationTarget(generation);
+        } else if (snapshot != null && canControlViewport()) {
+            scheduleRestore(snapshot, generation);
+        }
         scheduleLatestCardControlsUpdate();
     }
 
@@ -197,7 +228,7 @@ final class VerticalCardViewportController extends Forwarder {
     void onLauncherResumed() {
         resumed = true;
         ensureSavedReturnSnapshotLoaded();
-        requestSavedReturnRestore();
+        if (!hasPendingNotificationTarget()) requestSavedReturnRestore();
         scheduleLatestCardControlsUpdate();
     }
 
@@ -233,6 +264,7 @@ final class VerticalCardViewportController extends Forwarder {
         destroyed = true;
         generation++;
         pendingRebuildSnapshot = null;
+        pendingNotificationTargetId = null;
         returnRestoreRequested = false;
         bottomPassScheduled = false;
         latestControlsUpdateScheduled = false;
@@ -307,7 +339,9 @@ final class VerticalCardViewportController extends Forwarder {
     }
 
     private void onGeometryChanged() {
-        if (returnRestoreRequested && savedReturnSnapshot != null
+        if (hasPendingNotificationTarget()) {
+            scheduleNotificationTarget(generation);
+        } else if (returnRestoreRequested && savedReturnSnapshot != null
                 && !policy.preventsPositionRestore()) {
             scheduleRestore(savedReturnSnapshot, generation);
         } else if (policy.shouldPinGeometry()) {
@@ -404,7 +438,8 @@ final class VerticalCardViewportController extends Forwarder {
                 && TextUtils.isEmpty(mainActivity.searchEditText.getText())
                 && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
         boolean automaticBottomPending = policy.shouldPinGeometry()
-                || policy.shouldBottomRebuild();
+                || policy.shouldBottomRebuild()
+                || hasPendingNotificationTarget();
         int count = column == null ? 0 : column.getChildCount();
         int latestCardBottom = 0;
         if (count > 0) {
@@ -456,6 +491,34 @@ final class VerticalCardViewportController extends Forwarder {
     private boolean isAtBottom() {
         if (scroller == null || column == null || column.getChildCount() == 0) return true;
         return maxScrollY(scroller) - scroller.getScrollY() <= toPx(BOTTOM_TOLERANCE_DP);
+    }
+
+    private void scheduleNotificationTarget(int token) {
+        final ScrollView target = scroller;
+        final String targetId = pendingNotificationTargetId;
+        if (target == null || TextUtils.isEmpty(targetId)) return;
+
+        target.post(() -> {
+            if (!isCurrent(token, target)
+                    || !TextUtils.equals(targetId, pendingNotificationTargetId)) return;
+            target.postOnAnimation(() -> {
+                if (!isCurrent(token, target)
+                        || !TextUtils.equals(targetId, pendingNotificationTargetId)
+                        || column == null) return;
+                for (int i = 0; i < column.getChildCount(); i++) {
+                    View child = column.getChildAt(i);
+                    Object rawTag = child.getTag();
+                    if (!(rawTag instanceof String) || !targetId.equals(rawTag)) continue;
+                    int targetY = child.getTop() - target.getPaddingTop();
+                    target.scrollTo(target.getScrollX(), clampScrollY(target, targetY));
+                    pendingNotificationTargetId = null;
+                    clearSavedReturnSnapshot();
+                    policy.onPositionRestoreApplied();
+                    scheduleLatestCardControlsUpdate();
+                    return;
+                }
+            });
+        });
     }
 
     private void scheduleRestore(ViewportSnapshot snapshot, int token) {
