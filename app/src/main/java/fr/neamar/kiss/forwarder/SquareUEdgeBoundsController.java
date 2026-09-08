@@ -193,10 +193,10 @@ final class SquareUEdgeBoundsController {
 
     private int historyWidthPercent() {
         try {
-            return Math.max(48, Math.min(200, prefs.getInt(PREF_HISTORY_WIDTH, 100)));
+            return Math.max(48, Math.min(400, prefs.getInt(PREF_HISTORY_WIDTH, 100)));
         } catch (ClassCastException ignored) {
             try {
-                return Math.max(48, Math.min(200,
+                return Math.max(48, Math.min(400,
                         Math.round(Float.parseFloat(prefs.getString(PREF_HISTORY_WIDTH, "100")))));
             } catch (ClassCastException | NumberFormatException ignoredAgain) {
                 return 100;

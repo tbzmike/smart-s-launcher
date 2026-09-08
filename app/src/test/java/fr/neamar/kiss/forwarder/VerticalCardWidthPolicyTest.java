@@ -35,8 +35,20 @@ public class VerticalCardWidthPolicyTest {
     }
 
     @Test
-    public void valuesAboveMaximumCannotCreateOffscreenWidth() {
-        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 500), is(1000));
+    public void threeHundredCreatesOneAndHalfViewportWidths() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 300), is(1500));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(8, 300), is(0));
+    }
+
+    @Test
+    public void fourHundredCreatesTwoViewportWidths() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 400), is(2000));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(8, 400), is(0));
+    }
+
+    @Test
+    public void valuesAboveMaximumClampAtFourHundred() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 500), is(2000));
         assertThat(VerticalCardWidthPolicy.insetForPercent(8, 500), is(0));
     }
 }

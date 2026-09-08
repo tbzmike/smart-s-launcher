@@ -26,11 +26,30 @@ class HistoryEdgeWidthPolicyTest {
         assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 200), is(0));
         assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 200), closeTo(0.0, 0.0001));
         assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 200), closeTo(1.0, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.viewportScaleForPercent(200), closeTo(1.0, 0.0001));
     }
 
-    @Test void valuesAboveMaximumCannotCreateOffscreenWidth() {
-        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 500), is(1000));
+    @Test void threeHundredExtendsQuarterViewportPastEachEdge() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 300), is(1500));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 300), is(0));
+        assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 300), closeTo(-0.25, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 300), closeTo(1.25, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.viewportScaleForPercent(300), closeTo(1.5, 0.0001));
+    }
+
+    @Test void fourHundredSpansTwoViewportWidths() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 400), is(2000));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 400), is(0));
+        assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 400), closeTo(-0.50, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 400), closeTo(1.50, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.viewportScaleForPercent(400), closeTo(2.0, 0.0001));
+    }
+
+    @Test void valuesAboveMaximumClampAtFourHundred() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 500), is(2000));
         assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 500), is(0));
+        assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 500), closeTo(-0.50, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 500), closeTo(1.50, 0.0001));
     }
 
     @Test void valuesBelowOneHundredShrinkFromNormalWidth() {
@@ -38,8 +57,9 @@ class HistoryEdgeWidthPolicyTest {
         assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 50), is(8));
     }
 
-    @Test void normalWidthLargerThanViewportIsAlwaysBounded() {
+    @Test void normalWidthLargerThanViewportStillUsesViewportAsEdgeReference() {
         assertThat(HistoryEdgeWidthPolicy.targetWidth(1200, 1000, 100), is(1000));
         assertThat(HistoryEdgeWidthPolicy.targetWidth(1200, 1000, 200), is(1000));
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(1200, 1000, 400), is(2000));
     }
 }

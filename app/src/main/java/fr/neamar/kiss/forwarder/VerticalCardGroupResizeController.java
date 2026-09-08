@@ -36,7 +36,7 @@ final class VerticalCardGroupResizeController {
     private static final String PREF_SPACING = "smart-list-card-spacing-dp";
 
     private static final int MIN_WIDTH = 48;
-    private static final int MAX_WIDTH = 200;
+    private static final int MAX_WIDTH = 400;
     private static final int MIN_HEIGHT = 55;
     private static final int MAX_HEIGHT = 150;
 
@@ -211,9 +211,9 @@ final class VerticalCardGroupResizeController {
         if (!isVerticalCards() || column == null) return;
         int widthPercent = prefInt(PREF_WIDTH, 100, MIN_WIDTH, MAX_WIDTH);
 
-        // Above 100%, consume the renderer's own horizontal gutters instead of creating a child
-        // wider than its viewport. At 200% every Vertical Card can use the complete result width
-        // without being centered behind (and clipped by) a narrower ScrollView.
+        // 100-200% progressively consumes the renderer's own horizontal gutters. 200% is the
+        // exact physical viewport width. 201-400% intentionally creates a centered child wider
+        // than the viewport; the screen clips only the off-screen portion.
         ScrollView scroller = cardForwarder.getScroller();
         int scrollerInset = VerticalCardWidthPolicy.insetForPercent(dp(8), widthPercent);
         if (scroller != null
@@ -235,8 +235,10 @@ final class VerticalCardGroupResizeController {
             ViewGroup.LayoutParams raw = child.getLayoutParams();
             if (!(raw instanceof LinearLayout.LayoutParams)) continue;
             LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
-            int desired = widthPercent >= 100
-                    ? ViewGroup.LayoutParams.MATCH_PARENT : targetWidth;
+            int desired;
+            if (widthPercent < 100) desired = targetWidth;
+            else if (widthPercent <= 200) desired = ViewGroup.LayoutParams.MATCH_PARENT;
+            else desired = targetWidth;
             boolean wrapperChanged = lp.width != desired
                     || lp.gravity != Gravity.CENTER_HORIZONTAL
                     || lp.leftMargin != wrapperInset
@@ -276,8 +278,8 @@ final class VerticalCardGroupResizeController {
 
         TextView explanation = new TextView(activity);
         explanation.setText(verticalCards
-                ? "Resize every Vertical Card together"
-                : "Resize this history style across the full screen");
+                ? "Resize every Vertical Card together · 200% = screen edges · 400% = beyond screen"
+                : "Resize this history style · 200% = screen edges · 400% = beyond screen");
         explanation.setTextSize(15f);
         explanation.setPadding(0, 0, 0, dp(10));
         panel.addView(explanation);

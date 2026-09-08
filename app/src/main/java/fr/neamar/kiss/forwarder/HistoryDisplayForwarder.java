@@ -249,14 +249,16 @@ final class HistoryDisplayForwarder extends Forwarder {
         int available = wheelColumn.getWidth() - sidePadding * 2;
         if (available <= 0) return;
         int rowMargin = HistoryEdgeWidthPolicy.insetForPercent(dp(3), widthPercent);
-        int narrowerWidth = HistoryEdgeWidthPolicy.targetWidth(available, available, widthPercent);
+        int targetRowWidth = HistoryEdgeWidthPolicy.targetWidth(available, available, widthPercent);
         for (int i = 0; i < wheelColumn.getChildCount(); i++) {
             View child = wheelColumn.getChildAt(i);
             ViewGroup.LayoutParams raw = child.getLayoutParams();
             if (!(raw instanceof LinearLayout.LayoutParams)) continue;
             LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
-            int desiredWidth = widthPercent >= 100
-                    ? ViewGroup.LayoutParams.MATCH_PARENT : narrowerWidth;
+            int desiredWidth;
+            if (widthPercent < 100) desiredWidth = targetRowWidth;
+            else if (widthPercent <= 200) desiredWidth = ViewGroup.LayoutParams.MATCH_PARENT;
+            else desiredWidth = targetRowWidth;
             if (lp.width == desiredWidth && lp.leftMargin == rowMargin
                     && lp.rightMargin == rowMargin
                     && lp.gravity == Gravity.CENTER_HORIZONTAL) continue;
@@ -428,7 +430,10 @@ final class HistoryDisplayForwarder extends Forwarder {
         int gapDp = safePrefInt("smart-u-notification-gap-dp", 28, 8, 96);
         int screenWidth = mainActivity.getResources().getDisplayMetrics().widthPixels;
         int baseWidth = Math.max(dp(180), screenWidth - dp(116));
-        int width = Math.min(screenWidth - dp(24), Math.max(dp(150), baseWidth * sizePercent / 100));
+        int normalWidth = Math.min(screenWidth - dp(24),
+                Math.max(dp(150), baseWidth * sizePercent / 100));
+        int width = HistoryEdgeWidthPolicy.targetWidth(
+                normalWidth, screenWidth, historyWidthPercent());
         int height = Math.max(dp(150), dp(286) * sizePercent / 100);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(width, height, Gravity.CENTER);
         lp.topMargin = dp(50 + gapDp / 2);
@@ -593,7 +598,7 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private int historyWidthPercent() {
-        return safePrefInt(PREF_HISTORY_WIDTH, 100, 48, 200);
+        return safePrefInt(PREF_HISTORY_WIDTH, 100, 48, 400);
     }
 
     private int horizontalTilePercent() {

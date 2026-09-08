@@ -80,6 +80,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private final HashMap<String, String> notificationPreviewCache = new HashMap<>();
     private final WeakHashMap<View, int[]> baseRowPadding = new WeakHashMap<>();
     private final WeakHashMap<View, Integer> baseRowMinimumHeight = new WeakHashMap<>();
+    private final WeakHashMap<View, Integer> baseRowLayoutWidths = new WeakHashMap<>();
     private final WeakHashMap<View, int[]> baseIconBounds = new WeakHashMap<>();
     private final WeakHashMap<TextView, TextStyleState> baseTextStyles = new WeakHashMap<>();
     private final WeakHashMap<View, Boolean> overflowConfigured = new WeakHashMap<>();
@@ -126,6 +127,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                     applyVerticalHistoryPolish(view, context);
                     verticalStyleSignatures.put(view, signature);
                 }
+                applyVerticalHistoryWidth(view, parent, context);
             } else {
                 restoreVerticalHistoryAppearance(view);
                 verticalStyleSignatures.remove(view);
@@ -422,7 +424,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             base = new int[]{row.getPaddingLeft(), row.getPaddingTop(), row.getPaddingRight(), row.getPaddingBottom()};
             baseRowPadding.put(row, base);
         }
-        int widthPercent = safePercent(prefs, "smart-list-card-width-percent", 100, 48, 200);
+        int widthPercent = safePercent(prefs, "smart-list-card-width-percent", 100, 48, 400);
         int leftPadding = HistoryEdgeWidthPolicy.insetForPercent(base[0], widthPercent);
         int rightPadding = HistoryEdgeWidthPolicy.insetForPercent(base[2], widthPercent);
         row.setPadding(leftPadding, base[1], rightPadding, base[3] + dp(context, spacing));
@@ -446,11 +448,53 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         }
     }
 
+    private void applyVerticalHistoryWidth(View row, ViewGroup parent, Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        int widthPercent = safePercent(prefs, "smart-list-card-width-percent", 100, 48, 400);
+        int viewportWidth = parent == null ? 0 : parent.getWidth();
+        if (viewportWidth <= 0) {
+            viewportWidth = context.getResources().getDisplayMetrics().widthPixels;
+        }
+        if (viewportWidth <= 0) return;
+
+        ViewGroup.LayoutParams raw = row.getLayoutParams();
+        if (!baseRowLayoutWidths.containsKey(row)) {
+            baseRowLayoutWidths.put(row, raw == null
+                    ? ViewGroup.LayoutParams.MATCH_PARENT : raw.width);
+        }
+
+        int targetWidth = HistoryEdgeWidthPolicy.targetWidth(
+                viewportWidth, viewportWidth, widthPercent);
+        int height = raw == null ? ViewGroup.LayoutParams.WRAP_CONTENT : raw.height;
+        AbsListView.LayoutParams lp;
+        if (raw instanceof AbsListView.LayoutParams) {
+            lp = (AbsListView.LayoutParams) raw;
+        } else {
+            lp = new AbsListView.LayoutParams(targetWidth, height);
+        }
+        if (lp.width != targetWidth || row.getLayoutParams() != lp) {
+            lp.width = targetWidth;
+            row.setLayoutParams(lp);
+        }
+
+        float translationX = (viewportWidth - targetWidth) * 0.5f;
+        if (Math.abs(row.getTranslationX() - translationX) > 0.5f) {
+            row.setTranslationX(translationX);
+        }
+    }
+
     private void restoreVerticalHistoryAppearance(View row) {
         int[] padding = baseRowPadding.get(row);
         if (padding != null) row.setPadding(padding[0], padding[1], padding[2], padding[3]);
         Integer minimumHeight = baseRowMinimumHeight.get(row);
         if (minimumHeight != null) row.setMinimumHeight(minimumHeight);
+        Integer layoutWidth = baseRowLayoutWidths.get(row);
+        ViewGroup.LayoutParams rowParams = row.getLayoutParams();
+        if (layoutWidth != null && rowParams != null && rowParams.width != layoutWidth) {
+            rowParams.width = layoutWidth;
+            row.setLayoutParams(rowParams);
+        }
+        if (row.getTranslationX() != 0f) row.setTranslationX(0f);
         restorePrimaryIconSize(row);
 
         int[] ids = new int[]{
@@ -487,7 +531,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         int result = 17;
         result = 31 * result + safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
-        result = 31 * result + safePercent(prefs, "smart-list-card-width-percent", 100, 48, 200);
+        result = 31 * result + safePercent(prefs, "smart-list-card-width-percent", 100, 48, 400);
         result = 31 * result + safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
         result = 31 * result + safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
         result = 31 * result + safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
