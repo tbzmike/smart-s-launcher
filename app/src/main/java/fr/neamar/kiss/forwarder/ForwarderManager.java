@@ -65,7 +65,7 @@ public class ForwarderManager extends Forwarder {
         this.verticalCardViewportController = new VerticalCardViewportController(mainActivity, smartCardListForwarder);
         this.verticalMapsCardForwarder = new VerticalMapsCardForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(
-                mainActivity, smartCardListForwarder, verticalCardViewportController);
+                mainActivity, smartCardListForwarder, this::rebuildVerticalCardsForExplicitUiChange);
         this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardUsageForwarder = new VerticalCardUsageForwarder(
                 mainActivity, smartCardListForwarder, verticalCardViewportController);
@@ -76,6 +76,8 @@ public class ForwarderManager extends Forwarder {
         this.uNotificationHistoryLongPressForwarder = new UNotificationHistoryLongPressForwarder(mainActivity, historyDisplayForwarder);
         this.communicationHistoryForwarder = new CommunicationHistoryForwarder(mainActivity);
         this.widgetPeelController = new WidgetPeelController(mainActivity);
+        this.smartCardListForwarder.setDeferredHistoryRefreshCallback(
+                this::rebuildDeferredVerticalCards);
     }
 
     public void onCreate() {
@@ -148,7 +150,10 @@ public class ForwarderManager extends Forwarder {
             uNotificationHistoryLongPressForwarder.onResume();
         }
 
-        if (isHistorySearch()) historyVisualEnhancer.onResume();
+        // Vertical Cards already have dedicated usage/notification enrichment. Running the
+        // native-list HistoryVisualEnhancer as well duplicates DB/UsageStats work for a hidden
+        // renderer and can compete with the visible card UI.
+        if (isHistorySearch() && !verticalCards) historyVisualEnhancer.onResume();
         initialResumeComplete = true;
     }
 
@@ -200,16 +205,17 @@ public class ForwarderManager extends Forwarder {
         widgetPeelController.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
 
-        if (isVerticalCardsMode()) {
-            verticalCardViewportController.beforeDataSetChanged();
-            smartCardListForwarder.onDataSetChanged();
-            if (isHistorySearch()) {
-                verticalMapsCardForwarder.onDataSetChanged();
-                verticalCardGroupResizeController.onDataSetChanged();
-                verticalCardNotificationHistoryForwarder.onDataSetChanged();
-                verticalCardUsageForwarder.onDataSetChanged();
+        boolean verticalCards = isVerticalCardsMode();
+        boolean verticalCardTreeChanged = false;
+        if (verticalCards) {
+            boolean synchronousRebuild =
+                    smartCardListForwarder.willRebuildSynchronouslyForDataSetChange();
+            if (synchronousRebuild) verticalCardViewportController.beforeDataSetChanged();
+            verticalCardTreeChanged = smartCardListForwarder.onDataSetChanged();
+            if (verticalCardTreeChanged) {
+                decorateVerticalCardsAfterRebuild();
+                verticalCardViewportController.afterDataSetChanged();
             }
-            verticalCardViewportController.afterDataSetChanged();
         } else if (isSquareMode()) {
             squareUHostFullscreenController.onDataSetChanged();
             squareUStabilityController.onDataSetChanged();
@@ -217,9 +223,36 @@ public class ForwarderManager extends Forwarder {
             uNotificationHistoryLongPressForwarder.onDataSetChanged();
         }
 
-        // Launch-stat/live-card enrichment is history decoration. Never run its database/live-data
-        // pipeline for ordinary query results, where it only competes with search and scrolling.
-        if (isHistorySearch()) historyVisualEnhancer.onDataSetChanged();
+        // Native-list history enrichment is useful for native/square layouts, but Vertical Cards
+        // already own equivalent enrichment. Do not run both pipelines against the same history.
+        if (isHistorySearch() && !verticalCards) historyVisualEnhancer.onDataSetChanged();
+        // Recursive gesture attachment is needed only when the visible Vertical Cards tree changed.
+        if (!verticalCards || verticalCardTreeChanged) lockedHistoryGestureBridge.onDataSetChanged();
+    }
+
+    private void decorateVerticalCardsAfterRebuild() {
+        if (!isHistorySearch()) return;
+        verticalMapsCardForwarder.onDataSetChanged();
+        verticalCardGroupResizeController.onDataSetChanged();
+        verticalCardNotificationHistoryForwarder.onDataSetChanged();
+        verticalCardUsageForwarder.onDataSetChanged();
+    }
+
+    private void rebuildDeferredVerticalCards() {
+        if (!isVerticalCardsMode() || !smartCardListForwarder.hasPendingDataSetRefresh()) return;
+        verticalCardViewportController.beforeDataSetChanged();
+        if (!smartCardListForwarder.rebuildPendingDataSetRefresh()) return;
+        decorateVerticalCardsAfterRebuild();
+        verticalCardViewportController.afterDataSetChanged();
+        lockedHistoryGestureBridge.onDataSetChanged();
+    }
+
+    private void rebuildVerticalCardsForExplicitUiChange() {
+        if (!isVerticalCardsMode()) return;
+        verticalCardViewportController.beforeDataSetChanged();
+        smartCardListForwarder.rebuildImmediately();
+        decorateVerticalCardsAfterRebuild();
+        verticalCardViewportController.afterDataSetChanged();
         lockedHistoryGestureBridge.onDataSetChanged();
     }
 

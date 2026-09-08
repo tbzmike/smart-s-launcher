@@ -55,8 +55,22 @@ final class SmartCardListForwarder extends Forwarder {
     private View edgeEffect;
     private boolean pendingDataSetRefresh;
     private boolean renderedActiveQuery;
+    private Runnable deferredHistoryRefreshCallback;
+    private boolean deferredRefreshIdleProbeScheduled;
+    private final VerticalCardRefreshIdlePolicy deferredRefreshIdlePolicy =
+            new VerticalCardRefreshIdlePolicy();
     private final Runnable activeQueryRebuildRunnable = () -> {
         if (isEnabled() && isActiveQuery()) rebuild();
+    };
+    private final Runnable deferredRefreshIdleProbe = () -> {
+        deferredRefreshIdleProbeScheduled = false;
+        if (scroller == null || !pendingDataSetRefresh || isActiveQuery()) return;
+        if (deferredRefreshIdlePolicy.onAnimationFrame(scroller.getScrollY())) {
+            Runnable callback = deferredHistoryRefreshCallback;
+            if (callback != null) callback.run();
+            return;
+        }
+        scheduleDeferredRefreshIdleProbe();
     };
 
     SmartCardListForwarder(MainActivity mainActivity) {
@@ -98,27 +112,35 @@ final class SmartCardListForwarder extends Forwarder {
         if (isEnabled() && column != null && column.getChildCount() == 0) rebuild();
     }
 
-    void onDataSetChanged() {
-        if (!isEnabled()) return;
+    boolean onDataSetChanged() {
+        if (!isEnabled()) return false;
         // Search can publish several adapter updates for one input change. Rebuilding every
         // card synchronously for each publication competes with the IME and causes visible
-        // typing stalls. Coalesce only active-query rebuilds; idle History keeps its existing
-        // deferred-refresh contract.
+        // typing stalls. Active queries remain coalesced. Idle History marks one pending refresh
+        // and lets the manager perform a complete rebuild only after scrolling has actually settled.
         boolean activeQuery = isActiveQuery();
-        if (column == null || column.getChildCount() == 0
-                || (!activeQuery && renderedActiveQuery)) {
+        if (willRebuildSynchronouslyForDataSetChange()) {
             cancelPendingActiveQueryRebuild();
             rebuild();
-        } else if (activeQuery) {
-            scheduleActiveQueryRebuild();
-        } else {
-            cancelPendingActiveQueryRebuild();
-            pendingDataSetRefresh = true;
+            return true;
         }
+        if (activeQuery) {
+            scheduleActiveQueryRebuild();
+            return false;
+        }
+
+        cancelPendingActiveQueryRebuild();
+        pendingDataSetRefresh = true;
+        deferredRefreshIdlePolicy.request(scroller == null ? 0 : scroller.getScrollY());
+        scheduleDeferredRefreshIdleProbe();
+        return false;
     }
 
     void onDestroy() {
         cancelPendingActiveQueryRebuild();
+        cancelDeferredRefreshIdleProbe();
+        deferredRefreshIdlePolicy.clear();
+        deferredHistoryRefreshCallback = null;
         accentCache.clear();
         container = null;
         scroller = null;
@@ -134,6 +156,31 @@ final class SmartCardListForwarder extends Forwarder {
 
     LinearLayout getColumn() {
         return column;
+    }
+
+    void setDeferredHistoryRefreshCallback(Runnable callback) {
+        deferredHistoryRefreshCallback = callback;
+    }
+
+    boolean willRebuildSynchronouslyForDataSetChange() {
+        if (!isEnabled()) return false;
+        boolean activeQuery = isActiveQuery();
+        return column == null || column.getChildCount() == 0
+                || (!activeQuery && renderedActiveQuery);
+    }
+
+    boolean hasPendingDataSetRefresh() {
+        return pendingDataSetRefresh;
+    }
+
+    boolean rebuildPendingDataSetRefresh() {
+        if (!pendingDataSetRefresh || !isEnabled() || isActiveQuery()) return false;
+        rebuild();
+        return true;
+    }
+
+    void rebuildImmediately() {
+        if (isEnabled()) rebuild();
     }
 
     private void migrateLegacySelection() {
@@ -174,6 +221,18 @@ final class SmartCardListForwarder extends Forwarder {
         if (scroller != null) scroller.removeCallbacks(activeQueryRebuildRunnable);
     }
 
+    private void scheduleDeferredRefreshIdleProbe() {
+        if (scroller == null || deferredRefreshIdleProbeScheduled || isActiveQuery()
+                || !deferredRefreshIdlePolicy.shouldProbe()) return;
+        deferredRefreshIdleProbeScheduled = true;
+        scroller.postOnAnimation(deferredRefreshIdleProbe);
+    }
+
+    private void cancelDeferredRefreshIdleProbe() {
+        if (scroller != null) scroller.removeCallbacks(deferredRefreshIdleProbe);
+        deferredRefreshIdleProbeScheduled = false;
+    }
+
     private void applySearchFocusIsolation(boolean activeQuery) {
         if (scroller == null) return;
         scroller.setDescendantFocusability(activeQuery
@@ -207,6 +266,8 @@ final class SmartCardListForwarder extends Forwarder {
     private void rebuild() {
         if (column == null || mainActivity.adapter == null) return;
         cancelPendingActiveQueryRebuild();
+        cancelDeferredRefreshIdleProbe();
+        deferredRefreshIdlePolicy.clear();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
         renderedActiveQuery = activeQuery;
@@ -248,11 +309,6 @@ final class SmartCardListForwarder extends Forwarder {
         }
     }
 
-    private void refreshAfterUserTouch() {
-        if (!pendingDataSetRefresh || !isEnabled() || isActiveQuery()) return;
-        rebuild();
-    }
-
     private final class StableCardScrollView extends ScrollView {
         StableCardScrollView() {
             super(mainActivity);
@@ -260,11 +316,15 @@ final class SmartCardListForwarder extends Forwarder {
 
         @Override
         public boolean dispatchTouchEvent(MotionEvent event) {
-            boolean handled = super.dispatchTouchEvent(event);
             int action = event.getActionMasked();
-            if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL)
-                    && pendingDataSetRefresh) {
-                post(SmartCardListForwarder.this::refreshAfterUserTouch);
+            if (action == MotionEvent.ACTION_DOWN) {
+                deferredRefreshIdlePolicy.onTouchDown();
+                cancelDeferredRefreshIdleProbe();
+            }
+            boolean handled = super.dispatchTouchEvent(event);
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                deferredRefreshIdlePolicy.onTouchReleased(getScrollY());
+                scheduleDeferredRefreshIdleProbe();
             }
             return handled;
         }

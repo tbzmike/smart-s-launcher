@@ -41,7 +41,7 @@ final class VerticalCardGroupResizeController {
 
     private final MainActivity activity;
     private final SmartCardListForwarder cardForwarder;
-    private final VerticalCardViewportController viewportController;
+    private final Runnable rebuildCardsCallback;
     private final SharedPreferences prefs;
 
     private FrameLayout host;
@@ -52,10 +52,10 @@ final class VerticalCardGroupResizeController {
 
     VerticalCardGroupResizeController(MainActivity activity,
                                       SmartCardListForwarder cardForwarder,
-                                      VerticalCardViewportController viewportController) {
+                                      Runnable rebuildCardsCallback) {
         this.activity = activity;
         this.cardForwarder = cardForwarder;
-        this.viewportController = viewportController;
+        this.rebuildCardsCallback = rebuildCardsCallback;
         this.prefs = PreferenceManager.getDefaultSharedPreferences(activity);
     }
 
@@ -312,9 +312,7 @@ final class VerticalCardGroupResizeController {
     }
 
     private void rebuildCards() {
-        viewportController.beforeDataSetChanged();
-        cardForwarder.onDataSetChanged();
-        viewportController.afterDataSetChanged();
+        rebuildCardsCallback.run();
     }
 
     private void dismissDialog() {

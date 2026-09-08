@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.59 - bound runtime memory retention
-        versionCode 487
-        versionName "3.30.59"
+        // Smart S Launcher 3.30.60 - coherent Vertical Cards refresh and scroll stability
+        versionCode 488
+        versionName "3.30.60"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
