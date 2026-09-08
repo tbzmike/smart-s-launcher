@@ -45,18 +45,15 @@ jobs:
                   raise SystemExit(f"{path}: expected {count}, found {found}: {old[:100]!r}")
               p.write_text(text.replace(old, new, count))
 
-          # Compiler error 1/2: route_uri was inserted after rememberApp's user_serial instead of
-          # saveNotification's user_serial. Move it to the method that actually owns routeUri.
+          # The first transformation wrote route_uri beside both user_serial writes. Keep the
+          # saveNotification write (it already owns routeUri) and remove only the invalid rememberApp write.
           path = 'app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java'
           patch(path,
                 '''        values.put("user_serial", userSerial);\n        values.put("route_uri", routeUri == null ? "" : routeUri);\n        SQLiteDatabase database = db(context);''',
                 '''        values.put("user_serial", userSerial);\n        SQLiteDatabase database = db(context);''')
-          patch(path,
-                '''        values.put("shortcut_id", shortcutId == null ? "" : shortcutId);\n        values.put("user_serial", userSerial);\n        try {''',
-                '''        values.put("shortcut_id", shortcutId == null ? "" : shortcutId);\n        values.put("user_serial", userSerial);\n        values.put("route_uri", routeUri == null ? "" : routeUri);\n        try {''')
 
-          # Compiler error 2/2: the live package receiver also constructs PackageState. Carry the
-          # already-observed installer through InstallMeta and verify its store route exactly like sync.
+          # The live package receiver also constructs PackageState. Carry the already-observed
+          # installer through InstallMeta and verify its store route exactly like the full sync.
           path = 'app/src/main/java/fr/neamar/kiss/appusage/AppUsagePackageReceiver.java'
           patch(path,
                 'import android.content.pm.PackageManager;\n',
