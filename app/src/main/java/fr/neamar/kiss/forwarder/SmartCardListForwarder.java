@@ -40,6 +40,7 @@ final class SmartCardListForwarder extends Forwarder {
     private static final String LEGACY_PREF_ENABLED = "smart-card-list-enabled";
     private static final int ACCENT_SAMPLE_SIZE = 10;
     private static final int MAX_ACCENT_CACHE_SIZE = 256;
+    private static final long ACTIVE_QUERY_REBUILD_DEBOUNCE_MS = 64L;
 
     private final Map<Long, Integer> accentCache =
             new LinkedHashMap<Long, Integer>(MAX_ACCENT_CACHE_SIZE, 0.75f, true) {
@@ -53,6 +54,10 @@ final class SmartCardListForwarder extends Forwarder {
     private LinearLayout column;
     private View edgeEffect;
     private boolean pendingDataSetRefresh;
+    private boolean renderedActiveQuery;
+    private final Runnable activeQueryRebuildRunnable = () -> {
+        if (isEnabled() && isActiveQuery()) rebuild();
+    };
 
     SmartCardListForwarder(MainActivity mainActivity) {
         super(mainActivity);
@@ -95,23 +100,32 @@ final class SmartCardListForwarder extends Forwarder {
 
     void onDataSetChanged() {
         if (!isEnabled()) return;
-        // Search results are directly user-driven and must stay live while typing. Idle History
-        // updates, including provider/background reconciliation, are deferred until the user next
-        // touches the card viewport. This keeps Vertical Cards as visually stable as Vertical List.
-        if (isActiveQuery() || column == null || column.getChildCount() == 0) {
+        // Search can publish several adapter updates for one input change. Rebuilding every
+        // card synchronously for each publication competes with the IME and causes visible
+        // typing stalls. Coalesce only active-query rebuilds; idle History keeps its existing
+        // deferred-refresh contract.
+        boolean activeQuery = isActiveQuery();
+        if (column == null || column.getChildCount() == 0
+                || (!activeQuery && renderedActiveQuery)) {
+            cancelPendingActiveQueryRebuild();
             rebuild();
+        } else if (activeQuery) {
+            scheduleActiveQueryRebuild();
         } else {
+            cancelPendingActiveQueryRebuild();
             pendingDataSetRefresh = true;
         }
     }
 
     void onDestroy() {
+        cancelPendingActiveQueryRebuild();
         accentCache.clear();
         container = null;
         scroller = null;
         column = null;
         edgeEffect = null;
         pendingDataSetRefresh = false;
+        renderedActiveQuery = false;
     }
 
     ScrollView getScroller() {
@@ -150,6 +164,16 @@ final class SmartCardListForwarder extends Forwarder {
      * for an active query keeps touch interaction intact while preventing relayout from stealing
      * EditText/IME focus.
      */
+    private void scheduleActiveQueryRebuild() {
+        if (scroller == null) return;
+        scroller.removeCallbacks(activeQueryRebuildRunnable);
+        scroller.postDelayed(activeQueryRebuildRunnable, ACTIVE_QUERY_REBUILD_DEBOUNCE_MS);
+    }
+
+    private void cancelPendingActiveQueryRebuild() {
+        if (scroller != null) scroller.removeCallbacks(activeQueryRebuildRunnable);
+    }
+
     private void applySearchFocusIsolation(boolean activeQuery) {
         if (scroller == null) return;
         scroller.setDescendantFocusability(activeQuery
@@ -182,8 +206,10 @@ final class SmartCardListForwarder extends Forwarder {
 
     private void rebuild() {
         if (column == null || mainActivity.adapter == null) return;
+        cancelPendingActiveQueryRebuild();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
+        renderedActiveQuery = activeQuery;
         boolean preserveSearchFocus = activeQuery
                 && mainActivity.searchEditText != null
                 && mainActivity.searchEditText.hasFocus();

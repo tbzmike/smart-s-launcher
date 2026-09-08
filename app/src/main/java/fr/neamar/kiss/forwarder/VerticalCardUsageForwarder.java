@@ -254,10 +254,18 @@ final class VerticalCardUsageForwarder extends Forwarder {
                 ? viewportController.captureForContentMutation() : null;
         boolean layoutChanged = false;
 
-        int count = Math.min(column.getChildCount(), mainActivity.adapter.getCount());
+        Map<String, Result<?>> resultsByPojoId = new HashMap<>();
+        for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
+            if (result != null) resultsByPojoId.put(result.getPojoId(), result);
+        }
+
+        int count = column.getChildCount();
         for (int position = 0; position < count; position++) {
             View wrapper = column.getChildAt(position);
-            Result<?> result = mainActivity.adapter.getItem(position);
+            Object wrapperId = wrapper.getTag();
+            Result<?> result = wrapperId instanceof String
+                    ? resultsByPojoId.get((String) wrapperId) : null;
             Pojo pojo = result == null ? null : result.getPojo();
             if (pojo == null) continue;
 
