@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.61 - preserve bottom anchor through deferred history refresh
-        versionCode 489
-        versionName "3.30.61"
+        // Smart S Launcher 3.30.62 - verified bottom-anchor publication
+        versionCode 490
+        versionName "3.30.62"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
