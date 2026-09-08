@@ -1,0 +1,113 @@
+name: Guarded 3.30.70 physical screen-edge width repair v2
+
+on:
+  push:
+    branches:
+      - fix/3.30.70-physical-screen-edge-width
+    paths:
+      - .github/workflows/apply-33070-physical-edge-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-apply-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/3.30.70-physical-screen-edge-width
+          fetch-depth: 0
+
+      - name: Verify exact green 3.30.69 source ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=1ae757ef1adbd52d5a6e0f8857d94e6ac72c938c
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          actual="$(git diff --name-only "$BASE" HEAD | sort)"
+          expected="$(printf '%s\n' .github/workflows/apply-33070-physical-edge-v2.yml .github/workflows/apply-33070-physical-edge.yml | sort)"
+          test "$actual" = "$expected"
+          grep -F 'versionCode 497' app/build.gradle
+          grep -F 'versionName "3.30.69"' app/build.gradle
+          test -z "$(git status --porcelain)"
+
+      - name: Apply verified outer-container edge repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f"{path}: expected {count} occurrence(s), found {actual}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, count))
+
+          controller = 'app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java'
+          replace_exact(controller,
+              'import fr.neamar.kiss.MainActivity;\nimport fr.neamar.kiss.preference.UiEditLock;\n',
+              'import fr.neamar.kiss.MainActivity;\nimport fr.neamar.kiss.R;\nimport fr.neamar.kiss.preference.UiEditLock;\n')
+          replace_exact(controller,
+              '    private ViewTreeObserver.OnGlobalLayoutListener layoutListener;\n    private AlertDialog dialog;\n',
+              '    private ViewTreeObserver.OnGlobalLayoutListener layoutListener;\n    private View.OnLayoutChangeListener pendingHostLayoutListener;\n    private AlertDialog dialog;\n')
+          replace_exact(controller,
+              '''    void onConfigurationChanged() {\n        dismissDialog();\n        detachObserver();\n        host = null;\n''',
+              '''    void onConfigurationChanged() {\n        dismissDialog();\n        detachObserver();\n        cancelPendingHostWidthApply();\n        host = null;\n''')
+          replace_exact(controller,
+              '''    void onDestroy() {\n        dismissDialog();\n        detachObserver();\n        if (resizeButton != null && resizeButton.getParent() instanceof ViewGroup) {\n''',
+              '''    void onDestroy() {\n        dismissDialog();\n        detachObserver();\n        cancelPendingHostWidthApply();\n        if (resizeButton != null && resizeButton.getParent() instanceof ViewGroup) {\n''')
+          replace_exact(controller,
+              '''    private void resolveViews() {\n        FrameLayout nextHost = activity.listContainer instanceof FrameLayout\n                ? (FrameLayout) activity.listContainer : null;\n        LinearLayout nextColumn = cardForwarder.getColumn();\n        if (nextColumn != column) {\n            detachObserver();\n            column = nextColumn;\n        }\n        host = nextHost;\n    }\n''',
+              '''    private void resolveViews() {\n        FrameLayout nextHost = activity.listContainer instanceof FrameLayout\n                ? (FrameLayout) activity.listContainer : null;\n        if (nextHost != host) {\n            cancelPendingHostWidthApply();\n            host = nextHost;\n        }\n        LinearLayout nextColumn = cardForwarder.getColumn();\n        if (nextColumn != column) {\n            detachObserver();\n            column = nextColumn;\n        }\n    }\n''')
+          replace_exact(controller,
+              '''    private void applyWidthSoon() {\n        if (isVerticalCards()) {\n            if (column != null) column.post(this::applyWidthToAllCards);\n        } else if (sharedWidthChangedCallback != null && host != null) {\n            host.post(sharedWidthChangedCallback);\n        }\n    }\n''',
+              '''    private void applyWidthSoon() {\n        if (host == null || !isEnabled()) return;\n        int widthPercent = prefInt(PREF_WIDTH, 100, MIN_WIDTH, MAX_WIDTH);\n        cancelPendingHostWidthApply();\n\n        Runnable rendererApply = isVerticalCards()\n                ? this::applyWidthToAllCards : sharedWidthChangedCallback;\n        boolean hostChanged = applyOuterResultMargins(widthPercent);\n        if (rendererApply == null) return;\n        if (!hostChanged) {\n            host.post(rendererApply);\n            return;\n        }\n\n        // resultLayout itself can be narrower than the display. Wait for its exact new bounds so\n        // renderer children are measured against the physical-edge viewport, not the old 40dp clip.\n        pendingHostLayoutListener = new View.OnLayoutChangeListener() {\n            @Override\n            public void onLayoutChange(View v, int left, int top, int right, int bottom,\n                                       int oldLeft, int oldTop, int oldRight, int oldBottom) {\n                v.removeOnLayoutChangeListener(this);\n                pendingHostLayoutListener = null;\n                rendererApply.run();\n            }\n        };\n        host.addOnLayoutChangeListener(pendingHostLayoutListener);\n        host.requestLayout();\n    }\n\n    private boolean applyOuterResultMargins(int widthPercent) {\n        if (host == null) return false;\n        ViewGroup.LayoutParams raw = host.getLayoutParams();\n        if (!(raw instanceof ViewGroup.MarginLayoutParams)) return false;\n        ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) raw;\n\n        // InterfaceTweaks applies a separate 40dp margin to the ancestor resultLayout when the\n        // large-results-margin preference is enabled. Release that outer clip from 100% to 200%;\n        // 200-400% keeps it at zero so the physical display edge is the only visible boundary.\n        int baseMargin = prefs.getBoolean("large-result-list-margins", false)\n                ? activity.getResources().getDimensionPixelSize(R.dimen.list_margin_horizontal_large)\n                : 0;\n        int desiredMargin = HistoryEdgeWidthPolicy.insetForPercent(baseMargin, widthPercent);\n        if (lp.leftMargin == desiredMargin && lp.rightMargin == desiredMargin\n                && lp.getMarginStart() == desiredMargin && lp.getMarginEnd() == desiredMargin) {\n            return false;\n        }\n\n        int topMargin = lp.topMargin;\n        int bottomMargin = lp.bottomMargin;\n        lp.setMargins(desiredMargin, topMargin, desiredMargin, bottomMargin);\n        lp.setMarginStart(desiredMargin);\n        lp.setMarginEnd(desiredMargin);\n        host.setLayoutParams(lp);\n        return true;\n    }\n\n    private void cancelPendingHostWidthApply() {\n        if (host != null && pendingHostLayoutListener != null) {\n            host.removeOnLayoutChangeListener(pendingHostLayoutListener);\n        }\n        pendingHostLayoutListener = null;\n    }\n''')
+
+          test = 'app/src/test/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicyTest.java'
+          replace_exact(test,
+              '''    @Test void valuesBelowOneHundredShrinkFromNormalWidth() {\n''',
+              '''    @Test void outerFortyDpResultMarginIsReleasedAtThePhysicalEdges() {\n        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 100), is(40));\n        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 150), is(20));\n        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 200), is(0));\n        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 300), is(0));\n        assertThat(HistoryEdgeWidthPolicy.insetForPercent(40, 400), is(0));\n    }\n\n    @Test void valuesBelowOneHundredShrinkFromNormalWidth() {\n''')
+
+          replace_exact('app/build.gradle',
+              '        // Smart S Launcher 3.30.69 - global 48-400% history width, 200% edge-to-edge\n        versionCode 497\n        versionName "3.30.69"\n',
+              '        // Smart S Launcher 3.30.70 - physical screen-edge history width across all styles\n        versionCode 498\n        versionName "3.30.70"\n')
+          PY
+
+      - name: Verify exact intended working-tree edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only HEAD | sort)"
+          expected="$(printf '%s\n' app/build.gradle app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java app/src/test/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicyTest.java | sort)"
+          test "$actual" = "$expected"
+          grep -F 'versionCode 498' app/build.gradle
+          grep -F 'versionName "3.30.70"' app/build.gradle
+          grep -F 'R.dimen.list_margin_horizontal_large' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -F 'HistoryEdgeWidthPolicy.insetForPercent(baseMargin, widthPercent)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -F 'host.addOnLayoutChangeListener(pendingHostLayoutListener)' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+
+      - name: Focused outer-margin policy test
+        run: ./gradlew testDebugUnitTest --tests fr.neamar.kiss.forwarder.HistoryEdgeWidthPolicyTest --stacktrace
+
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Commit verified 3.30.70 source only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-33070-physical-edge.yml
+          rm .github/workflows/apply-33070-physical-edge-v2.yml
+          actual="$(git diff --name-only HEAD | sort)"
+          expected="$(printf '%s\n' .github/workflows/apply-33070-physical-edge-v2.yml .github/workflows/apply-33070-physical-edge.yml app/build.gradle app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java app/src/test/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicyTest.java | sort)"
+          test "$actual" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix physical screen-edge history width in 3.30.70'
+          git push origin HEAD:fix/3.30.70-physical-screen-edge-width
