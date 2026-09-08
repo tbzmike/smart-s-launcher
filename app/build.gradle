@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.66 - recycled Vertical Cards search and notification identity bells
-        versionCode 494
-        versionName "3.30.66"
+        // Smart S Launcher 3.30.67 - exact notification-event history and unread bell state
+        versionCode 495
+        versionName "3.30.67"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

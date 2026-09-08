@@ -573,8 +573,7 @@ final class SmartCardListForwarder extends Forwarder {
         cardTitle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         cardTitle.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
         NotificationBellStyle.apply(cardTitle,
-                NotificationBellStyle.isNotificationItem(mainActivity, result, source)
-                        || hasActiveNotification || hasMessage);
+                NotificationBellStyle.isNotificationItem(mainActivity, result, source));
         center.addView(cardTitle, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
 

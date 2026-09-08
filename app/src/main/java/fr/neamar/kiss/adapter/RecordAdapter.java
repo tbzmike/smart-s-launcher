@@ -104,7 +104,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
         Result<?> result = getItem(position);
         View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
-        NotificationBellStyle.applyToResult(view, result);
+        NotificationBellStyle.applyToResult(view, result, parent instanceof AbsListView);
         if (result.getPojo() instanceof NotificationPojo) {
             configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
             applyBestNotificationPreview(view, (NotificationPojo) result.getPojo());

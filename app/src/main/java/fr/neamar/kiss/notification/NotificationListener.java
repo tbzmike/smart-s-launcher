@@ -143,6 +143,7 @@ public class NotificationListener extends NotificationListenerService {
         }
         detailEditor.putStringSet(ACTIVE_NOTIFICATION_IDS, activeIds).apply();
         publishVerifiedActiveIds(activeIds);
+        NotificationUnreadStore.reconcileActive(this, activeIds);
 
         SharedPreferences.Editor editor = prefs.edit();
         Set<String> allKeys = new HashSet<>(prefs.getAll().keySet());
@@ -155,10 +156,12 @@ public class NotificationListener extends NotificationListenerService {
 
         if (seedTimeline && PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
             timeline.sort(Comparator.comparingLong(StatusBarNotification::getPostTime));
-            Set<String> seeded = new HashSet<>();
             for (StatusBarNotification sbn : timeline) {
                 String groupKey = getPackageKey(sbn);
-                if (seeded.add(groupKey)) KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(groupKey));
+                // Remove the legacy grouped event so one Android notification is never represented
+                // by both a group tile and its exact notification-event tile.
+                DBHelper.removeFromHistory(this, getGroupId(groupKey));
+                KissApplication.getApplication(this).getDataHandler().addToHistory(getTimelineId(sbn));
             }
         }
         return true;
@@ -187,6 +190,7 @@ public class NotificationListener extends NotificationListenerService {
         String id = getTimelineId(sbn);
         NotificationAvatarSupport.captureAsync(this, id, sbn);
         persistHistory(sbn, id);
+        NotificationUnreadStore.markUnread(this, id);
         if (isNotificationTrivial(sbn)) return;
 
         String packageKey = getPackageKey(sbn);
@@ -204,7 +208,8 @@ public class NotificationListener extends NotificationListenerService {
         else refreshAllNotifications(false);
 
         if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
-            KissApplication.getApplication(this).getDataHandler().addToHistory(getGroupId(packageKey));
+            DBHelper.removeFromHistory(this, getGroupId(packageKey));
+            KissApplication.getApplication(this).getDataHandler().addToHistory(id);
         }
         sendTimelineRefresh(id, true);
     }
@@ -280,6 +285,7 @@ public class NotificationListener extends NotificationListenerService {
         else prefs.edit().putStringSet(packageKey, currentNotifications).apply();
 
         String id = getTimelineId(sbn);
+        NotificationUnreadStore.markRemoved(this, id);
         removeVerifiedActiveId(id);
         Set<String> active = new HashSet<>(details.getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet()));
         active.remove(id);
@@ -584,6 +590,7 @@ public class NotificationListener extends NotificationListenerService {
         // the stable route to the exact conversation represented by the notification.
         NotificationHistoryRecord saved = NotificationTimelineStore.findLatest(context, notificationId);
         if (saved != null && SavedNotificationDestinationResolver.openPublishedShortcut(context, saved)) {
+            NotificationUnreadStore.markRead(context, notificationId);
             return true;
         }
 
@@ -593,7 +600,10 @@ public class NotificationListener extends NotificationListenerService {
         // instead of silently degrading to the app's launcher activity.
         PendingIntent retained = getRetainedContentIntent(notificationId);
         if (retained != null) {
-            if (sendContentIntent(context, retained)) return true;
+            if (sendContentIntent(context, retained)) {
+                NotificationUnreadStore.markRead(context, notificationId);
+                return true;
+            }
             forgetRetainedContentIntent(notificationId, retained);
         }
 
@@ -609,7 +619,10 @@ public class NotificationListener extends NotificationListenerService {
         PendingIntent contentIntent = sbn.getNotification().contentIntent;
         if (contentIntent == null) return false;
         rememberContentIntent(notificationId, contentIntent);
-        if (sendContentIntent(context, contentIntent)) return true;
+        if (sendContentIntent(context, contentIntent)) {
+            NotificationUnreadStore.markRead(context, notificationId);
+            return true;
+        }
         forgetRetainedContentIntent(notificationId, contentIntent);
         return false;
     }
