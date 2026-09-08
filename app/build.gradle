@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.68 - edge-to-edge history viewport and bounded card expansion
-        versionCode 496
-        versionName "3.30.68"
+        // Smart S Launcher 3.30.69 - shared edge-to-edge width across every history style
+        versionCode 497
+        versionName "3.30.69"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

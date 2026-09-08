@@ -65,7 +65,8 @@ public class ForwarderManager extends Forwarder {
         this.verticalCardViewportController = new VerticalCardViewportController(mainActivity, smartCardListForwarder);
         this.verticalMapsCardForwarder = new VerticalMapsCardForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(
-                mainActivity, smartCardListForwarder, this::rebuildVerticalCardsForExplicitUiChange);
+                mainActivity, smartCardListForwarder, this::rebuildVerticalCardsForExplicitUiChange,
+                this::applySharedHistoryWidth);
         this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardUsageForwarder = new VerticalCardUsageForwarder(
                 mainActivity, smartCardListForwarder, verticalCardViewportController);
@@ -113,7 +114,6 @@ public class ForwarderManager extends Forwarder {
     public void onResume() {
         UiEditLock.syncRuntimeState(mainActivity);
         boolean uiEditLocked = UiEditLock.isLocked(mainActivity);
-        boolean uiEditLockChanged = uiEditLocked != lastUiEditLocked;
         lastUiEditLocked = uiEditLocked;
         boolean verticalCards = isVerticalCardsMode();
         boolean square = isSquareMode();
@@ -128,7 +128,7 @@ public class ForwarderManager extends Forwarder {
         notificationForwarder.onResume();
 
         if (initialResumeComplete) {
-            if (verticalCards && uiEditLockChanged) verticalCardGroupResizeController.onResume();
+            verticalCardGroupResizeController.onResume();
             if (verticalCards) {
                 verticalCardNotificationHistoryForwarder.onResume();
                 verticalCardUsageForwarder.onResume();
@@ -284,6 +284,11 @@ public class ForwarderManager extends Forwarder {
         }
     }
 
+    private void applySharedHistoryWidth() {
+        historyDisplayForwarder.onSharedWidthChanged();
+        if (isSquareMode()) squareUEdgeBoundsController.onSharedWidthChanged();
+    }
+
     private void rebuildVerticalCardsForExplicitUiChange() {
         if (!isVerticalCardsMode()) return;
         verticalCardViewportController.beforeDataSetChanged();
@@ -369,8 +374,8 @@ public class ForwarderManager extends Forwarder {
         widgetPeelController.onConfigurationChanged();
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
+        verticalCardGroupResizeController.onConfigurationChanged();
         if (isVerticalCardsMode()) {
-            verticalCardGroupResizeController.onConfigurationChanged();
             verticalCardNotificationHistoryForwarder.onConfigurationChanged();
             verticalCardViewportController.onConfigurationChanged();
             verticalCardUsageForwarder.onConfigurationChanged();

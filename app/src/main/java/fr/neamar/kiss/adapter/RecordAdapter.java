@@ -32,6 +32,7 @@ import java.util.WeakHashMap;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.UIColors;
+import fr.neamar.kiss.forwarder.HistoryEdgeWidthPolicy;
 import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -421,7 +422,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             base = new int[]{row.getPaddingLeft(), row.getPaddingTop(), row.getPaddingRight(), row.getPaddingBottom()};
             baseRowPadding.put(row, base);
         }
-        row.setPadding(base[0], base[1], base[2], base[3] + dp(context, spacing));
+        int widthPercent = safePercent(prefs, "smart-list-card-width-percent", 100, 48, 200);
+        int leftPadding = HistoryEdgeWidthPolicy.insetForPercent(base[0], widthPercent);
+        int rightPadding = HistoryEdgeWidthPolicy.insetForPercent(base[2], widthPercent);
+        row.setPadding(leftPadding, base[1], rightPadding, base[3] + dp(context, spacing));
     }
 
     private void configureVerticalHistoryBodyLines(View row, int[] ids, int lines) {
@@ -483,6 +487,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         int result = 17;
         result = 31 * result + safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
+        result = 31 * result + safePercent(prefs, "smart-list-card-width-percent", 100, 48, 200);
         result = 31 * result + safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
         result = 31 * result + safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
         result = 31 * result + safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);

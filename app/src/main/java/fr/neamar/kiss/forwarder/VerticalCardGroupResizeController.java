@@ -43,6 +43,7 @@ final class VerticalCardGroupResizeController {
     private final MainActivity activity;
     private final SmartCardListForwarder cardForwarder;
     private final Runnable rebuildCardsCallback;
+    private final Runnable sharedWidthChangedCallback;
     private final SharedPreferences prefs;
 
     private FrameLayout host;
@@ -53,10 +54,12 @@ final class VerticalCardGroupResizeController {
 
     VerticalCardGroupResizeController(MainActivity activity,
                                       SmartCardListForwarder cardForwarder,
-                                      Runnable rebuildCardsCallback) {
+                                      Runnable rebuildCardsCallback,
+                                      Runnable sharedWidthChangedCallback) {
         this.activity = activity;
         this.cardForwarder = cardForwarder;
         this.rebuildCardsCallback = rebuildCardsCallback;
+        this.sharedWidthChangedCallback = sharedWidthChangedCallback;
         this.prefs = PreferenceManager.getDefaultSharedPreferences(activity);
     }
 
@@ -106,9 +109,21 @@ final class VerticalCardGroupResizeController {
         column = null;
     }
 
-    private boolean isEnabled() {
+    private boolean isVerticalCards() {
         return VERTICAL_CARDS.equals(prefs.getString(
                 HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL));
+    }
+
+    private boolean isEnabled() {
+        String layout = prefs.getString(
+                HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL);
+        return HistoryDisplayForwarder.VERTICAL.equals(layout)
+                || HistoryDisplayForwarder.VERTICAL_CARDS.equals(layout)
+                || HistoryDisplayForwarder.ICONS.equals(layout)
+                || HistoryDisplayForwarder.CARDS.equals(layout)
+                || HistoryDisplayForwarder.NAMES.equals(layout)
+                || HistoryDisplayForwarder.SQUARE_U.equals(layout)
+                || HistoryDisplayForwarder.WHEEL_3D.equals(layout);
     }
 
     private void resolveViews() {
@@ -130,11 +145,11 @@ final class VerticalCardGroupResizeController {
         }
 
         resizeButton = new TextView(activity);
-        resizeButton.setText("↔↕");
+        resizeButton.setText("↔");
         resizeButton.setTextColor(Color.WHITE);
         resizeButton.setTextSize(20f);
         resizeButton.setGravity(Gravity.CENTER);
-        resizeButton.setContentDescription("Resize all Vertical Cards");
+        resizeButton.setContentDescription("Resize history width");
         resizeButton.setElevation(dp(28));
         resizeButton.setBackground(makeButtonBackground());
         resizeButton.setOnClickListener(v -> showResizeDialog());
@@ -171,6 +186,9 @@ final class VerticalCardGroupResizeController {
     private void sync() {
         boolean editable = isEnabled() && !UiEditLock.isLocked(activity);
         if (resizeButton != null) {
+            resizeButton.setText(isVerticalCards() ? "↔↕" : "↔");
+            resizeButton.setContentDescription(isVerticalCards()
+                    ? "Resize Vertical Cards" : "Resize history width");
             resizeButton.setVisibility(editable ? View.VISIBLE : View.GONE);
             if (editable) resizeButton.bringToFront();
         }
@@ -182,11 +200,15 @@ final class VerticalCardGroupResizeController {
     }
 
     private void applyWidthSoon() {
-        if (column != null) column.post(this::applyWidthToAllCards);
+        if (isVerticalCards()) {
+            if (column != null) column.post(this::applyWidthToAllCards);
+        } else if (sharedWidthChangedCallback != null && host != null) {
+            host.post(sharedWidthChangedCallback);
+        }
     }
 
     private void applyWidthToAllCards() {
-        if (!isEnabled() || column == null) return;
+        if (!isVerticalCards() || column == null) return;
         int widthPercent = prefInt(PREF_WIDTH, 100, MIN_WIDTH, MAX_WIDTH);
 
         // Above 100%, consume the renderer's own horizontal gutters instead of creating a child
@@ -244,6 +266,7 @@ final class VerticalCardGroupResizeController {
         if (!isEnabled() || UiEditLock.isLocked(activity)) return;
         dismissDialog();
 
+        boolean verticalCards = isVerticalCards();
         int width = prefInt(PREF_WIDTH, 100, MIN_WIDTH, MAX_WIDTH);
         int height = prefInt(PREF_HEIGHT, 100, MIN_HEIGHT, MAX_HEIGHT);
 
@@ -252,7 +275,9 @@ final class VerticalCardGroupResizeController {
         panel.setPadding(dp(24), dp(12), dp(24), dp(10));
 
         TextView explanation = new TextView(activity);
-        explanation.setText("Resize every Vertical Card together");
+        explanation.setText(verticalCards
+                ? "Resize every Vertical Card together"
+                : "Resize this history style across the full screen");
         explanation.setTextSize(15f);
         explanation.setPadding(0, 0, 0, dp(10));
         panel.addView(explanation);
@@ -267,21 +292,6 @@ final class VerticalCardGroupResizeController {
         widthBar.setProgress(width - MIN_WIDTH);
         panel.addView(widthBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        TextView heightLabel = new TextView(activity);
-        heightLabel.setText("Height · " + height + "%");
-        heightLabel.setTextSize(16f);
-        LinearLayout.LayoutParams heightLabelLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        heightLabelLp.topMargin = dp(14);
-        panel.addView(heightLabel, heightLabelLp);
-
-        SeekBar heightBar = new SeekBar(activity);
-        heightBar.setMax(MAX_HEIGHT - MIN_HEIGHT);
-        heightBar.setProgress(height - MIN_HEIGHT);
-        panel.addView(heightBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
         widthBar.setOnSeekBarChangeListener(new SimpleSeekListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -294,36 +304,52 @@ final class VerticalCardGroupResizeController {
             }
         });
 
-        heightBar.setOnSeekBarChangeListener(new SimpleSeekListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int value = MIN_HEIGHT + progress;
-                heightLabel.setText("Height · " + value + "%");
-            }
+        if (verticalCards) {
+            TextView heightLabel = new TextView(activity);
+            heightLabel.setText("Height · " + height + "%");
+            heightLabel.setTextSize(16f);
+            LinearLayout.LayoutParams heightLabelLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            heightLabelLp.topMargin = dp(14);
+            panel.addView(heightLabel, heightLabelLp);
 
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                int value = MIN_HEIGHT + seekBar.getProgress();
-                applyHeightGroup(value);
-            }
-        });
+            SeekBar heightBar = new SeekBar(activity);
+            heightBar.setMax(MAX_HEIGHT - MIN_HEIGHT);
+            heightBar.setProgress(height - MIN_HEIGHT);
+            panel.addView(heightBar, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            heightBar.setOnSeekBarChangeListener(new SimpleSeekListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    int value = MIN_HEIGHT + progress;
+                    heightLabel.setText("Height · " + value + "%");
+                }
 
-        dialog = new AlertDialog.Builder(activity)
-                .setTitle("Vertical Cards size")
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {
+                    int value = MIN_HEIGHT + seekBar.getProgress();
+                    applyHeightGroup(value);
+                }
+            });
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity)
+                .setTitle(verticalCards ? "Vertical Cards size" : "History width")
                 .setView(panel)
                 .setPositiveButton("Done", null)
                 .setNeutralButton("Reset", (d, which) -> {
-                    prefs.edit()
-                            .putInt(PREF_WIDTH, 100)
-                            .putInt(PREF_HEIGHT, 100)
-                            .putInt(PREF_ICON, 100)
-                            .putInt(PREF_NAME, 100)
-                            .putInt(PREF_SPACING, 12)
-                            .apply();
-                    rebuildCards();
+                    SharedPreferences.Editor editor = prefs.edit().putInt(PREF_WIDTH, 100);
+                    if (verticalCards) {
+                        editor.putInt(PREF_HEIGHT, 100)
+                                .putInt(PREF_ICON, 100)
+                                .putInt(PREF_NAME, 100)
+                                .putInt(PREF_SPACING, 12);
+                    }
+                    editor.apply();
+                    if (verticalCards) rebuildCards();
                     applyWidthSoon();
-                })
-                .create();
+                });
+        dialog = builder.create();
         dialog.setOnDismissListener(d -> dialog = null);
         dialog.show();
     }

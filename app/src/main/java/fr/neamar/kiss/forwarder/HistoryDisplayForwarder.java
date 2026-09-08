@@ -41,6 +41,7 @@ final class HistoryDisplayForwarder extends Forwarder {
     static final String NAMES = "horizontal_names";
     static final String SQUARE_U = "square_u";
     static final String WHEEL_3D = "wheel_3d";
+    private static final String PREF_HISTORY_WIDTH = "smart-list-card-width-percent";
 
     private static final int CARD_WIDTH_DP = 190;
     private static final int CARD_HEIGHT_DP = 132;
@@ -107,6 +108,31 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     void onDataSetChanged() {
         if (!VERTICAL.equals(activeMode) && !VERTICAL_CARDS.equals(activeMode)) rebuild();
+    }
+
+    void onSharedWidthChanged() {
+        if (VERTICAL.equals(activeMode)) {
+            if (mainActivity.list != null) {
+                mainActivity.list.invalidateViews();
+                mainActivity.list.requestLayout();
+            }
+            return;
+        }
+        if (VERTICAL_CARDS.equals(activeMode)) return;
+        if (WHEEL_3D.equals(activeMode)) {
+            applyWheelWidth();
+            rebuildWheel();
+            return;
+        }
+        if (SQUARE_U.equals(activeMode)) {
+            applyNotificationPanelSizing();
+            if (squareTrack != null) {
+                squareTrack.requestLayout();
+                squareTrack.invalidate();
+            }
+            return;
+        }
+        rebuildHorizontal();
     }
 
     private void createHorizontalRenderer() {
@@ -200,6 +226,7 @@ final class HistoryDisplayForwarder extends Forwarder {
             wheelViewTypes.remove(wheelViewTypes.size() - 1);
         }
 
+        applyWheelWidth();
         wheelHasBeenEntered = true;
         lastWheelQuery = currentQuery;
         lastWheelPriorityId = currentPriorityId;
@@ -207,6 +234,38 @@ final class HistoryDisplayForwarder extends Forwarder {
             if (refocusFront && count > 0) centerWheelItem(count - 1);
             scheduleWheelTransforms();
         });
+    }
+
+    private void applyWheelWidth() {
+        if (wheelColumn == null) return;
+        int widthPercent = historyWidthPercent();
+        int sidePadding = HistoryEdgeWidthPolicy.insetForPercent(dp(4), widthPercent);
+        int top = wheelColumn.getPaddingTop();
+        int bottom = wheelColumn.getPaddingBottom();
+        if (wheelColumn.getPaddingLeft() != sidePadding
+                || wheelColumn.getPaddingRight() != sidePadding) {
+            wheelColumn.setPadding(sidePadding, top, sidePadding, bottom);
+        }
+        int available = wheelColumn.getWidth() - sidePadding * 2;
+        if (available <= 0) return;
+        int rowMargin = HistoryEdgeWidthPolicy.insetForPercent(dp(3), widthPercent);
+        int narrowerWidth = HistoryEdgeWidthPolicy.targetWidth(available, available, widthPercent);
+        for (int i = 0; i < wheelColumn.getChildCount(); i++) {
+            View child = wheelColumn.getChildAt(i);
+            ViewGroup.LayoutParams raw = child.getLayoutParams();
+            if (!(raw instanceof LinearLayout.LayoutParams)) continue;
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
+            int desiredWidth = widthPercent >= 100
+                    ? ViewGroup.LayoutParams.MATCH_PARENT : narrowerWidth;
+            if (lp.width == desiredWidth && lp.leftMargin == rowMargin
+                    && lp.rightMargin == rowMargin
+                    && lp.gravity == Gravity.CENTER_HORIZONTAL) continue;
+            lp.width = desiredWidth;
+            lp.leftMargin = rowMargin;
+            lp.rightMargin = rowMargin;
+            lp.gravity = Gravity.CENTER_HORIZONTAL;
+            child.setLayoutParams(lp);
+        }
     }
 
     private void centerWheelItem(int position) {
@@ -306,7 +365,10 @@ final class HistoryDisplayForwarder extends Forwarder {
             super.onSizeChanged(w, h, oldw, oldh);
             if (wheelColumn != null && h > 0) {
                 int verticalPadding = Math.max(dp(80), h / 3);
-                wheelColumn.setPadding(dp(4), verticalPadding, dp(4), verticalPadding);
+                int sidePadding = HistoryEdgeWidthPolicy.insetForPercent(
+                        dp(4), historyWidthPercent());
+                wheelColumn.setPadding(sidePadding, verticalPadding, sidePadding, verticalPadding);
+                applyWheelWidth();
             }
             post(() -> {
                 if (WHEEL_3D.equals(activeMode)) scheduleWheelTransforms();
@@ -528,6 +590,10 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (NAMES.equals(mode)) return createNameTile(source, result);
         if (CARDS.equals(mode)) return createCardTile(source, result);
         return source;
+    }
+
+    private int historyWidthPercent() {
+        return safePrefInt(PREF_HISTORY_WIDTH, 100, 48, 200);
     }
 
     private int horizontalTilePercent() {
@@ -855,10 +921,28 @@ final class HistoryDisplayForwarder extends Forwarder {
         card.setClipToOutline(true);
     }
 
-    private FrameLayout baseTile(int width, int height) {
+    private FrameLayout baseTile(int normalWidth, int height) {
         FrameLayout tile = new FrameLayout(mainActivity);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(width, height);
-        lp.setMargins(dp(5), dp(4), dp(5), dp(4));
+        int widthPercent = historyWidthPercent();
+        int scrollerInset = HistoryEdgeWidthPolicy.insetForPercent(dp(4), widthPercent);
+        if (scroller != null
+                && (scroller.getPaddingLeft() != scrollerInset
+                || scroller.getPaddingRight() != scrollerInset)) {
+            scroller.setPadding(scrollerInset, scroller.getPaddingTop(),
+                    scrollerInset, scroller.getPaddingBottom());
+        }
+        int tileMargin = HistoryEdgeWidthPolicy.insetForPercent(dp(5), widthPercent);
+        int viewportWidth = scroller != null ? scroller.getWidth() : 0;
+        if (viewportWidth <= 0 && container != null) viewportWidth = container.getWidth();
+        if (viewportWidth <= 0) {
+            viewportWidth = mainActivity.getResources().getDisplayMetrics().widthPixels;
+        }
+        int usableWidth = Math.max(1, viewportWidth - scrollerInset * 2 - tileMargin * 2);
+        int boundedNormalWidth = Math.min(normalWidth, usableWidth);
+        int targetWidth = HistoryEdgeWidthPolicy.targetWidth(
+                boundedNormalWidth, usableWidth, widthPercent);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(targetWidth, height);
+        lp.setMargins(tileMargin, dp(4), tileMargin, dp(4));
         tile.setLayoutParams(lp);
         tile.setClickable(true);
         tile.setFocusable(true);

@@ -28,6 +28,7 @@ final class SquareUEdgeBoundsController {
     private static final String PREF_RIGHT = "smart-u-bound-right";
     private static final String PREF_TOP = "smart-u-bound-top";
     private static final String PREF_BOTTOM = "smart-u-bound-bottom";
+    private static final String PREF_HISTORY_WIDTH = "smart-list-card-width-percent";
     private static final float BOTTOM_BAND = 2.55f;
     private static final float EDGE_SNAP = 0.04f;
 
@@ -64,6 +65,11 @@ final class SquareUEdgeBoundsController {
     }
 
     void onConfigurationChanged() {
+        resolveTrack();
+        refreshSoon();
+    }
+
+    void onSharedWidthChanged() {
         resolveTrack();
         refreshSoon();
     }
@@ -125,8 +131,11 @@ final class SquareUEdgeBoundsController {
         int height = squareTrack.getHeight();
         if (width <= 0 || height <= 0) return;
 
-        float leftBound = snapLeft(prefs.getFloat(PREF_LEFT, 0f));
-        float rightBound = snapRight(prefs.getFloat(PREF_RIGHT, 1f));
+        int widthPercent = historyWidthPercent();
+        float leftBound = HistoryEdgeWidthPolicy.leftBoundForPercent(
+                snapLeft(prefs.getFloat(PREF_LEFT, 0f)), widthPercent);
+        float rightBound = HistoryEdgeWidthPolicy.rightBoundForPercent(
+                snapRight(prefs.getFloat(PREF_RIGHT, 1f)), widthPercent);
         float topBound = clamp(prefs.getFloat(PREF_TOP, 0.19f), 0f, 1f);
         float bottomBound = clamp(prefs.getFloat(PREF_BOTTOM, 0.90f), 0f, 1f);
 
@@ -179,6 +188,19 @@ final class SquareUEdgeBoundsController {
             float currentCenterY = card.getTop() + card.getHeight() * 0.5f + card.getTranslationY();
             card.setTranslationX(card.getTranslationX() + (targetCenterX - currentCenterX));
             card.setTranslationY(card.getTranslationY() + (targetCenterY - currentCenterY));
+        }
+    }
+
+    private int historyWidthPercent() {
+        try {
+            return Math.max(48, Math.min(200, prefs.getInt(PREF_HISTORY_WIDTH, 100)));
+        } catch (ClassCastException ignored) {
+            try {
+                return Math.max(48, Math.min(200,
+                        Math.round(Float.parseFloat(prefs.getString(PREF_HISTORY_WIDTH, "100")))));
+            } catch (ClassCastException | NumberFormatException ignoredAgain) {
+                return 100;
+            }
         }
     }
 
