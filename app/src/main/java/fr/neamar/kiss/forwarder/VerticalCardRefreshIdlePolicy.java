@@ -5,17 +5,22 @@ package fr.neamar.kiss.forwarder;
  *
  * A pending refresh never becomes runnable while a finger is down. After release, scroll movement
  * resets stability; two consecutive animation frames at the same Y establish that a fling has
- * actually settled without relying on an arbitrary millisecond delay.
+ * actually settled without relying on an arbitrary millisecond delay. The gate also remembers
+ * whether the viewport was at the newest/bottom edge when the data change arrived. That intent is
+ * stable even if a newly inserted card later increases maxScrollY before the deferred rebuild.
  */
 final class VerticalCardRefreshIdlePolicy {
     private static final int REQUIRED_STABLE_FRAMES = 2;
 
     private boolean pending;
     private boolean touching;
+    private boolean keepBottom;
     private int lastScrollY;
     private int stableFrames;
 
-    void request(int scrollY) {
+    void request(int scrollY, boolean atBottom) {
+        if (!pending) keepBottom = atBottom;
+        else keepBottom |= atBottom;
         pending = true;
         lastScrollY = scrollY;
         stableFrames = 0;
@@ -50,9 +55,16 @@ final class VerticalCardRefreshIdlePolicy {
         return true;
     }
 
+    boolean consumeKeepBottom() {
+        boolean result = keepBottom;
+        keepBottom = false;
+        return result;
+    }
+
     void clear() {
         pending = false;
         touching = false;
+        keepBottom = false;
         stableFrames = 0;
     }
 }
