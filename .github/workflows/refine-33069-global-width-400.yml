@@ -1,0 +1,414 @@
+name: Refine 3.30.69 global 400% history width
+
+on:
+  push:
+    branches:
+      - fix/3.30.69-all-history-edge-width
+    paths:
+      - .github/workflows/refine-33069-global-width-400.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/3.30.69-all-history-edge-width
+          fetch-depth: 0
+
+      - name: Verify exact 3.30.69 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "3ae7421da1830b71a8b985f0d96da6c889d1270a"
+          grep -F 'versionCode 497' app/build.gradle
+          grep -F 'versionName "3.30.69"' app/build.gradle
+          test -z "$(git status --porcelain)"
+
+      - name: Apply audited global 48-400 percent width refinement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f"{path}: expected {count} occurrence(s), found {actual}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, count))
+
+          Path('app/src/main/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicy.java').write_text('''package fr.neamar.kiss.forwarder;
+
+/**
+ * Shared width rules for every history renderer.
+ * 100% preserves the renderer's normal width, 200% reaches the physical viewport edges, and
+ * 400% intentionally spans two viewport widths so the rendered item can continue beyond both
+ * screen edges on high-resolution displays.
+ */
+public final class HistoryEdgeWidthPolicy {
+    private static final int NORMAL_PERCENT = 100;
+    private static final int EDGE_PERCENT = 200;
+    private static final int MAX_PERCENT = 400;
+
+    private HistoryEdgeWidthPolicy() { }
+
+    public static int targetWidth(int normalWidthPx, int viewportWidthPx, int widthPercent) {
+        if (normalWidthPx <= 0 || viewportWidthPx <= 0) return 0;
+        int percent = clampPercent(widthPercent);
+        int normal = Math.min(normalWidthPx, viewportWidthPx);
+        if (percent <= NORMAL_PERCENT) {
+            return Math.max(1, Math.round(normal * percent / 100f));
+        }
+        if (percent <= EDGE_PERCENT) {
+            float progress = (percent - NORMAL_PERCENT)
+                    / (float) (EDGE_PERCENT - NORMAL_PERCENT);
+            return Math.max(1, Math.round(normal + (viewportWidthPx - normal) * progress));
+        }
+        float overscan = (percent - EDGE_PERCENT)
+                / (float) (MAX_PERCENT - EDGE_PERCENT);
+        return Math.max(1, Math.round(viewportWidthPx * (1f + overscan)));
+    }
+
+    /** Release an existing side inset by 200%; overscan beyond 200% keeps it at zero. */
+    public static int insetForPercent(int baseInsetPx, int widthPercent) {
+        if (baseInsetPx <= 0) return 0;
+        int percent = clampPercent(widthPercent);
+        if (percent <= NORMAL_PERCENT) return baseInsetPx;
+        if (percent >= EDGE_PERCENT) return 0;
+        float remaining = (EDGE_PERCENT - percent)
+                / (float) (EDGE_PERCENT - NORMAL_PERCENT);
+        return Math.max(0, Math.round(baseInsetPx * remaining));
+    }
+
+    /** 200% reaches x=0; 400% extends the left bound to half a viewport beyond the screen. */
+    public static float leftBoundForPercent(float baseLeft, int widthPercent) {
+        float base = clamp01(baseLeft);
+        int percent = clampPercent(widthPercent);
+        if (percent <= NORMAL_PERCENT) return base;
+        if (percent <= EDGE_PERCENT) {
+            float remaining = (EDGE_PERCENT - percent)
+                    / (float) (EDGE_PERCENT - NORMAL_PERCENT);
+            return base * remaining;
+        }
+        float overscan = (percent - EDGE_PERCENT)
+                / (float) (MAX_PERCENT - EDGE_PERCENT);
+        return -0.5f * overscan;
+    }
+
+    /** 200% reaches x=1; 400% extends the right bound to half a viewport beyond the screen. */
+    public static float rightBoundForPercent(float baseRight, int widthPercent) {
+        float base = clamp01(baseRight);
+        int percent = clampPercent(widthPercent);
+        if (percent <= NORMAL_PERCENT) return base;
+        if (percent <= EDGE_PERCENT) {
+            float progress = (percent - NORMAL_PERCENT)
+                    / (float) (EDGE_PERCENT - NORMAL_PERCENT);
+            return base + (1f - base) * progress;
+        }
+        float overscan = (percent - EDGE_PERCENT)
+                / (float) (MAX_PERCENT - EDGE_PERCENT);
+        return 1f + 0.5f * overscan;
+    }
+
+    /** Scale of a full viewport after the physical edges have already been reached. */
+    public static float viewportScaleForPercent(int widthPercent) {
+        int percent = clampPercent(widthPercent);
+        if (percent <= EDGE_PERCENT) return 1f;
+        return 1f + (percent - EDGE_PERCENT)
+                / (float) (MAX_PERCENT - EDGE_PERCENT);
+    }
+
+    private static int clampPercent(int value) {
+        return Math.max(1, Math.min(MAX_PERCENT, value));
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0f, Math.min(1f, value));
+    }
+}
+''')
+
+          Path('app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicy.java').write_text('''package fr.neamar.kiss.forwarder;
+
+/** Pure sizing rules for the Vertical Cards width editor. */
+final class VerticalCardWidthPolicy {
+    private static final int NORMAL_PERCENT = 100;
+    private static final int EDGE_PERCENT = 200;
+    private static final int MAX_PERCENT = 400;
+
+    private VerticalCardWidthPolicy() { }
+
+    static int targetWidth(int availablePx, int widthPercent) {
+        if (availablePx <= 0) return 0;
+        int percent = Math.max(1, Math.min(MAX_PERCENT, widthPercent));
+        if (percent <= NORMAL_PERCENT) {
+            return Math.max(1, Math.round(availablePx * percent / 100f));
+        }
+        if (percent <= EDGE_PERCENT) return availablePx;
+        return Math.max(1, Math.round(availablePx
+                * HistoryEdgeWidthPolicy.viewportScaleForPercent(percent)));
+    }
+
+    /** 100-200% releases the old gutters; 200-400% keeps zero gutters while overscanning. */
+    static int insetForPercent(int baseInsetPx, int widthPercent) {
+        return HistoryEdgeWidthPolicy.insetForPercent(baseInsetPx, widthPercent);
+    }
+}
+''')
+
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java',
+              '    private static final int MAX_WIDTH = 200;\n',
+              '    private static final int MAX_WIDTH = 400;\n')
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java',
+              '''        // Above 100%, consume the renderer's own horizontal gutters instead of creating a child\n        // wider than its viewport. At 200% every Vertical Card can use the complete result width\n        // without being centered behind (and clipped by) a narrower ScrollView.\n''',
+              '''        // 100-200% progressively consumes the renderer's own horizontal gutters. 200% is the\n        // exact physical viewport width. 201-400% intentionally creates a centered child wider\n        // than the viewport; the off-screen portion is clipped by the screen, not by card gutters.\n''')
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java',
+              '''            int desired = widthPercent >= 100\n                    ? ViewGroup.LayoutParams.MATCH_PARENT : targetWidth;\n''',
+              '''            int desired;\n            if (widthPercent < 100) desired = targetWidth;\n            else if (widthPercent <= 200) desired = ViewGroup.LayoutParams.MATCH_PARENT;\n            else desired = targetWidth;\n''')
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java',
+              '''        explanation.setText(verticalCards\n                ? "Resize every Vertical Card together"\n                : "Resize this history style across the full screen");\n''',
+              '''        explanation.setText(verticalCards\n                ? "Resize every Vertical Card together · 200% = screen edges · 400% = beyond screen"\n                : "Resize this history style · 200% = screen edges · 400% = beyond screen");\n''')
+
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java',
+              '        int narrowerWidth = HistoryEdgeWidthPolicy.targetWidth(available, available, widthPercent);\n',
+              '        int targetRowWidth = HistoryEdgeWidthPolicy.targetWidth(available, available, widthPercent);\n')
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java',
+              '''            int desiredWidth = widthPercent >= 100\n                    ? ViewGroup.LayoutParams.MATCH_PARENT : narrowerWidth;\n''',
+              '''            int desiredWidth;\n            if (widthPercent < 100) desiredWidth = targetRowWidth;\n            else if (widthPercent <= 200) desiredWidth = ViewGroup.LayoutParams.MATCH_PARENT;\n            else desiredWidth = targetRowWidth;\n''')
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java',
+              '''        int width = Math.min(screenWidth - dp(24), Math.max(dp(150), baseWidth * sizePercent / 100));\n''',
+              '''        int normalWidth = Math.min(screenWidth - dp(24),\n                Math.max(dp(150), baseWidth * sizePercent / 100));\n        int width = HistoryEdgeWidthPolicy.targetWidth(\n                normalWidth, screenWidth, historyWidthPercent());\n''')
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java',
+              '        return safePrefInt(PREF_HISTORY_WIDTH, 100, 48, 200);\n',
+              '        return safePrefInt(PREF_HISTORY_WIDTH, 100, 48, 400);\n')
+
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java',
+              '            return Math.max(48, Math.min(200, prefs.getInt(PREF_HISTORY_WIDTH, 100)));\n',
+              '            return Math.max(48, Math.min(400, prefs.getInt(PREF_HISTORY_WIDTH, 100)));\n')
+          replace_exact(
+              'app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java',
+              '''                return Math.max(48, Math.min(200,\n                        Math.round(Float.parseFloat(prefs.getString(PREF_HISTORY_WIDTH, "100")))));\n''',
+              '''                return Math.max(48, Math.min(400,\n                        Math.round(Float.parseFloat(prefs.getString(PREF_HISTORY_WIDTH, "100")))));\n''')
+
+          record = 'app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java'
+          replace_exact(
+              record,
+              '    private final WeakHashMap<View, Integer> baseRowMinimumHeight = new WeakHashMap<>();\n',
+              '    private final WeakHashMap<View, Integer> baseRowMinimumHeight = new WeakHashMap<>();\n    private final WeakHashMap<View, Integer> baseRowLayoutWidths = new WeakHashMap<>();\n')
+          replace_exact(
+              record,
+              '''                    applyVerticalHistoryPolish(view, context);\n                    verticalStyleSignatures.put(view, signature);\n                }\n''',
+              '''                    applyVerticalHistoryPolish(view, context);\n                    verticalStyleSignatures.put(view, signature);\n                }\n                applyVerticalHistoryWidth(view, parent, context);\n''')
+          replace_exact(
+              record,
+              '        int widthPercent = safePercent(prefs, "smart-list-card-width-percent", 100, 48, 200);\n',
+              '        int widthPercent = safePercent(prefs, "smart-list-card-width-percent", 100, 48, 400);\n')
+          replace_exact(
+              record,
+              '        result = 31 * result + safePercent(prefs, "smart-list-card-width-percent", 100, 48, 200);\n',
+              '        result = 31 * result + safePercent(prefs, "smart-list-card-width-percent", 100, 48, 400);\n')
+          replace_exact(
+              record,
+              '''    private void restoreVerticalHistoryAppearance(View row) {\n''',
+              '''    private void applyVerticalHistoryWidth(View row, ViewGroup parent, Context context) {\n        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);\n        int widthPercent = safePercent(prefs, "smart-list-card-width-percent", 100, 48, 400);\n        int viewportWidth = parent == null ? 0 : parent.getWidth();\n        if (viewportWidth <= 0) {\n            viewportWidth = context.getResources().getDisplayMetrics().widthPixels;\n        }\n        if (viewportWidth <= 0) return;\n\n        ViewGroup.LayoutParams raw = row.getLayoutParams();\n        if (!baseRowLayoutWidths.containsKey(row)) {\n            baseRowLayoutWidths.put(row, raw == null\n                    ? ViewGroup.LayoutParams.MATCH_PARENT : raw.width);\n        }\n\n        int targetWidth = HistoryEdgeWidthPolicy.targetWidth(\n                viewportWidth, viewportWidth, widthPercent);\n        int height = raw == null ? ViewGroup.LayoutParams.WRAP_CONTENT : raw.height;\n        AbsListView.LayoutParams lp;\n        if (raw instanceof AbsListView.LayoutParams) {\n            lp = (AbsListView.LayoutParams) raw;\n        } else {\n            lp = new AbsListView.LayoutParams(targetWidth, height);\n        }\n        if (lp.width != targetWidth || row.getLayoutParams() != lp) {\n            lp.width = targetWidth;\n            row.setLayoutParams(lp);\n        }\n\n        float translationX = (viewportWidth - targetWidth) * 0.5f;\n        if (Math.abs(row.getTranslationX() - translationX) > 0.5f) {\n            row.setTranslationX(translationX);\n        }\n    }\n\n    private void restoreVerticalHistoryAppearance(View row) {\n''')
+          replace_exact(
+              record,
+              '''        Integer minimumHeight = baseRowMinimumHeight.get(row);\n        if (minimumHeight != null) row.setMinimumHeight(minimumHeight);\n        restorePrimaryIconSize(row);\n''',
+              '''        Integer minimumHeight = baseRowMinimumHeight.get(row);\n        if (minimumHeight != null) row.setMinimumHeight(minimumHeight);\n        Integer layoutWidth = baseRowLayoutWidths.get(row);\n        ViewGroup.LayoutParams rowParams = row.getLayoutParams();\n        if (layoutWidth != null && rowParams != null && rowParams.width != layoutWidth) {\n            rowParams.width = layoutWidth;\n            row.setLayoutParams(rowParams);\n        }\n        if (row.getTranslationX() != 0f) row.setTranslationX(0f);\n        restorePrimaryIconSize(row);\n''')
+
+          Path('app/src/test/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicyTest.java').write_text('''package fr.neamar.kiss.forwarder;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.closeTo;
+import static org.hamcrest.Matchers.is;
+
+import org.junit.jupiter.api.Test;
+
+class HistoryEdgeWidthPolicyTest {
+    @Test void oneHundredPreservesNormalWidthInsetsAndBounds() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 100), is(600));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 100), is(8));
+        assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 100), closeTo(0.10, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 100), closeTo(0.90, 0.0001));
+    }
+
+    @Test void oneHundredFiftyMovesHalfwayToPhysicalEdges() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 150), is(800));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 150), is(4));
+        assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 150), closeTo(0.05, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 150), closeTo(0.95, 0.0001));
+    }
+
+    @Test void twoHundredMeansExactViewportEdges() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 200), is(1000));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 200), is(0));
+        assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 200), closeTo(0.0, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 200), closeTo(1.0, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.viewportScaleForPercent(200), closeTo(1.0, 0.0001));
+    }
+
+    @Test void threeHundredExtendsQuarterViewportPastEachEdge() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 300), is(1500));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 300), is(0));
+        assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 300), closeTo(-0.25, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 300), closeTo(1.25, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.viewportScaleForPercent(300), closeTo(1.5, 0.0001));
+    }
+
+    @Test void fourHundredSpansTwoViewportWidths() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 400), is(2000));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 400), is(0));
+        assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 400), closeTo(-0.50, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 400), closeTo(1.50, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.viewportScaleForPercent(400), closeTo(2.0, 0.0001));
+    }
+
+    @Test void valuesAboveMaximumClampAtFourHundred() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 500), is(2000));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 500), is(0));
+        assertThat((double) HistoryEdgeWidthPolicy.leftBoundForPercent(0.10f, 500), closeTo(-0.50, 0.0001));
+        assertThat((double) HistoryEdgeWidthPolicy.rightBoundForPercent(0.90f, 500), closeTo(1.50, 0.0001));
+    }
+
+    @Test void valuesBelowOneHundredShrinkFromNormalWidth() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(600, 1000, 50), is(300));
+        assertThat(HistoryEdgeWidthPolicy.insetForPercent(8, 50), is(8));
+    }
+
+    @Test void normalWidthLargerThanViewportStillUsesViewportAsEdgeReference() {
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(1200, 1000, 100), is(1000));
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(1200, 1000, 200), is(1000));
+        assertThat(HistoryEdgeWidthPolicy.targetWidth(1200, 1000, 400), is(2000));
+    }
+}
+''')
+
+          Path('app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicyTest.java').write_text('''package fr.neamar.kiss.forwarder;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+
+import org.junit.jupiter.api.Test;
+
+public class VerticalCardWidthPolicyTest {
+    @Test
+    public void belowOneHundredShrinksCardButKeepsBaseInsets() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 48), is(480));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(8, 48), is(8));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(4, 48), is(4));
+    }
+
+    @Test
+    public void oneHundredUsesViewportWithoutChangingNormalInsets() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 100), is(1000));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(8, 100), is(8));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(4, 100), is(4));
+    }
+
+    @Test
+    public void oneHundredFiftyUsesFullViewportAndHalfInsets() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 150), is(1000));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(8, 150), is(4));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(4, 150), is(2));
+    }
+
+    @Test
+    public void twoHundredUsesFullViewportWithNoInternalSideGutter() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 200), is(1000));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(8, 200), is(0));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(4, 200), is(0));
+    }
+
+    @Test
+    public void threeHundredCreatesOneAndHalfViewportWidths() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 300), is(1500));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(8, 300), is(0));
+    }
+
+    @Test
+    public void fourHundredCreatesTwoViewportWidths() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 400), is(2000));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(8, 400), is(0));
+    }
+
+    @Test
+    public void valuesAboveMaximumClampAtFourHundred() {
+        assertThat(VerticalCardWidthPolicy.targetWidth(1000, 500), is(2000));
+        assertThat(VerticalCardWidthPolicy.insetForPercent(8, 500), is(0));
+    }
+}
+''')
+
+          replace_exact(
+              'app/build.gradle',
+              '// Smart S Launcher 3.30.69 - shared edge-to-edge width across every history style\n',
+              '// Smart S Launcher 3.30.69 - global 48-400% history width, 200% edge-to-edge\n')
+          PY
+
+      - name: Verify exact intended source edits
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -F 'versionCode 497' app/build.gradle
+          grep -F 'versionName "3.30.69"' app/build.gradle
+          grep -F 'private static final int MAX_WIDTH = 400;' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -F 'private static final int MAX_PERCENT = 400;' app/src/main/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicy.java
+          grep -F 'private static final int MAX_PERCENT = 400;' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicy.java
+          grep -F 'return safePrefInt(PREF_HISTORY_WIDTH, 100, 48, 400);' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -F 'applyVerticalHistoryWidth(view, parent, context);' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -F 'Math.min(400, prefs.getInt(PREF_HISTORY_WIDTH, 100))' app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java
+          test "$(git diff --name-only | sort)" = "$(printf '%s\n' \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicy.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicy.java \
+            app/src/test/java/fr/neamar/kiss/forwarder/HistoryEdgeWidthPolicyTest.java \
+            app/src/test/java/fr/neamar/kiss/forwarder/VerticalCardWidthPolicyTest.java | sort)"
+
+      - name: Focused width policy tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest \
+            --tests fr.neamar.kiss.forwarder.HistoryEdgeWidthPolicyTest \
+            --tests fr.neamar.kiss.forwarder.VerticalCardWidthPolicyTest \
+            --stacktrace
+
+      - name: Full clean verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Commit verified source without temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/refine-33069-global-width-400.yml
+          git diff --check
+          test "$(git diff --name-only HEAD^ | grep -F '.github/workflows/refine-33069-global-width-400.yml' || true)" = ".github/workflows/refine-33069-global-width-400.yml"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Extend global history width to 400 percent in 3.30.69'
+          git push origin HEAD:fix/3.30.69-all-history-edge-width
