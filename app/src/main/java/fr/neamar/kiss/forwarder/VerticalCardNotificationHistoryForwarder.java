@@ -199,12 +199,10 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         if (paused || destroyed || !isEnabled() || column == null || mainActivity.adapter == null) return;
         resetAttentionBorders();
         Map<String, Result<?>> resultsByPojoId = new HashMap<>();
-        Map<String, Integer> positionsByPojoId = new HashMap<>();
         for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
             Result<?> result = mainActivity.adapter.getItem(position);
             if (result == null) continue;
             resultsByPojoId.put(result.getPojoId(), result);
-            positionsByPojoId.put(result.getPojoId(), position);
         }
 
         int count = column.getChildCount();
@@ -212,13 +210,12 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             View wrapper = column.getChildAt(position);
             Object wrapperId = wrapper.getTag();
             if (!(wrapperId instanceof String)) continue;
-            Result<?> result = resultsByPojoId.get((String) wrapperId);
-            Integer resolvedPosition = positionsByPojoId.get((String) wrapperId);
-            if (result == null || resolvedPosition == null) continue;
-            final int adapterPosition = resolvedPosition;
+            String stableId = (String) wrapperId;
+            Result<?> result = resultsByPojoId.get(stableId);
+            if (result == null) continue;
 
             applyLaunchStats(wrapper, result);
-            applyEasyIconTap(wrapper, result, adapterPosition);
+            applyEasyIconTap(wrapper, result, stableId);
 
             NotificationPojo notification = result.getPojo() instanceof NotificationPojo
                     ? (NotificationPojo) result.getPojo() : null;
@@ -231,11 +228,13 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             applyBottomSwipeTouchRecursively(wrapper);
 
             View.OnLongClickListener historyFirstLongPress = v -> {
+                int currentPosition = resolveAdapterPosition(stableId);
+                if (currentPosition < 0) return false;
                 if (UiEditLock.isLocked(mainActivity)
-                        && mainActivity.adapter.showNotificationHistoryIfAvailable(adapterPosition, v)) {
+                        && mainActivity.adapter.showNotificationHistoryIfAvailable(currentPosition, v)) {
                     return true;
                 }
-                mainActivity.adapter.onLongClick(adapterPosition, v);
+                mainActivity.adapter.onLongClick(currentPosition, v);
                 return true;
             };
             applyLongPressRecursively(wrapper, historyFirstLongPress);
@@ -246,7 +245,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
                         NotificationTimelineState.markRead(mainActivity, notification.id);
                         clearAttentionFor(notification.id);
                     }
-                    mainActivity.adapter.onClick(adapterPosition, v);
+                    int currentPosition = resolveAdapterPosition(stableId);
+                    if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, v);
                 };
                 applyNotificationClickRecursively(wrapper, notificationClick);
             }
@@ -457,7 +457,7 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         bottomSwipeTriggered = false;
     }
 
-    private void applyEasyIconTap(View wrapper, Result<?> result, int adapterPosition) {
+    private void applyEasyIconTap(View wrapper, Result<?> result, String stableId) {
         if (wrapper == null || result == null || result.getPojo() == null) return;
         Pojo pojo = result.getPojo();
         if (!(pojo instanceof AppPojo)
@@ -470,7 +470,10 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         if (icon == null) return;
 
         icon.setClickable(true);
-        icon.setOnClickListener(v -> mainActivity.adapter.onClick(adapterPosition, wrapper));
+        icon.setOnClickListener(v -> {
+            int currentPosition = resolveAdapterPosition(stableId);
+            if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, wrapper);
+        });
 
         if (!(icon.getParent() instanceof ViewGroup)) return;
         ViewGroup touchParent = (ViewGroup) icon.getParent();
@@ -485,6 +488,15 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             hit.bottom += extra;
             touchParent.setTouchDelegate(new TouchDelegate(hit, icon));
         });
+    }
+
+    private int resolveAdapterPosition(String stableId) {
+        if (mainActivity.adapter == null || TextUtils.isEmpty(stableId)) return -1;
+        for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
+            if (result != null && TextUtils.equals(stableId, result.getPojoId())) return position;
+        }
+        return -1;
     }
 
     private ImageView findFirstVisibleImage(View view) {

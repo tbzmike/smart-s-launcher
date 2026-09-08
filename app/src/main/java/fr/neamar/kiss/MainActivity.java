@@ -370,8 +370,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                     emptyListView.setVisibility(View.GONE);
                 }
 
-                forwarderManager.onDataSetChanged();
-                applyGlobalTextScale(findViewById(android.R.id.content));
+                boolean visibleResultTreeChanged = forwarderManager.onDataSetChanged();
+                if (visibleResultTreeChanged) {
+                    applyGlobalTextScale(findViewById(android.R.id.content));
+                }
 
             }
         });
@@ -1120,8 +1122,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     public void externalResultLaunchStarting() {
-        // This runs before doLaunch(), not after it: no provider/notification refresh is allowed
-        // to rebuild Vertical Cards in the same frame Android begins the launch animation.
+        // Capture the currently visible Vertical Cards viewport before Android begins the external
+        // transition. A later history recency update must not relocate the tile the user tapped.
+        forwarderManager.onExternalResultLaunchStarting();
         launcherUiResumed = false;
     }
 
@@ -1133,6 +1136,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     @Override
     public void externalResultLaunchCancelled() {
         launcherUiResumed = true;
+        forwarderManager.onExternalResultLaunchCancelled();
     }
 
     public void registerPopup(ListPopup popup) {

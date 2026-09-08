@@ -57,6 +57,7 @@ final class SmartCardListForwarder extends Forwarder {
     private boolean renderedActiveQuery;
     private boolean suppressNextHistoryAnimation;
     private Runnable deferredHistoryRefreshCallback;
+    private Runnable userScrollStartedCallback;
     private boolean deferredRefreshIdleProbeScheduled;
     private final VerticalCardRefreshIdlePolicy deferredRefreshIdlePolicy =
             new VerticalCardRefreshIdlePolicy();
@@ -67,8 +68,13 @@ final class SmartCardListForwarder extends Forwarder {
         deferredRefreshIdleProbeScheduled = false;
         if (scroller == null || !pendingDataSetRefresh || isActiveQuery()) return;
         if (deferredRefreshIdlePolicy.onAnimationFrame(scroller.getScrollY())) {
-            Runnable callback = deferredHistoryRefreshCallback;
-            if (callback != null) callback.run();
+            // A passive history refresh is never allowed to move the viewport by itself. Only a
+            // real user gesture that has reached the currently visible bottom may materialize the
+            // pending timeline update. Explicit finger/Home navigation is handled by the manager.
+            if (isAtBottom()) {
+                Runnable callback = deferredHistoryRefreshCallback;
+                if (callback != null) callback.run();
+            }
             return;
         }
         scheduleDeferredRefreshIdleProbe();
@@ -131,10 +137,13 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         cancelPendingActiveQueryRebuild();
+        // Keep the currently rendered history tree frozen. The adapter may re-rank an app/shortcut
+        // after a launch or append a notification, but that background fact must not move what the
+        // user is looking at. The pending tree is materialized only by explicit latest navigation
+        // or after the user manually reaches the visible bottom.
         pendingDataSetRefresh = true;
-        deferredRefreshIdlePolicy.request(
-                scroller == null ? 0 : scroller.getScrollY(), isAtBottom());
-        scheduleDeferredRefreshIdleProbe();
+        cancelDeferredRefreshIdleProbe();
+        deferredRefreshIdlePolicy.clear();
         return false;
     }
 
@@ -143,6 +152,7 @@ final class SmartCardListForwarder extends Forwarder {
         cancelDeferredRefreshIdleProbe();
         deferredRefreshIdlePolicy.clear();
         deferredHistoryRefreshCallback = null;
+        userScrollStartedCallback = null;
         accentCache.clear();
         container = null;
         scroller = null;
@@ -163,6 +173,10 @@ final class SmartCardListForwarder extends Forwarder {
 
     void setDeferredHistoryRefreshCallback(Runnable callback) {
         deferredHistoryRefreshCallback = callback;
+    }
+
+    void setUserScrollStartedCallback(Runnable callback) {
+        userScrollStartedCallback = callback;
     }
 
     boolean willRebuildSynchronouslyForDataSetChange() {
@@ -341,11 +355,16 @@ final class SmartCardListForwarder extends Forwarder {
             if (action == MotionEvent.ACTION_DOWN) {
                 deferredRefreshIdlePolicy.onTouchDown();
                 cancelDeferredRefreshIdleProbe();
+                Runnable callback = userScrollStartedCallback;
+                if (callback != null) callback.run();
             }
             boolean handled = super.dispatchTouchEvent(event);
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                deferredRefreshIdlePolicy.onTouchReleased(getScrollY());
-                scheduleDeferredRefreshIdleProbe();
+                if (pendingDataSetRefresh) {
+                    deferredRefreshIdlePolicy.request(getScrollY(), false);
+                    deferredRefreshIdlePolicy.onTouchReleased(getScrollY());
+                    scheduleDeferredRefreshIdleProbe();
+                }
             }
             return handled;
         }
@@ -552,7 +571,7 @@ final class SmartCardListForwarder extends Forwarder {
             card.addView(details, detailsLp);
             final String expectedPojoId = result.getPojoId();
             details.setOnClickListener(v -> toggleDetails(
-                    detailsPanel, details, adapterPosition, expectedPojoId));
+                    detailsPanel, details, expectedPojoId));
         }
 
         final TextView expandableMessage = messageView;
@@ -565,10 +584,13 @@ final class SmartCardListForwarder extends Forwarder {
                 return;
             }
             pressAnimation(card);
-            mainActivity.adapter.onClick(adapterPosition, card);
+            int currentPosition = resolveAdapterPosition(result.getPojoId());
+            if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, card);
         };
         View.OnLongClickListener longPress = v -> {
-            mainActivity.adapter.onLongClick(adapterPosition, card);
+            int currentPosition = resolveAdapterPosition(result.getPojoId());
+            if (currentPosition < 0) return false;
+            mainActivity.adapter.onLongClick(currentPosition, card);
             return true;
         };
         card.setOnClickListener(launchOrExpand);
@@ -706,11 +728,11 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void toggleDetails(FrameLayout detailsPanel, TextView control,
-                               int adapterPosition, String expectedPojoId) {
+                               String expectedPojoId) {
         boolean opening = detailsPanel.getVisibility() != View.VISIBLE;
         detailsPanel.animate().cancel();
         if (opening) {
-            if (!populateDetails(detailsPanel, adapterPosition, expectedPojoId)) return;
+            if (!populateDetails(detailsPanel, expectedPojoId)) return;
             detailsPanel.setAlpha(0f);
             detailsPanel.setVisibility(View.VISIBLE);
             control.setText("⌃");
@@ -735,21 +757,13 @@ final class SmartCardListForwarder extends Forwarder {
         }
     }
 
-    private boolean populateDetails(FrameLayout detailsPanel, int adapterPosition,
-                                    String expectedPojoId) {
+    private boolean populateDetails(FrameLayout detailsPanel, String expectedPojoId) {
         if (detailsPanel.getChildCount() > 0) return true;
-        if (mainActivity.adapter == null
-                || adapterPosition < 0
-                || adapterPosition >= mainActivity.adapter.getCount()) {
-            return false;
-        }
+        int adapterPosition = resolveAdapterPosition(expectedPojoId);
+        if (adapterPosition < 0) return false;
 
         Result<?> current = mainActivity.adapter.getItem(adapterPosition);
-        if (current == null || !TextUtils.equals(expectedPojoId, current.getPojoId())) {
-            // History can be re-ranked after a launch/notification. Never bind a stale position to
-            // a different card merely to populate optional details.
-            return false;
-        }
+        if (current == null || !TextUtils.equals(expectedPojoId, current.getPojoId())) return false;
 
         View detailSource = mainActivity.adapter.getView(adapterPosition, null, detailsPanel);
         prepareSourceForDetails(detailSource);
@@ -760,6 +774,17 @@ final class SmartCardListForwarder extends Forwarder {
         detailsPanel.addView(detailSource, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return true;
+    }
+
+    private int resolveAdapterPosition(String expectedPojoId) {
+        if (mainActivity.adapter == null || TextUtils.isEmpty(expectedPojoId)) return -1;
+        for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
+            Result<?> current = mainActivity.adapter.getItem(position);
+            if (current != null && TextUtils.equals(expectedPojoId, current.getPojoId())) {
+                return position;
+            }
+        }
+        return -1;
     }
 
     private void clearDetailsPanel(FrameLayout detailsPanel) {
