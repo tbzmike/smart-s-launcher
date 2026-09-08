@@ -119,6 +119,11 @@ final class VerticalCardViewportController extends Forwarder {
         }
     }
 
+    /** Preserve a bottom edge captured when the deferred data change first arrived. */
+    void forceBottomForNextRebuild() {
+        policy.requestBottomOnNextRebuild();
+    }
+
     /** Restore after the card rebuild and all synchronous decorators have been queued. */
     void afterDataSetChanged() {
         ViewportSnapshot snapshot = pendingRebuildSnapshot;

@@ -20,6 +20,16 @@ class VerticalCardViewportPolicyTest {
     }
 
     @Test
+    void deferredBottomIntentPinsExactlyTheNextRebuild() {
+        VerticalCardViewportPolicy policy = settledPolicy();
+        policy.requestBottomOnNextRebuild();
+        assertThat(policy.shouldBottomRebuild(), is(true));
+        applyBottomRebuild(policy);
+        assertThat(policy.shouldBottomRebuild(), is(false));
+        assertThat(policy.shouldPinGeometry(), is(false));
+    }
+
+    @Test
     void homeIsImmediateAndDoesNotArmAnUnrelatedFutureRefresh() {
         VerticalCardViewportPolicy policy = settledPolicy();
 

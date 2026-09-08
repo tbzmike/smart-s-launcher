@@ -24,6 +24,10 @@ final class VerticalCardViewportPolicy {
         immediateBottomPending = true;
     }
 
+    void requestBottomOnNextRebuild() {
+        forceBottomOnNextRebuild = true;
+    }
+
     void setKeyboardVisible(boolean visible) {
         keyboardVisible = visible;
     }

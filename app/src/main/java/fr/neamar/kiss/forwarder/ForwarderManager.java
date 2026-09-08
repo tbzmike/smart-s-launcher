@@ -240,6 +240,9 @@ public class ForwarderManager extends Forwarder {
 
     private void rebuildDeferredVerticalCards() {
         if (!isVerticalCardsMode() || !smartCardListForwarder.hasPendingDataSetRefresh()) return;
+        if (smartCardListForwarder.consumeDeferredKeepBottom()) {
+            verticalCardViewportController.forceBottomForNextRebuild();
+        }
         verticalCardViewportController.beforeDataSetChanged();
         if (!smartCardListForwarder.rebuildPendingDataSetRefresh()) return;
         decorateVerticalCardsAfterRebuild();
