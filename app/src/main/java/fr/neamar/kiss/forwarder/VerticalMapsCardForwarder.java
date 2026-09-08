@@ -30,11 +30,14 @@ final class VerticalMapsCardForwarder extends Forwarder {
     private static final int TAG_MAP_LOCATION = 0x534D4D02;
 
     private final SmartCardListForwarder smartCards;
+    private final VerticalCardViewportController viewportController;
     private final AtomicBoolean loadInFlight = new AtomicBoolean(false);
 
-    VerticalMapsCardForwarder(MainActivity mainActivity, SmartCardListForwarder smartCards) {
+    VerticalMapsCardForwarder(MainActivity mainActivity, SmartCardListForwarder smartCards,
+                              VerticalCardViewportController viewportController) {
         super(mainActivity);
         this.smartCards = smartCards;
+        this.viewportController = viewportController;
     }
 
     void onCreate() {
@@ -58,7 +61,7 @@ final class VerticalMapsCardForwarder extends Forwarder {
         anchor.post(() -> {
             int position = findMapsPosition();
             if (position < 0) return;
-            showLocatingState(position);
+            mutatePreservingViewport(() -> showLocatingState(position));
             if (requestFreshLocation) {
                 MapLiveTileProvider.requestFreshLocation(mainActivity,
                         () -> loadAndApply(findMapsPosition()));
@@ -100,16 +103,25 @@ final class VerticalMapsCardForwarder extends Forwarder {
                 loadInFlight.set(false);
                 if (!isVerticalCardsEnabled()) return;
                 if (data == null) {
-                    if (!MapLiveTileProvider.hasLocationPermission(mainActivity)) {
-                        updateStatus(adapterPosition, "Allow location for live Maps preview");
-                    } else {
-                        updateStatus(adapterPosition, "Locating current position…");
-                    }
+                    mutatePreservingViewport(() -> {
+                        if (!MapLiveTileProvider.hasLocationPermission(mainActivity)) {
+                            updateStatus(adapterPosition, "Allow location for live Maps preview");
+                        } else {
+                            updateStatus(adapterPosition, "Locating current position…");
+                        }
+                    });
                     return;
                 }
-                applyToCard(adapterPosition, data);
+                mutatePreservingViewport(() -> applyToCard(adapterPosition, data));
             });
         });
+    }
+
+    private void mutatePreservingViewport(Runnable mutation) {
+        VerticalCardViewportController.ViewportSnapshot viewport =
+                viewportController.captureForContentMutation();
+        mutation.run();
+        viewportController.restoreAfterContentMutation(viewport);
     }
 
     private void showLocatingState(int adapterPosition) {

@@ -192,7 +192,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
                 statsRefreshInFlight.set(false);
                 if (destroyed) return;
                 launchStats = freshStats;
-                postApplySnapshot(false, true);
+                postApplySnapshot(true, false);
             });
         });
     }

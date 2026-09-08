@@ -131,7 +131,8 @@ final class SmartCardListForwarder extends Forwarder {
 
         cancelPendingActiveQueryRebuild();
         pendingDataSetRefresh = true;
-        deferredRefreshIdlePolicy.request(scroller == null ? 0 : scroller.getScrollY());
+        deferredRefreshIdlePolicy.request(
+                scroller == null ? 0 : scroller.getScrollY(), isAtBottom());
         scheduleDeferredRefreshIdleProbe();
         return false;
     }
@@ -179,6 +180,10 @@ final class SmartCardListForwarder extends Forwarder {
         return true;
     }
 
+    boolean consumeDeferredKeepBottom() {
+        return deferredRefreshIdlePolicy.consumeKeepBottom();
+    }
+
     void rebuildImmediately() {
         if (isEnabled()) rebuild();
     }
@@ -219,6 +224,16 @@ final class SmartCardListForwarder extends Forwarder {
 
     private void cancelPendingActiveQueryRebuild() {
         if (scroller != null) scroller.removeCallbacks(activeQueryRebuildRunnable);
+    }
+
+    private boolean isAtBottom() {
+        if (scroller == null || column == null || column.getChildCount() == 0) return true;
+        View content = scroller.getChildAt(0);
+        if (content == null) return true;
+        int viewportHeight = Math.max(0, scroller.getHeight()
+                - scroller.getPaddingTop() - scroller.getPaddingBottom());
+        int maxScrollY = Math.max(0, content.getHeight() - viewportHeight);
+        return maxScrollY - scroller.getScrollY() <= dp(6);
     }
 
     private void scheduleDeferredRefreshIdleProbe() {

@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.60 - coherent Vertical Cards refresh and scroll stability
-        versionCode 488
-        versionName "3.30.60"
+        // Smart S Launcher 3.30.61 - preserve Vertical Cards viewport through delayed geometry
+        versionCode 489
+        versionName "3.30.61"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

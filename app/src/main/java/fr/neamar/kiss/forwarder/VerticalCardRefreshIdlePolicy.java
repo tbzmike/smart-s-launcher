@@ -12,10 +12,13 @@ final class VerticalCardRefreshIdlePolicy {
 
     private boolean pending;
     private boolean touching;
+    private boolean keepBottom;
     private int lastScrollY;
     private int stableFrames;
 
-    void request(int scrollY) {
+    void request(int scrollY, boolean atBottom) {
+        if (!pending) keepBottom = atBottom;
+        else keepBottom |= atBottom;
         pending = true;
         lastScrollY = scrollY;
         stableFrames = 0;
@@ -50,9 +53,16 @@ final class VerticalCardRefreshIdlePolicy {
         return true;
     }
 
+    boolean consumeKeepBottom() {
+        boolean result = keepBottom;
+        keepBottom = false;
+        return result;
+    }
+
     void clear() {
         pending = false;
         touching = false;
+        keepBottom = false;
         stableFrames = 0;
     }
 }

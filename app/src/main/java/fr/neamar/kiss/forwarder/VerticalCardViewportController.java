@@ -70,6 +70,7 @@ final class VerticalCardViewportController extends Forwarder {
     private boolean latestControlsUpdateScheduled;
     private boolean resumed;
     private int generation;
+    private int scheduledRestoreGeneration = -1;
     private boolean destroyed;
 
     VerticalCardViewportController(MainActivity activity,
@@ -119,6 +120,11 @@ final class VerticalCardViewportController extends Forwarder {
         }
     }
 
+    /** Carry a captured newest-edge intent into exactly the next deferred rebuild. */
+    void forceBottomForNextRebuild() {
+        policy.requestBottomOnNextRebuild();
+    }
+
     /** Restore after the card rebuild and all synchronous decorators have been queued. */
     void afterDataSetChanged() {
         ViewportSnapshot snapshot = pendingRebuildSnapshot;
@@ -134,7 +140,10 @@ final class VerticalCardViewportController extends Forwarder {
     @Nullable
     ViewportSnapshot captureForContentMutation() {
         resolveViews();
-        if (!canControlViewport()) return null;
+        // If an authoritative rebuild/return restore is already queued, it will run after
+        // this mutation and therefore already protects the viewport. Starting a second
+        // restore here would invalidate or race that transaction.
+        if (!canControlViewport() || hasCurrentScheduledRestore()) return null;
         if (returnRestoreRequested && savedReturnSnapshot != null
                 && !policy.preventsPositionRestore()) {
             return savedReturnSnapshot;
@@ -213,6 +222,7 @@ final class VerticalCardViewportController extends Forwarder {
         returnRestoreRequested = false;
         bottomPassScheduled = false;
         latestControlsUpdateScheduled = false;
+        scheduledRestoreGeneration = -1;
         policy.resetForConfiguration();
         detachViewportListeners();
         removeLatestCardControls();
@@ -231,6 +241,7 @@ final class VerticalCardViewportController extends Forwarder {
         returnRestoreRequested = false;
         bottomPassScheduled = false;
         latestControlsUpdateScheduled = false;
+        scheduledRestoreGeneration = -1;
         resumed = false;
         detachViewportListeners();
         removeLatestCardControls();
@@ -456,15 +467,34 @@ final class VerticalCardViewportController extends Forwarder {
     private void scheduleRestore(ViewportSnapshot snapshot, int token) {
         final ScrollView target = scroller;
         if (target == null) return;
+        scheduledRestoreGeneration = token;
 
         // Queue behind the rebuild/decorators, then use the next frame's measured card geometry.
         target.post(() -> {
-            if (!isCurrent(token, target)) return;
+            if (!isCurrent(token, target)) {
+                clearScheduledRestore(token);
+                return;
+            }
             target.postOnAnimation(() -> {
-                if (!isCurrent(token, target)) return;
-                restoreSnapshot(target, snapshot);
+                if (!isCurrent(token, target)) {
+                    clearScheduledRestore(token);
+                    return;
+                }
+                try {
+                    restoreSnapshot(target, snapshot);
+                } finally {
+                    clearScheduledRestore(token);
+                }
             });
         });
+    }
+
+    private boolean hasCurrentScheduledRestore() {
+        return scheduledRestoreGeneration == generation;
+    }
+
+    private void clearScheduledRestore(int token) {
+        if (scheduledRestoreGeneration == token) scheduledRestoreGeneration = -1;
     }
 
     private boolean isCurrent(int token, ScrollView target) {

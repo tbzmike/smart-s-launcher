@@ -63,7 +63,8 @@ public class ForwarderManager extends Forwarder {
         this.historyDisplayForwarder = new HistoryDisplayForwarder(mainActivity);
         this.smartCardListForwarder = new SmartCardListForwarder(mainActivity);
         this.verticalCardViewportController = new VerticalCardViewportController(mainActivity, smartCardListForwarder);
-        this.verticalMapsCardForwarder = new VerticalMapsCardForwarder(mainActivity, smartCardListForwarder);
+        this.verticalMapsCardForwarder = new VerticalMapsCardForwarder(
+                mainActivity, smartCardListForwarder, verticalCardViewportController);
         this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(
                 mainActivity, smartCardListForwarder, this::rebuildVerticalCardsForExplicitUiChange);
         this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
@@ -240,6 +241,9 @@ public class ForwarderManager extends Forwarder {
 
     private void rebuildDeferredVerticalCards() {
         if (!isVerticalCardsMode() || !smartCardListForwarder.hasPendingDataSetRefresh()) return;
+        if (smartCardListForwarder.consumeDeferredKeepBottom()) {
+            verticalCardViewportController.forceBottomForNextRebuild();
+        }
         verticalCardViewportController.beforeDataSetChanged();
         if (!smartCardListForwarder.rebuildPendingDataSetRefresh()) return;
         decorateVerticalCardsAfterRebuild();
