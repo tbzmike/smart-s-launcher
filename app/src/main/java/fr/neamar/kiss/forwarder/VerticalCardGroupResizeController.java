@@ -10,6 +10,7 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
@@ -185,25 +186,57 @@ final class VerticalCardGroupResizeController {
     }
 
     private void applyWidthToAllCards() {
-        if (!isEnabled() || column == null || column.getWidth() <= 0) return;
+        if (!isEnabled() || column == null) return;
         int widthPercent = prefInt(PREF_WIDTH, 100, MIN_WIDTH, MAX_WIDTH);
+
+        // Above 100%, consume the renderer's own horizontal gutters instead of creating a child
+        // wider than its viewport. At 200% every Vertical Card can use the complete result width
+        // without being centered behind (and clipped by) a narrower ScrollView.
+        ScrollView scroller = cardForwarder.getScroller();
+        int scrollerInset = VerticalCardWidthPolicy.insetForPercent(dp(8), widthPercent);
+        if (scroller != null
+                && (scroller.getPaddingLeft() != scrollerInset
+                || scroller.getPaddingRight() != scrollerInset)) {
+            scroller.setPadding(scrollerInset, scroller.getPaddingTop(),
+                    scrollerInset, scroller.getPaddingBottom());
+        }
+
+        if (column.getWidth() <= 0) return;
         int available = Math.max(dp(120), column.getWidth() - column.getPaddingLeft()
                 - column.getPaddingRight());
-        int targetWidth = Math.round(available * widthPercent / 100f);
+        int targetWidth = VerticalCardWidthPolicy.targetWidth(available, widthPercent);
+        int wrapperInset = VerticalCardWidthPolicy.insetForPercent(dp(4), widthPercent);
+        int cardInset = VerticalCardWidthPolicy.insetForPercent(dp(4), widthPercent);
 
         for (int i = 0; i < column.getChildCount(); i++) {
             View child = column.getChildAt(i);
             ViewGroup.LayoutParams raw = child.getLayoutParams();
             if (!(raw instanceof LinearLayout.LayoutParams)) continue;
             LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
-            // Keep 100% as the exact historical full-width behaviour. Values above 100% are
-            // deliberate oversized card widths rather than being collapsed back to MATCH_PARENT.
-            int desired = widthPercent == 100
+            int desired = widthPercent >= 100
                     ? ViewGroup.LayoutParams.MATCH_PARENT : targetWidth;
-            if (lp.width == desired && lp.gravity == Gravity.CENTER_HORIZONTAL) continue;
-            lp.width = desired;
-            lp.gravity = Gravity.CENTER_HORIZONTAL;
-            child.setLayoutParams(lp);
+            boolean wrapperChanged = lp.width != desired
+                    || lp.gravity != Gravity.CENTER_HORIZONTAL
+                    || lp.leftMargin != wrapperInset
+                    || lp.rightMargin != wrapperInset;
+            if (wrapperChanged) {
+                lp.width = desired;
+                lp.gravity = Gravity.CENTER_HORIZONTAL;
+                lp.leftMargin = wrapperInset;
+                lp.rightMargin = wrapperInset;
+                child.setLayoutParams(lp);
+            }
+
+            if (!(child instanceof ViewGroup) || ((ViewGroup) child).getChildCount() == 0) continue;
+            View card = ((ViewGroup) child).getChildAt(0);
+            ViewGroup.LayoutParams cardRaw = card.getLayoutParams();
+            if (!(cardRaw instanceof LinearLayout.LayoutParams)) continue;
+            LinearLayout.LayoutParams cardLp = (LinearLayout.LayoutParams) cardRaw;
+            if (cardLp.leftMargin != cardInset || cardLp.rightMargin != cardInset) {
+                cardLp.leftMargin = cardInset;
+                cardLp.rightMargin = cardInset;
+                card.setLayoutParams(cardLp);
+            }
         }
     }
 

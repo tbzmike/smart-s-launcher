@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.67 - exact notification-event history and unread bell state
-        versionCode 495
-        versionName "3.30.67"
+        // Smart S Launcher 3.30.68 - edge-to-edge history viewport and bounded card expansion
+        versionCode 496
+        versionName "3.30.68"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
