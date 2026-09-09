@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.71 - foreground-only Activity Launcher and persistent saved targets
-        versionCode 499
-        versionName "3.30.71"
+        // Smart S Launcher 3.30.72 - Activity Launcher insets, live search and on-demand privileged enabling
+        versionCode 500
+        versionName "3.30.72"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
