@@ -117,7 +117,10 @@ jobs:
             app/src/main/java/fr/neamar/kiss/searcher/HomeHistoryWindow.java \
             app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java \
             app/src/test/java/fr/neamar/kiss/searcher/HomeHistoryWindowTest.java | sort > /tmp/expected-final
-          git diff --name-only "$BASE" | sort > /tmp/actual-final
+          {
+            git diff --name-only "$BASE"
+            git ls-files --others --exclude-standard
+          } | sort -u > /tmp/actual-final
           diff -u /tmp/expected-final /tmp/actual-final
           git diff --check
 
