@@ -1,0 +1,115 @@
+name: Verify Activity Launcher 3.30.71
+
+on:
+  push:
+    branches:
+      - feature/activity-launcher-3.30.71
+    paths:
+      - .github/scripts/apply_activity_launcher_33071.py
+      - .github/workflows/apply-activity-launcher-3.30.71.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/activity-launcher-3.30.71
+          fetch-depth: 0
+
+      - name: Verify exact v3.30.70 release base
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=496e16cce11888b81aff2da8b297f28aad75332d
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          printf '%s\n' \
+            .github/scripts/apply_activity_launcher_33071.py \
+            .github/workflows/apply-activity-launcher-3.30.71.yml | sort > /tmp/expected-temp
+          git diff --name-only "$BASE" HEAD | sort > /tmp/actual-temp
+          diff -u /tmp/expected-temp /tmp/actual-temp
+          grep -F 'versionCode 498' app/build.gradle
+          grep -F 'versionName "3.30.70"' app/build.gradle
+          test -z "$(git status --porcelain)"
+
+      - name: Apply exact Activity Launcher patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply_activity_launcher_33071.py
+          git diff --check
+
+      - name: Verify exact intended source surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=496e16cce11888b81aff2da8b297f28aad75332d
+          printf '%s\n' \
+            .github/scripts/apply_activity_launcher_33071.py \
+            .github/workflows/apply-activity-launcher-3.30.71.yml \
+            app/build.gradle \
+            app/src/main/AndroidManifest.xml \
+            app/src/main/res/menu/menu_main.xml \
+            app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java \
+            app/src/main/java/fr/neamar/kiss/loader/LoadShortcutsPojos.java \
+            app/src/main/java/fr/neamar/kiss/pojo/ShortcutPojo.java \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherDispatchActivity.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStore.java \
+            app/src/test/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStoreTest.java | sort > /tmp/expected-all
+          git diff --name-only "$BASE" | sort > /tmp/actual-all
+          diff -u /tmp/expected-all /tmp/actual-all
+          grep -F 'versionCode 499' app/build.gradle
+          grep -F 'versionName "3.30.71"' app/build.gradle
+          grep -F '@+id/activity_launcher' app/src/main/res/menu/menu_main.xml
+          grep -F 'activityLauncher.setVisible(unlocked)' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+          grep -F 'if (!pojo.isOreoShortcut()) return null;' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -F 'worker.shutdownNow();' app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
+          ! grep -E 'WorkManager|JobScheduler|AlarmManager|WakeLock|registerReceiver\(' app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
+
+      - name: Focused Activity Launcher identity tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest \
+            --tests fr.neamar.kiss.activitylauncher.ActivityLauncherStoreTest \
+            --stacktrace
+
+      - name: Full clean verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Commit only verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=496e16cce11888b81aff2da8b297f28aad75332d
+          rm .github/scripts/apply_activity_launcher_33071.py
+          rm .github/workflows/apply-activity-launcher-3.30.71.yml
+          git diff --check
+          printf '%s\n' \
+            app/build.gradle \
+            app/src/main/AndroidManifest.xml \
+            app/src/main/res/menu/menu_main.xml \
+            app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java \
+            app/src/main/java/fr/neamar/kiss/loader/LoadShortcutsPojos.java \
+            app/src/main/java/fr/neamar/kiss/pojo/ShortcutPojo.java \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherDispatchActivity.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStore.java \
+            app/src/test/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStoreTest.java | sort > /tmp/expected-final
+          git diff --name-only "$BASE" | sort > /tmp/actual-final
+          diff -u /tmp/expected-final /tmp/actual-final
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Add foreground-only Activity Launcher in 3.30.71'
+          git push origin HEAD:feature/activity-launcher-3.30.71
