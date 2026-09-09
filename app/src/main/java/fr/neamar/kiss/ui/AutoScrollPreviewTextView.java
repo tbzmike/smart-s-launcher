@@ -1,17 +1,20 @@
 package fr.neamar.kiss.ui;
 
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.text.Layout;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.View;
 
 import androidx.appcompat.widget.AppCompatTextView;
 
 /**
  * Notification/message preview shared by Smart S result tiles.
- * Auto-scroll keeps the compact two-line stepping preview. Auto-expand removes the timer and height
- * cap so every laid-out line contributes to the tile height and the complete text stays visible.
+ * Auto-scroll keeps the compact two-line stepping preview. Auto-expand removes the timer but starts
+ * at roughly half of the wrapped message and exposes a dedicated arrow for full-text expansion.
  */
 public class AutoScrollPreviewTextView extends AppCompatTextView {
     private static final int VISIBLE_LINES = 2;
@@ -21,6 +24,10 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
     private int firstVisibleLine;
     private boolean attached;
     private boolean behaviorLocked;
+    private boolean expanded;
+    private boolean expandable;
+    private boolean arrowGesture;
+    private final Paint arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final Runnable scrollStep = this::advancePreview;
 
@@ -47,6 +54,12 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         super.setEllipsize(null);
         setFocusable(false);
         setFocusableInTouchMode(false);
+        expanded = false;
+        expandable = false;
+        arrowGesture = false;
+        arrowPaint.setStyle(Paint.Style.STROKE);
+        arrowPaint.setStrokeCap(Paint.Cap.ROUND);
+        arrowPaint.setStrokeJoin(Paint.Join.ROUND);
         behaviorLocked = true;
         applyConfiguredBehavior();
     }
@@ -99,6 +112,7 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
     @Override
     protected void onDetachedFromWindow() {
         attached = false;
+        arrowGesture = false;
         removeCallbacks(scrollStep);
         super.onDetachedFromWindow();
     }
@@ -108,6 +122,9 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         super.onTextChanged(text, start, lengthBefore, lengthAfter);
         removeCallbacks(scrollStep);
         firstVisibleLine = 0;
+        expanded = false;
+        expandable = false;
+        arrowGesture = false;
         scrollTo(0, 0);
         if (!attached) return;
         if (isAutoExpand()) requestLayout();
@@ -126,9 +143,26 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         applyConfiguredBehavior();
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-        if (isAutoExpand()) return;
 
         Layout layout = getLayout();
+        if (isAutoExpand()) {
+            int totalLines = layout == null ? 0 : layout.getLineCount();
+            int collapsedLines = TextOverflowMode.collapsedPreviewLineCount(totalLines);
+            expandable = totalLines > collapsedLines && collapsedLines > 0;
+            if (!expandable) expanded = false;
+
+            if (expandable && !expanded && layout != null) {
+                int contentHeight = layout.getLineBottom(collapsedLines - 1);
+                int desiredHeight = getCompoundPaddingTop() + getCompoundPaddingBottom() + contentHeight;
+                int mode = View.MeasureSpec.getMode(heightMeasureSpec);
+                int size = View.MeasureSpec.getSize(heightMeasureSpec);
+                if (mode == View.MeasureSpec.EXACTLY) desiredHeight = size;
+                else if (mode == View.MeasureSpec.AT_MOST) desiredHeight = Math.min(desiredHeight, size);
+                setMeasuredDimension(getMeasuredWidth(), desiredHeight);
+            }
+            return;
+        }
+
         int contentHeight;
         if (layout != null && layout.getLineCount() > 0) {
             int visibleLineCount = Math.min(VISIBLE_LINES, layout.getLineCount());
@@ -144,6 +178,71 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         else if (mode == View.MeasureSpec.AT_MOST) desiredHeight = Math.min(desiredHeight, size);
 
         setMeasuredDimension(getMeasuredWidth(), desiredHeight);
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        if (!isAutoExpand() || !expandable) return;
+
+        float centerX = getWidth() - getPaddingRight() - dp(12);
+        float centerY = getHeight() / 2f;
+        float half = dp(5);
+        arrowPaint.setColor(getCurrentTextColor());
+        arrowPaint.setAlpha(220);
+        arrowPaint.setStrokeWidth(Math.max(1f, dp(2)));
+
+        if (expanded) {
+            canvas.drawLine(centerX - half, centerY + half, centerX, centerY - half, arrowPaint);
+            canvas.drawLine(centerX, centerY - half, centerX + half, centerY + half, arrowPaint);
+        } else {
+            canvas.drawLine(centerX - half, centerY - half, centerX, centerY + half, arrowPaint);
+            canvas.drawLine(centerX, centerY + half, centerX + half, centerY - half, arrowPaint);
+        }
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (isAutoExpand() && expandable) {
+            boolean inArrowArea = event.getX() >= getWidth() - getPaddingRight() - dp(40);
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    if (inArrowArea) {
+                        arrowGesture = true;
+                        return true;
+                    }
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (arrowGesture) return true;
+                    break;
+                case MotionEvent.ACTION_UP:
+                    if (arrowGesture) {
+                        boolean activate = inArrowArea;
+                        arrowGesture = false;
+                        if (activate) toggleExpandedMessage();
+                        return true;
+                    }
+                    break;
+                case MotionEvent.ACTION_CANCEL:
+                    if (arrowGesture) {
+                        arrowGesture = false;
+                        return true;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        return super.onTouchEvent(event);
+    }
+
+    private void toggleExpandedMessage() {
+        if (!expandable || !isAutoExpand()) return;
+        expanded = !expanded;
+        scrollTo(0, 0);
+        requestLayout();
+        invalidate();
+        announceForAccessibility(expanded ? "Message expanded" : "Message collapsed");
     }
 
     private void applyConfiguredBehavior() {
