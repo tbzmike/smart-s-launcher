@@ -47,8 +47,6 @@ final class SmartCardListForwarder extends Forwarder {
     private static final long ACTIVE_QUERY_REBUILD_DEBOUNCE_MS = 120L;
 
     private final Map<String, String> activeQueryCardSignatures = new HashMap<>();
-    private final Map<String, View> warmHistoryCards = new LinkedHashMap<>();
-    private int warmHistoryScrollY;
     private final Map<Long, Integer> accentCache =
             new LinkedHashMap<Long, Integer>(MAX_ACCENT_CACHE_SIZE, 0.75f, true) {
                 @Override
@@ -162,7 +160,6 @@ final class SmartCardListForwarder extends Forwarder {
         deferredHistoryRefreshCallback = null;
         userScrollStartedCallback = null;
         activeQueryCardSignatures.clear();
-        warmHistoryCards.clear();
         accentCache.clear();
         container = null;
         scroller = null;
@@ -339,13 +336,8 @@ final class SmartCardListForwarder extends Forwarder {
                     !activeQuery && prefs.getBoolean("enable-notification-history", false)
                             ? SmartStateStore.queryLatestNotificationsByPackage(mainActivity)
                             : Collections.emptyMap();
-            if (activeQuery && !previouslyRenderedActiveQuery) captureWarmHistoryCards();
-            boolean restoredWarmHistory = !activeQuery && previouslyRenderedActiveQuery
-                    && restoreWarmHistoryCards(latestNotifications);
             activeQueryCardSignatures.clear();
-
-            if (!restoredWarmHistory) {
-                column.removeAllViews();
+            column.removeAllViews();
                 int count = mainActivity.adapter.getCount();
                 for (int position = 0; position < count; position++) {
                     Result<?> result = mainActivity.adapter.getItem(position);
@@ -357,9 +349,6 @@ final class SmartCardListForwarder extends Forwarder {
                                 result.getPojoId(), activeQueryCardSignature(result));
                     }
                 }
-            } else {
-                animateHistoryItems = false;
-            }
         }
 
         if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
@@ -380,46 +369,6 @@ final class SmartCardListForwarder extends Forwarder {
                 }
             });
         }
-    }
-
-    private void captureWarmHistoryCards() {
-        warmHistoryCards.clear();
-        warmHistoryScrollY = scroller == null ? 0 : scroller.getScrollY();
-        if (column == null) return;
-        for (int i = 0; i < column.getChildCount(); i++) {
-            View child = column.getChildAt(i);
-            Object tag = child.getTag();
-            if (tag instanceof String) warmHistoryCards.put((String) tag, child);
-        }
-    }
-
-    private boolean restoreWarmHistoryCards(
-            Map<String, NotificationHistoryRecord> latestNotifications) {
-        if (column == null || mainActivity.adapter == null || warmHistoryCards.isEmpty()) return false;
-        Map<String, View> available = new LinkedHashMap<>(warmHistoryCards);
-        column.removeAllViews();
-        int count = mainActivity.adapter.getCount();
-        for (int position = 0; position < count; position++) {
-            Result<?> result = mainActivity.adapter.getItem(position);
-            View item = available.remove(result.getPojoId());
-            if (item == null) {
-                View source = mainActivity.adapter.getView(position, null, column);
-                item = createCardItem(source, result, position, latestNotifications);
-            } else if (item.getParent() instanceof ViewGroup) {
-                ((ViewGroup) item.getParent()).removeView(item);
-            }
-            column.addView(item);
-        }
-        warmHistoryCards.clear();
-        column.requestLayout();
-        column.invalidate();
-        int restoreY = warmHistoryScrollY;
-        scroller.post(() -> {
-            if (scroller == null || column == null) return;
-            int max = Math.max(0, column.getHeight() - scroller.getHeight());
-            scroller.scrollTo(0, Math.max(0, Math.min(max, restoreY)));
-        });
-        return true;
     }
 
     /**
