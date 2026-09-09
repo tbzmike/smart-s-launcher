@@ -1,0 +1,138 @@
+name: Verify Activity Launcher 3.30.72
+
+on:
+  push:
+    branches:
+      - feature/activity-launcher-3.30.72
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-activity-launcher-3.30.72
+  cancel-in-progress: false
+
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/activity-launcher-3.30.72
+          fetch-depth: 0
+
+      - name: Verify base and staged version
+        run: |
+          set -euo pipefail
+          BASE=a2a0ad0e302d080ad5aeb3d4b579da726e135c3e
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          grep -F 'versionCode 500' app/build.gradle
+          grep -F 'versionName "3.30.72"' app/build.gradle
+          test -z "$(git status --porcelain)"
+
+      - name: Apply exact Activity Launcher UI patch
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply_activity_launcher_33072.py
+          git diff --check
+
+      - name: Verify architecture and wiring
+        run: |
+          set -euo pipefail
+          ACTIVITY=app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
+          BRIDGE=app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherPrivilegeBridge.java
+          DISPATCH=app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherDispatchActivity.java
+          STORE=app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStore.java
+
+          grep -F 'ViewCompat.setOnApplyWindowInsetsListener' "$ACTIVITY"
+          grep -F 'WindowInsetsCompat.Type.systemBars()' "$ACTIVITY"
+          grep -F 'private static final long SEARCH_DELAY_MS = 60L;' "$ACTIVITY"
+          grep -F 'private final AtomicInteger lifecycleGeneration' "$ACTIVITY"
+          grep -F 'private final AtomicInteger searchGeneration' "$ACTIVITY"
+          grep -F 'ActivityLauncherSearch.matchesAll' "$ACTIVITY"
+          grep -F 'highlightSearch' "$ACTIVITY"
+          grep -F 'enableApplicationAndInspect' "$ACTIVITY"
+          grep -F 'enableComponentAndOpen' "$ACTIVITY"
+          grep -F 'KIND_PRIVILEGED_ACTIVITY' "$STORE"
+          grep -F 'ActivityLauncherPrivilegeBridge.executePrivilegedTarget' "$DISPATCH"
+          grep -F 'new ProcessBuilder("su", "-c", command)' "$BRIDGE"
+          grep -F 'pm enable --user current' "$BRIDGE"
+
+          ! grep -E 'WorkManager\.|JobScheduler\.|AlarmManager\.|WakeLock|registerReceiver\(' "$ACTIVITY" "$BRIDGE" "$DISPATCH"
+          test "$(grep -R -l -F 'new ProcessBuilder("su", "-c", command)' app/src/main/java/fr/neamar/kiss/activitylauncher | wc -l)" -eq 1
+
+      - name: Focused Activity Launcher tests
+        run: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest \
+            --tests fr.neamar.kiss.activitylauncher.ActivityLauncherStoreTest \
+            --tests fr.neamar.kiss.activitylauncher.ActivityLauncherSearchTest \
+            --tests fr.neamar.kiss.activitylauncher.ActivityLauncherPrivilegeBridgeTest \
+            --stacktrace
+
+      - name: Full clean verification
+        run: |
+          set -euo pipefail
+          ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify built APK version is the upgrade
+        run: |
+          set -euo pipefail
+          DEBUG_APK=app/build/outputs/apk/debug/app-debug.apk
+          RELEASE_APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$DEBUG_APK"
+          test -f "$RELEASE_APK"
+
+          APK_ANALYZER="$(find "$ANDROID_HOME" -type f -name apkanalyzer 2>/dev/null | head -n 1 || true)"
+          if [ -n "$APK_ANALYZER" ]; then
+            for apk in "$DEBUG_APK" "$RELEASE_APK"; do
+              NAME="$($APK_ANALYZER manifest version-name "$apk")"
+              CODE="$($APK_ANALYZER manifest version-code "$apk")"
+              echo "$apk => versionName=$NAME versionCode=$CODE"
+              test "$NAME" = "3.30.72"
+              test "$CODE" = "500"
+            done
+          else
+            AAPT="$(find "$ANDROID_HOME" -type f -name aapt 2>/dev/null | sort -V | tail -n 1 || true)"
+            test -n "$AAPT"
+            for apk in "$DEBUG_APK" "$RELEASE_APK"; do
+              BADGING="$($AAPT dump badging "$apk" | head -n 1)"
+              echo "$BADGING"
+              echo "$BADGING" | grep -F "versionCode='500'"
+              echo "$BADGING" | grep -F "versionName='3.30.72'"
+            done
+          fi
+
+      - name: Verify final source surface and commit only verified source
+        run: |
+          set -euo pipefail
+          BASE=a2a0ad0e302d080ad5aeb3d4b579da726e135c3e
+
+          git checkout "$BASE" -- .github/workflows/ci.yml
+          git rm .github/scripts/apply_activity_launcher_33072.py
+          git rm .github/workflows/verify-activity-launcher-3.30.72.yml
+
+          printf '%s\n' \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherDispatchActivity.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherPrivilegeBridge.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherSearch.java \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStore.java \
+            app/src/test/java/fr/neamar/kiss/activitylauncher/ActivityLauncherPrivilegeBridgeTest.java \
+            app/src/test/java/fr/neamar/kiss/activitylauncher/ActivityLauncherSearchTest.java | sort > /tmp/expected-final
+          git diff --name-only "$BASE" | sort > /tmp/actual-final
+          diff -u /tmp/expected-final /tmp/actual-final
+          git diff --check
+
+          grep -F 'versionCode 500' app/build.gradle
+          grep -F 'versionName "3.30.72"' app/build.gradle
+          grep -F 'android:id="@+id/activity_launcher"' app/src/main/res/menu/menu_main.xml
+          grep -F 'activityLauncher.setVisible(unlocked)' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix and harden Activity Launcher in 3.30.72'
+          git push origin HEAD:feature/activity-launcher-3.30.72
