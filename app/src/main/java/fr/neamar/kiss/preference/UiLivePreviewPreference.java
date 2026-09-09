@@ -87,8 +87,7 @@ public final class UiLivePreviewPreference extends Preference
     private boolean relevant(String key) {
         switch (type) {
             case TYPE_HISTORY:
-                return key.startsWith("smart-u-") || key.startsWith("smart-horizontal-")
-                        || key.startsWith("smart-list-") || "smart-history-layout".equals(key)
+                return key.startsWith("smart-list-") || "smart-history-layout".equals(key)
                         || "smart-card-list-enabled".equals(key);
             case TYPE_ANIMATIONS:
                 return key.startsWith("smart-animation-") || "smart-animations-enabled".equals(key);
@@ -123,7 +122,7 @@ public final class UiLivePreviewPreference extends Preference
 
     private String summary() {
         switch (type) {
-            case TYPE_HISTORY: return "Drag the controls below — card/list size, icons, names, notification box and spacing update here immediately.";
+            case TYPE_HISTORY: return "Drag the controls below — Vertical List and Vertical Cards sizing updates here immediately.";
             case TYPE_ANIMATIONS: return "Animation style and speed replay here immediately.";
             case TYPE_WORKSPACE: return "Pane direction and split size update immediately.";
             case TYPE_WALLPAPER: return "Wallpaper, blur and focus changes update immediately.";
@@ -192,43 +191,36 @@ public final class UiLivePreviewPreference extends Preference
         }
 
         private void history(Canvas c, float w, float h) {
-            if ("vertical_cards".equals(prefs.getString("smart-history-layout", "vertical"))) {
+            String layout = prefs.getString("smart-history-layout", "vertical");
+            if ("vertical_cards".equals(layout)) {
                 smartCardList(c, w, h);
                 return;
             }
+            verticalRows(c, w, h, "wheel_3d".equals(layout));
+        }
 
-            int tilePct = number("smart-u-tile-size-percent", 100, 70, 150);
-            int iconPct = number("smart-u-icon-size-percent", 100, 60, 160);
-            int panelPct = number("smart-u-notification-panel-size-percent", 100, 55, 150);
-            int contentPct = number("smart-u-notification-content-size-percent", 100, 65, 140);
-            int gap = number("smart-u-notification-gap-dp", 28, 8, 96);
-            float tw = dp(50) * tilePct / 100f;
-            float th = dp(64) * tilePct / 100f;
-            float icon = Math.min(tw * .52f, dp(28) * iconPct / 100f);
-            float bottom = h - dp(10) - th;
+        private void verticalRows(Canvas c, float w, float h, boolean wheel) {
+            int rowPct = number("smart-list-row-size-percent", 100, 70, 220);
+            int iconPct = number("smart-list-icon-size-percent", 110, 50, 240);
+            float rowHeight = Math.min(dp(45) * rowPct / 100f, h / 3.5f);
+            float icon = Math.min(rowHeight * .55f, dp(22) * iconPct / 100f);
+            float gap = dp(7);
+            float total = rowHeight * 3f + gap * 2f;
+            float top = Math.max(dp(8), (h - total) / 2f);
             for (int i = 0; i < 3; i++) {
-                float y = bottom - i * th * .55f;
-                tile(c, dp(7), y, tw, th, icon, i);
-                tile(c, w - dp(7) - tw, y, tw, th, icon, i + 3);
+                float distance = Math.abs(i - 1);
+                float inset = wheel ? distance * dp(17) : dp(10);
+                float y = top + i * (rowHeight + gap);
+                RectF row = new RectF(inset, y, w - inset, y + rowHeight);
+                p.setColor(Color.rgb(37, 41, 50));
+                c.drawRoundRect(row, dp(9), dp(9), p);
+                p.setColor(i == 1 ? Color.rgb(78, 132, 239) : Color.rgb(90, 105, 130));
+                c.drawCircle(row.left + dp(20), row.centerY(), icon / 2f, p);
+                p.setColor(Color.rgb(225, 230, 239));
+                float lineEnd = row.right - (wheel ? distance * dp(14) : 0f) - dp(13);
+                c.drawRoundRect(new RectF(row.left + dp(38), row.centerY() - dp(3),
+                        lineEnd, row.centerY() + dp(3)), dp(3), dp(3), p);
             }
-            tile(c, w / 2f - tw / 2f, bottom, tw, th, icon, 6);
-
-            float pw = Math.min(w * .62f, w * .42f * panelPct / 100f + dp(34));
-            float ph = Math.min(h * .50f, h * .30f * panelPct / 100f + dp(16));
-            float pb = bottom - dp(Math.min(70, gap));
-            RectF box = new RectF(w / 2f - pw / 2f, Math.max(dp(8), pb - ph),
-                    w / 2f + pw / 2f, pb);
-            p.setColor(Color.rgb(29, 33, 41));
-            c.drawRoundRect(box, dp(12), dp(12), p);
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(dp(1));
-            p.setColor(Color.rgb(92, 112, 220));
-            c.drawRoundRect(box, dp(12), dp(12), p);
-            p.setStyle(Paint.Style.FILL);
-            float row = dp(16) * contentPct / 100f;
-            p.setColor(Color.rgb(52, 57, 68));
-            c.drawRoundRect(new RectF(box.left + dp(8), box.top + dp(18), box.right - dp(8),
-                    box.top + dp(18) + row), dp(6), dp(6), p);
         }
 
         private void smartCardList(Canvas c, float w, float h) {
@@ -260,22 +252,6 @@ public final class UiLivePreviewPreference extends Preference
                         card.right - dp(24), nameY + dp(2)), dp(2), dp(2), p);
                 y += cardH + nameH + dp(spacing);
             }
-        }
-
-        private void tile(Canvas c, float x, float y, float w, float h, float icon, int seed) {
-            RectF r = new RectF(x, y, x + w, y + h);
-            p.setColor(Color.rgb(43, 47, 57));
-            c.drawRoundRect(r, dp(10), dp(10), p);
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(dp(1));
-            p.setColor(Color.rgb(205, 215, 232));
-            c.drawRoundRect(r, dp(10), dp(10), p);
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(seed % 2 == 0 ? Color.rgb(82, 140, 255) : Color.rgb(83, 205, 144));
-            c.drawCircle(r.centerX(), r.top + h * .35f, icon / 2f, p);
-            p.setColor(Color.argb(175, 0, 0, 0));
-            c.drawRoundRect(new RectF(r.left + dp(4), r.bottom - dp(16), r.right - dp(4),
-                    r.bottom - dp(4)), dp(4), dp(4), p);
         }
 
         private void ui(Canvas c, float w, float h) {

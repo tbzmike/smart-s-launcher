@@ -22,19 +22,11 @@
         <item>Vertical list</item>
         <item>Vertical cards</item>
         <item>3D wheel</item>
-        <item>Horizontal icons</item>
-        <item>Horizontal cards</item>
-        <item>Horizontal app names</item>
-        <item>Square-U cards</item>
     </string-array>
     <string-array name="smartHistoryLayoutValues" translatable="false">
         <item>vertical</item>
         <item>vertical_cards</item>
         <item>wheel_3d</item>
-        <item>horizontal_icons</item>
-        <item>horizontal_cards</item>
-        <item>horizontal_names</item>
-        <item>square_u</item>
     </string-array>
     <string-array name="smartTextOverflowEntries" translatable="false">
         <item>Auto-scroll text (compact tiles)</item>

@@ -5,6 +5,8 @@ import androidx.annotation.NonNull;
 public final class NotificationPojo extends SettingPojo {
     public final String appName;
     public final String groupKey;
+    /** Exact child notification represented by this tile, even when {@link #id} is a group id. */
+    public final String exactNotificationId;
     public final int notificationCount;
     public final String latestTitle;
     public final String latestText;
@@ -14,6 +16,7 @@ public final class NotificationPojo extends SettingPojo {
                             @NonNull String packageName,
                             @NonNull String appName,
                             @NonNull String groupKey,
+                            @NonNull String exactNotificationId,
                             int notificationCount,
                             @NonNull String latestTitle,
                             @NonNull String latestText,
@@ -21,6 +24,7 @@ public final class NotificationPojo extends SettingPojo {
         super(id, "", packageName, -1);
         this.appName = appName;
         this.groupKey = groupKey;
+        this.exactNotificationId = exactNotificationId;
         this.notificationCount = notificationCount;
         this.latestTitle = latestTitle;
         this.latestText = latestText;

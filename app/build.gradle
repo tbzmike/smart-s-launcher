@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.81 - SQLite corruption recovery and launcher crash hardening
-        versionCode 509
-        versionName "3.30.81"
+        // Smart S Launcher 3.30.82 - history layout, scroll-idle, and exact notification routing
+        versionCode 510
+        versionName "3.30.82"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

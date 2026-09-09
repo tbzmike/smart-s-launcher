@@ -2,6 +2,7 @@ package fr.neamar.kiss.ui;
 
 import android.content.Context;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewTreeObserver;
 
@@ -10,33 +11,56 @@ import java.util.HashMap;
 public class AnimatedListView extends BlockableListView {
 
     protected final HashMap<Long, ItemInfo> mItemMap = new HashMap<>();
-    private SmartScrollAnimationController smartScrollAnimations;
+    private ScrollIdleGate scrollIdleGate;
     private ViewTreeObserver pendingAnimationObserver;
     private ViewTreeObserver.OnPreDrawListener pendingAnimationListener;
 
     public AnimatedListView(Context context) {
         super(context);
-        initSmartAnimations();
+        initScrollIdleGate();
     }
 
     public AnimatedListView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        initSmartAnimations();
+        initScrollIdleGate();
     }
 
     public AnimatedListView(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        initSmartAnimations();
+        initScrollIdleGate();
     }
 
-    private void initSmartAnimations() {
-        smartScrollAnimations = new SmartScrollAnimationController(this);
+    private void initScrollIdleGate() {
+        scrollIdleGate = new ScrollIdleGate(this);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (scrollIdleGate != null) scrollIdleGate.onTouchEvent(event);
+        return super.dispatchTouchEvent(event);
     }
 
     @Override
     protected void onScrollChanged(int l, int t, int oldl, int oldt) {
         super.onScrollChanged(l, t, oldl, oldt);
-        if (smartScrollAnimations != null) smartScrollAnimations.requestApply();
+        if (scrollIdleGate != null) scrollIdleGate.onScrollChanged();
+    }
+
+    public boolean isScrollInProgress() {
+        return scrollIdleGate != null && scrollIdleGate.isScrolling();
+    }
+
+    public void runWhenScrollIdle(Runnable work) {
+        if (scrollIdleGate == null) work.run();
+        else scrollIdleGate.runWhenIdle(work);
+    }
+
+    public void addScrollStartedListener(Runnable listener) {
+        if (scrollIdleGate != null) scrollIdleGate.addScrollStartedListener(listener);
+    }
+
+    public void removeScrollStartedListener(Runnable listener) {
+        if (scrollIdleGate != null) scrollIdleGate.removeScrollStartedListener(listener);
     }
 
     public void prepareChangeAnim() {
@@ -112,6 +136,7 @@ public class AnimatedListView extends BlockableListView {
     @Override
     protected void onDetachedFromWindow() {
         cancelPendingChangeAnimation();
+        if (scrollIdleGate != null) scrollIdleGate.destroy();
         super.onDetachedFromWindow();
     }
 

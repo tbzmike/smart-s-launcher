@@ -48,7 +48,7 @@ public final class NotificationHistoryResolver {
         List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
                 context, packageName, null, 0);
         int index = NotificationHistoryStartIndex.resolve(
-                records, notification.id, notification.postTime);
+                records, notification.exactNotificationId, notification.postTime);
         if (index < 0 || index >= records.size()) {
             return SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET;
         }
@@ -65,7 +65,8 @@ public final class NotificationHistoryResolver {
             if (pojo instanceof NotificationPojo) {
                 NotificationPojo notification = (NotificationPojo) pojo;
                 if (RichNotificationHistoryDialog.showSelected(
-                        context, packageName, notification.id, notification.postTime)) {
+                        context, packageName, notification.exactNotificationId,
+                        notification.postTime)) {
                     return true;
                 }
             } else if (RichNotificationHistoryDialog.showLatest(context, packageName)) {
@@ -76,8 +77,10 @@ public final class NotificationHistoryResolver {
         // A live notification can still be opened when no matching persisted record exists yet.
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;
-            boolean liveIndividual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
-                    && NotificationListener.isNotificationActive(context, notification.id);
+            boolean liveIndividual = notification.exactNotificationId.startsWith(
+                    NotificationListener.NOTIFICATION_SCHEME)
+                    && NotificationListener.isNotificationActive(
+                    context, notification.exactNotificationId);
             boolean liveGroup = !NotificationListener.getGroupNotifications(
                     context, notification.groupKey).isEmpty();
             if (liveIndividual || liveGroup) {

@@ -143,6 +143,10 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void refreshSnapshotAsync(Map<String, String> shortcutTargets) {
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(() -> refreshSnapshotAsync(shortcutTargets));
+            return;
+        }
         if (destroyed || !isEnabled()) {
             snapshot = null;
             shortcutSnapshot = null;
@@ -191,6 +195,10 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void refreshLaunchStatsAsync() {
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(this::refreshLaunchStatsAsync);
+            return;
+        }
         if (destroyed || !isEnabled() || !statsRefreshInFlight.compareAndSet(false, true)) return;
         final android.content.Context appContext = mainActivity.getApplicationContext();
         usageExecutor.execute(() -> {
@@ -243,6 +251,11 @@ final class VerticalCardUsageForwarder extends Forwarder {
 
     private void postApplySnapshot(boolean protectViewport, boolean fromDataSet) {
         if (destroyed || paused || column == null || snapshot == null || !isEnabled()) return;
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(
+                    () -> postApplySnapshot(protectViewport, fromDataSet));
+            return;
+        }
         pendingApplyNeedsViewportProtection |= protectViewport;
         pendingApplyFromDataSet |= fromDataSet;
         column.removeCallbacks(applySnapshotRunnable);
@@ -250,6 +263,10 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void applySnapshot() {
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(this::applySnapshot);
+            return;
+        }
         AppUsageTodayStore.Snapshot currentSnapshot = snapshot;
         HistoryItemUsageTodayStore.Snapshot currentShortcutSnapshot = shortcutSnapshot;
         Map<String, LaunchStatsProvider.LaunchStats> currentLaunchStats = launchStats;

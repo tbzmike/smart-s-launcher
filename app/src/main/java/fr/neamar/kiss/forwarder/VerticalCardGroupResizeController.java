@@ -121,13 +121,7 @@ final class VerticalCardGroupResizeController {
     private boolean isEnabled() {
         String layout = prefs.getString(
                 HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL);
-        return HistoryDisplayForwarder.VERTICAL.equals(layout)
-                || HistoryDisplayForwarder.VERTICAL_CARDS.equals(layout)
-                || HistoryDisplayForwarder.ICONS.equals(layout)
-                || HistoryDisplayForwarder.CARDS.equals(layout)
-                || HistoryDisplayForwarder.NAMES.equals(layout)
-                || HistoryDisplayForwarder.SQUARE_U.equals(layout)
-                || HistoryDisplayForwarder.WHEEL_3D.equals(layout);
+        return HistoryLayoutMode.isSupported(layout);
     }
 
     private void resolveViews() {

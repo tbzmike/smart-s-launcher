@@ -26,12 +26,14 @@ import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.CommunicationPojo;
+import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.result.AppResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
 import fr.neamar.kiss.ui.AutoScrollPreviewTextView;
 import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
+import fr.neamar.kiss.ui.ScrollIdleGate;
 import fr.neamar.kiss.ui.TextOverflowMode;
 
 /**
@@ -61,29 +63,27 @@ final class SmartCardListForwarder extends Forwarder {
     private boolean pendingDataSetRefresh;
     private boolean forceNextHistoryRebuild;
     private boolean renderedActiveQuery;
-    private boolean suppressNextHistoryAnimation;
     private Runnable deferredHistoryRefreshCallback;
     private Runnable userScrollStartedCallback;
-    private boolean deferredRefreshIdleProbeScheduled;
-    private final VerticalCardRefreshIdlePolicy deferredRefreshIdlePolicy =
-            new VerticalCardRefreshIdlePolicy();
+    private boolean deferredRefreshIdleScheduled;
+    private boolean rebuildQueued;
+    private boolean rebuildQueuedAllowActiveQueryReuse;
+    private final Runnable rebuildAfterIdle = () -> {
+        rebuildQueued = false;
+        boolean allowReuse = rebuildQueuedAllowActiveQueryReuse;
+        rebuildQueuedAllowActiveQueryReuse = false;
+        if (isEnabled()) rebuild(allowReuse);
+    };
+    private final Runnable deferredRefreshAfterIdle = () -> {
+        deferredRefreshIdleScheduled = false;
+        if (scroller == null || !pendingDataSetRefresh || isActiveQuery()) return;
+        if (isAtBottom()) {
+            Runnable callback = deferredHistoryRefreshCallback;
+            if (callback != null) callback.run();
+        }
+    };
     private final Runnable activeQueryRebuildRunnable = () -> {
         if (isEnabled() && isActiveQuery()) rebuild(true);
-    };
-    private final Runnable deferredRefreshIdleProbe = () -> {
-        deferredRefreshIdleProbeScheduled = false;
-        if (scroller == null || !pendingDataSetRefresh || isActiveQuery()) return;
-        if (deferredRefreshIdlePolicy.onAnimationFrame(scroller.getScrollY())) {
-            // A passive history refresh is never allowed to move the viewport by itself. Only a
-            // real user gesture that has reached the currently visible bottom may materialize the
-            // pending timeline update. Explicit finger/Home navigation is handled by the manager.
-            if (isAtBottom()) {
-                Runnable callback = deferredHistoryRefreshCallback;
-                if (callback != null) callback.run();
-            }
-            return;
-        }
-        scheduleDeferredRefreshIdleProbe();
     };
 
     SmartCardListForwarder(MainActivity mainActivity) {
@@ -149,14 +149,16 @@ final class SmartCardListForwarder extends Forwarder {
         // or after the user manually reaches the visible bottom.
         pendingDataSetRefresh = true;
         cancelDeferredRefreshIdleProbe();
-        deferredRefreshIdlePolicy.clear();
         return false;
     }
 
     void onDestroy() {
         cancelPendingActiveQueryRebuild();
         cancelDeferredRefreshIdleProbe();
-        deferredRefreshIdlePolicy.clear();
+        if (scroller instanceof StableCardScrollView) {
+            ((StableCardScrollView) scroller).scrollIdleGate.cancel(rebuildAfterIdle);
+            ((StableCardScrollView) scroller).scrollIdleGate.destroy();
+        }
         deferredHistoryRefreshCallback = null;
         userScrollStartedCallback = null;
         activeQueryCardSignatures.clear();
@@ -168,7 +170,8 @@ final class SmartCardListForwarder extends Forwarder {
         pendingDataSetRefresh = false;
         forceNextHistoryRebuild = false;
         renderedActiveQuery = false;
-        suppressNextHistoryAnimation = false;
+        rebuildQueued = false;
+        rebuildQueuedAllowActiveQueryReuse = false;
     }
 
     ScrollView getScroller() {
@@ -190,8 +193,8 @@ final class SmartCardListForwarder extends Forwarder {
     boolean willRebuildSynchronouslyForDataSetChange() {
         if (!isEnabled()) return false;
         boolean activeQuery = isActiveQuery();
-        return column == null || column.getChildCount() == 0
-                || (!activeQuery && (renderedActiveQuery || forceNextHistoryRebuild));
+        return !isScrollInProgress() && (column == null || column.getChildCount() == 0
+                || (!activeQuery && (renderedActiveQuery || forceNextHistoryRebuild)));
     }
 
     boolean hasPendingDataSetRefresh() {
@@ -204,14 +207,16 @@ final class SmartCardListForwarder extends Forwarder {
 
     boolean rebuildPendingDataSetRefresh() {
         if (!pendingDataSetRefresh || !isEnabled() || isActiveQuery()) return false;
-        // Passive provider/notification refreshes must not replay tile entrance animations.
-        suppressNextHistoryAnimation = true;
+        if (isScrollInProgress()) {
+            scheduleDeferredRefreshIdleProbe();
+            return false;
+        }
         rebuild();
         return true;
     }
 
     boolean consumeDeferredKeepBottom() {
-        return deferredRefreshIdlePolicy.consumeKeepBottom();
+        return false;
     }
 
     private boolean isAtBottom() {
@@ -225,7 +230,7 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     void rebuildImmediately() {
-        if (isEnabled()) rebuild();
+        if (isEnabled() && !isScrollInProgress()) rebuild();
     }
 
     private void migrateLegacySelection() {
@@ -267,15 +272,37 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void scheduleDeferredRefreshIdleProbe() {
-        if (scroller == null || deferredRefreshIdleProbeScheduled || isActiveQuery()
-                || !deferredRefreshIdlePolicy.shouldProbe()) return;
-        deferredRefreshIdleProbeScheduled = true;
-        scroller.postOnAnimation(deferredRefreshIdleProbe);
+        if (scroller == null || deferredRefreshIdleScheduled || isActiveQuery()) return;
+        deferredRefreshIdleScheduled = true;
+        runWhenScrollIdle(deferredRefreshAfterIdle);
     }
 
     private void cancelDeferredRefreshIdleProbe() {
-        if (scroller != null) scroller.removeCallbacks(deferredRefreshIdleProbe);
-        deferredRefreshIdleProbeScheduled = false;
+        if (scroller != null) scrollIdleGate().cancel(deferredRefreshAfterIdle);
+        deferredRefreshIdleScheduled = false;
+    }
+
+    boolean isScrollInProgress() {
+        return scroller instanceof StableCardScrollView
+                && ((StableCardScrollView) scroller).scrollIdleGate.isScrolling();
+    }
+
+    void runWhenScrollIdle(Runnable work) {
+        if (scroller instanceof StableCardScrollView) {
+            ((StableCardScrollView) scroller).scrollIdleGate.runWhenIdle(work);
+        } else {
+            work.run();
+        }
+    }
+
+    void addScrollStartedListener(Runnable listener) {
+        if (scroller instanceof StableCardScrollView) {
+            ((StableCardScrollView) scroller).scrollIdleGate.addScrollStartedListener(listener);
+        }
+    }
+
+    private ScrollIdleGate scrollIdleGate() {
+        return ((StableCardScrollView) scroller).scrollIdleGate;
     }
 
     private void applySearchFocusIsolation(boolean activeQuery) {
@@ -314,15 +341,21 @@ final class SmartCardListForwarder extends Forwarder {
 
     private void rebuild(boolean allowActiveQueryReuse) {
         if (column == null || mainActivity.adapter == null) return;
+        if (isScrollInProgress()) {
+            pendingDataSetRefresh = true;
+            rebuildQueuedAllowActiveQueryReuse |= allowActiveQueryReuse;
+            if (!rebuildQueued) {
+                rebuildQueued = true;
+                runWhenScrollIdle(rebuildAfterIdle);
+            }
+            return;
+        }
         cancelPendingActiveQueryRebuild();
         cancelDeferredRefreshIdleProbe();
-        deferredRefreshIdlePolicy.clear();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
         boolean previouslyRenderedActiveQuery = renderedActiveQuery;
         if (!activeQuery) forceNextHistoryRebuild = false;
-        boolean animateHistoryItems = !activeQuery && !suppressNextHistoryAnimation;
-        suppressNextHistoryAnimation = false;
         renderedActiveQuery = activeQuery;
         boolean preserveSearchFocus = activeQuery
                 && mainActivity.searchEditText != null
@@ -358,17 +391,6 @@ final class SmartCardListForwarder extends Forwarder {
             mainActivity.showKeyboard();
         }
 
-        if (animateHistoryItems) {
-            scroller.post(() -> {
-                int childCount = column.getChildCount();
-                int first = Math.max(0, childCount - 16);
-                int visualIndex = 0;
-                for (int i = first; i < childCount; i++) {
-                    View child = column.getChildAt(i);
-                    animateIn(child, visualIndex++);
-                }
-            });
-        }
     }
 
     /**
@@ -442,16 +464,18 @@ final class SmartCardListForwarder extends Forwarder {
     private final class StableCardScrollView extends ScrollView {
         private final VerticalCardUserScrollGesturePolicy userScrollGesturePolicy =
                 new VerticalCardUserScrollGesturePolicy();
+        final ScrollIdleGate scrollIdleGate;
 
         StableCardScrollView() {
             super(mainActivity);
+            scrollIdleGate = new ScrollIdleGate(this);
         }
 
         @Override
         public boolean dispatchTouchEvent(MotionEvent event) {
             int action = event.getActionMasked();
+            scrollIdleGate.onTouchEvent(event);
             if (action == MotionEvent.ACTION_DOWN) {
-                deferredRefreshIdlePolicy.onTouchDown();
                 cancelDeferredRefreshIdleProbe();
                 userScrollGesturePolicy.onTouchDown(getScrollY());
             }
@@ -464,12 +488,16 @@ final class SmartCardListForwarder extends Forwarder {
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                 userScrollGesturePolicy.onTouchEnd();
                 if (pendingDataSetRefresh) {
-                    deferredRefreshIdlePolicy.request(getScrollY(), false);
-                    deferredRefreshIdlePolicy.onTouchReleased(getScrollY());
                     scheduleDeferredRefreshIdleProbe();
                 }
             }
             return handled;
+        }
+
+        @Override
+        protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+            super.onScrollChanged(l, t, oldl, oldt);
+            scrollIdleGate.onScrollChanged();
         }
     }
 
@@ -693,7 +721,9 @@ final class SmartCardListForwarder extends Forwarder {
         final TextView expandableMessage = messageView;
         final boolean[] messageExpanded = {false};
         View.OnClickListener launchOrExpand = v -> {
-            if (expandableMessage != null && !messageExpanded[0] && messageNeedsExpansion(expandableMessage)) {
+            boolean directNotification = result.getPojo() instanceof NotificationPojo;
+            if (!directNotification && expandableMessage != null && !messageExpanded[0]
+                    && messageNeedsExpansion(expandableMessage)) {
                 pressAnimation(card);
                 expandMessage(expandableMessage);
                 messageExpanded[0] = true;
@@ -1082,10 +1112,6 @@ final class SmartCardListForwarder extends Forwarder {
         bg.setStroke(dp(2), tone(accent, 1.62f, 215));
         card.setBackground(bg);
         card.setClipToOutline(true);
-    }
-
-    private void animateIn(View view, int index) {
-        SmartAnimationEngine.animateTileListItem(view, index);
     }
 
     private int accentFor(Result<?> result, Drawable drawable) {

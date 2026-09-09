@@ -7,7 +7,6 @@ import android.graphics.Typeface;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
-import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
@@ -62,8 +61,6 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private static final String TAG = RecordAdapter.class.getSimpleName();
-    private static final long RENDER_CONFIG_CACHE_MS = 1500L;
-
     private static final class TextStyleState {
         final float sizePx;
         final Typeface typeface;
@@ -80,7 +77,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private FuzzyScore fuzzyScore;
     private final List<Result<?>> results;
     private final HashMap<String, Integer> alphaIndexer = new HashMap<>();
-    private final HashMap<String, String> notificationPreviewCache = new HashMap<>();
     private final WeakHashMap<View, int[]> baseRowPadding = new WeakHashMap<>();
     private final WeakHashMap<View, Integer> baseRowMinimumHeight = new WeakHashMap<>();
     private final WeakHashMap<View, Integer> baseRowLayoutWidths = new WeakHashMap<>();
@@ -91,11 +87,22 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private final WeakHashMap<View, Integer> verticalStyleSignatures = new WeakHashMap<>();
     private String[] sections = new String[0];
     private String lastRenderedQuery = null;
-    private long renderConfigLoadedAt;
     private String cachedOverflowMode = TextOverflowMode.AUTO_SCROLL;
     private String cachedHistoryLayout = "vertical";
+    private boolean cachedVerticalHistory;
     private int cachedVerticalStyleSignature = Integer.MIN_VALUE;
     private int cachedHistoryWidthPercent = 100;
+    private int cachedRowPercent = 100;
+    private int cachedIconPercent = 110;
+    private int cachedLabelSp = 18;
+    private int cachedBodySp = 14;
+    private Typeface cachedLabelTypeface = Typeface.DEFAULT_BOLD;
+    private Typeface cachedBodyTypeface = Typeface.DEFAULT;
+    private String cachedLabelColor = UIColors.colorToString(UIColors.COLOR_SYSTEM);
+    private String cachedBodyColor = UIColors.colorToString(UIColors.COLOR_SYSTEM);
+    private int cachedLabelContrast = 100;
+    private int cachedBodyContrast = 100;
+    private int cachedRowSpacing = 4;
 
     public RecordAdapter(QueryInterface parent, List<Result<?>> results) {
         this.parent = parent;
@@ -178,23 +185,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         }
 
         String preview = notification.getPreview();
-        if (TextUtils.isEmpty(preview)
-                && notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
-                && NotificationListener.isNotificationActive(view.getContext(), notification.id)) {
-            if (notificationPreviewCache.containsKey(notification.id)) {
-                preview = notificationPreviewCache.get(notification.id);
-            } else {
-                String expanded = NotificationListener.getExpandedNotificationText(
-                        view.getContext(), notification.id);
-                preview = expanded == null ? "" : expanded.trim().replace('\n', ' ');
-                if (TextUtils.isEmpty(preview)) {
-                    View nativeContainer = view.findViewById(R.id.item_notification_native_container);
-                    preview = extractNativeNotificationPreview(nativeContainer, notification.appName);
-                }
-                notificationPreviewCache.put(notification.id, preview == null ? "" : preview);
-            }
-        }
-
         if (!TextUtils.isEmpty(preview)) {
             title.setText(preview);
             title.setVisibility(View.VISIBLE);
@@ -211,50 +201,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (nativeContainer != null) nativeContainer.setVisibility(View.GONE);
     }
 
-    private String extractNativeNotificationPreview(View root, String appName) {
-        if (root == null) return "";
-        ArrayList<String> texts = new ArrayList<>(4);
-        collectNativeText(root, appName == null ? "" : appName.trim(), texts);
-        if (texts.isEmpty()) return "";
-        StringBuilder preview = new StringBuilder();
-        int added = 0;
-        for (String text : texts) {
-            if (preview.length() > 0) preview.append(" · ");
-            preview.append(text);
-            added++;
-            if (preview.length() >= 180 || added >= 2) break;
-        }
-        return preview.toString();
-    }
-
-    private void collectNativeText(View view, String appName, List<String> out) {
-        if (view == null || out.size() >= 3) return;
-        if (view instanceof TextView && !(view instanceof Button)) {
-            CharSequence raw = ((TextView) view).getText();
-            String text = raw == null ? "" : raw.toString().trim().replace('\n', ' ');
-            if (!isUsefulNativePreviewText(text, appName, out)) return;
-            out.add(text);
-            return;
-        }
-        if (!(view instanceof ViewGroup)) return;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount() && out.size() < 3; i++) {
-            collectNativeText(group.getChildAt(i), appName, out);
-        }
-    }
-
-    private boolean isUsefulNativePreviewText(String text, String appName, List<String> existing) {
-        if (TextUtils.isEmpty(text) || isGenericNotificationCount(text)) return false;
-        if (!TextUtils.isEmpty(appName) && text.equalsIgnoreCase(appName)) return false;
-        String lower = text.toLowerCase(java.util.Locale.ROOT);
-        if (lower.equals("mark read") || lower.equals("mark as read")
-                || lower.equals("open notification") || lower.equals("reply")) return false;
-        for (String value : existing) {
-            if (value.equalsIgnoreCase(text) || value.contains(text) || text.contains(value)) return false;
-        }
-        return true;
-    }
-
     private boolean isGenericNotificationCount(String text) {
         String value = text == null ? "" : text.trim().toLowerCase(java.util.Locale.ROOT);
         return value.matches("\\d+ notifications?");
@@ -269,11 +215,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         };
         View.OnLongClickListener openRichNotification = v -> {
             int position = results.indexOf(result);
-            if (UiEditLock.isLocked(v.getContext())) {
-                recordExplicitSelection(v.getContext(), result.getPojo());
-                promoteHistoryResult(result);
-                return NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo());
-            }
             if (position >= 0) {
                 onLongClick(position, v);
                 return true;
@@ -283,7 +224,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
         view.setOnClickListener(openExactTarget);
         view.setOnLongClickListener(openRichNotification);
-        int[] ids = new int[]{R.id.item_notification_native_container, R.id.item_notification_app,
+        int[] ids = new int[]{R.id.item_notification_icon, R.id.item_notification_native_container,
+                R.id.item_notification_app,
                 R.id.item_notification_title, R.id.item_notification_text};
         for (int id : ids) {
             View child = view.findViewById(id);
@@ -302,7 +244,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private void configureOverflowText(View view) {
         if (view instanceof TextView && !(view instanceof Button)) {
             TextView text = (TextView) view;
-            if (TextOverflowMode.isAutoExpandForHistory(view.getContext())) {
+            if (TextOverflowMode.AUTO_EXPAND.equals(cachedOverflowMode)) {
                 configureExpandedText(text);
                 return;
             }
@@ -324,7 +266,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureMarquee(TextView text) {
-        if (TextOverflowMode.isAutoExpandForHistory(text.getContext())) {
+        if (TextOverflowMode.AUTO_EXPAND.equals(cachedOverflowMode)) {
             configureExpandedText(text);
             return;
         }
@@ -411,30 +353,14 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void applyVerticalHistorySizing(View row, Context context) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        int rowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
-        int iconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
         if (!baseRowMinimumHeight.containsKey(row)) {
             baseRowMinimumHeight.put(row, row.getMinimumHeight());
         }
-        row.setMinimumHeight(dp(context, 64) * rowPercent / 100);
-        applyPrimaryIconSize(row, iconPercent);
+        row.setMinimumHeight(dp(context, 64) * cachedRowPercent / 100);
+        applyPrimaryIconSize(row, cachedIconPercent);
     }
 
     private void applyVerticalHistoryPolish(View row, Context context) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-
-        int labelSp = safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
-        int bodySp = safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
-        Typeface labelTypeface = typefaceFor(prefs.getString("smart-list-label-font", "sans_bold"));
-        Typeface bodyTypeface = typefaceFor(prefs.getString("smart-list-body-font", "sans_normal"));
-        String labelColor = prefs.getString("smart-list-label-color",
-                UIColors.colorToString(UIColors.COLOR_SYSTEM));
-        String bodyColor = prefs.getString("smart-list-body-color",
-                UIColors.colorToString(UIColors.COLOR_SYSTEM));
-        int labelContrast = safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
-        int bodyContrast = safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
-
         int[] labelIds = new int[]{
                 R.id.item_app_name, R.id.item_contact_name, R.id.item_setting_name,
                 R.id.item_notification_app, R.id.item_communication_title, R.id.item_phone_text
@@ -444,11 +370,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 R.id.item_contact_nickname, R.id.item_notification_title, R.id.item_notification_text,
                 R.id.item_communication_meta, R.id.item_communication_body
         };
-        applyTextStyle(row, labelIds, labelSp, labelTypeface, labelColor, labelContrast);
-        applyTextStyle(row, bodyIds, bodySp, bodyTypeface, bodyColor, bodyContrast);
+        applyTextStyle(row, labelIds, cachedLabelSp, cachedLabelTypeface,
+                cachedLabelColor, cachedLabelContrast);
+        applyTextStyle(row, bodyIds, cachedBodySp, cachedBodyTypeface,
+                cachedBodyColor, cachedBodyContrast);
 
-        int spacing = safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
-        int bodyLines = spacing >= 56 ? 3 : spacing >= 24 ? 2 : 1;
+        int bodyLines = cachedRowSpacing >= 56 ? 3 : cachedRowSpacing >= 24 ? 2 : 1;
         configureVerticalHistoryBodyLines(row, bodyIds, bodyLines);
 
         int[] base = baseRowPadding.get(row);
@@ -456,14 +383,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             base = new int[]{row.getPaddingLeft(), row.getPaddingTop(), row.getPaddingRight(), row.getPaddingBottom()};
             baseRowPadding.put(row, base);
         }
-        int widthPercent = safePercent(prefs, "smart-list-card-width-percent", 100, 48, 400);
-        int leftPadding = HistoryEdgeWidthPolicy.insetForPercent(base[0], widthPercent);
-        int rightPadding = HistoryEdgeWidthPolicy.insetForPercent(base[2], widthPercent);
-        row.setPadding(leftPadding, base[1], rightPadding, base[3] + dp(context, spacing));
+        int leftPadding = HistoryEdgeWidthPolicy.insetForPercent(
+                base[0], cachedHistoryWidthPercent);
+        int rightPadding = HistoryEdgeWidthPolicy.insetForPercent(
+                base[2], cachedHistoryWidthPercent);
+        row.setPadding(leftPadding, base[1], rightPadding,
+                base[3] + dp(context, cachedRowSpacing));
     }
 
     private void configureVerticalHistoryBodyLines(View row, int[] ids, int lines) {
-        if (TextOverflowMode.isAutoExpandForHistory(row.getContext())) {
+        if (TextOverflowMode.AUTO_EXPAND.equals(cachedOverflowMode)) {
             for (int id : ids) {
                 View candidate = row.findViewById(id);
                 if (!(candidate instanceof TextView) || candidate.getVisibility() == View.GONE) continue;
@@ -566,46 +495,61 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void refreshRenderConfigIfNeeded(Context context) {
-        long now = SystemClock.uptimeMillis();
-        if (cachedVerticalStyleSignature != Integer.MIN_VALUE
-                && now - renderConfigLoadedAt < RENDER_CONFIG_CACHE_MS) return;
+        if (cachedVerticalStyleSignature != Integer.MIN_VALUE) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         cachedHistoryLayout = prefs.getString("smart-history-layout", "vertical");
         if (cachedHistoryLayout == null) cachedHistoryLayout = "vertical";
+        if (!"vertical".equals(cachedHistoryLayout)
+                && !"vertical_cards".equals(cachedHistoryLayout)
+                && !"wheel_3d".equals(cachedHistoryLayout)) {
+            cachedHistoryLayout = "vertical";
+        }
         cachedOverflowMode = TextOverflowMode.effectiveMode(context);
         cachedHistoryWidthPercent = safePercent(
                 prefs, "smart-list-card-width-percent", 100, 48, 400);
-        cachedVerticalStyleSignature = verticalStyleSignature(context, cachedOverflowMode);
-        renderConfigLoadedAt = now;
+        cachedRowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
+        cachedIconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
+        cachedLabelSp = safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
+        cachedBodySp = safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
+        cachedLabelTypeface = typefaceFor(prefs.getString("smart-list-label-font", "sans_bold"));
+        cachedBodyTypeface = typefaceFor(prefs.getString("smart-list-body-font", "sans_normal"));
+        cachedLabelColor = prefs.getString("smart-list-label-color",
+                UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        cachedBodyColor = prefs.getString("smart-list-body-color",
+                UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        cachedLabelContrast = safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
+        cachedBodyContrast = safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
+        cachedRowSpacing = safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
+        cachedVerticalHistory = ("vertical".equals(cachedHistoryLayout)
+                || "wheel_3d".equals(cachedHistoryLayout))
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+        cachedVerticalStyleSignature = verticalStyleSignature();
     }
 
     private void invalidateRenderConfig() {
-        renderConfigLoadedAt = 0L;
         cachedVerticalStyleSignature = Integer.MIN_VALUE;
     }
 
-    private int verticalStyleSignature(Context context, String overflowMode) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+    private int verticalStyleSignature() {
         int result = 17;
-        result = 31 * result + safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
-        result = 31 * result + safePercent(prefs, "smart-list-card-width-percent", 100, 48, 400);
-        result = 31 * result + safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
-        result = 31 * result + safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
-        result = 31 * result + safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
-        result = 31 * result + safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
-        result = 31 * result + safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
-        result = 31 * result + safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
-        result = 31 * result + overflowMode.hashCode();
-        result = 31 * result + String.valueOf(prefs.getString("smart-list-label-font", "sans_bold")).hashCode();
-        result = 31 * result + String.valueOf(prefs.getString("smart-list-body-font", "sans_normal")).hashCode();
-        result = 31 * result + String.valueOf(prefs.getString("smart-list-label-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();
-        result = 31 * result + String.valueOf(prefs.getString("smart-list-body-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();
+        result = 31 * result + cachedRowPercent;
+        result = 31 * result + cachedHistoryWidthPercent;
+        result = 31 * result + cachedIconPercent;
+        result = 31 * result + cachedLabelSp;
+        result = 31 * result + cachedBodySp;
+        result = 31 * result + cachedLabelContrast;
+        result = 31 * result + cachedBodyContrast;
+        result = 31 * result + cachedRowSpacing;
+        result = 31 * result + cachedOverflowMode.hashCode();
+        result = 31 * result + cachedLabelTypeface.hashCode();
+        result = 31 * result + cachedBodyTypeface.hashCode();
+        result = 31 * result + String.valueOf(cachedLabelColor).hashCode();
+        result = 31 * result + String.valueOf(cachedBodyColor).hashCode();
         return result;
     }
 
     private boolean isVerticalHistory() {
-        return ("vertical".equals(cachedHistoryLayout) || "wheel_3d".equals(cachedHistoryLayout))
-                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+        return cachedVerticalHistory;
     }
 
     private void applyTextStyle(View row, int[] ids, int sizeSp, Typeface typeface,
@@ -797,8 +741,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         Context context = v.getContext();
         recordExplicitSelection(context, result.getPojo());
         promoteHistoryResult(result);
+        if (result.getPojo() instanceof NotificationPojo
+                && NotificationHistoryResolver.showForPojo(context, result.getPojo())) {
+            return;
+        }
         if (UiEditLock.isLocked(context)) {
-            showNotificationHistoryIfAvailable(pos, v);
+            NotificationHistoryResolver.showForPojo(context, result.getPojo());
             return;
         }
         ListPopup menu = result.getPopupMenu(context, this, v);
@@ -907,7 +855,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         parent.beforeListChange();
         this.results.clear();
         this.results.addAll(updatedResults);
-        notificationPreviewCache.clear();
         lastRenderedQuery = normalizedQuery;
         StringNormalizer.Result queryNormalized = StringNormalizer.normalizeWithResult(normalizedQuery, false);
         fuzzyScore = FuzzyFactory.createFuzzyScore(context, queryNormalized.codePoints, true);
@@ -949,6 +896,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (oldPojo instanceof NotificationPojo && newPojo instanceof NotificationPojo) {
             NotificationPojo oldNotification = (NotificationPojo) oldPojo;
             NotificationPojo newNotification = (NotificationPojo) newPojo;
+            if (!TextUtils.equals(oldNotification.exactNotificationId,
+                    newNotification.exactNotificationId)) return false;
             if (oldNotification.notificationCount != newNotification.notificationCount) return false;
             if (oldNotification.postTime != newNotification.postTime) return false;
             if (!TextUtils.equals(oldNotification.latestTitle, newNotification.latestTitle)) return false;
@@ -974,7 +923,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public void clear() {
         parent.beforeListChange();
         this.results.clear();
-        notificationPreviewCache.clear();
         lastRenderedQuery = null;
         notifyDataSetChanged();
         parent.afterListChange();

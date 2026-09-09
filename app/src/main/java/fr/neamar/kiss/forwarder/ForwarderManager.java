@@ -38,11 +38,7 @@ public class ForwarderManager extends Forwarder {
     private final VerticalCardGroupResizeController verticalCardGroupResizeController;
     private final VerticalCardNotificationHistoryForwarder verticalCardNotificationHistoryForwarder;
     private final VerticalCardUsageForwarder verticalCardUsageForwarder;
-    private final SquareUHostFullscreenController squareUHostFullscreenController;
-    private final SquareUStabilityController squareUStabilityController;
-    private final SquareUEdgeBoundsController squareUEdgeBoundsController;
     private final HistoryVisualEnhancer historyVisualEnhancer;
-    private final UNotificationHistoryLongPressForwarder uNotificationHistoryLongPressForwarder;
     private final CommunicationHistoryForwarder communicationHistoryForwarder;
     private final WidgetPeelController widgetPeelController;
     private boolean initialResumeComplete;
@@ -71,11 +67,7 @@ public class ForwarderManager extends Forwarder {
         this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardUsageForwarder = new VerticalCardUsageForwarder(
                 mainActivity, smartCardListForwarder, verticalCardViewportController);
-        this.squareUHostFullscreenController = new SquareUHostFullscreenController(mainActivity, historyDisplayForwarder);
-        this.squareUStabilityController = new SquareUStabilityController(mainActivity, historyDisplayForwarder);
-        this.squareUEdgeBoundsController = new SquareUEdgeBoundsController(mainActivity, historyDisplayForwarder);
         this.historyVisualEnhancer = new HistoryVisualEnhancer(mainActivity, historyDisplayForwarder);
-        this.uNotificationHistoryLongPressForwarder = new UNotificationHistoryLongPressForwarder(mainActivity, historyDisplayForwarder);
         this.communicationHistoryForwarder = new CommunicationHistoryForwarder(mainActivity);
         this.widgetPeelController = new WidgetPeelController(mainActivity);
         this.smartCardListForwarder.setDeferredHistoryRefreshCallback(
@@ -96,17 +88,13 @@ public class ForwarderManager extends Forwarder {
         experienceTweaks.onCreate();
         shortcutsForwarder.onCreate();
         tagsMenu.onCreate();
-        historyDisplayForwarder.onCreate();
-        squareUHostFullscreenController.onCreate();
         smartCardListForwarder.onCreate();
+        historyDisplayForwarder.onCreate();
         verticalCardViewportController.onCreate();
         verticalMapsCardForwarder.onCreate();
         verticalCardGroupResizeController.onCreate();
         verticalCardNotificationHistoryForwarder.onCreate();
         verticalCardUsageForwarder.onCreate();
-        squareUStabilityController.onCreate();
-        squareUEdgeBoundsController.onCreate();
-        uNotificationHistoryLongPressForwarder.onCreate();
         lockedHistoryGestureBridge.onCreate();
     }
 
@@ -117,7 +105,6 @@ public class ForwarderManager extends Forwarder {
         boolean uiEditLocked = UiEditLock.isLocked(mainActivity);
         lastUiEditLocked = uiEditLocked;
         boolean verticalCards = isVerticalCardsMode();
-        boolean square = isSquareMode();
 
         if (verticalCards) {
             // Only the selected Vertical Cards renderer owns this persisted viewport state.
@@ -151,11 +138,6 @@ public class ForwarderManager extends Forwarder {
             verticalCardNotificationHistoryForwarder.onResume();
             verticalCardUsageForwarder.onResume();
             verticalCardViewportController.afterDataSetChanged();
-        } else if (square) {
-            squareUHostFullscreenController.onResume();
-            squareUStabilityController.onResume();
-            squareUEdgeBoundsController.onResume();
-            uNotificationHistoryLongPressForwarder.onResume();
         }
 
         // Vertical Cards already have dedicated usage/notification enrichment. Running the
@@ -248,14 +230,9 @@ public class ForwarderManager extends Forwarder {
                 }
             }
             visibleResultTreeChanged = verticalCardTreeChanged;
-        } else if (isSquareMode()) {
-            squareUHostFullscreenController.onDataSetChanged();
-            squareUStabilityController.onDataSetChanged();
-            squareUEdgeBoundsController.onDataSetChanged();
-            uNotificationHistoryLongPressForwarder.onDataSetChanged();
         }
 
-        // Native-list history enrichment is useful for native/square layouts, but Vertical Cards
+        // Native-list/wheel history enrichment is useful for the native renderer, but Vertical Cards
         // already own equivalent enrichment. Do not run both pipelines against the same history.
         if (isHistorySearch() && !verticalCards) historyVisualEnhancer.onDataSetChanged();
         // Recursive gesture attachment is needed only when the visible Vertical Cards tree changed.
@@ -279,6 +256,11 @@ public class ForwarderManager extends Forwarder {
 
     private boolean rebuildPendingVerticalCards(boolean keepBottom) {
         if (!isVerticalCardsMode() || !smartCardListForwarder.hasPendingDataSetRefresh()) return false;
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(
+                    () -> rebuildPendingVerticalCards(keepBottom));
+            return false;
+        }
         if (keepBottom) verticalCardViewportController.forceBottomForNextRebuild();
         verticalCardViewportController.beforeDataSetChanged();
         if (!smartCardListForwarder.rebuildPendingDataSetRefresh()) return false;
@@ -300,7 +282,6 @@ public class ForwarderManager extends Forwarder {
 
     private void applySharedHistoryWidth() {
         historyDisplayForwarder.onSharedWidthChanged();
-        if (isSquareMode()) squareUEdgeBoundsController.onSharedWidthChanged();
     }
 
     private void rebuildVerticalCardsForExplicitUiChange() {
@@ -371,15 +352,13 @@ public class ForwarderManager extends Forwarder {
     public void onDestroy() {
         liveWallpaperForwarder.onDestroy();
         widgetPeelController.onDestroy();
+        historyVisualEnhancer.onDestroy();
+        historyDisplayForwarder.onDestroy();
         verticalCardViewportController.onDestroy();
         verticalCardUsageForwarder.onDestroy();
-        uNotificationHistoryLongPressForwarder.onDestroy();
         lockedHistoryGestureBridge.onDestroy();
         verticalCardNotificationHistoryForwarder.onDestroy();
         verticalCardGroupResizeController.onDestroy();
-        squareUEdgeBoundsController.onDestroy();
-        squareUStabilityController.onDestroy();
-        squareUHostFullscreenController.onDestroy();
         widgetsForwarder.onDestroy();
         smartCardListForwarder.onDestroy();
     }
@@ -393,27 +372,17 @@ public class ForwarderManager extends Forwarder {
             verticalCardNotificationHistoryForwarder.onConfigurationChanged();
             verticalCardViewportController.onConfigurationChanged();
             verticalCardUsageForwarder.onConfigurationChanged();
-        } else if (isSquareMode()) {
-            squareUHostFullscreenController.onConfigurationChanged();
-            squareUStabilityController.onConfigurationChanged();
-            squareUEdgeBoundsController.onConfigurationChanged();
-            uNotificationHistoryLongPressForwarder.onConfigurationChanged();
         }
         lockedHistoryGestureBridge.onResume();
     }
 
     private String activeHistoryLayout() {
-        String layout = prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT,
-                HistoryDisplayForwarder.VERTICAL);
-        return layout == null ? HistoryDisplayForwarder.VERTICAL : layout;
+        return HistoryLayoutMode.normalize(prefs.getString(
+                HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL));
     }
 
     private boolean isVerticalCardsMode() {
         return HistoryDisplayForwarder.VERTICAL_CARDS.equals(activeHistoryLayout());
-    }
-
-    private boolean isSquareMode() {
-        return HistoryDisplayForwarder.SQUARE_U.equals(activeHistoryLayout());
     }
 
     private boolean isHistorySearch() {

@@ -16,10 +16,6 @@ class TextOverflowModeTest {
     @Test
     void autoExpandDoesNotLeakIntoOtherHistoryRenderers() {
         assertFalse(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "wheel_3d"));
-        assertFalse(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "horizontal_icons"));
-        assertFalse(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "horizontal_cards"));
-        assertFalse(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "horizontal_names"));
-        assertFalse(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "square_u"));
     }
 
     @Test

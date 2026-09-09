@@ -1,6 +1,5 @@
 package fr.neamar.kiss.result;
 
-import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
@@ -15,10 +14,7 @@ import android.os.Process;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -26,7 +22,6 @@ import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
 
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 import fr.neamar.kiss.KissApplication;
@@ -42,11 +37,7 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
-import fr.neamar.kiss.searcher.SearchHandler;
-import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
-import fr.neamar.kiss.ui.SmartAnimationEngine;
-import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
@@ -101,32 +92,17 @@ public class SettingsResult extends Result<SettingPojo> {
         appName.setText(notification.appName);
         title.setText(notification.getSummary());
 
-        boolean individualRecord = notification.id.startsWith(
-                NotificationListener.NOTIFICATION_SCHEME);
-        boolean groupRecord = notification.id.startsWith(
-                NotificationListener.NOTIFICATION_GROUP_SCHEME);
-        boolean individualActive = individualRecord
-                && NotificationListener.isNotificationActive(context, notification.id);
-        int activeGroupCount = groupRecord
-                ? NotificationListener.getGroupNotifications(
-                        context, notification.groupKey).size()
-                : 0;
-        NotificationActionPolicy.Target actionTarget = NotificationActionPolicy.resolve(
-                individualRecord, groupRecord, individualActive, activeGroupCount);
-
-        View.OnClickListener openGroup = actionTarget == NotificationActionPolicy.Target.NONE
-                ? null : v -> showNotificationGroup(context, notification);
+        String exactNotificationId = notification.exactNotificationId;
+        boolean exactActive = exactNotificationId.startsWith(
+                NotificationListener.NOTIFICATION_SCHEME)
+                && NotificationListener.isNotificationActive(context, exactNotificationId);
+        View.OnClickListener openExact = v -> launchNotificationTarget(context, notification);
         nativeContainer.setInterceptChildTouches(true);
-        nativeContainer.setOnClickListener(openGroup);
+        nativeContainer.setOnClickListener(openExact);
 
-        View nativeView = null;
-        if (actionTarget == NotificationActionPolicy.Target.INDIVIDUAL) {
-            nativeView = NotificationListener.createNativeNotificationView(
-                    context, notification.id, nativeContainer, false);
-        } else if (actionTarget == NotificationActionPolicy.Target.GROUP) {
-            nativeView = NotificationListener.createNativeGroupView(
-                    context, notification.groupKey, nativeContainer, false);
-        }
+        View nativeView = exactActive
+                ? NotificationListener.createNativeNotificationView(
+                context, exactNotificationId, nativeContainer, false) : null;
         if (nativeView != null) {
             nativeContainer.removeAllViews();
             nativeContainer.addView(nativeView);
@@ -140,32 +116,22 @@ public class SettingsResult extends Result<SettingPojo> {
         text.setText(preview);
         text.setVisibility(View.VISIBLE);
 
-        String avatarNotificationId = individualRecord ? notification.id : null;
-        if (groupRecord) {
-            List<NotificationListener.NotificationSnapshot> avatarGroup =
-                    NotificationListener.getGroupNotifications(context, notification.groupKey);
-            if (!avatarGroup.isEmpty()) avatarNotificationId = avatarGroup.get(0).id;
-        }
+        String avatarNotificationId = exactNotificationId;
         Drawable avatar = NotificationAvatarSupport.avatar(context, avatarNotificationId);
         if (!isHideIcons(context)) {
             if (avatar != null) icon.setImageDrawable(avatar);
             else setAsyncDrawable(icon);
         } else icon.setImageDrawable(null);
 
-        // Only this identity image launches the app itself. Text/native content keeps exact-notification routing.
-        icon.setOnClickListener(v -> {
-            if (!AppLaunchUtils.launchPackage(context, notification.packageName)) {
-                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        // Everything describing the notification opens Smart S's grouped popup.
-        appName.setOnClickListener(openGroup);
-        title.setOnClickListener(openGroup);
-        text.setOnClickListener(openGroup);
+        // Every clickable part resolves the same exact child notification. No app-level or group
+        // popup is reachable from a normal tap; popups are reserved for the long-press path.
+        icon.setOnClickListener(openExact);
+        appName.setOnClickListener(openExact);
+        title.setOnClickListener(openExact);
+        text.setOnClickListener(openExact);
 
         markRead.setText(R.string.notification_mark_read);
-        if (actionTarget == NotificationActionPolicy.Target.NONE) {
+        if (!exactActive) {
             markRead.setVisibility(View.GONE);
             markRead.setEnabled(false);
             markRead.setOnClickListener(null);
@@ -175,9 +141,8 @@ public class SettingsResult extends Result<SettingPojo> {
         markRead.setVisibility(View.VISIBLE);
         markRead.setEnabled(true);
         markRead.setOnClickListener(v -> {
-            boolean marked = actionTarget == NotificationActionPolicy.Target.INDIVIDUAL
-                    ? NotificationListener.markNotificationRead(context, notification.id)
-                    : NotificationListener.markGroupRead(context, notification.groupKey);
+            boolean marked = NotificationListener.markNotificationRead(
+                    context, exactNotificationId);
             if (marked) {
                 markRead.setEnabled(false);
                 view.setVisibility(View.GONE);
@@ -281,39 +246,15 @@ public class SettingsResult extends Result<SettingPojo> {
         if (handleExactNotificationResult(context, notification.appName,
                 notification.packageName, exactResult)) return;
 
-        // Launcher History represents one stored notification event. If Android never exposed a
-        // durable target, keep the selected saved message available instead of misreporting it as
-        // deleted or silently launching a different notification.
-        if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY) {
-            if (!NotificationHistoryResolver.showForPojo(context, notification)) {
-                Toast.makeText(context, "Saved message has no durable app route.",
-                        Toast.LENGTH_SHORT).show();
-            }
-            return;
-        }
-
-        boolean individual = notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME);
-        if (individual && NotificationListener.isNotificationActive(context, notification.id)
-                && NotificationListener.openNotification(context, notification.id)) {
+        String exactId = notification.exactNotificationId;
+        if (exactId.startsWith(NotificationListener.NOTIFICATION_SCHEME)
+                && NotificationListener.isNotificationActive(context, exactId)
+                && NotificationListener.openNotification(context, exactId)) {
             launchSucceeded = true;
             return;
         }
-
-        List<NotificationListener.NotificationSnapshot> active =
-                NotificationListener.getGroupNotifications(context, notification.groupKey);
-        if (active.size() == 1 && NotificationListener.openNotification(context, active.get(0).id)) {
-            launchSucceeded = true;
-            return;
-        }
-        if (!active.isEmpty()) {
-            showNotificationGroup(context, notification);
-            return;
-        }
-
-        if (!NotificationHistoryResolver.showForPojo(context, notification)) {
-            Toast.makeText(context, "No exact notification destination is available.",
-                    Toast.LENGTH_SHORT).show();
-        }
+        Toast.makeText(context, "No exact notification destination is available.",
+                Toast.LENGTH_SHORT).show();
     }
 
     private boolean handleExactNotificationResult(
@@ -333,182 +274,6 @@ public class SettingsResult extends Result<SettingPojo> {
             return true;
         }
         return false;
-    }
-
-    private void showNotificationGroup(Context context, NotificationPojo notification) {
-        List<NotificationListener.NotificationSnapshot> items = NotificationListener.getGroupNotifications(context, notification.groupKey);
-        if (items.isEmpty()) {
-            Toast.makeText(context, "No active notifications.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        LinearLayout list = new LinearLayout(context);
-        list.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(context, 16);
-        list.setPadding(padding, padding / 2, padding, padding / 2);
-        AlertDialog[] groupDialog = new AlertDialog[1];
-
-        for (NotificationListener.NotificationSnapshot item : items) {
-            LinearLayout row = new LinearLayout(context);
-            row.setOrientation(LinearLayout.VERTICAL);
-            row.setPadding(0, padding / 2, 0, padding / 2);
-            View.OnClickListener openDetail = v -> showNotificationDetail(context, notification, item, groupDialog[0]);
-
-            View nativeView = NotificationListener.createNativeNotificationView(context, item.id, row, false);
-            if (nativeView != null) {
-                if (nativeView instanceof CompactNotificationFrame) {
-                    CompactNotificationFrame frame = (CompactNotificationFrame) nativeView;
-                    frame.setInterceptChildTouches(true);
-                    frame.setOnClickListener(openDetail);
-                }
-                row.addView(nativeView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            } else {
-                TextView itemTitle = new TextView(context);
-                itemTitle.setText(item.title.isEmpty() ? notification.appName : item.title);
-                itemTitle.setTextSize(16);
-                itemTitle.setTypeface(itemTitle.getTypeface(), android.graphics.Typeface.BOLD);
-                row.addView(itemTitle);
-
-                if (!item.text.isEmpty()) {
-                    TextView body = new TextView(context);
-                    body.setText(item.text);
-                    body.setMaxLines(2);
-                    body.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                    body.setTextSize(14);
-                    row.addView(body);
-                }
-            }
-
-            row.setOnClickListener(openDetail);
-            list.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        }
-
-        ScrollView scroll = new ScrollView(context);
-        scroll.addView(list);
-        AlertDialog.Builder builder = new AlertDialog.Builder(context)
-                .setTitle(notification.appName + " · " + notification.getSummary())
-                .setView(scroll)
-                .setNegativeButton(android.R.string.cancel, null);
-        boolean hasMarkAll = NotificationListener.hasMarkAllReadAction(context, notification.groupKey);
-        if (hasMarkAll) builder.setPositiveButton("Mark all read", null);
-
-        AlertDialog dialog = builder.create();
-        groupDialog[0] = dialog;
-        dialog.setOnShowListener(ignored -> {
-            SmartAnimationEngine.animateDialogIn(dialog);
-            if (hasMarkAll) {
-                Button markAll = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-                markAll.setOnClickListener(v -> {
-                    if (NotificationListener.markAllRead(context, notification.groupKey)) {
-                        context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
-                        SmartAnimationEngine.dismissDialog(dialog);
-                    } else {
-                        Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
-                    }
-                });
-            }
-        });
-        dialog.show();
-    }
-
-    private void showNotificationDetail(Context context, NotificationPojo group,
-                                        NotificationListener.NotificationSnapshot item,
-                                        AlertDialog parentGroupDialog) {
-        String detailTitle = item.title.isEmpty() ? group.appName : item.title;
-        LinearLayout content = new LinearLayout(context);
-        content.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(context, 12);
-        content.setPadding(padding, padding, padding, padding);
-
-        View nativeView = NotificationListener.createNativeNotificationView(context, item.id, content, true);
-        if (nativeView != null) {
-            if (nativeView instanceof CompactNotificationFrame) {
-                ((CompactNotificationFrame) nativeView).setInterceptChildTouches(true);
-            }
-            content.addView(nativeView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        } else {
-            TextView body = new TextView(context);
-            body.setText(item.text.isEmpty() ? "No message text available." : item.text);
-            body.setTextSize(16);
-            content.addView(body);
-        }
-
-        LinearLayout actions = new LinearLayout(context);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-
-        Button markRead = new Button(context);
-        markRead.setText("Mark read");
-        actions.addView(markRead, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        Button open = new Button(context);
-        open.setText("Open notification");
-        actions.addView(open, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-        if (NotificationListener.hasReplyAction(context, item.id)) {
-            Button reply = new Button(context);
-            reply.setText("Reply");
-            reply.setOnClickListener(v -> showReplyDialog(context, item));
-            actions.addView(reply, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        }
-        content.addView(actions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        AlertDialog dialog = new AlertDialog.Builder(context)
-                .setTitle(detailTitle)
-                .setView(content)
-                .setNegativeButton(android.R.string.cancel, null)
-                .create();
-
-        markRead.setOnClickListener(v -> {
-            if (!NotificationListener.markNotificationRead(context, item.id)) {
-                Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
-            } else {
-                context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
-                SmartAnimationEngine.dismissDialog(dialog);
-                if (parentGroupDialog != null && parentGroupDialog.isShowing()) {
-                    SmartAnimationEngine.dismissDialog(parentGroupDialog);
-                }
-            }
-        });
-
-        open.setOnClickListener(v -> {
-            if (!AppLaunchUtils.ensurePackageEnabled(context, group.packageName)) {
-                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (!NotificationListener.openNotification(context, item.id)) {
-                Toast.makeText(context, "Unable to open this exact notification",
-                        Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        dialog.setOnShowListener(ignored -> SmartAnimationEngine.animateDialogIn(dialog));
-        dialog.show();
-    }
-
-    private void showReplyDialog(Context context, NotificationListener.NotificationSnapshot item) {
-        EditText input = new EditText(context);
-        input.setHint("Type a reply");
-        input.setSingleLine(false);
-        input.setMinLines(2);
-        AlertDialog replyDialog = new AlertDialog.Builder(context)
-                .setTitle("Reply")
-                .setView(input)
-                .setPositiveButton("Send", null)
-                .setNegativeButton(android.R.string.cancel, null)
-                .create();
-        replyDialog.setOnShowListener(ignored -> {
-            SmartAnimationEngine.animateDialogIn(replyDialog);
-            replyDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                String replyText = input.getText().toString().trim();
-                if (replyText.isEmpty()) return;
-                if (NotificationListener.replyToNotification(context, item.id, replyText)) {
-                    SmartAnimationEngine.dismissDialog(replyDialog);
-                } else {
-                    Toast.makeText(context, "Unable to send reply.", Toast.LENGTH_SHORT).show();
-                }
-            });
-        });
-        replyDialog.show();
     }
 
     private int dp(Context context, int value) {

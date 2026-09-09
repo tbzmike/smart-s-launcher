@@ -115,6 +115,10 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void refresh() {
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(this::refresh);
+            return;
+        }
         if (!isEnabled()) {
             launchStats = Collections.emptyMap();
             column = null;
@@ -167,6 +171,10 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void apply() {
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(this::apply);
+            return;
+        }
         if (paused || destroyed || !isEnabled() || column == null || mainActivity.adapter == null) return;
         resetAttentionBorders();
         Map<String, Result<?>> resultsByPojoId = new HashMap<>();
@@ -191,7 +199,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             NotificationPojo notification = result.getPojo() instanceof NotificationPojo
                     ? (NotificationPojo) result.getPojo() : null;
             if (notification != null
-                    && notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
+                    && notification.exactNotificationId.startsWith(
+                    NotificationListener.NOTIFICATION_SCHEME)) {
                 applyNotificationTimelinePreview(wrapper, notification);
                 attachAttentionBorder(wrapper, notification);
             }
@@ -212,9 +221,11 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
             if (notification != null) {
                 View.OnClickListener notificationClick = v -> {
-                    if (notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
-                        NotificationTimelineState.markRead(mainActivity, notification.id);
-                        clearAttentionFor(notification.id);
+                    if (notification.exactNotificationId.startsWith(
+                            NotificationListener.NOTIFICATION_SCHEME)) {
+                        NotificationTimelineState.markRead(mainActivity,
+                                notification.exactNotificationId);
+                        clearAttentionFor(notification.exactNotificationId);
                     }
                     int currentPosition = resolveAdapterPosition(stableId);
                     if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, v);
@@ -298,7 +309,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void attachAttentionBorder(View wrapper, NotificationPojo notification) {
-        if (!NotificationTimelineState.isUnread(mainActivity, notification.id)) return;
+        if (!NotificationTimelineState.isUnread(
+                mainActivity, notification.exactNotificationId)) return;
         View card = cardView(wrapper);
         if (card == null) return;
 
@@ -316,13 +328,14 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             updateAttentionBounds(v, border);
         };
         AttentionBorder binding = new AttentionBorder(
-                card, border, notification.id, layoutListener);
+                card, border, notification.exactNotificationId, layoutListener);
         attentionBorders.add(binding);
         card.addOnLayoutChangeListener(layoutListener);
         card.post(() -> {
             if (!attentionBorders.contains(binding)
                     || !card.isAttachedToWindow()
-                    || !NotificationTimelineState.isUnread(mainActivity, notification.id)) return;
+                    || !NotificationTimelineState.isUnread(
+                    mainActivity, notification.exactNotificationId)) return;
             updateAttentionBounds(card, border);
             card.getOverlay().add(border);
             border.start();

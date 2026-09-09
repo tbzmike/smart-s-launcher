@@ -12,12 +12,12 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 
 import java.util.Date;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.LaunchStatsProvider;
@@ -33,19 +33,11 @@ import fr.neamar.kiss.result.Result;
  */
 public final class UniversalHistoryTimestamp {
     private static final String VIEW_TAG = "smart_s_universal_history_timestamp";
-    private static final long STATS_REFRESH_MS = 30_000L;
     private static final int MAX_FIRST_SEEN_ENTRIES = 512;
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "smart-s-history-stats");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
     private static final ConcurrentHashMap<String, Long> FIRST_SEEN = new ConcurrentHashMap<>();
     private static final LruCache<String, CharSequence> FORMATTED_CACHE = new LruCache<>(512);
     private static final WeakHashMap<TextView, Boolean> STYLED_VIEWS = new WeakHashMap<>();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
-    private static volatile long statsLoadedAt;
-    private static volatile boolean loadInFlight;
 
     private UniversalHistoryTimestamp() {}
 
@@ -70,8 +62,6 @@ public final class UniversalHistoryTimestamp {
             SmartTextAppearance.applyHistoryMetadata(timestampView);
             STYLED_VIEWS.put(timestampView, Boolean.TRUE);
         }
-
-        ensureStatsLoaded(row, result, context);
     }
 
     private static boolean isHistorySurface(Context context) {
@@ -110,7 +100,20 @@ public final class UniversalHistoryTimestamp {
     }
 
     public static void invalidateStats() {
-        statsLoadedAt = 0L;
+        launchStats = null;
+        synchronized (FORMATTED_CACHE) {
+            FORMATTED_CACHE.evictAll();
+        }
+    }
+
+    /** Supplies one bulk stats snapshot loaded by the scroll-idle history enrichment pipeline. */
+    public static void updateStats(Map<String, LaunchStatsProvider.LaunchStats> stats) {
+        launchStats = stats == null
+                ? Collections.emptyMap()
+                : Collections.unmodifiableMap(new HashMap<>(stats));
+        synchronized (FORMATTED_CACHE) {
+            FORMATTED_CACHE.evictAll();
+        }
     }
 
     private static CharSequence formatTimestampCached(
@@ -145,28 +148,6 @@ public final class UniversalHistoryTimestamp {
                 .append("  •  ")
                 .append(interactionsToday)
                 .append(interactionsToday == 1 ? " interaction today" : " interactions today");
-    }
-
-    private static void ensureStatsLoaded(View row, Result<?> result, Context context) {
-        long now = System.currentTimeMillis();
-        boolean fresh = launchStats != null && now - statsLoadedAt < STATS_REFRESH_MS;
-        if (fresh || loadInFlight) return;
-        synchronized (UniversalHistoryTimestamp.class) {
-            now = System.currentTimeMillis();
-            fresh = launchStats != null && now - statsLoadedAt < STATS_REFRESH_MS;
-            if (fresh || loadInFlight) return;
-            loadInFlight = true;
-        }
-        Context appContext = context.getApplicationContext();
-        EXECUTOR.execute(() -> {
-            Map<String, LaunchStatsProvider.LaunchStats> loaded = LaunchStatsProvider.loadAll(appContext);
-            launchStats = loaded;
-            statsLoadedAt = System.currentTimeMillis();
-            loadInFlight = false;
-            row.post(() -> {
-                if (row.isAttachedToWindow()) bind(row, result, context);
-            });
-        });
     }
 
     private static TextView ensureTimestampView(View row, Context context) {
