@@ -41,7 +41,11 @@ public final class NotificationVisualSupport {
     private static final String DIR = "notification_visuals";
     private static final int MAX_EDGE = 768;
     private static final long MAX_AGE_MS = 45L * 24L * 60L * 60L * 1000L;
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "smart-s-notification-visual");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
 
     public static final class Snapshot {
         public final Drawable image;

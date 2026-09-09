@@ -204,12 +204,24 @@ final class HistoryDisplayForwarder extends Forwarder {
             View reusable = existing != null && oldType == viewType ? existing : null;
             View source = mainActivity.adapter.getView(position, reusable, mainActivity.list);
 
+            // The adapter intentionally receives the real ListView as its rendering parent so the
+            // wheel keeps the same row styling/features as Vertical History. During a recycled bind
+            // RecordAdapter may therefore install AbsListView.LayoutParams on this View. The View is
+            // physically owned by wheelColumn, so normalize it back to LinearLayout.LayoutParams on
+            // every bind. Without this, a later LinearLayout measure can ClassCastException.
+            ViewGroup.LayoutParams rebound = source.getLayoutParams();
+            int reboundHeight = rebound == null
+                    ? ViewGroup.LayoutParams.WRAP_CONTENT : rebound.height;
+            LinearLayout.LayoutParams wheelParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, reboundHeight);
+            wheelParams.setMargins(dp(3), dp(4), dp(3), dp(4));
+            wheelParams.gravity = Gravity.CENTER_HORIZONTAL;
+
             if (source != existing) {
                 if (existing != null) wheelColumn.removeViewAt(position);
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                lp.setMargins(dp(3), dp(4), dp(3), dp(4));
-                wheelColumn.addView(source, position, lp);
+                wheelColumn.addView(source, position, wheelParams);
+            } else {
+                source.setLayoutParams(wheelParams);
             }
 
             while (wheelViewTypes.size() <= position) wheelViewTypes.add(-1);
@@ -299,20 +311,15 @@ final class HistoryDisplayForwarder extends Forwarder {
         float overscan = wheelScroller.getHeight() * 0.35f;
         float density = mainActivity.getResources().getDisplayMetrics().density;
 
-        for (int i = 0; i < wheelColumn.getChildCount(); i++) {
+        // Horizontal Icons is smooth because scrolling does not rewrite every item in its
+        // complete data set. Apply the same principle here: the wheel keeps every row laid out for
+        // ScrollView geometry, while perspective properties are touched only for the near-visible
+        // window. A row is recalculated before it enters the viewport, so no 3D feature is removed.
+        int childCount = wheelColumn.getChildCount();
+        int first = firstWheelChildNear(viewportTop - overscan);
+        for (int i = first; i < childCount; i++) {
             View child = wheelColumn.getChildAt(i);
-            if (child.getBottom() < viewportTop - overscan
-                    || child.getTop() > viewportBottom + overscan) {
-                // Keep off-screen rows laid out for ScrollView geometry, but skip perspective work
-                // until they approach the viewport.
-                child.setAlpha(0.12f);
-                child.setRotationX(0f);
-                child.setScaleX(0.82f);
-                child.setScaleY(0.82f);
-                child.setTranslationY(0f);
-                child.setTranslationZ(0f);
-                continue;
-            }
+            if (child.getTop() > viewportBottom + overscan) break;
             float childCenter = child.getTop() + child.getHeight() / 2f;
             float normalized = (childCenter - viewportCenter) / radius;
             normalized = Math.max(-1f, Math.min(1f, normalized));
@@ -330,6 +337,25 @@ final class HistoryDisplayForwarder extends Forwarder {
             child.setTranslationY(-normalized * distance * dp(22));
             child.setTranslationZ((1f - distance) * dp(18));
         }
+    }
+
+    private int firstWheelChildNear(float minimumBottom) {
+        if (wheelColumn == null) return 0;
+        int count = wheelColumn.getChildCount();
+        int low = 0;
+        int high = count - 1;
+        int result = count;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            View child = wheelColumn.getChildAt(mid);
+            if (child.getBottom() >= minimumBottom) {
+                result = mid;
+                high = mid - 1;
+            } else {
+                low = mid + 1;
+            }
+        }
+        return Math.max(0, Math.min(count, result));
     }
 
     private void resetWheelTransforms() {

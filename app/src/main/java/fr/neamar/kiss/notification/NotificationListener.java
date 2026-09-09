@@ -70,7 +70,11 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private static volatile NotificationListener instance;
-    private static final ExecutorService RECONCILE_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final ExecutorService RECONCILE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "smart-s-notification-reconcile");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
     private static final AtomicBoolean RECONCILE_RUNNING = new AtomicBoolean(false);
     private static final int RETAINED_CONTENT_INTENT_LIMIT = 256;
     private static final LinkedHashMap<String, PendingIntent> RETAINED_CONTENT_INTENTS =
@@ -82,6 +86,11 @@ public class NotificationListener extends NotificationListenerService {
      */
     private static volatile Set<String> verifiedActiveIds = Collections.emptySet();
     private static volatile boolean activeStateVerified;
+    private static final Object GROUP_SNAPSHOT_LOCK = new Object();
+    private static volatile Map<String, List<NotificationSnapshot>> verifiedGroupSnapshots =
+            Collections.emptyMap();
+    private static volatile long notificationStateGeneration;
+    private static volatile long verifiedGroupSnapshotGeneration = -1L;
     private SharedPreferences prefs;
     private SharedPreferences details;
 
@@ -382,12 +391,7 @@ public class NotificationListener extends NotificationListenerService {
 
     public static boolean hasActiveNotificationGroup(Context context, String packageKey) {
         if (packageKey == null || packageKey.isEmpty()) return false;
-        SharedPreferences cache = context.getSharedPreferences(
-                DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
-        for (String id : getVerifiedActiveNotificationIds()) {
-            if (packageKey.equals(cache.getString(id + "|group", ""))) return true;
-        }
-        return false;
+        return verifiedGroupSnapshots(context).containsKey(packageKey);
     }
 
     public static String getLatestMessage(Context context, String packageKey) {
@@ -803,29 +807,72 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     public static List<NotificationSnapshot> getGroupNotifications(Context context, String groupKey) {
-        SharedPreferences details = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
-        Set<String> active = getVerifiedActiveNotificationIds();
-        if (active.isEmpty()) return Collections.emptyList();
-        List<NotificationSnapshot> result = new ArrayList<>();
-        for (String id : new HashSet<>(active)) {
-            if (!groupKey.equals(details.getString(id + "|group", ""))) continue;
-            String title = details.getString(id + "|title", "");
-            String text = details.getString(id + "|text", "");
-            result.add(new NotificationSnapshot(id, title == null ? "" : title, text == null ? "" : text,
-                    details.getLong(id + "|post", 0L)));
+        if (groupKey == null || groupKey.isEmpty()) return Collections.emptyList();
+        List<NotificationSnapshot> group = verifiedGroupSnapshots(context).get(groupKey);
+        return group == null ? Collections.emptyList() : group;
+    }
+
+    private static Map<String, List<NotificationSnapshot>> verifiedGroupSnapshots(Context context) {
+        long generation = notificationStateGeneration;
+        Map<String, List<NotificationSnapshot>> snapshot = verifiedGroupSnapshots;
+        if (verifiedGroupSnapshotGeneration == generation) return snapshot;
+
+        synchronized (GROUP_SNAPSHOT_LOCK) {
+            generation = notificationStateGeneration;
+            if (verifiedGroupSnapshotGeneration == generation) return verifiedGroupSnapshots;
+
+            SharedPreferences details = context.getSharedPreferences(
+                    DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE);
+            Set<String> active = getVerifiedActiveNotificationIds();
+            if (active.isEmpty()) {
+                verifiedGroupSnapshots = Collections.emptyMap();
+                verifiedGroupSnapshotGeneration = generation;
+                return verifiedGroupSnapshots;
+            }
+
+            Map<String, List<NotificationSnapshot>> groups = new HashMap<>();
+            for (String id : active) {
+                String groupKey = details.getString(id + "|group", "");
+                if (groupKey == null || groupKey.isEmpty()) continue;
+                String title = details.getString(id + "|title", "");
+                String text = details.getString(id + "|text", "");
+                NotificationSnapshot item = new NotificationSnapshot(
+                        id, title == null ? "" : title, text == null ? "" : text,
+                        details.getLong(id + "|post", 0L));
+                groups.computeIfAbsent(groupKey, ignored -> new ArrayList<>()).add(item);
+            }
+
+            Map<String, List<NotificationSnapshot>> immutable = new HashMap<>();
+            for (Map.Entry<String, List<NotificationSnapshot>> entry : groups.entrySet()) {
+                List<NotificationSnapshot> items = entry.getValue();
+                items.sort(Comparator.comparingLong(
+                        (NotificationSnapshot n) -> n.postTime).reversed());
+                immutable.put(entry.getKey(), Collections.unmodifiableList(items));
+            }
+            verifiedGroupSnapshots = Collections.unmodifiableMap(immutable);
+            verifiedGroupSnapshotGeneration = generation;
+            return verifiedGroupSnapshots;
         }
-        result.sort(Comparator.comparingLong((NotificationSnapshot n) -> n.postTime).reversed());
-        return result;
+    }
+
+    private static void invalidateVerifiedGroupSnapshots() {
+        synchronized (GROUP_SNAPSHOT_LOCK) {
+            notificationStateGeneration++;
+            verifiedGroupSnapshots = Collections.emptyMap();
+            verifiedGroupSnapshotGeneration = -1L;
+        }
     }
 
     private static synchronized void publishVerifiedActiveIds(Set<String> ids) {
         verifiedActiveIds = Collections.unmodifiableSet(new HashSet<>(ids));
         activeStateVerified = true;
+        invalidateVerifiedGroupSnapshots();
     }
 
     private static synchronized void publishUnverifiedActiveState() {
         activeStateVerified = false;
         verifiedActiveIds = Collections.emptySet();
+        invalidateVerifiedGroupSnapshots();
     }
 
     private static synchronized void addVerifiedActiveId(String id) {
@@ -833,6 +880,7 @@ public class NotificationListener extends NotificationListenerService {
         Set<String> updated = new HashSet<>(verifiedActiveIds);
         updated.add(id);
         verifiedActiveIds = Collections.unmodifiableSet(updated);
+        invalidateVerifiedGroupSnapshots();
     }
 
     private static synchronized void removeVerifiedActiveId(String id) {
@@ -840,6 +888,7 @@ public class NotificationListener extends NotificationListenerService {
         Set<String> updated = new HashSet<>(verifiedActiveIds);
         updated.remove(id);
         verifiedActiveIds = Collections.unmodifiableSet(updated);
+        invalidateVerifiedGroupSnapshots();
     }
 
     public static String getTimelineId(StatusBarNotification sbn) {
