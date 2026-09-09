@@ -1,0 +1,146 @@
+name: Refine Smart S 3.30.80 Home Resume + Scroll Stability
+
+on:
+  push:
+    branches:
+      - fix/3.30.80-home-resume-scroll-stability
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refine-33080-home-resume-scroll-stability
+  cancel-in-progress: true
+
+jobs:
+  refine:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify exact 3.30.79 release baseline
+        run: |
+          set -euxo pipefail
+          grep -q 'versionCode 507' app/build.gradle
+          grep -q 'versionName "3.30.79"' app/build.gradle
+          grep -q 'private static final int ATTENTION_PULSE_MS = 550;' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java
+          grep -q 'History is never skipped on Activity resume' app/src/main/java/fr/neamar/kiss/forwarder/HistoryRefreshPolicy.java
+          grep -q 'refreshSnapshotAsync();' app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java
+          grep -q 'pendingBackgroundRefresh = true;' app/src/main/java/fr/neamar/kiss/MainActivity.java
+          ! test -e app/src/main/java/fr/neamar/kiss/LauncherResumeRefreshPolicy.java
+
+      - name: Apply guarded 3.30.80 repair
+        run: python3 .github/scripts/fix_33080_home_resume_scroll.py
+
+      - name: Verify intended runtime changes
+        run: |
+          set -euxo pipefail
+          MAIN=app/src/main/java/fr/neamar/kiss/MainActivity.java
+          NOTIFY=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java
+          USAGE=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java
+          PM=app/src/main/java/fr/neamar/kiss/utils/PackageManagerUtils.java
+
+          grep -q 'versionCode 508' app/build.gradle
+          grep -q 'versionName "3.30.80"' app/build.gradle
+
+          # Home returns: keep first frame cheap, but preserve real deferred refreshes.
+          grep -q 'LauncherResumeRefreshPolicy.decide' "$MAIN"
+          grep -q 'Action.KEEP_VISIBLE' "$MAIN"
+          grep -q 'scheduleDeferredResumeRefresh' "$MAIN"
+          grep -q 'HOME_RESUME_REFRESH_DELAY_MS = 300L' "$MAIN"
+          grep -q 'pendingHomeReturnFromBackground = homeIntent && !launcherWasForeground' "$MAIN"
+          grep -q 'pendingSmartLaunchHistoryRefresh = true' "$MAIN"
+          grep -q 'cancelDeferredResumeRefresh(true)' "$MAIN"
+          grep -q 'updateSearchRecords(true, searchEditText.getText().toString())' "$MAIN"
+
+          # Notification decoration: no whole-tree rewire on every resume.
+          grep -q 'if (!decorated && column != null) column.post(this::apply);' "$NOTIFY"
+          grep -q 'else resumeAttentionBorders();' "$NOTIFY"
+          grep -q 'column.post(this::applyLaunchStatsOnly)' "$NOTIFY"
+          grep -q 'ATTENTION_SCROLL_IDLE_MS = 160L' "$NOTIFY"
+          grep -q 'attentionSuspendedForScroll = true' "$NOTIFY"
+          grep -q 'suspendAttentionBorders();' "$NOTIFY"
+          grep -q 'resumeAttentionBorders();' "$NOTIFY"
+          grep -q 'addOnScrollChangedListener(attentionScrollListener)' "$NOTIFY"
+
+          # UsageStats are throttled on short app -> Home trips.
+          grep -q 'RESUME_USAGE_REFRESH_MIN_INTERVAL_MS = 30_000L' "$USAGE"
+          grep -q 'refreshLaunchStatsAsync();' "$USAGE"
+          grep -q 'lastFullRefreshElapsedMs = SystemClock.elapsedRealtime();' "$USAGE"
+
+          # Missing old activity aliases fall back quietly instead of stack-trace storms.
+          grep -q 'Activity icon component no longer exists; using application icon' "$PM"
+          ! grep -q 'Unable to find activity icon for component.*NameNotFoundException' "$PM"
+
+          # Existing critical 3.30.79 behavior remains.
+          grep -q 'SavedNotificationDestinationResolver.openExactResult' app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          grep -q 'AppLaunchUtils.launchPackage(context, packageName)' app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          grep -q 'private static final int ATTENTION_PULSE_MS = 550;' "$NOTIFY"
+          grep -q 'border.addFrame(createAttentionFrame(dp(2), Color.argb(235, 255, 176, 32))' "$NOTIFY"
+          grep -q 'border.addFrame(createAttentionFrame(dp(4), Color.WHITE)' "$NOTIFY"
+          grep -q 'homeResultSnapshot' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
+          ! grep -q 'warmHistoryCards' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+
+          git diff --check
+
+      - name: Run focused policy tests first
+        run: ./gradlew testDebugUnitTest --tests fr.neamar.kiss.LauncherResumeRefreshPolicyTest --stacktrace
+
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify APK manifest versions
+        run: |
+          set -euxo pipefail
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          DEBUG_APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          RELEASE_APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
+          "$AAPT" dump badging "$DEBUG_APK" | tee /tmp/debug-badging.txt
+          "$AAPT" dump badging "$RELEASE_APK" | tee /tmp/release-badging.txt
+          grep -q "versionCode='508'" /tmp/debug-badging.txt
+          grep -q "versionName='3.30.80'" /tmp/debug-badging.txt
+          grep -q "versionCode='508'" /tmp/release-badging.txt
+          grep -q "versionName='3.30.80'" /tmp/release-badging.txt
+
+      - name: Upload verified debug APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Smart-S-Launcher-3.30.80-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload verified release APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Smart-S-Launcher-3.30.80-release-unsigned.apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit verified 3.30.80 source
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/MainActivity.java \
+            app/src/main/java/fr/neamar/kiss/LauncherResumeRefreshPolicy.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java \
+            app/src/main/java/fr/neamar/kiss/utils/PackageManagerUtils.java \
+            app/src/test/java/fr/neamar/kiss/LauncherResumeRefreshPolicyTest.java
+          git diff --cached --check
+          git commit -m 'Fix Home resume stalls and Vertical Cards scroll jank'
+          git push origin HEAD:fix/3.30.80-home-resume-scroll-stability
