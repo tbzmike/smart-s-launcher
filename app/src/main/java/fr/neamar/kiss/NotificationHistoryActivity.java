@@ -343,8 +343,10 @@ public class NotificationHistoryActivity extends AppCompatActivity {
                 if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
                     AppReinstallSupport.showUninstalledDialog(
                             this, record.packageName, record.appName);
+                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
+                    Toast.makeText(this, "The app could not be re-enabled.", Toast.LENGTH_SHORT).show();
                 } else if (!result.accepted()) {
-                    Toast.makeText(this, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();
+                    openApp(record);
                 }
             } else {
                 openApp(record);

@@ -314,8 +314,13 @@ public final class RichNotificationHistoryDialog {
                 } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
                     AppReinstallSupport.showUninstalledDialog(
                             context, record.packageName, record.appName);
+                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
+                    Toast.makeText(context, "The app could not be re-enabled.",
+                            Toast.LENGTH_SHORT).show();
+                } else if (AppLaunchUtils.launchPackage(context, record.packageName)) {
+                    SmartAnimationEngine.dismissDialog(dialog);
                 } else {
-                    Toast.makeText(context, "Unable to open this exact notification",
+                    Toast.makeText(context, "Notification route expired and the app cannot be opened",
                             Toast.LENGTH_SHORT).show();
                 }
             });
@@ -340,14 +345,25 @@ public final class RichNotificationHistoryDialog {
                 if (exactTarget) {
                     SavedNotificationDestinationResolver.OpenResult result =
                             SavedNotificationDestinationResolver.openExactResult(context, record);
+                    if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
+                        AppReinstallSupport.showUninstalledDialog(
+                                context, packageName, record.appName);
+                        return;
+                    }
+                    if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
+                        Toast.makeText(context, "The app could not be re-enabled.",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
                     opened = result.accepted();
+                    if (!opened && result == SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET) {
+                        opened = AppLaunchUtils.launchPackage(context, packageName);
+                    }
                 } else {
                     opened = AppLaunchUtils.launchPackage(context, packageName);
                 }
                 if (!opened) {
-                    Toast.makeText(context, exactTarget
-                                    ? "Unable to open this exact notification" : "App cannot be opened",
-                            Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, "App cannot be opened", Toast.LENGTH_SHORT).show();
                     return;
                 }
                 SmartAnimationEngine.dismissDialog(dialog);

@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.78 - lightweight flashing notification attention in Vertical Cards
-        versionCode 506
-        versionName "3.30.78"
+        // Smart S Launcher 3.30.79 - Home lifecycle and historical notification recovery
+        versionCode 507
+        versionName "3.30.79"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
