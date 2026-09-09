@@ -29,6 +29,7 @@ import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.result.AppResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
+import fr.neamar.kiss.ui.AutoScrollPreviewTextView;
 import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.ui.TextOverflowMode;
@@ -519,8 +520,11 @@ final class SmartCardListForwarder extends Forwarder {
 
         ImageView liveIcon = findIconView(source);
         Drawable iconDrawable = liveIcon == null ? null : liveIcon.getDrawable();
-        if (iconDrawable == null) iconDrawable = result.getDrawable(mainActivity);
-        int accent = accentFor(result, iconDrawable);
+        // Match Horizontal Icons' smooth-scroll rule: never turn a cold asynchronous icon into a
+        // synchronous drawable load on the UI thread just to style the card. A neutral provisional
+        // accent is deliberately not cached; bindDrawable() below supplies the real icon/accent.
+        int accent = iconDrawable == null
+                ? Color.rgb(64, 84, 118) : accentFor(result, iconDrawable);
         styleCard(card, radiusDp, accent);
 
         View notificationRow = source.findViewById(R.id.item_notification_row);
@@ -560,6 +564,14 @@ final class SmartCardListForwarder extends Forwarder {
         LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
         iconLp.rightMargin = dp(14);
         mainRow.addView(iconView, iconLp);
+        if (iconView instanceof ImageView) {
+            ImageView renderedIcon = (ImageView) iconView;
+            result.bindDrawable(renderedIcon, drawable -> {
+                if (drawable == null || renderedIcon.getParent() == null) return;
+                int resolvedAccent = accentFor(result, drawable);
+                styleCard(card, radiusDp, resolvedAccent);
+            });
+        }
 
         LinearLayout center = new LinearLayout(mainActivity);
         center.setOrientation(LinearLayout.VERTICAL);
@@ -615,7 +627,7 @@ final class SmartCardListForwarder extends Forwarder {
             }
             notificationRow.setVisibility(View.GONE);
         } else if (hasMessage) {
-            AutoMarqueeTextView lastMessage = new AutoMarqueeTextView(mainActivity);
+            AutoScrollPreviewTextView lastMessage = new AutoScrollPreviewTextView(mainActivity);
             lastMessage.setText(latestMessage);
             lastMessage.setTextColor(Color.WHITE);
             lastMessage.setTextSize(13f);
