@@ -58,6 +58,16 @@ replace_once(
 namespace = {'__name__': '__main__', '__file__': str(base_path)}
 exec(compile(source, str(base_path), 'exec'), namespace)
 
+# Generic lambda inference does not widen the legacy integer literal to the enclosing long return.
+# Keep the exact existing value/behavior while making its primitive type explicit for the wrapper.
+dbhelper = Path('app/src/main/java/fr/neamar/kiss/db/DBHelper.java')
+dbhelper_text = dbhelper.read_text()
+old_long_zero = '''        if (app == null)\n            return 0;'''
+if dbhelper_text.count(old_long_zero) != 1:
+    raise SystemExit(f'DBHelper long-zero guard expected exactly one match, found {dbhelper_text.count(old_long_zero)}')
+dbhelper.write_text(dbhelper_text.replace(old_long_zero,
+                                           '''        if (app == null)\n            return 0L;''', 1))
+
 # Method-body wrapping preserves original indentation verbatim, including whitespace-only blank
 # lines. Normalize trailing whitespace after the guarded transformation so the generated Java is
 # diff-clean without changing any executable source text.
