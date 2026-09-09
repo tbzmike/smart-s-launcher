@@ -39,6 +39,16 @@ public final class TextOverflowMode {
         return "vertical".equals(layout) || "vertical_cards".equals(layout);
     }
 
+    /**
+     * Auto-expand now starts collapsed instead of measuring the complete message into History.
+     * Use the wrapped line count, not string length, so words/emoji/Unicode are never cut in half.
+     */
+    static int collapsedPreviewLineCount(int totalLines) {
+        if (totalLines <= 0) return 0;
+        if (totalLines == 1) return 1;
+        return Math.max(1, (totalLines + 1) / 2);
+    }
+
     private static String readString(SharedPreferences prefs, String key, String fallback) {
         try {
             String value = prefs.getString(key, fallback);
