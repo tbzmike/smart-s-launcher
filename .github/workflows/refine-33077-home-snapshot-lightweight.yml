@@ -33,7 +33,7 @@ jobs:
           set -euxo pipefail
           grep -q 'versionCode 504' app/build.gradle
           grep -q 'versionName "3.30.76"' app/build.gradle
-          grep -q 'Keep Vertical Cards icon work off the scroll thread' <(git log -1 --pretty=%B)
+          git merge-base --is-ancestor fd45cc06aa940c87dee4953a31b4ff330430ed9e HEAD
           grep -q 'private static final int MAX_STATE_ENTRIES = 384' app/src/main/java/fr/neamar/kiss/utils/AppIconMemoryCache.java
 
       - name: Apply guarded 3.30.77 source patch
