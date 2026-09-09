@@ -1,0 +1,34 @@
+from pathlib import Path
+
+
+def replace_once(path, old, new):
+    p = Path(path)
+    text = p.read_text()
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{path}: expected exactly one match, found {count}\n--- needle ---\n{old[:900]}")
+    p.write_text(text.replace(old, new, 1))
+
+
+# Historical notification routes can become stale after Android/WhatsApp stops publishing the
+# original shortcut or PendingIntent. Always try the exact saved destination first; when Android
+# no longer exposes it, fall back to the posting app rather than dead-ending on an error. Never
+# fabricate a deep link from notification title/body text.
+rich = "app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java"
+replace_once(
+    rich,
+    '''            open.setOnClickListener(v -> {\n                SavedNotificationDestinationResolver.OpenResult result =\n                        SavedNotificationDestinationResolver.openExactResult(context, record);\n                if (result.accepted()) {\n                    SmartAnimationEngine.dismissDialog(dialog);\n                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {\n                    AppReinstallSupport.showUninstalledDialog(\n                            context, record.packageName, record.appName);\n                } else {\n                    Toast.makeText(context, "Unable to open this exact notification",\n                            Toast.LENGTH_SHORT).show();\n                }\n            });''',
+    '''            open.setOnClickListener(v -> {\n                SavedNotificationDestinationResolver.OpenResult result =\n                        SavedNotificationDestinationResolver.openExactResult(context, record);\n                if (result.accepted()) {\n                    SmartAnimationEngine.dismissDialog(dialog);\n                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {\n                    AppReinstallSupport.showUninstalledDialog(\n                            context, record.packageName, record.appName);\n                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {\n                    Toast.makeText(context, "The app could not be re-enabled.",\n                            Toast.LENGTH_SHORT).show();\n                } else if (AppLaunchUtils.launchPackage(context, record.packageName)) {\n                    SmartAnimationEngine.dismissDialog(dialog);\n                } else {\n                    Toast.makeText(context, "Notification route expired and the app cannot be opened",\n                            Toast.LENGTH_SHORT).show();\n                }\n            });''')
+
+replace_once(
+    rich,
+    '''                boolean opened;\n                if (exactTarget) {\n                    SavedNotificationDestinationResolver.OpenResult result =\n                            SavedNotificationDestinationResolver.openExactResult(context, record);\n                    opened = result.accepted();\n                } else {\n                    opened = AppLaunchUtils.launchPackage(context, packageName);\n                }\n                if (!opened) {\n                    Toast.makeText(context, exactTarget\n                                    ? "Unable to open this exact notification" : "App cannot be opened",\n                            Toast.LENGTH_SHORT).show();\n                    return;\n                }\n                SmartAnimationEngine.dismissDialog(dialog);''',
+    '''                boolean opened;\n                if (exactTarget) {\n                    SavedNotificationDestinationResolver.OpenResult result =\n                            SavedNotificationDestinationResolver.openExactResult(context, record);\n                    if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {\n                        AppReinstallSupport.showUninstalledDialog(\n                                context, packageName, record.appName);\n                        return;\n                    }\n                    if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {\n                        Toast.makeText(context, "The app could not be re-enabled.",\n                                Toast.LENGTH_SHORT).show();\n                        return;\n                    }\n                    opened = result.accepted();\n                    if (!opened && result == SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET) {\n                        opened = AppLaunchUtils.launchPackage(context, packageName);\n                    }\n                } else {\n                    opened = AppLaunchUtils.launchPackage(context, packageName);\n                }\n                if (!opened) {\n                    Toast.makeText(context, "App cannot be opened", Toast.LENGTH_SHORT).show();\n                    return;\n                }\n                SmartAnimationEngine.dismissDialog(dialog);''')
+
+history = "app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java"
+replace_once(
+    history,
+    '''        open.setOnClickListener(v -> {\n            if (exactTarget) {\n                SavedNotificationDestinationResolver.OpenResult result =\n                        SavedNotificationDestinationResolver.openExactResult(this, record);\n                if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {\n                    AppReinstallSupport.showUninstalledDialog(\n                            this, record.packageName, record.appName);\n                } else if (!result.accepted()) {\n                    Toast.makeText(this, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();\n                }\n            } else {\n                openApp(record);\n            }\n        });''',
+    '''        open.setOnClickListener(v -> {\n            if (exactTarget) {\n                SavedNotificationDestinationResolver.OpenResult result =\n                        SavedNotificationDestinationResolver.openExactResult(this, record);\n                if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {\n                    AppReinstallSupport.showUninstalledDialog(\n                            this, record.packageName, record.appName);\n                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {\n                    Toast.makeText(this, "The app could not be re-enabled.", Toast.LENGTH_SHORT).show();\n                } else if (!result.accepted()) {\n                    openApp(record);\n                }\n            } else {\n                openApp(record);\n            }\n        });''')
+
+print("3.30.78 historical notification exact-first app fallback applied successfully")
