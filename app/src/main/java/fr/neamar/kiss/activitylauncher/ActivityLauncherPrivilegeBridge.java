@@ -10,7 +10,6 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ServiceInfo;
-import android.os.UserHandle;
 
 import androidx.annotation.NonNull;
 
@@ -106,8 +105,7 @@ final class ActivityLauncherPrivilegeBridge {
             if (isApplicationEffectivelyEnabled(context, packageName)) return Result.SUCCESS;
         } catch (SecurityException | IllegalArgumentException ignored) { }
 
-        String command = "pm enable --user " + UserHandle.myUserId() + " "
-                + packageShellArg(packageName);
+        String command = "pm enable --user current " + packageShellArg(packageName);
         if (!runRootCommand(command)) return Result.ROOT_UNAVAILABLE_OR_DENIED;
         return isApplicationEffectivelyEnabled(context, packageName)
                 ? Result.SUCCESS : Result.FAILED;
@@ -129,8 +127,7 @@ final class ActivityLauncherPrivilegeBridge {
 
         String command;
         try {
-            command = "pm enable --user " + UserHandle.myUserId() + " "
-                    + componentShellArg(component);
+            command = "pm enable --user current " + componentShellArg(component);
         } catch (IllegalArgumentException e) {
             return Result.FAILED;
         }
@@ -157,8 +154,7 @@ final class ActivityLauncherPrivilegeBridge {
         }
 
         try {
-            return runRootCommand(verb + " --user " + UserHandle.myUserId()
-                    + " -n " + componentShellArg(component));
+            return runRootCommand(verb + " --user current -n " + componentShellArg(component));
         } catch (IllegalArgumentException e) {
             return false;
         }
