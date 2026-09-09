@@ -1,0 +1,133 @@
+name: Verify Home Return 3.30.73
+
+on:
+  push:
+    branches:
+      - fix/3.30.73-home-return-search-race
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-home-return-3.30.73
+  cancel-in-progress: false
+
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact fix branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/3.30.73-home-return-search-race
+          fetch-depth: 0
+
+      - name: Verify exact 3.30.72 base
+        run: |
+          set -euo pipefail
+          BASE=a13ac6646363edc825a96f11dca83bd2c59787ec
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          grep -F 'versionCode 500' app/build.gradle
+          grep -F 'versionName "3.30.72"' app/build.gradle
+          test -z "$(git status --porcelain)"
+
+      - name: Apply exact Home-return patch
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply_home_return_33073.py
+          git diff --check
+
+      - name: Verify exact wiring and no concurrent full-search lane
+        run: |
+          set -euo pipefail
+          MAIN=app/src/main/java/fr/neamar/kiss/MainActivity.java
+          HANDLER=app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
+          WINDOW=app/src/main/java/fr/neamar/kiss/searcher/HomeHistoryWindow.java
+
+          grep -F 'SearchHandler.getInstance().restoreHomeHistory(this);' "$MAIN"
+          grep -F 'public void restoreHomeHistory(@NonNull MainActivity activity)' "$HANDLER"
+          grep -F 'publishHomeHistoryPreview(activity, generation, historyQuerySeed);' "$HANDLER"
+          grep -F 'refreshHistorySeedAndPublish(activity, generation);' "$HANDLER"
+          grep -F 'startSearch(Searcher.Type.HISTORY, activity, null, false, generation);' "$HANDLER"
+          grep -F 'HomeHistoryWindow.select(' "$HANDLER"
+          grep -F 'RecentLaunchTracker.getMostRecent()' "$HANDLER"
+          grep -F 'activity.adapter.updateWithPojos(activity, preview, false, "<history>");' "$HANDLER"
+
+          # The fix deliberately does not add a second executor for full provider/history searches.
+          test "$(grep -R -F 'SEARCH_THREAD = new ThreadPoolExecutor' app/src/main/java/fr/neamar/kiss/searcher/Searcher.java | wc -l)" -eq 1
+          ! grep -E 'HOME_RETURN_THREAD|URGENT_SEARCH_THREAD|executeOnExecutor\([^S]' "$HANDLER"
+
+          grep -F 'versionCode 501' app/build.gradle
+          grep -F 'versionName "3.30.73"' app/build.gradle
+          test -s "$WINDOW"
+
+      - name: Focused Home-return regression tests
+        run: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest \
+            --tests fr.neamar.kiss.searcher.HomeHistoryWindowTest \
+            --tests fr.neamar.kiss.SearchLaunchReturnStateTest \
+            --tests fr.neamar.kiss.searcher.HistoryRecencyOrderTest \
+            --stacktrace
+
+      - name: Full clean verification
+        run: |
+          set -euo pipefail
+          ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify both APK manifests are the upgrade
+        run: |
+          set -euo pipefail
+          DEBUG_APK=app/build/outputs/apk/debug/app-debug.apk
+          RELEASE_APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$DEBUG_APK"
+          test -f "$RELEASE_APK"
+
+          APK_ANALYZER="$(find "$ANDROID_HOME" -type f -name apkanalyzer 2>/dev/null | head -n 1 || true)"
+          if [ -n "$APK_ANALYZER" ]; then
+            for apk in "$DEBUG_APK" "$RELEASE_APK"; do
+              NAME="$($APK_ANALYZER manifest version-name "$apk")"
+              CODE="$($APK_ANALYZER manifest version-code "$apk")"
+              echo "$apk => versionName=$NAME versionCode=$CODE"
+              test "$NAME" = "3.30.73"
+              test "$CODE" = "501"
+            done
+          else
+            AAPT="$(find "$ANDROID_HOME" -type f -name aapt 2>/dev/null | sort -V | tail -n 1 || true)"
+            test -n "$AAPT"
+            for apk in "$DEBUG_APK" "$RELEASE_APK"; do
+              BADGING="$($AAPT dump badging "$apk" | head -n 1)"
+              echo "$BADGING"
+              echo "$BADGING" | grep -F "versionCode='501'"
+              echo "$BADGING" | grep -F "versionName='3.30.73'"
+            done
+          fi
+
+      - name: Verify final changed-file surface and commit only source
+        run: |
+          set -euo pipefail
+          BASE=a13ac6646363edc825a96f11dca83bd2c59787ec
+
+          git rm .github/scripts/apply_home_return_33073.py
+          git rm .github/workflows/verify-home-return-3.30.73.yml
+
+          printf '%s\n' \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/MainActivity.java \
+            app/src/main/java/fr/neamar/kiss/searcher/HomeHistoryWindow.java \
+            app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java \
+            app/src/test/java/fr/neamar/kiss/searcher/HomeHistoryWindowTest.java | sort > /tmp/expected-final
+          git diff --name-only "$BASE" | sort > /tmp/actual-final
+          diff -u /tmp/expected-final /tmp/actual-final
+          git diff --check
+
+          grep -F 'versionCode 501' app/build.gradle
+          grep -F 'versionName "3.30.73"' app/build.gradle
+          grep -F 'SearchHandler.getInstance().restoreHomeHistory(this);' app/src/main/java/fr/neamar/kiss/MainActivity.java
+          grep -F 'public void restoreHomeHistory(@NonNull MainActivity activity)' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix delayed Home return after search launch in 3.30.73'
+          git push origin HEAD:fix/3.30.73-home-return-search-race
