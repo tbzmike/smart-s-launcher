@@ -4,8 +4,6 @@ import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.os.Handler;
-import android.os.Looper;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.text.format.DateUtils;
@@ -48,9 +46,9 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
  * Makes notification-history behavior explicit on the custom Vertical Cards renderer and enriches
  * the existing between-card label with launch activity from the KISS history table.
  *
- * Decoration is applied only when cards are created/rebuilt. It must never run from a permanent
- * global-layout listener because that would recursively walk every card during ordinary layouts
- * and scrolling, and it could overwrite independent metadata such as today's usage time.
+ * Decoration is applied only when cards are created/rebuilt. Unread notifications keep a static
+ * attention border; no recurring Handler/invalidations are allowed while Home is idle or scrolling.
+ * This prevents notification decoration from competing with ScrollView and marquee frame delivery.
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -59,10 +57,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String DETAILS_TOGGLE_DESCRIPTION = "Show card details";
     private static final float BOTTOM_SWIPE_THRESHOLD_DP = 28f;
     private static final float BOTTOM_SWIPE_AXIS_BIAS = 1.15f;
-    private static final long ATTENTION_PULSE_MS = 550L;
 
     private final SmartCardListForwarder smartCardListForwarder;
-    private final Handler attentionHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService launchStatsExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "smart-s-card-launch-stats");
         thread.setPriority(Thread.MIN_PRIORITY);
@@ -76,39 +72,11 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private boolean launchStatsRefreshRequested;
     private boolean paused;
     private volatile boolean destroyed;
-    private boolean attentionBright;
 
     private float bottomSwipeDownRawX;
     private float bottomSwipeDownRawY;
     private boolean bottomSwipeStartedOnCard;
     private boolean bottomSwipeTriggered;
-
-    private final Runnable attentionPulse = new Runnable() {
-        @Override
-        public void run() {
-            attentionBright = !attentionBright;
-            for (int i = attentionBorders.size() - 1; i >= 0; i--) {
-                AttentionBorder binding = attentionBorders.get(i);
-                if (!binding.card.isAttachedToWindow()
-                        || !NotificationTimelineState.isUnread(mainActivity, binding.notificationId)) {
-                    binding.card.getOverlay().remove(binding.border);
-                    attentionBorders.remove(i);
-                    continue;
-                }
-                binding.border.setBounds(0, 0,
-                        Math.max(1, binding.card.getWidth()), Math.max(1, binding.card.getHeight()));
-                int stroke = attentionBright ? dp(4) : dp(2);
-                int color = attentionBright
-                        ? Color.argb(255, 255, 255, 255)
-                        : Color.argb(235, 255, 176, 32);
-                binding.border.setStroke(stroke, color);
-                binding.card.invalidate();
-            }
-            if (!attentionBorders.isEmpty()) {
-                attentionHandler.postDelayed(this, ATTENTION_PULSE_MS);
-            }
-        }
-    };
 
     VerticalCardNotificationHistoryForwarder(MainActivity activity,
                                              SmartCardListForwarder smartCardListForwarder) {
@@ -251,7 +219,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
                 applyNotificationClickRecursively(wrapper, notificationClick);
             }
         }
-        startAttentionPulse();
     }
 
     /** Replace generic card metadata with the exact individual notification preview. */
@@ -354,13 +321,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         return group.getChildCount() > 0 ? group.getChildAt(0) : null;
     }
 
-    private void startAttentionPulse() {
-        attentionHandler.removeCallbacks(attentionPulse);
-        if (attentionBorders.isEmpty()) return;
-        attentionBright = false;
-        attentionHandler.post(attentionPulse);
-    }
-
     private void clearAttentionFor(String notificationId) {
         for (int i = attentionBorders.size() - 1; i >= 0; i--) {
             AttentionBorder binding = attentionBorders.get(i);
@@ -369,17 +329,14 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             binding.card.invalidate();
             attentionBorders.remove(i);
         }
-        if (attentionBorders.isEmpty()) attentionHandler.removeCallbacks(attentionPulse);
     }
 
     private void resetAttentionBorders() {
-        attentionHandler.removeCallbacks(attentionPulse);
         for (AttentionBorder binding : attentionBorders) {
             binding.card.getOverlay().remove(binding.border);
             binding.card.invalidate();
         }
         attentionBorders.clear();
-        attentionBright = false;
     }
 
     private void applyBottomSwipeTouchRecursively(View view) {

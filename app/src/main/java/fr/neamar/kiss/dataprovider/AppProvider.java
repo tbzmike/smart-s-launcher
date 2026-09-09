@@ -46,7 +46,11 @@ public class AppProvider extends Provider<AppPojo>
     private static volatile AppProvider activeInstance;
 
     private final Handler stateHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService stateExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService stateExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "smart-s-frozen-state");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
     private final AtomicBoolean reconcileRunning = new AtomicBoolean(false);
     private LauncherApps launcherApps;
     private SharedPreferences prefs;
@@ -102,13 +106,14 @@ public class AppProvider extends Provider<AppPojo>
         }
         if (!reconcileRunning.compareAndSet(false, true)) return;
 
-        // Snapshot the immutable provider list on the main thread, then perform PackageManager and
-        // LauncherApps calls on a dedicated background worker. Those binder calls were previously
-        // executed for every app directly on the UI thread every 15 seconds and immediately on
-        // every Home return.
+        // Snapshot the immutable provider list, then keep PackageManager/LauncherApps scanning and
+        // unchanged-state filtering on a low-priority worker. The UI thread receives only packages
+        // whose disabled state may actually need to change; the common no-change pass posts no UI work.
         final List<AppPojo> snapshot = new ArrayList<>(getPojos());
         stateExecutor.execute(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             final boolean[] enabledStates = new boolean[snapshot.size()];
+            final ArrayList<Integer> changedIndices = new ArrayList<>();
             PackageManager pm = getPackageManager();
 
             for (int i = 0; i < snapshot.size(); i++) {
@@ -137,15 +142,28 @@ public class AppProvider extends Provider<AppPojo>
                     }
                 }
                 enabledStates[i] = enabled;
+                // AppPojo state is already read from search/background workers elsewhere.
+                // Pre-filter here so the main thread never performs an all-app comparison pass.
+                if (pojo.isDisabled() == enabled) changedIndices.add(i);
+            }
+
+            if (changedIndices.isEmpty()) {
+                reconcileRunning.set(false);
+                if (launcherUiVisible && isFrozenDetectionEnabled()) {
+                    scheduleNextReconcile(reconcileDelayMs);
+                }
+                return;
             }
 
             stateHandler.post(() -> {
                 try {
                     if (!launcherUiVisible) return;
                     boolean changed = false;
-                    for (int i = 0; i < snapshot.size(); i++) {
-                        AppPojo pojo = snapshot.get(i);
-                        boolean enabled = enabledStates[i];
+                    for (int index : changedIndices) {
+                        AppPojo pojo = snapshot.get(index);
+                        boolean enabled = enabledStates[index];
+                        // Re-check on the UI thread in case a LauncherApps callback updated
+                        // this package while the fallback scan was still running.
                         if (pojo.isDisabled() == enabled) {
                             pojo.setDisabled(!enabled);
                             changed = true;

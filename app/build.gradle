@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.73 - immediate Home history restoration after search launches
-        versionCode 501
-        versionName "3.30.73"
+        // Smart S Launcher 3.30.74 - smooth Home scrolling and marquee performance
+        versionCode 502
+        versionName "3.30.74"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
