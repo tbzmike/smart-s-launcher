@@ -1,0 +1,100 @@
+name: Refine Smart S 3.30.77 Home Snapshot Performance
+
+on:
+  push:
+    branches:
+      - fix/3.30.77-home-snapshot-lightweight-scroll
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refine-33077-home-snapshot
+  cancel-in-progress: true
+
+jobs:
+  refine:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify exact 3.30.76 refinement baseline
+        run: |
+          set -euxo pipefail
+          grep -q 'versionCode 504' app/build.gradle
+          grep -q 'versionName "3.30.76"' app/build.gradle
+          grep -q 'Keep Vertical Cards icon work off the scroll thread' <(git log -1 --pretty=%B)
+          grep -q 'private static final int MAX_STATE_ENTRIES = 384' app/src/main/java/fr/neamar/kiss/utils/AppIconMemoryCache.java
+
+      - name: Apply guarded 3.30.77 source patch
+        run: |
+          set -euxo pipefail
+          python3 .github/scripts/apply_33077_home_snapshot_lightweight.py
+
+      - name: Verify intended performance wiring
+        run: |
+          set -euxo pipefail
+          grep -q 'versionCode 505' app/build.gradle
+          grep -q 'versionName "3.30.77"' app/build.gradle
+          grep -q 'homeResultSnapshot' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
+          grep -q 'publishWarmHomeResultSnapshot' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
+          grep -q 'rememberLaunchedResult(this)' app/src/main/java/fr/neamar/kiss/result/Result.java
+          grep -q 'snapshotResults' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'reuseKey' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'RENDER_CONFIG_CACHE_MS' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'cachedHistoryWidthPercent' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'warmHistoryCards' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'restoreWarmHistoryCards' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'FORMATTED_CACHE' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
+          grep -q 'smart-s-history-stats' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
+          grep -q 'BITMAP_CACHE' app/src/main/java/fr/neamar/kiss/utils/AppIconMemoryCache.java
+          grep -q 'MAX_BITMAP_KB = 16 \* 1024' app/src/main/java/fr/neamar/kiss/utils/AppIconMemoryCache.java
+          # Features explicitly preserved.
+          grep -q 'SmartAnimationEngine.animateListMove' app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java
+          grep -q 'case "helix"' app/src/main/java/fr/neamar/kiss/ui/SmartScrollAnimationController.java
+          grep -q 'case "fan"' app/src/main/java/fr/neamar/kiss/ui/SmartScrollAnimationController.java
+          grep -q 'WHEEL_3D' app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java
+          grep -q 'AutoScrollPreviewTextView' app/src/main/res/layout/item_app.xml
+          grep -q 'ActivityLauncherActivity' app/src/main/AndroidManifest.xml
+
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify APK manifest versions
+        run: |
+          set -euxo pipefail
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          DEBUG_APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          RELEASE_APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
+          "$AAPT" dump badging "$DEBUG_APK" | tee /tmp/debug-badging.txt
+          "$AAPT" dump badging "$RELEASE_APK" | tee /tmp/release-badging.txt
+          grep -q "versionCode='505'" /tmp/debug-badging.txt
+          grep -q "versionName='3.30.77'" /tmp/debug-badging.txt
+          grep -q "versionCode='505'" /tmp/release-badging.txt
+          grep -q "versionName='3.30.77'" /tmp/release-badging.txt
+
+      - name: Commit verified source changes
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java \
+            app/src/main/java/fr/neamar/kiss/result/Result.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java \
+            app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
+          git diff --cached --check
+          git commit -m 'Retain warm Home results and cards across launches'
+          git push origin HEAD:fix/3.30.77-home-snapshot-lightweight-scroll
