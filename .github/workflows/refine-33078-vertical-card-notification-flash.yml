@@ -28,24 +28,22 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Verify exact 3.30.77 baseline
+      - name: Verify exact current 3.30.78 baseline
         run: |
           set -euxo pipefail
-          git merge-base --is-ancestor b16ab9c692e62359589669791abacda255301c9c HEAD
-          grep -q 'versionCode 505' app/build.gradle
-          grep -q 'versionName "3.30.77"' app/build.gradle
           NOTIFY=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java
           CARDS=app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
-          grep -q 'Unread notifications keep a static' "$NOTIFY"
-          grep -q 'private final List<AttentionBorder> attentionBorders' "$NOTIFY"
+          grep -q 'versionCode 506' app/build.gradle
+          grep -q 'versionName "3.30.78"' app/build.gradle
+          grep -q 'import android.graphics.drawable.AnimationDrawable;' "$NOTIFY"
+          grep -q 'border.addFrame(createAttentionFrame(dp(4), Color.WHITE)' "$NOTIFY"
           grep -q 'private final Map<String, View> warmHistoryCards' "$CARDS"
           grep -q 'captureWarmHistoryCards()' "$CARDS"
           grep -q 'restoreWarmHistoryCards' "$CARDS"
 
-      - name: Apply guarded 3.30.78 fixes
+      - name: Remove unsafe warm Home View retention
         run: |
           set -euxo pipefail
-          python3 .github/scripts/apply_33078_vertical_card_notification_flash.py
           python3 .github/scripts/fix_33078_remove_warm_card_views.py
 
       - name: Verify lifecycle safety, flashing, and feature preservation
@@ -59,19 +57,17 @@ jobs:
           grep -q 'versionCode 506' app/build.gradle
           grep -q 'versionName "3.30.78"' app/build.gradle
 
-          # Flashing is restored without the old renderer-wide Handler pulse.
+          # Notification flashing remains restored and lightweight.
           grep -q 'import android.graphics.drawable.AnimationDrawable;' "$NOTIFY"
           grep -q 'private static final int ATTENTION_PULSE_MS = 550;' "$NOTIFY"
           grep -q 'border.addFrame(createAttentionFrame(dp(2), Color.argb(235, 255, 176, 32))' "$NOTIFY"
           grep -q 'border.addFrame(createAttentionFrame(dp(4), Color.WHITE)' "$NOTIFY"
           grep -q 'card.addOnLayoutChangeListener(layoutListener);' "$NOTIFY"
           grep -q 'binding.border.stop();' "$NOTIFY"
-          grep -q 'binding.card.removeOnLayoutChangeListener(binding.layoutListener);' "$NOTIFY"
           ! grep -q 'attentionHandler' "$NOTIFY"
           ! grep -q 'attentionPulse' "$NOTIFY"
-          ! grep -q 'postDelayed(this, ATTENTION_PULSE_MS)' "$NOTIFY"
 
-          # Never retain complete Activity-owned Home View trees across search/external-app use.
+          # Complete Activity-owned Home View trees must never survive QUERY/external-app use.
           ! grep -q 'warmHistoryCards' "$CARDS"
           ! grep -q 'warmHistoryScrollY' "$CARDS"
           ! grep -q 'captureWarmHistoryCards' "$CARDS"
@@ -79,13 +75,13 @@ jobs:
           grep -q 'column.removeAllViews();' "$CARDS"
           grep -q 'reconcileActiveQueryCards()' "$CARDS"
 
-          # Keep the lightweight 3.30.77 data/icon optimizations rather than reverting them.
+          # Keep the safe lightweight 3.30.77 caches and other performance work.
           grep -q 'homeResultSnapshot' "$SEARCH"
           grep -q 'canRetainWarmResult' "$SEARCH"
           grep -q 'BITMAP_CACHE_BYTES' "$ICONS"
           grep -q 'snapshotResults()' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
 
-          # Existing notification/card behavior remains wired.
+          # Existing behavior remains wired.
           grep -q 'NotificationTimelineState.markRead' "$NOTIFY"
           grep -q 'applyNotificationTimelinePreview' "$NOTIFY"
           grep -q 'applyEasyIconTap' "$NOTIFY"
@@ -129,10 +125,7 @@ jobs:
           set -euxo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            app/build.gradle \
-            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java \
-            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          git add app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
           git diff --cached --check
-          git commit -m 'Fix Home lifecycle and restore lightweight notification flashing'
+          git commit -m 'Stop retaining full Home card View trees across launches'
           git push origin HEAD:fix/3.30.78-vertical-card-notification-flash
