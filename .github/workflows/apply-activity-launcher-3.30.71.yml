@@ -62,7 +62,7 @@ jobs:
             app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherDispatchActivity.java \
             app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStore.java \
             app/src/test/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStoreTest.java | sort > /tmp/expected-all
-          git diff --name-only "$BASE" | sort > /tmp/actual-all
+          { git diff --name-only "$BASE"; git ls-files --others --exclude-standard; } | sort -u > /tmp/actual-all
           diff -u /tmp/expected-all /tmp/actual-all
           grep -F 'versionCode 499' app/build.gradle
           grep -F 'versionName "3.30.71"' app/build.gradle
@@ -106,7 +106,7 @@ jobs:
             app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherDispatchActivity.java \
             app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStore.java \
             app/src/test/java/fr/neamar/kiss/activitylauncher/ActivityLauncherStoreTest.java | sort > /tmp/expected-final
-          git diff --name-only "$BASE" | sort > /tmp/actual-final
+          { git diff --name-only "$BASE"; git ls-files --others --exclude-standard; } | sort -u > /tmp/actual-final
           diff -u /tmp/expected-final /tmp/actual-final
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
