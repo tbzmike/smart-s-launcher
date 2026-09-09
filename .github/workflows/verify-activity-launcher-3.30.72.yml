@@ -35,6 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/apply_activity_launcher_33072.py
+          python3 .github/scripts/fix_activity_launcher_33072_generated.py
           git diff --check
 
       - name: Verify architecture and wiring
@@ -111,6 +112,7 @@ jobs:
 
           git checkout "$BASE" -- .github/workflows/ci.yml
           git rm .github/scripts/apply_activity_launcher_33072.py
+          git rm .github/scripts/fix_activity_launcher_33072_generated.py
           git rm .github/workflows/verify-activity-launcher-3.30.72.yml
 
           printf '%s\n' \
