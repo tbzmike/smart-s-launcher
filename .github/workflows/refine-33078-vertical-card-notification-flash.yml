@@ -1,4 +1,4 @@
-name: Refine Smart S 3.30.78 Home Lifecycle + Notification Flash
+name: Refine Smart S 3.30.78 Home Lifecycle + Notification Recovery + Flash
 
 on:
   push:
@@ -40,19 +40,28 @@ jobs:
           grep -q 'private final Map<String, View> warmHistoryCards' "$CARDS"
           grep -q 'captureWarmHistoryCards()' "$CARDS"
           grep -q 'restoreWarmHistoryCards' "$CARDS"
+          grep -q 'Unable to open this exact notification' app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          grep -q 'Unable to open this exact notification' app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java
 
       - name: Remove unsafe warm Home View retention
         run: |
           set -euxo pipefail
           python3 .github/scripts/fix_33078_remove_warm_card_views.py
 
-      - name: Verify lifecycle safety, flashing, and feature preservation
+      - name: Restore old notification exact-first app fallback
+        run: |
+          set -euxo pipefail
+          python3 .github/scripts/fix_33078_notification_open_fallback.py
+
+      - name: Verify lifecycle safety, notification recovery, flashing, and preservation
         run: |
           set -euxo pipefail
           NOTIFY=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java
           CARDS=app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
           SEARCH=app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
           ICONS=app/src/main/java/fr/neamar/kiss/utils/AppIconMemoryCache.java
+          RICH=app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
+          HISTORY=app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java
 
           grep -q 'versionCode 506' app/build.gradle
           grep -q 'versionName "3.30.78"' app/build.gradle
@@ -75,10 +84,21 @@ jobs:
           grep -q 'column.removeAllViews();' "$CARDS"
           grep -q 'reconcileActiveQueryCards()' "$CARDS"
 
+          # Historical notifications always try the exact saved route first, then the posting app.
+          grep -q 'SavedNotificationDestinationResolver.openExactResult(context, record)' "$RICH"
+          grep -q 'result == SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET' "$RICH"
+          grep -q 'opened = AppLaunchUtils.launchPackage(context, packageName);' "$RICH"
+          grep -q 'AppLaunchUtils.launchPackage(context, record.packageName)' "$RICH"
+          grep -q 'SavedNotificationDestinationResolver.openExactResult(this, record)' "$HISTORY"
+          grep -q 'else if (!result.accepted())' "$HISTORY"
+          grep -q 'openApp(record);' "$HISTORY"
+          ! grep -q 'Unable to open this exact notification' "$RICH"
+          ! grep -q 'Unable to open this exact notification' "$HISTORY"
+
           # Keep the safe lightweight 3.30.77 caches and other performance work.
           grep -q 'homeResultSnapshot' "$SEARCH"
           grep -q 'canRetainWarmResult' "$SEARCH"
-          grep -q 'MAX_BITMAP_KB = 16 \* 1024' "$ICONS"
+          grep -q 'MAX_BITMAP_KB = 16' "$ICONS"
           grep -q 'snapshotResults()' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
 
           # Existing behavior remains wired.
@@ -125,7 +145,10 @@ jobs:
           set -euxo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          git add \
+            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java \
+            app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java \
+            app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java
           git diff --cached --check
-          git commit -m 'Stop retaining full Home card View trees across launches'
+          git commit -m 'Fix Home lifecycle and historical notification recovery'
           git push origin HEAD:fix/3.30.78-vertical-card-notification-flash
