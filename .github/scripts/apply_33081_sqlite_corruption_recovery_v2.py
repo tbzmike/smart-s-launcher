@@ -25,7 +25,7 @@ replace_once(
 """expected = sorted([str(DBHELPER), str(SMART), str(TIMELINE)])""",
 """expected = sorted([str(DBHELPER), str(SMART), str(TIMELINE), str(LAUNCH_HISTORY), str(LAUNCH_STATS), str(HISTORY_USAGE)])""")
 
-extra_patch = r'''
+extra_patch = r"""
 # Three additional direct openers were discovered by the guarded baseline scan. They are read-only
 # statistics/usage helpers, but an independent handle could still retain the corrupt file after the
 # main stores recover it, so they must use the same owner and retry boundary.
@@ -49,7 +49,7 @@ replace_once(HISTORY_USAGE,
 # repeated only after a real DB recovery, which is an exceptional path rather than normal runtime.
 wrap_methods(HISTORY_USAGE, {'getToday'}, set(), '__no_direct_getter__')
 
-'''
+"""
 replace_once(
     '# No independent DB constructors may remain outside the single recovery owner.\n',
     extra_patch + '# No independent DB constructors may remain outside the single recovery owner.\n')
