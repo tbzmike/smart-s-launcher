@@ -22,29 +22,28 @@ import fr.neamar.kiss.utils.Log;
 /** Persistent Smart S state that must survive provider reloads and app freezes. */
 public final class SmartStateStore {
     private static final String TAG = SmartStateStore.class.getSimpleName();
-    private static volatile SQLiteDatabase database;
     private static final Object LATEST_NOTIFICATION_LOCK = new Object();
     private static volatile Map<String, NotificationHistoryRecord> latestNotificationsCache;
 
     private SmartStateStore() {}
 
+    static void onDatabaseRecovered() {
+        latestNotificationsCache = null;
+    }
+
     private static SQLiteDatabase db(Context context) {
-        if (database == null) {
-            synchronized (SmartStateStore.class) {
-                if (database == null) database = new DB(context.getApplicationContext()).getWritableDatabase();
-            }
-        }
-        return database;
+        return DatabaseRecovery.getDatabase(context);
     }
 
     public static void rememberApp(@NonNull Context context, @NonNull String packageName,
                                    @NonNull String activityName, @NonNull String label, long userSerial) {
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
         ContentValues values = new ContentValues();
         values.put("package", packageName);
         values.put("class", activityName);
         values.put("label", label);
         values.put("user_serial", userSerial);
-        SQLiteDatabase database = db(context);
+        SQLiteDatabase database = recoveryDb;
 
         database.delete("app_catalog",
                 "package=? AND user_serial=? AND class<>?",
@@ -54,19 +53,25 @@ public final class SmartStateStore {
                 "package=? AND class=? AND user_serial=?",
                 new String[]{packageName, activityName, Long.toString(userSerial)});
         if (rows == 0) database.insert("app_catalog", null, values);
+
+        });
     }
 
     public static void forgetPackage(@NonNull Context context, @NonNull String packageName) {
-        db(context).delete("app_catalog", "package=?", new String[]{packageName});
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        recoveryDb.delete("app_catalog", "package=?", new String[]{packageName});
+
+        });
     }
 
     @NonNull
     public static List<AppCatalogRecord> getRememberedApps(@NonNull Context context, long userSerial) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         List<AppCatalogRecord> result = new ArrayList<>();
         Set<String> seenPackages = new HashSet<>();
         List<Long> duplicateIds = new ArrayList<>();
 
-        try (Cursor cursor = db(context).query("app_catalog",
+        try (Cursor cursor = recoveryDb.query("app_catalog",
                 new String[]{"_id", "package", "class", "label", "user_serial"},
                 "user_serial=?", new String[]{Long.toString(userSerial)}, null, null, "_id DESC")) {
             while (cursor.moveToNext()) {
@@ -86,21 +91,26 @@ public final class SmartStateStore {
             }
         }
 
-        SQLiteDatabase database = db(context);
+        SQLiteDatabase database = recoveryDb;
         for (Long duplicateId : duplicateIds) {
             database.delete("app_catalog", "_id=?", new String[]{Long.toString(duplicateId)});
         }
         return result;
+
+        });
     }
 
     @NonNull
     public static List<String[]> getNotificationApps(@NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         List<String[]> result = new ArrayList<>();
-        try (Cursor cursor = db(context).rawQuery(
+        try (Cursor cursor = recoveryDb.rawQuery(
                 "SELECT package, MAX(app_name) FROM notification_history WHERE is_permanent=0 GROUP BY package ORDER BY MAX(post_time) DESC", null)) {
             while (cursor.moveToNext()) result.add(new String[]{cursor.getString(0), cursor.getString(1)});
         }
         return result;
+
+        });
     }
 
     /**
@@ -113,13 +123,14 @@ public final class SmartStateStore {
     @NonNull
     public static Map<String, NotificationHistoryRecord> queryLatestNotificationsByPackage(
             @NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         Map<String, NotificationHistoryRecord> result = new LinkedHashMap<>();
         String sql = "SELECT n._id,n.notification_id,n.package,n.app_name,n.title,n.body,"
                 + "n.post_time,n.is_permanent,n.shortcut_id,n.user_serial,n.route_uri FROM notification_history n INNER JOIN "
                 + "(SELECT package,MAX(post_time) latest_time FROM notification_history "
                 + "GROUP BY package) latest ON latest.package=n.package "
                 + "AND latest.latest_time=n.post_time ORDER BY n.post_time DESC,n._id DESC";
-        try (Cursor cursor = db(context).rawQuery(sql, null)) {
+        try (Cursor cursor = recoveryDb.rawQuery(sql, null)) {
             while (cursor.moveToNext()) {
                 NotificationHistoryRecord record = readNotificationRecord(cursor);
                 if (record.packageName != null && !result.containsKey(record.packageName)) {
@@ -129,6 +140,8 @@ public final class SmartStateStore {
         }
         latestNotificationsCache = new LinkedHashMap<>(result);
         return result;
+
+        });
     }
 
     /** Fast O(1) lookup used by vertical-card binding after one grouped database scan. */
@@ -154,6 +167,7 @@ public final class SmartStateStore {
                                         @Nullable String title, @Nullable String body, long postTime,
                                         boolean permanent, @Nullable String shortcutId, long userSerial,
                                         @Nullable String routeUri) {
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
         if (!PreferenceManager.getDefaultSharedPreferences(context)
                 .getBoolean("enable-notification-history", false)) {
             return;
@@ -171,7 +185,7 @@ public final class SmartStateStore {
         values.put("user_serial", userSerial);
         values.put("route_uri", routeUri == null ? "" : routeUri);
         try {
-            SQLiteDatabase database = db(context);
+            SQLiteDatabase database = recoveryDb;
             if (permanent) {
                 ContentValues permanentState = new ContentValues(1);
                 permanentState.put("is_permanent", 1);
@@ -186,6 +200,8 @@ public final class SmartStateStore {
         } catch (SQLiteFullException e) {
             Log.w(TAG, "Notification history reached available database storage", e);
         }
+
+        });
     }
 
     @NonNull
@@ -202,6 +218,7 @@ public final class SmartStateStore {
                                                                      @Nullable List<String> terms,
                                                                      @Nullable Boolean permanent,
                                                                      int limit) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         StringBuilder where = new StringBuilder();
         List<String> args = new ArrayList<>();
         if (packageName != null && !packageName.isEmpty()) {
@@ -229,7 +246,7 @@ public final class SmartStateStore {
 
         List<NotificationHistoryRecord> result = new ArrayList<>();
         String limitText = limit > 0 ? Integer.toString(limit) : null;
-        try (Cursor cursor = db(context).query("notification_history",
+        try (Cursor cursor = recoveryDb.query("notification_history",
                 new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent", "shortcut_id", "user_serial", "route_uri"},
                 where.length() == 0 ? null : where.toString(),
                 args.isEmpty() ? null : args.toArray(new String[0]),
@@ -239,15 +256,20 @@ public final class SmartStateStore {
             }
         }
         return result;
+
+        });
     }
 
     public static void updateNotificationRoute(@NonNull Context context, long dbId,
                                                @Nullable String routeUri) {
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
         if (dbId <= 0L || routeUri == null || routeUri.isEmpty()) return;
         ContentValues values = new ContentValues(1);
         values.put("route_uri", routeUri);
-        db(context).update("notification_history", values, "_id=?",
+        recoveryDb.update("notification_history", values, "_id=?",
                 new String[]{Long.toString(dbId)});
+
+        });
     }
 
     private static NotificationHistoryRecord readNotificationRecord(Cursor cursor) {

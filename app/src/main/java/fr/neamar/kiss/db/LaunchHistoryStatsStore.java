@@ -30,6 +30,7 @@ public final class LaunchHistoryStatsStore {
      */
     @NonNull
     public static Map<String, Stats> getAll(@NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         Calendar midnight = Calendar.getInstance();
         midnight.set(Calendar.HOUR_OF_DAY, 0);
         midnight.set(Calendar.MINUTE, 0);
@@ -38,7 +39,7 @@ public final class LaunchHistoryStatsStore {
         long startOfToday = midnight.getTimeInMillis();
 
         Map<String, Stats> result = new HashMap<>();
-        SQLiteDatabase db = new DB(context.getApplicationContext()).getReadableDatabase();
+        SQLiteDatabase db = recoveryDb;
         String sql = "SELECT record, MAX(timeStamp), "
                 + "SUM(CASE WHEN timeStamp >= ? THEN 1 ELSE 0 END) "
                 + "FROM history GROUP BY record";
@@ -52,7 +53,8 @@ public final class LaunchHistoryStatsStore {
                 }
             }
         }
-        db.close();
         return result;
+
+        });
     }
 }

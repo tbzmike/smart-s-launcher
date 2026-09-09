@@ -22,7 +22,7 @@ import fr.neamar.kiss.utils.UserHandle;
 
 class DB extends SQLiteOpenHelper {
 
-    private final static String DB_NAME = "kiss.s3db";
+    static final String DB_NAME = "kiss.s3db";
     private final static int DB_VERSION = 16;
     private static final String TAG = DB.class.getSimpleName();
 

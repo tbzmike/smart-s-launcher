@@ -19,20 +19,11 @@ import fr.neamar.kiss.utils.Log;
 
 public class DBHelper {
     private static final String TAG = DBHelper.class.getSimpleName();
-    private static volatile SQLiteDatabase database = null;
-
     private DBHelper() {
     }
 
     private static SQLiteDatabase getDatabase(Context context) {
-        if (database == null) {
-            synchronized (DBHelper.class) {
-                if (database == null) {
-                    database = new DB(context).getReadableDatabase();
-                }
-            }
-        }
-        return database;
+        return DatabaseRecovery.getDatabase(context);
     }
 
     private static List<ValuedHistoryRecord> readCursor(Cursor cursor) {
@@ -61,7 +52,8 @@ public class DBHelper {
      * @param record  record to insert
      */
     public static void insertHistory(Context context, String query, String record) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         ContentValues values = new ContentValues();
         values.put("query", query);
         values.put("record", record);
@@ -75,16 +67,24 @@ public class DBHelper {
             // And vacuum the DB for speed
             db.execSQL("VACUUM");
         }
+
+        });
     }
 
     public static void removeFromHistory(Context context, String record) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         db.delete("history", "record = ?", new String[]{record});
+
+        });
     }
 
     public static void clearHistory(Context context) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         db.delete("history", "", null);
+
+        });
     }
 
     private static Cursor getHistoryByFrecency(SQLiteDatabase db, int limit) {
@@ -175,9 +175,10 @@ public class DBHelper {
      * @return records with number of use
      */
     public static List<ValuedHistoryRecord> getHistory(Context context, int limit, HistoryMode historyMode) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         List<ValuedHistoryRecord> records;
 
-        SQLiteDatabase db = getDatabase(context);
+        SQLiteDatabase db = recoveryDb;
 
         Cursor cursor;
         switch (historyMode) {
@@ -207,6 +208,8 @@ public class DBHelper {
         cursor.close();
 
         return records;
+
+        });
     }
 
 
@@ -217,7 +220,8 @@ public class DBHelper {
      * @return total number of use for the application
      */
     public static int getHistoryLength(Context context) {
-        SQLiteDatabase db = getDatabase(context);
+        return DatabaseRecovery.run(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
 
         // Cursor query (boolean distinct, String table, String[] columns,
         // String selection, String[] selectionArgs, String groupBy, String
@@ -227,6 +231,8 @@ public class DBHelper {
             cursor.moveToFirst();
             return cursor.getInt(0);
         }
+
+        });
     }
 
     /**
@@ -238,8 +244,9 @@ public class DBHelper {
      */
     public static List<ValuedHistoryRecord> getPreviousResultsForQuery(Context context,
                                                                        String query) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         List<ValuedHistoryRecord> records;
-        SQLiteDatabase db = getDatabase(context);
+        SQLiteDatabase db = recoveryDb;
 
         // Cursor query (String table, String[] columns, String selection,
         // String[] selectionArgs, String groupBy, String having, String
@@ -249,6 +256,8 @@ public class DBHelper {
         records = readCursor(cursor);
         cursor.close();
         return records;
+
+        });
     }
 
     /**
@@ -259,7 +268,8 @@ public class DBHelper {
      * @return true, if shortcut has changed
      */
     public static boolean insertShortcut(Context context, ShortcutRecord shortcut) {
-        SQLiteDatabase db = getDatabase(context);
+        return DatabaseRecovery.run(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         // check if any field has changed
         try (Cursor cursor = db.query("shortcuts", new String[]{"name", "package", "intent_uri"},
                 "name = ? and package = ? AND intent_uri = ?", new String[]{shortcut.name, shortcut.packageName, shortcut.intentUri}, null, null, null, null)) {
@@ -281,6 +291,8 @@ public class DBHelper {
             db.insert("shortcuts", null, values);
         }
         return true;
+
+        });
     }
 
     /**
@@ -292,13 +304,17 @@ public class DBHelper {
      * @return true, if shortcut was removed
      */
     public static boolean removeShortcut(Context context, String packageName, String intentUri) {
-        SQLiteDatabase db = getDatabase(context);
+        return DatabaseRecovery.run(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         int rowsAffected = db.delete("shortcuts", "package = ? AND intent_uri = ?", new String[]{packageName, intentUri});
         return rowsAffected > 0;
+
+        });
     }
 
     public static void addCustomAppName(Context context, String componentName, String newName) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
 
         long id;
         String sql = "INSERT OR ABORT INTO custom_apps(\"name\", \"component_name\", \"custom_flags\") VALUES (?,?,?)";
@@ -328,6 +344,8 @@ public class DBHelper {
                 Log.e(TAG, "Insert or Update custom app name", e);
             }
         }
+
+        });
     }
 
 
@@ -353,10 +371,11 @@ public class DBHelper {
 
     @Deprecated
     public static long removeCustomAppIcon(Context context, String componentName) {
-        SQLiteDatabase db = getDatabase(context);
+        return DatabaseRecovery.run(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         AppRecord app = getAppRecord(db, componentName);
         if (app == null)
-            return 0;
+            return 0L;
 
         if (app.hasCustomName()) {
             // app has a custom name, just remove the custom icon
@@ -379,10 +398,13 @@ public class DBHelper {
         }
 
         return app.dbId;
+
+        });
     }
 
     public static void removeCustomAppName(Context context, String componentName) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         AppRecord app = getAppRecord(db, componentName);
         if (app == null)
             return;
@@ -406,11 +428,14 @@ public class DBHelper {
             // nothing custom about this app anymore, remove entry
             db.delete("custom_apps", "_id=?", new String[]{String.valueOf(app.dbId)});
         }
+
+        });
     }
 
     public static Map<String, AppRecord> getCustomAppData(Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         Map<String, AppRecord> records;
-        SQLiteDatabase db = getDatabase(context);
+        SQLiteDatabase db = recoveryDb;
         try (Cursor cursor = db.query("custom_apps", new String[]{"_id", "name", "component_name", "custom_flags"},
                 null, null, null, null, null)) {
             records = new HashMap<>(cursor.getCount());
@@ -427,13 +452,16 @@ public class DBHelper {
         }
 
         return records;
+
+        });
     }
 
     /**
      * Retrieve a list of all shortcuts for current package name, without icons.
      */
     public static List<ShortcutRecord> getShortcuts(Context context, String packageName) {
-        SQLiteDatabase db = getDatabase(context);
+        return DatabaseRecovery.run(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
 
         // Cursor query (String table, String[] columns, String selection,
         // String[] selectionArgs, String groupBy, String having, String
@@ -457,13 +485,16 @@ public class DBHelper {
         cursor.close();
 
         return records;
+
+        });
     }
 
     /**
      * Retrieve a list of all shortcuts, without icons.
      */
     public static List<ShortcutRecord> getShortcuts(Context context) {
-        SQLiteDatabase db = getDatabase(context);
+        return DatabaseRecovery.run(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
 
         // Cursor query (String table, String[] columns, String selection,
         // String[] selectionArgs, String groupBy, String having, String
@@ -487,22 +518,30 @@ public class DBHelper {
         cursor.close();
 
         return records;
+
+        });
     }
 
     /**
      * Remove shortcuts for a given package name
      */
     public static void removeShortcuts(Context context, String packageName) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
 
         // remove shortcuts
         db.delete("shortcuts", "package LIKE ?", new String[]{"%" + packageName + "%"});
+
+        });
     }
 
     public static void removeAllShortcuts(Context context) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         // delete whole table
         db.delete("shortcuts", null, null);
+
+        });
     }
 
     /**
@@ -513,11 +552,14 @@ public class DBHelper {
      * @param record  record to insert
      */
     public static void insertTagsForId(Context context, String tag, String record) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         ContentValues values = new ContentValues();
         values.put("tag", tag);
         values.put("record", record);
         db.insert("tags", null, values);
+
+        });
     }
 
 
@@ -528,9 +570,12 @@ public class DBHelper {
      * @param record  record to delete
      */
     public static void deleteTagsForId(Context context, String record) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
 
         db.delete("tags", "record = ?", new String[]{record});
+
+        });
     }
 
     /**
@@ -539,14 +584,18 @@ public class DBHelper {
      * @param context android context
      */
     public static void deleteTags(Context context) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
 
         db.execSQL("DELETE FROM tags;");
+
+        });
     }
 
     public static Map<String, String> loadTags(Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         Map<String, String> records = new HashMap<>();
-        SQLiteDatabase db = getDatabase(context);
+        SQLiteDatabase db = recoveryDb;
 
         Cursor cursor = db.query("tags", new String[]{"record", "tag"}, null, null, null, null, null);
 
@@ -559,15 +608,18 @@ public class DBHelper {
         }
         cursor.close();
         return records;
+
+        });
     }
 
     public static void initDatabase(Context context) {
-        getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> { });
     }
 
     public static Map<String, ComponentName> getCustomComponents(@NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         Map<String, ComponentName> components = new HashMap<>();
-        SQLiteDatabase db = getDatabase(context);
+        SQLiteDatabase db = recoveryDb;
         try (Cursor cursor = db.query("custom_components", new String[]{"id", "package", "class"},
                 null, null, null, null, null)) {
             while (cursor.moveToNext()) {
@@ -580,10 +632,13 @@ public class DBHelper {
         }
 
         return components;
+
+        });
     }
 
     public static void setCustomComponent(@NonNull Context context, @NonNull String id, @Nullable ComponentName componentName) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
 
         if (componentName == null) {
             db.delete("custom_components", "id = ?", new String[]{id});
@@ -599,12 +654,17 @@ public class DBHelper {
                 db.insert("custom_components", null, values);
             }
         }
+
+        });
     }
 
     public static void removeAllCustomComponents(Context context) {
-        SQLiteDatabase db = getDatabase(context);
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        SQLiteDatabase db = recoveryDb;
         // delete whole table
         db.delete("custom_components", null, null);
 
+
+        });
     }
 }
