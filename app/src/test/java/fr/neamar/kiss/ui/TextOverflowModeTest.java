@@ -29,4 +29,14 @@ class TextOverflowModeTest {
         assertFalse(TextOverflowMode.shouldExpand(null, "vertical"));
         assertFalse(TextOverflowMode.shouldExpand("unexpected", "vertical_cards"));
     }
+
+    @Test
+    void collapsedPreviewUsesApproximatelyHalfOfWrappedLines() {
+        assertEquals(0, TextOverflowMode.collapsedPreviewLineCount(0));
+        assertEquals(1, TextOverflowMode.collapsedPreviewLineCount(1));
+        assertEquals(1, TextOverflowMode.collapsedPreviewLineCount(2));
+        assertEquals(2, TextOverflowMode.collapsedPreviewLineCount(3));
+        assertEquals(2, TextOverflowMode.collapsedPreviewLineCount(4));
+        assertEquals(3, TextOverflowMode.collapsedPreviewLineCount(5));
+    }
 }
