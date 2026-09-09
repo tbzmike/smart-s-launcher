@@ -29,6 +29,9 @@ public final class ActivityLauncherStore {
     public static final String KIND_ACTIVITY = "activity";
     public static final String KIND_SERVICE = "service";
     public static final String KIND_BROADCAST = "broadcast";
+    public static final String KIND_PRIVILEGED_ACTIVITY = "root-activity";
+    public static final String KIND_PRIVILEGED_SERVICE = "root-service";
+    public static final String KIND_PRIVILEGED_BROADCAST = "root-broadcast";
 
     private static final String INTERNAL_NAME_PREFIX = "activity-launcher-";
     private static final String LABEL_PREF_PREFIX = "activity-launcher-label-";
@@ -85,9 +88,12 @@ public final class ActivityLauncherStore {
     public static Intent persistentLaunchIntent(@NonNull Context context, @NonNull Intent target,
                                                 @NonNull String kind) {
         if (KIND_ACTIVITY.equals(kind)) return new Intent(target);
-        if (!KIND_SERVICE.equals(kind) && !KIND_BROADCAST.equals(kind)) {
-            throw new IllegalArgumentException("Unsupported target kind: " + kind);
-        }
+        boolean dispatched = KIND_SERVICE.equals(kind)
+                || KIND_BROADCAST.equals(kind)
+                || KIND_PRIVILEGED_ACTIVITY.equals(kind)
+                || KIND_PRIVILEGED_SERVICE.equals(kind)
+                || KIND_PRIVILEGED_BROADCAST.equals(kind);
+        if (!dispatched) throw new IllegalArgumentException("Unsupported target kind: " + kind);
         return ActivityLauncherDispatchActivity.createDispatchIntent(context, target, kind);
     }
 
@@ -146,8 +152,6 @@ public final class ActivityLauncherStore {
 
     public static void addToHome(@NonNull Context context, @NonNull ShortcutRecord record) {
         if (!isManaged(record)) return;
-        // This is an explicit user command, so it intentionally inserts even if passive
-        // automatic history recording is frozen.
         DBHelper.insertHistory(context, "", stablePojoId(record));
     }
 
