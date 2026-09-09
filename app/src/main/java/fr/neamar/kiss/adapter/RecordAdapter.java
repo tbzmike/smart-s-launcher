@@ -7,6 +7,7 @@ import android.graphics.Typeface;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
@@ -61,6 +62,7 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private static final String TAG = RecordAdapter.class.getSimpleName();
+    private static final long RENDER_CONFIG_CACHE_MS = 1500L;
 
     private static final class TextStyleState {
         final float sizePx;
@@ -89,6 +91,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private final WeakHashMap<View, Integer> verticalStyleSignatures = new WeakHashMap<>();
     private String[] sections = new String[0];
     private String lastRenderedQuery = null;
+    private long renderConfigLoadedAt;
+    private String cachedOverflowMode = TextOverflowMode.AUTO_SCROLL;
+    private String cachedHistoryLayout = "vertical";
+    private int cachedVerticalStyleSignature = Integer.MIN_VALUE;
+    private int cachedHistoryWidthPercent = 100;
 
     public RecordAdapter(QueryInterface parent, List<Result<?>> results) {
         this.parent = parent;
@@ -105,31 +112,33 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     @Override @NonNull
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
+        Context renderContext = parent.getContext();
+        refreshRenderConfigIfNeeded(renderContext);
         Result<?> result = getItem(position);
-        View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
+        View view = result.display(renderContext, convertView, parent, fuzzyScore);
         NotificationBellStyle.applyToResult(view, result, parent instanceof AbsListView);
         if (result.getPojo() instanceof NotificationPojo) {
             configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
             applyBestNotificationPreview(view, (NotificationPojo) result.getPojo());
         }
-        String overflowMode = TextOverflowMode.effectiveMode(parent.getContext());
+        String overflowMode = cachedOverflowMode;
         if (!TextUtils.equals(overflowConfigured.get(view), overflowMode)) {
             configureOverflowText(view);
             overflowConfigured.put(view, overflowMode);
         }
         if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
         if (parent instanceof AbsListView) {
-            Context context = parent.getContext();
+            Context context = renderContext;
             TileVisualStyle.apply(view, result, context);
-            if (isVerticalHistory(context)) {
-                int signature = verticalStyleSignature(context);
+            if (isVerticalHistory()) {
+                int signature = cachedVerticalStyleSignature;
                 Integer previous = verticalStyleSignatures.get(view);
                 if (previous == null || previous != signature) {
                     applyVerticalHistorySizing(view, context);
                     applyVerticalHistoryPolish(view, context);
                     verticalStyleSignatures.put(view, signature);
                 }
-                applyVerticalHistoryWidth(view, parent, context);
+                applyVerticalHistoryWidth(view, parent, context, cachedHistoryWidthPercent);
             } else {
                 restoreVerticalHistoryAppearance(view);
                 verticalStyleSignatures.remove(view);
@@ -195,7 +204,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void collapseDuplicateNotificationContent(View view, TextView primaryPreview) {
-        if (!isVerticalHistory(view.getContext())) return;
+        if (!isVerticalHistory()) return;
         TextView secondary = view.findViewById(R.id.item_notification_text);
         if (secondary != null && secondary != primaryPreview) secondary.setVisibility(View.GONE);
         View nativeContainer = view.findViewById(R.id.item_notification_native_container);
@@ -479,9 +488,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         }
     }
 
-    private void applyVerticalHistoryWidth(View row, ViewGroup parent, Context context) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        int widthPercent = safePercent(prefs, "smart-list-card-width-percent", 100, 48, 400);
+    private void applyVerticalHistoryWidth(View row, ViewGroup parent, Context context, int widthPercent) {
         int viewportWidth = parent == null ? 0 : parent.getWidth();
         if (viewportWidth <= 0) {
             viewportWidth = context.getResources().getDisplayMetrics().widthPixels;
@@ -558,7 +565,26 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         }
     }
 
-    private int verticalStyleSignature(Context context) {
+    private void refreshRenderConfigIfNeeded(Context context) {
+        long now = SystemClock.uptimeMillis();
+        if (cachedVerticalStyleSignature != Integer.MIN_VALUE
+                && now - renderConfigLoadedAt < RENDER_CONFIG_CACHE_MS) return;
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        cachedHistoryLayout = prefs.getString("smart-history-layout", "vertical");
+        if (cachedHistoryLayout == null) cachedHistoryLayout = "vertical";
+        cachedOverflowMode = TextOverflowMode.effectiveMode(context);
+        cachedHistoryWidthPercent = safePercent(
+                prefs, "smart-list-card-width-percent", 100, 48, 400);
+        cachedVerticalStyleSignature = verticalStyleSignature(context, cachedOverflowMode);
+        renderConfigLoadedAt = now;
+    }
+
+    private void invalidateRenderConfig() {
+        renderConfigLoadedAt = 0L;
+        cachedVerticalStyleSignature = Integer.MIN_VALUE;
+    }
+
+    private int verticalStyleSignature(Context context, String overflowMode) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         int result = 17;
         result = 31 * result + safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
@@ -569,7 +595,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         result = 31 * result + safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
         result = 31 * result + safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
         result = 31 * result + safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
-        result = 31 * result + TextOverflowMode.effectiveMode(context).hashCode();
+        result = 31 * result + overflowMode.hashCode();
         result = 31 * result + String.valueOf(prefs.getString("smart-list-label-font", "sans_bold")).hashCode();
         result = 31 * result + String.valueOf(prefs.getString("smart-list-body-font", "sans_normal")).hashCode();
         result = 31 * result + String.valueOf(prefs.getString("smart-list-label-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();
@@ -577,10 +603,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         return result;
     }
 
-    private boolean isVerticalHistory(Context context) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        String layout = prefs.getString("smart-history-layout", "vertical");
-        return ("vertical".equals(layout) || "wheel_3d".equals(layout))
+    private boolean isVerticalHistory() {
+        return ("vertical".equals(cachedHistoryLayout) || "wheel_3d".equals(cachedHistoryLayout))
                 && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
     }
 
@@ -746,6 +770,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
+    /** Snapshot the already-loaded Result objects so Home can restore ready icons/state. */
+    @NonNull
+    public List<Result<?>> snapshotResults() {
+        return new ArrayList<>(results);
+    }
+
     /** Snapshot the already-loaded rows for a cheap history-first query stage. */
     @NonNull
     public List<Pojo> snapshotPojos() {
@@ -843,21 +873,35 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     public void updateWithPojos(@NonNull Context context, @NonNull List<Pojo> pojos, boolean isRefresh, String query) {
-        Map<Pojo, Result<?>> existingResults = new HashMap<>(Math.max(16, results.size() * 2));
-        for (Result<?> result : results) existingResults.put(result.getPojo(), result);
+        Map<String, Result<?>> existingResults = new HashMap<>(Math.max(16, results.size() * 2));
+        for (Result<?> result : results) {
+            if (result != null && result.getPojo() != null) {
+                existingResults.put(reuseKey(result.getPojo()), result);
+            }
+        }
         List<Result<?>> updatedResults = new ArrayList<>(pojos.size());
         for (Pojo pojo : pojos) {
             if (pojo == null) continue;
-            Result<?> existing = existingResults.get(pojo);
-            if (existing != null) updatedResults.add(existing);
-            else if (pojo instanceof CommunicationPojo) updatedResults.add(new CommunicationResult((CommunicationPojo) pojo));
-            else updatedResults.add(Result.fromPojo(parent, pojo));
+            Result<?> existing = existingResults.get(reuseKey(pojo));
+            if (existing != null && samePojoState(existing.getPojo(), pojo)) {
+                updatedResults.add(existing);
+            } else if (pojo instanceof CommunicationPojo) {
+                updatedResults.add(new CommunicationResult((CommunicationPojo) pojo));
+            } else {
+                updatedResults.add(Result.fromPojo(parent, pojo));
+            }
         }
         updateResults(context, updatedResults, isRefresh, query);
     }
 
+    private String reuseKey(Pojo pojo) {
+        if (pojo == null) return "<null>";
+        return pojo.getClass().getName() + '|' + pojo.id;
+    }
+
     public void updateResults(@NonNull Context context, List<Result<?>> updatedResults, boolean isRefresh, String query) {
         String normalizedQuery = query == null ? "" : query;
+        invalidateRenderConfig();
         if (sameVisibleState(updatedResults, normalizedQuery)) return;
 
         parent.beforeListChange();
@@ -868,6 +912,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         StringNormalizer.Result queryNormalized = StringNormalizer.normalizeWithResult(normalizedQuery, false);
         fuzzyScore = FuzzyFactory.createFuzzyScore(context, queryNormalized.codePoints, true);
         notifyDataSetChanged();
+        if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                && (normalizedQuery.isEmpty() || "<history>".equals(normalizedQuery))) {
+            SearchHandler.getInstance().rememberHomeResults(snapshotResults());
+        }
         if (isRefresh) parent.temporarilyDisableTranscriptMode();
         parent.afterListChange();
     }

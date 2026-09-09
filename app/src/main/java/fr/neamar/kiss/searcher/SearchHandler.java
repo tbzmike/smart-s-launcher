@@ -11,7 +11,9 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -25,6 +27,7 @@ import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
@@ -48,11 +51,11 @@ public class SearchHandler {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ThreadPoolExecutor historySeedExecutor = new ThreadPoolExecutor(
             1, 1, 15L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1),
-            runnable -> new Thread(runnable, "smart-s-history-seed"),
+            runnable -> lowPriorityThread(runnable, "smart-s-history-seed"),
             new ThreadPoolExecutor.DiscardOldestPolicy());
     private final ThreadPoolExecutor historyPreviewExecutor = new ThreadPoolExecutor(
             1, 1, 15L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1),
-            runnable -> new Thread(runnable, "smart-s-history-preview"),
+            runnable -> lowPriorityThread(runnable, "smart-s-history-preview"),
             new ThreadPoolExecutor.DiscardOldestPolicy());
     private final AtomicLong searchGeneration = new AtomicLong();
     private final AtomicLong completedSearchGeneration = new AtomicLong(-1L);
@@ -61,6 +64,12 @@ public class SearchHandler {
     private SearchHandler() {
         historySeedExecutor.allowCoreThreadTimeOut(true);
         historyPreviewExecutor.allowCoreThreadTimeOut(true);
+    }
+
+    private static Thread lowPriorityThread(Runnable runnable, String name) {
+        Thread thread = new Thread(runnable, name);
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
     }
 
     /** Last search type, needed for refresh. */
@@ -77,6 +86,10 @@ public class SearchHandler {
      * retained; these are provider-owned records, not Result/View/Drawable objects.
      */
     private volatile List<Pojo> historyQuerySeed = Collections.emptyList();
+
+    /** Ready-to-render Home Results retained while QUERY temporarily owns the visible adapter. */
+    private volatile List<Result<?>> homeResultSnapshot = Collections.emptyList();
+    private volatile Result<?> pendingLaunchedResult;
 
     /**
      * Create search task and execute. Query searches publish a small in-memory history preview on a
@@ -129,8 +142,16 @@ public class SearchHandler {
         lastSearchType = Searcher.Type.HISTORY;
         lastSearchQuery = null;
 
-        publishHomeHistoryPreview(activity, generation, historyQuerySeed);
-        refreshHistorySeedAndPublish(activity, generation);
+        boolean restoredWarmHome = publishWarmHomeResultSnapshot(activity, generation);
+        if (!restoredWarmHome) {
+            publishHomeHistoryPreview(activity, generation, historyQuerySeed);
+            refreshHistorySeedAndPublish(activity, generation);
+        } else {
+            // The ready Result snapshot is authoritative for the first frame. Refresh only the
+            // lightweight seed in the background; the complete HistorySearcher below will publish
+            // a real dataset change only if history actually differs.
+            refreshHistorySeed(activity);
+        }
 
         // Keep the complete HistorySearcher on the normal serialized worker. This avoids racing a
         // still-unwinding provider QUERY over shared provider-owned Pojo instances/relevance fields.
@@ -243,6 +264,67 @@ public class SearchHandler {
                 publishHomeHistoryPreview(current, generation, historyQuerySeed);
             });
         });
+    }
+
+    public void rememberHomeResults(@NonNull List<Result<?>> results) {
+        if (lastSearchType != Searcher.Type.HISTORY) return;
+        List<Result<?>> safe = new ArrayList<>(results.size());
+        for (Result<?> result : results) {
+            if (canRetainWarmResult(result)) safe.add(result);
+        }
+        homeResultSnapshot = Collections.unmodifiableList(safe);
+    }
+
+    public void rememberLaunchedResult(@NonNull Result<?> result) {
+        if (lastSearchType == Searcher.Type.HISTORY || !canRetainWarmResult(result)) return;
+        pendingLaunchedResult = result;
+    }
+
+    private boolean canRetainWarmResult(Result<?> result) {
+        return result instanceof fr.neamar.kiss.result.AppResult
+                || result instanceof fr.neamar.kiss.result.ShortcutsResult
+                || result instanceof fr.neamar.kiss.result.SettingsResult
+                || result instanceof fr.neamar.kiss.result.PhoneResult
+                || result instanceof fr.neamar.kiss.result.CommunicationResult;
+    }
+
+    private boolean publishWarmHomeResultSnapshot(@NonNull MainActivity activity, long generation) {
+        if (generation != searchGeneration.get() || activity.adapter == null || activity.isFinishing()) {
+            return false;
+        }
+
+        LinkedHashMap<String, Result<?>> readyById = new LinkedHashMap<>();
+        for (Result<?> result : homeResultSnapshot) {
+            if (result == null || result.getPojo() == null) continue;
+            readyById.put(resultKey(result.getPojo()), result);
+        }
+        Result<?> launched = pendingLaunchedResult;
+        pendingLaunchedResult = null;
+        if (launched != null && launched.getPojo() != null) {
+            readyById.put(resultKey(launched.getPojo()), launched);
+        }
+        if (readyById.isEmpty()) return false;
+
+        List<Pojo> seed = new ArrayList<>(readyById.size());
+        for (Result<?> result : readyById.values()) seed.add(result.getPojo());
+        List<Pojo> selected = buildHomeHistoryPreview(activity, seed);
+        if (selected.isEmpty()) return false;
+
+        List<Result<?>> restored = new ArrayList<>(selected.size());
+        for (Pojo pojo : selected) {
+            Result<?> result = readyById.get(resultKey(pojo));
+            if (result != null) restored.add(result);
+        }
+        if (restored.isEmpty()) return false;
+
+        homeResultSnapshot = Collections.unmodifiableList(new ArrayList<>(restored));
+        activity.adapter.updateResults(activity, restored, false, "");
+        return true;
+    }
+
+    private String resultKey(Pojo pojo) {
+        if (pojo == null) return "<null>";
+        return pojo.getClass().getName() + '|' + pojo.id;
     }
 
     /** Publish only resolved cached/recent History rows; never start another provider scan here. */

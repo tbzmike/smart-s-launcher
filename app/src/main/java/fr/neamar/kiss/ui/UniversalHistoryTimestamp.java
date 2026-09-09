@@ -3,6 +3,7 @@ package fr.neamar.kiss.ui;
 import android.content.Context;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
+import android.util.LruCache;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -12,6 +13,8 @@ import androidx.annotation.NonNull;
 
 import java.util.Date;
 import java.util.Map;
+import java.util.TimeZone;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,8 +35,14 @@ public final class UniversalHistoryTimestamp {
     private static final String VIEW_TAG = "smart_s_universal_history_timestamp";
     private static final long STATS_REFRESH_MS = 30_000L;
     private static final int MAX_FIRST_SEEN_ENTRIES = 512;
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "smart-s-history-stats");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
     private static final ConcurrentHashMap<String, Long> FIRST_SEEN = new ConcurrentHashMap<>();
+    private static final LruCache<String, CharSequence> FORMATTED_CACHE = new LruCache<>(512);
+    private static final WeakHashMap<TextView, Boolean> STYLED_VIEWS = new WeakHashMap<>();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
     private static volatile long statsLoadedAt;
     private static volatile boolean loadInFlight;
@@ -55,8 +64,12 @@ public final class UniversalHistoryTimestamp {
 
         LaunchStatsProvider.LaunchStats stats = resolveStats(pojo);
         timestampView.setVisibility(View.VISIBLE);
-        timestampView.setText(formatTimestamp(context, resolveTimestamp(pojo, stats), stats));
-        SmartTextAppearance.applyHistoryMetadata(timestampView);
+        long resolvedTimestamp = resolveTimestamp(pojo, stats);
+        timestampView.setText(formatTimestampCached(context, pojo, resolvedTimestamp, stats));
+        if (!STYLED_VIEWS.containsKey(timestampView)) {
+            SmartTextAppearance.applyHistoryMetadata(timestampView);
+            STYLED_VIEWS.put(timestampView, Boolean.TRUE);
+        }
 
         ensureStatsLoaded(row, result, context);
     }
@@ -100,12 +113,31 @@ public final class UniversalHistoryTimestamp {
         statsLoadedAt = 0L;
     }
 
+    private static CharSequence formatTimestampCached(
+            Context context, Pojo pojo, long timestamp, LaunchStatsProvider.LaunchStats stats) {
+        int interactionsToday = stats == null ? 0 : Math.max(0, stats.launchesToday);
+        String historyId = pojo.getHistoryId();
+        if (TextUtils.isEmpty(historyId)) historyId = pojo.id;
+        String locale = context.getResources().getConfiguration().locale.toLanguageTag();
+        String key = historyId + '|' + timestamp + '|' + interactionsToday + '|'
+                + DateFormat.is24HourFormat(context) + '|' + locale + '|'
+                + TimeZone.getDefault().getID();
+        synchronized (FORMATTED_CACHE) {
+            CharSequence cached = FORMATTED_CACHE.get(key);
+            if (cached != null) return cached;
+        }
+        CharSequence formatted = formatTimestamp(context, timestamp, interactionsToday);
+        synchronized (FORMATTED_CACHE) {
+            FORMATTED_CACHE.put(key, formatted);
+        }
+        return formatted;
+    }
+
     private static CharSequence formatTimestamp(Context context, long timestamp,
-                                                LaunchStatsProvider.LaunchStats stats) {
+                                                int interactionsToday) {
         Date date = new Date(timestamp);
         java.text.DateFormat dateFormat = DateFormat.getMediumDateFormat(context);
         java.text.DateFormat timeFormat = DateFormat.getTimeFormat(context);
-        int interactionsToday = stats == null ? 0 : Math.max(0, stats.launchesToday);
         return new StringBuilder()
                 .append(dateFormat.format(date))
                 .append("  •  ")

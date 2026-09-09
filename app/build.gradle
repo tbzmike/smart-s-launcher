@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.76 - horizontal-baseline scrolling and stable 3D wheel
-        versionCode 504
-        versionName "3.30.76"
+        // Smart S Launcher 3.30.77 - warm Home snapshots and lightweight vertical scrolling
+        versionCode 505
+        versionName "3.30.77"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
