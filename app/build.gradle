@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.77 - warm Home snapshots and lightweight vertical scrolling
-        versionCode 505
-        versionName "3.30.77"
+        // Smart S Launcher 3.30.78 - lightweight flashing notification attention in Vertical Cards
+        versionCode 506
+        versionName "3.30.78"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

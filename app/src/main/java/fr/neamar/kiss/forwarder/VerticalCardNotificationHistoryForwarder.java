@@ -3,6 +3,7 @@ package fr.neamar.kiss.forwarder;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.AnimationDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
@@ -46,9 +47,10 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
  * Makes notification-history behavior explicit on the custom Vertical Cards renderer and enriches
  * the existing between-card label with launch activity from the KISS history table.
  *
- * Decoration is applied only when cards are created/rebuilt. Unread notifications keep a static
- * attention border; no recurring Handler/invalidations are allowed while Home is idle or scrolling.
- * This prevents notification decoration from competing with ScrollView and marquee frame delivery.
+ * Decoration is applied only when cards are created/rebuilt. Unread notifications keep the
+ * original orange/white flashing attention border, but each border now uses a tiny AnimationDrawable
+ * overlay instead of a renderer-wide Handler loop. Card geometry is updated only when layout size
+ * actually changes, keeping notification animation out of the scrolling hot path.
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -57,6 +59,7 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String DETAILS_TOGGLE_DESCRIPTION = "Show card details";
     private static final float BOTTOM_SWIPE_THRESHOLD_DP = 28f;
     private static final float BOTTOM_SWIPE_AXIS_BIAS = 1.15f;
+    private static final int ATTENTION_PULSE_MS = 550;
 
     private final SmartCardListForwarder smartCardListForwarder;
     private final ExecutorService launchStatsExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -299,20 +302,43 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         View card = cardView(wrapper);
         if (card == null) return;
 
-        GradientDrawable border = new GradientDrawable();
-        border.setColor(Color.TRANSPARENT);
-        border.setCornerRadius(dp(22));
-        border.setStroke(dp(2), Color.argb(235, 255, 176, 32));
-        AttentionBorder binding = new AttentionBorder(card, border, notification.id);
+        AnimationDrawable border = new AnimationDrawable();
+        border.setOneShot(false);
+        border.addFrame(createAttentionFrame(dp(2), Color.argb(235, 255, 176, 32)),
+                ATTENTION_PULSE_MS);
+        border.addFrame(createAttentionFrame(dp(4), Color.WHITE), ATTENTION_PULSE_MS);
+
+        View.OnLayoutChangeListener layoutListener = (v, left, top, right, bottom,
+                                                       oldLeft, oldTop, oldRight, oldBottom) -> {
+            int width = right - left;
+            int height = bottom - top;
+            if (width == oldRight - oldLeft && height == oldBottom - oldTop) return;
+            updateAttentionBounds(v, border);
+        };
+        AttentionBorder binding = new AttentionBorder(
+                card, border, notification.id, layoutListener);
         attentionBorders.add(binding);
+        card.addOnLayoutChangeListener(layoutListener);
         card.post(() -> {
             if (!attentionBorders.contains(binding)
                     || !card.isAttachedToWindow()
                     || !NotificationTimelineState.isUnread(mainActivity, notification.id)) return;
-            border.setBounds(0, 0, Math.max(1, card.getWidth()), Math.max(1, card.getHeight()));
+            updateAttentionBounds(card, border);
             card.getOverlay().add(border);
-            card.invalidate();
+            border.start();
         });
+    }
+
+    private GradientDrawable createAttentionFrame(int strokeWidth, int strokeColor) {
+        GradientDrawable frame = new GradientDrawable();
+        frame.setColor(Color.TRANSPARENT);
+        frame.setCornerRadius(dp(22));
+        frame.setStroke(strokeWidth, strokeColor);
+        return frame;
+    }
+
+    private void updateAttentionBounds(View card, AnimationDrawable border) {
+        border.setBounds(0, 0, Math.max(1, card.getWidth()), Math.max(1, card.getHeight()));
     }
 
     private View cardView(View wrapper) {
@@ -325,18 +351,20 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         for (int i = attentionBorders.size() - 1; i >= 0; i--) {
             AttentionBorder binding = attentionBorders.get(i);
             if (!TextUtils.equals(notificationId, binding.notificationId)) continue;
-            binding.card.getOverlay().remove(binding.border);
-            binding.card.invalidate();
+            removeAttentionBinding(binding);
             attentionBorders.remove(i);
         }
     }
 
     private void resetAttentionBorders() {
-        for (AttentionBorder binding : attentionBorders) {
-            binding.card.getOverlay().remove(binding.border);
-            binding.card.invalidate();
-        }
+        for (AttentionBorder binding : attentionBorders) removeAttentionBinding(binding);
         attentionBorders.clear();
+    }
+
+    private void removeAttentionBinding(AttentionBorder binding) {
+        binding.border.stop();
+        binding.card.removeOnLayoutChangeListener(binding.layoutListener);
+        binding.card.getOverlay().remove(binding.border);
     }
 
     private void applyBottomSwipeTouchRecursively(View view) {
@@ -540,13 +568,16 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
     private static final class AttentionBorder {
         final View card;
-        final GradientDrawable border;
+        final AnimationDrawable border;
         final String notificationId;
+        final View.OnLayoutChangeListener layoutListener;
 
-        AttentionBorder(View card, GradientDrawable border, String notificationId) {
+        AttentionBorder(View card, AnimationDrawable border, String notificationId,
+                        View.OnLayoutChangeListener layoutListener) {
             this.card = card;
             this.border = border;
             this.notificationId = notificationId;
+            this.layoutListener = layoutListener;
         }
     }
 }
