@@ -1,0 +1,57 @@
+name: Build verified 3.30.73 APK
+
+on:
+  push:
+    branches:
+      - artifact/3.30.73-home-return-fix
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify exact source and version
+        run: |
+          set -euo pipefail
+          grep -F 'versionCode 501' app/build.gradle
+          grep -F 'versionName "3.30.73"' app/build.gradle
+          grep -F 'SearchHandler.getInstance().restoreHomeHistory(this);' app/src/main/java/fr/neamar/kiss/MainActivity.java
+          grep -F 'public void restoreHomeHistory(@NonNull MainActivity activity)' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
+
+      - name: Clean verify and build installable debug APK
+        run: |
+          set -euo pipefail
+          ./gradlew clean lint testDebugUnitTest assembleDebug --stacktrace
+
+      - name: Verify APK manifest version
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
+          APK_ANALYZER="$(find "$ANDROID_HOME" -type f -name apkanalyzer 2>/dev/null | head -n 1 || true)"
+          if [ -n "$APK_ANALYZER" ]; then
+            NAME="$($APK_ANALYZER manifest version-name "$APK")"
+            CODE="$($APK_ANALYZER manifest version-code "$APK")"
+            echo "versionName=$NAME versionCode=$CODE"
+            test "$NAME" = "3.30.73"
+            test "$CODE" = "501"
+          else
+            AAPT="$(find "$ANDROID_HOME" -type f -name aapt 2>/dev/null | sort -V | tail -n 1 || true)"
+            test -n "$AAPT"
+            BADGING="$($AAPT dump badging "$APK" | head -n 1)"
+            echo "$BADGING"
+            echo "$BADGING" | grep -F "versionCode='501'"
+            echo "$BADGING" | grep -F "versionName='3.30.73'"
+          fi
+
+      - name: Upload Smart S Launcher 3.30.73 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.73-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          archive: false
