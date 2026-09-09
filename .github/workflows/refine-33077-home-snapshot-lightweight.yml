@@ -40,6 +40,7 @@ jobs:
         run: |
           set -euxo pipefail
           python3 .github/scripts/apply_33077_home_snapshot_lightweight.py
+          python3 .github/scripts/fix_33077_patch_compile.py
 
       - name: Verify intended performance wiring
         run: |
@@ -48,11 +49,13 @@ jobs:
           grep -q 'versionName "3.30.77"' app/build.gradle
           grep -q 'homeResultSnapshot' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
           grep -q 'publishWarmHomeResultSnapshot' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
+          grep -q 'updateResults(activity, restored, false, "")' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
           grep -q 'rememberLaunchedResult(this)' app/src/main/java/fr/neamar/kiss/result/Result.java
           grep -q 'snapshotResults' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
           grep -q 'reuseKey' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
           grep -q 'RENDER_CONFIG_CACHE_MS' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
           grep -q 'cachedHistoryWidthPercent' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          ! grep -q 'isVerticalHistory(view.getContext())' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
           grep -q 'warmHistoryCards' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
           grep -q 'restoreWarmHistoryCards' app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
           grep -q 'FORMATTED_CACHE' app/src/main/java/fr/neamar/kiss/ui/UniversalHistoryTimestamp.java
