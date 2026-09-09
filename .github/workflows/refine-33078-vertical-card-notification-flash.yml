@@ -1,4 +1,4 @@
-name: Refine Smart S 3.30.78 Home Lifecycle + Notification Recovery + Flash
+name: Refine Smart S 3.30.79 Home Lifecycle + Notification Recovery + Flash
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: refine-33078-notification-flash
+  group: refine-33079-runtime-recovery
   cancel-in-progress: true
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Verify exact current 3.30.78 baseline
+      - name: Verify exact current 3.30.78 repair baseline
         run: |
           set -euxo pipefail
           NOTIFY=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java
@@ -45,6 +45,11 @@ jobs:
           grep -q 'Unable to open this exact notification' app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
           grep -q 'Unable to open this exact notification' app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java
 
+      - name: Bump repaired build to 3.30.79
+        run: |
+          set -euxo pipefail
+          python3 .github/scripts/bump_33079_runtime_recovery.py
+
       - name: Restore old notification exact-first app fallback
         run: |
           set -euxo pipefail
@@ -60,8 +65,8 @@ jobs:
           RICH=app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java
           HISTORY=app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java
 
-          grep -q 'versionCode 506' app/build.gradle
-          grep -q 'versionName "3.30.78"' app/build.gradle
+          grep -q 'versionCode 507' app/build.gradle
+          grep -q 'versionName "3.30.79"' app/build.gradle
 
           # Notification flashing remains restored and lightweight.
           grep -q 'import android.graphics.drawable.AnimationDrawable;' "$NOTIFY"
@@ -73,7 +78,7 @@ jobs:
           ! grep -q 'attentionHandler' "$NOTIFY"
           ! grep -q 'attentionPulse' "$NOTIFY"
 
-          # Complete Activity-owned Home View trees must never survive QUERY/external-app use.
+          # Activity-owned Home View trees must never survive QUERY/external-app use.
           ! grep -q 'warmHistoryCards' "$CARDS"
           ! grep -q 'warmHistoryScrollY' "$CARDS"
           ! grep -q 'captureWarmHistoryCards' "$CARDS"
@@ -81,7 +86,7 @@ jobs:
           grep -q 'column.removeAllViews();' "$CARDS"
           grep -q 'reconcileActiveQueryCards()' "$CARDS"
 
-          # Historical notifications always try the exact saved route first, then the posting app.
+          # Historical notifications try exact saved route first, then posting-app fallback.
           grep -q 'SavedNotificationDestinationResolver.openExactResult(context, record)' "$RICH"
           grep -q 'result == SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET' "$RICH"
           grep -q 'opened = AppLaunchUtils.launchPackage(context, packageName);' "$RICH"
@@ -92,13 +97,13 @@ jobs:
           ! grep -q 'Unable to open this exact notification' "$RICH"
           ! grep -q 'Unable to open this exact notification' "$HISTORY"
 
-          # Keep the safe lightweight 3.30.77 caches and other performance work.
+          # Preserve safe lightweight caches and performance work.
           grep -q 'homeResultSnapshot' "$SEARCH"
           grep -q 'canRetainWarmResult' "$SEARCH"
           grep -q 'MAX_BITMAP_KB = 16' "$ICONS"
           grep -q 'snapshotResults()' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
 
-          # Existing behavior remains wired.
+          # Existing notification interactions remain wired.
           grep -q 'NotificationTimelineState.markRead' "$NOTIFY"
           grep -q 'applyNotificationTimelinePreview' "$NOTIFY"
           grep -q 'applyEasyIconTap' "$NOTIFY"
@@ -116,15 +121,15 @@ jobs:
           RELEASE_APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
           "$AAPT" dump badging "$DEBUG_APK" | tee /tmp/debug-badging.txt
           "$AAPT" dump badging "$RELEASE_APK" | tee /tmp/release-badging.txt
-          grep -q "versionCode='506'" /tmp/debug-badging.txt
-          grep -q "versionName='3.30.78'" /tmp/debug-badging.txt
-          grep -q "versionCode='506'" /tmp/release-badging.txt
-          grep -q "versionName='3.30.78'" /tmp/release-badging.txt
+          grep -q "versionCode='507'" /tmp/debug-badging.txt
+          grep -q "versionName='3.30.79'" /tmp/debug-badging.txt
+          grep -q "versionCode='507'" /tmp/release-badging.txt
+          grep -q "versionName='3.30.79'" /tmp/release-badging.txt
 
       - name: Upload verified debug APK
         uses: actions/upload-artifact@v6
         with:
-          name: Smart-S-Launcher-3.30.78-debug.apk
+          name: Smart-S-Launcher-3.30.79-debug.apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 90
@@ -132,7 +137,7 @@ jobs:
       - name: Upload verified release APK
         uses: actions/upload-artifact@v6
         with:
-          name: Smart-S-Launcher-3.30.78-release-unsigned.apk
+          name: Smart-S-Launcher-3.30.79-release-unsigned.apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 90
@@ -143,8 +148,9 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
+            app/build.gradle \
             app/src/main/java/fr/neamar/kiss/ui/RichNotificationHistoryDialog.java \
             app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java
           git diff --cached --check
-          git commit -m 'Recover historical notifications when exact Android routes expire'
+          git commit -m 'Bump 3.30.79 and recover historical notification launches'
           git push origin HEAD:fix/3.30.78-vertical-card-notification-flash
