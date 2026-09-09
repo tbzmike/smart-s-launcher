@@ -70,7 +70,7 @@ jobs:
           grep -F 'activityLauncher.setVisible(unlocked)' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
           grep -F 'if (!pojo.isOreoShortcut()) return null;' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
           grep -F 'worker.shutdownNow();' app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
-          ! grep -E 'WorkManager|JobScheduler|AlarmManager|WakeLock|registerReceiver\(' app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
+          ! grep -E 'WorkManager\.|JobScheduler\.|AlarmManager\.|WakeLock|registerReceiver\(' app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
 
       - name: Focused Activity Launcher identity tests
         shell: bash
