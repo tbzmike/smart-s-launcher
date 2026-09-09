@@ -12,6 +12,7 @@ import androidx.preference.PreferenceManager;
 import java.util.Map;
 
 import fr.neamar.kiss.KissApplication;
+import fr.neamar.kiss.UIColors;
 
 /**
  * Small process-local cache used to bridge short-lived Result objects.
@@ -21,6 +22,10 @@ import fr.neamar.kiss.KissApplication;
  * that PNG asynchronously still creates visible icon pop-in on Home return. Keeping only drawable
  * ConstantState objects here lets a new AppResult bind immediately without sharing mutable Drawable
  * instances between ImageViews.
+ *
+ * Themed icons are safe to keep here as long as the dynamic palette is part of the cache identity.
+ * A wallpaper/system-color change therefore creates a different key automatically instead of
+ * disabling the whole warm cache during ordinary scrolling.
  */
 public final class AppIconMemoryCache {
     private static final int MAX_ENTRIES = 128;
@@ -31,7 +36,6 @@ public final class AppIconMemoryCache {
 
     @Nullable
     public static Drawable get(@NonNull Context context, @NonNull String componentId) {
-        if (!isCacheable(context)) return null;
         Drawable.ConstantState state;
         synchronized (CACHE) {
             state = CACHE.get(cacheKey(context, componentId));
@@ -41,7 +45,7 @@ public final class AppIconMemoryCache {
 
     public static void put(@NonNull Context context, @NonNull String componentId,
                            @Nullable Drawable drawable) {
-        if (drawable == null || !isCacheable(context)) return;
+        if (drawable == null) return;
         Drawable.ConstantState state = drawable.getConstantState();
         if (state == null) return;
         synchronized (CACHE) {
@@ -66,22 +70,25 @@ public final class AppIconMemoryCache {
         }
     }
 
-    private static boolean isCacheable(Context context) {
-        // System-color themed icons are intentionally dynamic in IconsHandler too. Do not retain a
-        // process-local snapshot that could outlive a wallpaper/material-color change.
-        return !(DrawableUtils.hasThemedIcons() && DrawableUtils.isThemedIconEnabled(context));
-    }
-
     private static String cacheKey(Context context, String componentId) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         String pack = prefs.getString("icons-pack", "default");
         String shape = prefs.getString("adaptive-shape", "0");
         boolean forceAdaptive = prefs.getBoolean("force-adaptive", true);
         boolean forceShape = prefs.getBoolean("force-shape", true);
+        boolean themed = DrawableUtils.hasThemedIcons() && DrawableUtils.isThemedIconEnabled(context);
+        int themedBackground = 0;
+        int themedForeground = 0;
+        if (themed) {
+            int[] colors = UIColors.getIconColors(context);
+            if (colors.length > 0) themedBackground = colors[0];
+            if (colors.length > 1) themedForeground = colors[1];
+        }
         int density = context.getResources().getDisplayMetrics().densityDpi;
         String effectivePack = KissApplication.getApplication(context)
                 .getIconsHandler().getIconPack().getPackPackageName();
         return componentId + '|' + effectivePack + '|' + pack + '|' + shape + '|'
-                + forceAdaptive + '|' + forceShape + '|' + density;
+                + forceAdaptive + '|' + forceShape + '|' + themed + '|'
+                + themedBackground + '|' + themedForeground + '|' + density;
     }
 }
