@@ -3,6 +3,7 @@ package fr.neamar.kiss.ui;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.text.Layout;
 import android.text.TextUtils;
 import android.util.AttributeSet;
@@ -27,9 +28,17 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
     private boolean expanded;
     private boolean expandable;
     private boolean arrowGesture;
+    private boolean scrollStepScheduled;
     private final Paint arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Rect visibleRect = new Rect();
 
-    private final Runnable scrollStep = this::advancePreview;
+    private final Runnable scrollStep = () -> {
+        scrollStepScheduled = false;
+        advancePreview();
+    };
+    private final Runnable deferredLayoutRequest = () -> {
+        if (attached) requestLayout();
+    };
 
     public AutoScrollPreviewTextView(Context context) {
         super(context);
@@ -57,6 +66,7 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         expanded = false;
         expandable = false;
         arrowGesture = false;
+        scrollStepScheduled = false;
         arrowPaint.setStyle(Paint.Style.STROKE);
         arrowPaint.setStrokeCap(Paint.Cap.ROUND);
         arrowPaint.setStrokeJoin(Paint.Join.ROUND);
@@ -100,10 +110,10 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         SmartTextAppearance.applySearchBody(this);
         applyConfiguredBehavior();
         if (isAutoExpand()) {
-            removeCallbacks(scrollStep);
+            cancelScrollStep();
             firstVisibleLine = 0;
             scrollTo(0, 0);
-            requestLayout();
+            scheduleLayoutRequest();
         } else {
             post(this::restartAutoScroll);
         }
@@ -113,21 +123,22 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
     protected void onDetachedFromWindow() {
         attached = false;
         arrowGesture = false;
-        removeCallbacks(scrollStep);
+        cancelScrollStep();
+        removeCallbacks(deferredLayoutRequest);
         super.onDetachedFromWindow();
     }
 
     @Override
     protected void onTextChanged(CharSequence text, int start, int lengthBefore, int lengthAfter) {
         super.onTextChanged(text, start, lengthBefore, lengthAfter);
-        removeCallbacks(scrollStep);
+        cancelScrollStep();
         firstVisibleLine = 0;
         expanded = false;
         expandable = false;
         arrowGesture = false;
         scrollTo(0, 0);
         if (!attached) return;
-        if (isAutoExpand()) requestLayout();
+        if (isAutoExpand()) scheduleLayoutRequest();
         else post(this::restartAutoScroll);
     }
 
@@ -183,7 +194,14 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        if (!isAutoExpand() || !expandable) return;
+        if (!isAutoExpand()) {
+            // ScrollView keeps every card attached. Starting the timer from draw means only rows
+            // that actually intersect the viewport can own an auto-scroll callback; off-screen
+            // notification previews perform no periodic work while the user scrolls elsewhere.
+            scheduleScrollStep(STEP_DELAY_MS);
+            return;
+        }
+        if (!expandable) return;
 
         float centerX = getWidth() - getPaddingRight() - dp(12);
         float centerY = getHeight() / 2f;
@@ -256,19 +274,43 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         if (!isAutoExpand()) setFadingEdgeLength(dp(8));
     }
 
-    private void restartAutoScroll() {
+    private void scheduleLayoutRequest() {
+        removeCallbacks(deferredLayoutRequest);
+        postOnAnimation(deferredLayoutRequest);
+    }
+
+    private boolean isActuallyVisibleOnScreen() {
+        if (!attached || !isShown() || !hasWindowFocus()) return false;
+        visibleRect.setEmpty();
+        return getGlobalVisibleRect(visibleRect)
+                && visibleRect.width() > 0
+                && visibleRect.height() > 0;
+    }
+
+    private void cancelScrollStep() {
         removeCallbacks(scrollStep);
+        scrollStepScheduled = false;
+    }
+
+    private void scheduleScrollStep(long delayMs) {
+        if (scrollStepScheduled || isAutoExpand() || !isActuallyVisibleOnScreen()) return;
+        scrollStepScheduled = true;
+        postDelayed(scrollStep, delayMs);
+    }
+
+    private void restartAutoScroll() {
+        cancelScrollStep();
         applyConfiguredBehavior();
         firstVisibleLine = 0;
         scrollTo(0, 0);
-        if (attached && !isAutoExpand()) postDelayed(scrollStep, STEP_DELAY_MS);
+        scheduleScrollStep(STEP_DELAY_MS);
     }
 
     private void advancePreview() {
-        if (!attached || isAutoExpand()) return;
+        if (!attached || isAutoExpand() || !isActuallyVisibleOnScreen()) return;
         Layout layout = getLayout();
         if (layout == null) {
-            postDelayed(scrollStep, STEP_DELAY_MS);
+            scheduleScrollStep(STEP_DELAY_MS);
             return;
         }
 
@@ -283,7 +325,7 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         if (firstVisibleLine >= maxFirstLine) {
             firstVisibleLine = 0;
             scrollTo(0, 0);
-            postDelayed(scrollStep, RESET_DELAY_MS);
+            scheduleScrollStep(RESET_DELAY_MS);
             return;
         }
 
@@ -293,7 +335,7 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         int maxScroll = Math.max(0, layout.getHeight() - visibleTextHeight);
         int target = Math.min(layout.getLineTop(firstVisibleLine), maxScroll);
         scrollTo(0, target);
-        postDelayed(scrollStep, STEP_DELAY_MS);
+        scheduleScrollStep(STEP_DELAY_MS);
     }
 
     private int dp(int value) {
