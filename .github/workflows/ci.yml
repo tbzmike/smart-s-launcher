@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - '**'
-      - '!feature/activity-launcher-3.30.72'
   pull_request:
     branches:
       - master
