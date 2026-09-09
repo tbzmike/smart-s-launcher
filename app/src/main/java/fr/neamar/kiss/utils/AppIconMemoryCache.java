@@ -2,6 +2,9 @@ package fr.neamar.kiss.utils;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.util.LruCache;
 
@@ -9,47 +12,74 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.preference.PreferenceManager;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.UIColors;
 
 /**
- * Small process-local cache used to bridge short-lived Result objects.
+ * Process-local icon cache used to bridge short-lived Result objects.
  *
- * AppResult objects are rebuilt whenever history/search is refreshed, while the launcher icon
- * itself normally has not changed. IconsHandler already has a persistent PNG cache, but decoding
- * that PNG asynchronously still creates visible icon pop-in on Home return. Keeping only drawable
- * ConstantState objects here lets a new AppResult bind immediately without sharing mutable Drawable
- * instances between ImageViews.
- *
- * Themed icons are safe to keep here as long as the dynamic palette is part of the cache identity.
- * A wallpaper/system-color change therefore creates a different key automatically instead of
- * disabling the whole warm cache during ordinary scrolling.
+ * The fast path stores Drawable.ConstantState so each ImageView receives its own Drawable instance.
+ * Some generated/themed/custom drawables do not expose ConstantState; those are rasterized once on
+ * the existing background icon-loading path and kept in a memory-bounded Bitmap cache instead of
+ * being regenerated every time Home/search reconstructs a Result object.
  */
 public final class AppIconMemoryCache {
-    private static final int MAX_ENTRIES = 128;
-    private static final LruCache<String, Drawable.ConstantState> CACHE =
-            new LruCache<>(MAX_ENTRIES);
+    private static final int MAX_STATE_ENTRIES = 384;
+    private static final int MAX_BITMAP_KB = 16 * 1024;
+    private static final int MAX_RASTER_DP = 112;
+
+    private static final LruCache<String, Drawable.ConstantState> STATE_CACHE =
+            new LruCache<>(MAX_STATE_ENTRIES);
+    private static final LruCache<String, Bitmap> BITMAP_CACHE =
+            new LruCache<String, Bitmap>(MAX_BITMAP_KB) {
+                @Override
+                protected int sizeOf(String key, Bitmap value) {
+                    if (value == null) return 0;
+                    return Math.max(1, value.getAllocationByteCount() / 1024);
+                }
+            };
 
     private AppIconMemoryCache() { }
 
     @Nullable
     public static Drawable get(@NonNull Context context, @NonNull String componentId) {
+        String key = cacheKey(context, componentId);
         Drawable.ConstantState state;
-        synchronized (CACHE) {
-            state = CACHE.get(cacheKey(context, componentId));
+        Bitmap bitmap;
+        synchronized (STATE_CACHE) {
+            state = STATE_CACHE.get(key);
         }
-        return state == null ? null : state.newDrawable(context.getResources());
+        if (state != null) return state.newDrawable(context.getResources());
+
+        synchronized (BITMAP_CACHE) {
+            bitmap = BITMAP_CACHE.get(key);
+        }
+        return bitmap == null ? null : new BitmapDrawable(context.getResources(), bitmap);
     }
 
     public static void put(@NonNull Context context, @NonNull String componentId,
                            @Nullable Drawable drawable) {
         if (drawable == null) return;
+        String key = cacheKey(context, componentId);
         Drawable.ConstantState state = drawable.getConstantState();
-        if (state == null) return;
-        synchronized (CACHE) {
-            CACHE.put(cacheKey(context, componentId), state);
+        if (state != null) {
+            synchronized (STATE_CACHE) {
+                STATE_CACHE.put(key, state);
+            }
+            synchronized (BITMAP_CACHE) {
+                BITMAP_CACHE.remove(key);
+            }
+            return;
+        }
+
+        Bitmap bitmap = rasterize(context, drawable);
+        if (bitmap == null) return;
+        synchronized (BITMAP_CACHE) {
+            BITMAP_CACHE.put(key, bitmap);
         }
     }
 
@@ -57,16 +87,52 @@ public final class AppIconMemoryCache {
     public static void invalidate(@Nullable String componentId) {
         if (componentId == null) return;
         String prefix = componentId + '|';
-        synchronized (CACHE) {
-            for (Map.Entry<String, Drawable.ConstantState> entry : CACHE.snapshot().entrySet()) {
-                if (entry.getKey().startsWith(prefix)) CACHE.remove(entry.getKey());
+        synchronized (STATE_CACHE) {
+            for (String key : new HashSet<>(STATE_CACHE.snapshot().keySet())) {
+                if (key.startsWith(prefix)) STATE_CACHE.remove(key);
+            }
+        }
+        synchronized (BITMAP_CACHE) {
+            for (String key : new HashSet<>(BITMAP_CACHE.snapshot().keySet())) {
+                if (key.startsWith(prefix)) BITMAP_CACHE.remove(key);
             }
         }
     }
 
     public static void clear() {
-        synchronized (CACHE) {
-            CACHE.evictAll();
+        synchronized (STATE_CACHE) {
+            STATE_CACHE.evictAll();
+        }
+        synchronized (BITMAP_CACHE) {
+            BITMAP_CACHE.evictAll();
+        }
+    }
+
+    private static Bitmap rasterize(Context context, Drawable drawable) {
+        try {
+            float density = context.getResources().getDisplayMetrics().density;
+            int fallback = Math.max(1, Math.round(72f * density));
+            int max = Math.max(fallback, Math.round(MAX_RASTER_DP * density));
+            int width = drawable.getIntrinsicWidth();
+            int height = drawable.getIntrinsicHeight();
+            if (width <= 0) width = fallback;
+            if (height <= 0) height = fallback;
+            float scale = Math.min(1f, max / (float) Math.max(width, height));
+            width = Math.max(1, Math.round(width * scale));
+            height = Math.max(1, Math.round(height * scale));
+
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            int oldLeft = drawable.getBounds().left;
+            int oldTop = drawable.getBounds().top;
+            int oldRight = drawable.getBounds().right;
+            int oldBottom = drawable.getBounds().bottom;
+            drawable.setBounds(0, 0, width, height);
+            drawable.draw(canvas);
+            drawable.setBounds(oldLeft, oldTop, oldRight, oldBottom);
+            return bitmap;
+        } catch (RuntimeException | OutOfMemoryError ignored) {
+            return null;
         }
     }
 
