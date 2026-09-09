@@ -6,6 +6,7 @@ on:
       - feature/activity-launcher-3.30.71
     paths:
       - .github/scripts/apply_activity_launcher_33071.py
+      - .github/scripts/fix_activity_launcher_lint_33071.py
       - .github/workflows/apply-activity-launcher-3.30.71.yml
 
 permissions:
@@ -29,6 +30,7 @@ jobs:
           test "$(git merge-base HEAD "$BASE")" = "$BASE"
           printf '%s\n' \
             .github/scripts/apply_activity_launcher_33071.py \
+            .github/scripts/fix_activity_launcher_lint_33071.py \
             .github/workflows/apply-activity-launcher-3.30.71.yml | sort > /tmp/expected-temp
           git diff --name-only "$BASE" HEAD | sort > /tmp/actual-temp
           diff -u /tmp/expected-temp /tmp/actual-temp
@@ -41,6 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/apply_activity_launcher_33071.py
+          python3 .github/scripts/fix_activity_launcher_lint_33071.py
           git diff --check
 
       - name: Verify exact intended source surface
@@ -50,6 +53,7 @@ jobs:
           BASE=496e16cce11888b81aff2da8b297f28aad75332d
           printf '%s\n' \
             .github/scripts/apply_activity_launcher_33071.py \
+            .github/scripts/fix_activity_launcher_lint_33071.py \
             .github/workflows/apply-activity-launcher-3.30.71.yml \
             app/build.gradle \
             app/src/main/AndroidManifest.xml \
@@ -67,9 +71,11 @@ jobs:
           grep -F 'versionCode 499' app/build.gradle
           grep -F 'versionName "3.30.71"' app/build.gradle
           grep -F '@+id/activity_launcher' app/src/main/res/menu/menu_main.xml
+          grep -F 'if (itemId == R.id.activity_launcher)' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
           grep -F 'activityLauncher.setVisible(unlocked)' app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
           grep -F 'if (!pojo.isOreoShortcut()) return null;' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
           grep -F 'worker.shutdownNow();' app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
+          grep -F 'if (UiEditLock.isLocked(this))' app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
           ! grep -E 'WorkManager\.|JobScheduler\.|AlarmManager\.|WakeLock|registerReceiver\(' app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
 
       - name: Focused Activity Launcher identity tests
@@ -92,6 +98,7 @@ jobs:
           set -euo pipefail
           BASE=496e16cce11888b81aff2da8b297f28aad75332d
           rm .github/scripts/apply_activity_launcher_33071.py
+          rm .github/scripts/fix_activity_launcher_lint_33071.py
           rm .github/workflows/apply-activity-launcher-3.30.71.yml
           git diff --check
           printf '%s\n' \
