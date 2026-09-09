@@ -29,6 +29,10 @@ public class MatchInfo {
     }
 
     public List<Integer> getMatchedIndices() {
-        return matchedIndices;
+        // Rendering treats null as "no highlight positions". An empty matcher result is the same
+        // state and must not reach Result.getMatchedSequences(), which consumes index 0 when a
+        // match is reported. This can legitimately happen during HOME/history restoration with an
+        // empty search pattern; normalize it here so every renderer sees the same safe invariant.
+        return matchedIndices == null || matchedIndices.isEmpty() ? null : matchedIndices;
     }
 }
