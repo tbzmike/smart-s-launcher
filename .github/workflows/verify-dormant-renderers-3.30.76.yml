@@ -1,0 +1,212 @@
+name: Verify Dormant Renderers 3.30.76
+
+on:
+  push:
+    branches:
+      - fix/3.30.76-dormant-renderers
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-dormant-renderers-3.30.76
+  cancel-in-progress: false
+
+jobs:
+  verify-build-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact performance branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/3.30.76-dormant-renderers
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify exact installed 3.30.75 application baseline
+        run: |
+          set -euo pipefail
+          BASE=883f1f736e2224ff070e44dde493bda348bcc889
+          test "$(git merge-base HEAD "$BASE")" = "$BASE"
+          git diff --quiet "$BASE" -- app
+          git show "$BASE:app/build.gradle" | grep -F 'versionCode 503'
+          git show "$BASE:app/build.gradle" | grep -F 'versionName "3.30.75"'
+          git diff --quiet "$BASE" -- app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
+          git diff --quiet "$BASE" -- app/src/main/java/fr/neamar/kiss/ui/TextOverflowMode.java
+          git diff --quiet "$BASE" -- app/src/main/java/fr/neamar/kiss/ui/AutoMarqueeTextView.java
+          git diff --quiet "$BASE" -- app/src/main/java/fr/neamar/kiss/ui/AutoScrollPreviewTextView.java
+
+      - name: Apply exact dormancy fixes
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply_dormancy_core_33076.py
+          python3 .github/scripts/apply_dormancy_styles_33076.py
+          git diff --check
+
+      - name: Verify inactive renderers are dormant
+        run: |
+          set -euo pipefail
+          grep -F 'versionCode 504' app/build.gradle
+          grep -F 'versionName "3.30.76"' app/build.gradle
+
+          APP=app/src/main/java/fr/neamar/kiss/dataprovider/AppProvider.java
+          PREF=app/src/main/res/xml/preferences_smart_features.xml
+          grep -F 'prefs.getString(PREF_RECONCILE_INTERVAL, "package-only")' "$APP"
+          grep -A2 -B1 'app:key="smart-frozen-refresh-interval"' "$PREF" >/tmp/frozen-pref
+          grep -F 'app:defaultValue="package-only"' "$PREF"
+          grep -F '<item>Every 15 seconds</item>' app/src/main/res/values/arrays_smart_features.xml
+
+          BELL=app/src/main/java/fr/neamar/kiss/ui/NotificationBellStyle.java
+          grep -F 'animator.setRepeatCount(1);' "$BELL"
+          ! grep -F 'ValueAnimator.INFINITE' "$BELL"
+          grep -F 'if (FLASHERS.get(textView) == animator) FLASHERS.remove(textView);' "$BELL"
+
+          CARDS=app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -F 'if (!paused && isEnabled() && isActiveQuery()) rebuild(true);' "$CARDS"
+          grep -F 'if (paused || !isEnabled() || scroller == null || !pendingDataSetRefresh || isActiveQuery()) return;' "$CARDS"
+          grep -F 'void onPause() {' "$CARDS"
+          grep -F 'cancelDeferredRefreshIdleProbe();' "$CARDS"
+
+          RESIZE=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java
+          grep -F 'if (!isVerticalCards()) {' "$RESIZE"
+          grep -F 'cancelPendingHostWidthApply();' "$RESIZE"
+
+          VIEWPORT=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardViewportController.java
+          grep -F 'if (!isEnabled()) {' "$VIEWPORT"
+          grep -F 'detachViewportListeners();' "$VIEWPORT"
+          grep -F 'if (destroyed || !resumed || latestControlsUpdateScheduled) return;' "$VIEWPORT"
+          grep -F 'return resumed && token == generation && target == scroller && canControlViewport();' "$VIEWPORT"
+
+          USAGE=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java
+          grep -F 'if (destroyed || paused || !isEnabled()) return;' "$USAGE"
+          grep -F 'if (destroyed || paused || !isEnabled()) {' "$USAGE"
+
+          STABLE=app/src/main/java/fr/neamar/kiss/forwarder/SquareUStabilityController.java
+          EDGE=app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java
+          grep -F 'if (!isUStyle() || squareTrack == null || layoutListener != null) return;' "$STABLE"
+          grep -F 'squareTrack.removeCallbacks(refreshRunnable);' "$STABLE"
+          grep -F 'if (!isUStyle() || squareTrack == null || layoutListener != null) return;' "$EDGE"
+          grep -F 'squareTrack.removeCallbacks(refreshRunnable);' "$EDGE"
+
+          VISUAL=app/src/main/java/fr/neamar/kiss/forwarder/HistoryVisualEnhancer.java
+          grep -F 'if (HistoryDisplayForwarder.VERTICAL.equals(layout)) {' "$VISUAL"
+          grep -F 'if (HistoryDisplayForwarder.SQUARE_U.equals(layout)) {' "$VISUAL"
+          grep -F 'HistoryDisplayForwarder.ICONS.equals(layout)' "$VISUAL"
+          grep -F '// Wheel and Vertical Cards own their own render/enrichment pipelines.' "$VISUAL"
+          grep -F 'if (paused || token != generation' "$VISUAL"
+
+          MANAGER=app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java
+          grep -F 'historyDisplayForwarder.onResumeIfModeChanged();' "$MANAGER"
+          grep -F 'smartCardListForwarder.onPause();' "$MANAGER"
+          grep -F 'verticalMapsCardForwarder.onPause();' "$MANAGER"
+          grep -F 'verticalCardViewportController.onPause();' "$MANAGER"
+          grep -F 'squareUEdgeBoundsController.onPause();' "$MANAGER"
+          grep -F 'squareUStabilityController.onPause();' "$MANAGER"
+          grep -F 'historyVisualEnhancer.onPause();' "$MANAGER"
+
+          # The Activity Launcher already had correct executor/Handler shutdown. It must remain exact.
+          git diff --quiet 883f1f736e2224ff070e44dde493bda348bcc889 -- \
+            app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
+
+          # 3.30.75 auto-expand implementation is a protected regression surface.
+          git diff --quiet 883f1f736e2224ff070e44dde493bda348bcc889 -- \
+            app/src/main/java/fr/neamar/kiss/ui/TextOverflowMode.java \
+            app/src/main/java/fr/neamar/kiss/ui/AutoMarqueeTextView.java \
+            app/src/main/java/fr/neamar/kiss/ui/AutoScrollPreviewTextView.java \
+            app/src/test/java/fr/neamar/kiss/ui/TextOverflowModeTest.java
+
+      - name: Focused regression tests
+        run: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest \
+            --tests 'fr.neamar.kiss.ui.TextOverflowModeTest' \
+            --tests 'fr.neamar.kiss.ui.NotificationBellPolicyTest' \
+            --stacktrace
+
+      - name: Full clean verification
+        run: |
+          set -euo pipefail
+          ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify both APK manifests are the upgrade
+        run: |
+          set -euo pipefail
+          DEBUG_APK=app/build/outputs/apk/debug/app-debug.apk
+          RELEASE_APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$DEBUG_APK"
+          test -f "$RELEASE_APK"
+
+          APK_ANALYZER="$(find "$ANDROID_HOME" -type f -name apkanalyzer 2>/dev/null | head -n 1 || true)"
+          if [ -n "$APK_ANALYZER" ]; then
+            for apk in "$DEBUG_APK" "$RELEASE_APK"; do
+              NAME="$($APK_ANALYZER manifest version-name "$apk")"
+              CODE="$($APK_ANALYZER manifest version-code "$apk")"
+              echo "$apk => versionName=$NAME versionCode=$CODE"
+              test "$NAME" = "3.30.76"
+              test "$CODE" = "504"
+            done
+          else
+            AAPT="$(find "$ANDROID_HOME" -type f -name aapt 2>/dev/null | sort -V | tail -n 1 || true)"
+            test -n "$AAPT"
+            for apk in "$DEBUG_APK" "$RELEASE_APK"; do
+              BADGING="$($AAPT dump badging "$apk" | head -n 1)"
+              echo "$BADGING"
+              echo "$BADGING" | grep -F "versionCode='504'"
+              echo "$BADGING" | grep -F "versionName='3.30.76'"
+            done
+          fi
+
+      - name: Upload verified Smart S Launcher 3.30.76 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.76-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          archive: false
+
+      - name: Verify final changed-file surface and commit source only
+        run: |
+          set -euo pipefail
+          BASE=883f1f736e2224ff070e44dde493bda348bcc889
+
+          git rm .github/scripts/apply_dormancy_core_33076.py
+          git rm .github/scripts/apply_dormancy_styles_33076.py
+          git rm .github/workflows/verify-dormant-renderers-3.30.76.yml
+
+          printf '%s\n' \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/dataprovider/AppProvider.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/ForwarderManager.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/HistoryDisplayForwarder.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/HistoryVisualEnhancer.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SquareUEdgeBoundsController.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/SquareUStabilityController.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardGroupResizeController.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardUsageForwarder.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardViewportController.java \
+            app/src/main/java/fr/neamar/kiss/ui/NotificationBellStyle.java \
+            app/src/main/res/xml/preferences_smart_features.xml | sort > /tmp/expected-final
+          {
+            git diff --name-only "$BASE"
+            git ls-files --others --exclude-standard
+          } | sort -u > /tmp/actual-final
+          diff -u /tmp/expected-final /tmp/actual-final
+          git diff --check
+
+          grep -F 'versionCode 504' app/build.gradle
+          grep -F 'versionName "3.30.76"' app/build.gradle
+          git diff --quiet "$BASE" -- app/src/main/java/fr/neamar/kiss/activitylauncher/ActivityLauncherActivity.java
+          git diff --quiet "$BASE" -- app/src/main/java/fr/neamar/kiss/ui/TextOverflowMode.java
+          git diff --quiet "$BASE" -- app/src/main/java/fr/neamar/kiss/ui/AutoMarqueeTextView.java
+          git diff --quiet "$BASE" -- app/src/main/java/fr/neamar/kiss/ui/AutoScrollPreviewTextView.java
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Quiesce inactive renderers in 3.30.76'
+          git push origin HEAD:fix/3.30.76-dormant-renderers
