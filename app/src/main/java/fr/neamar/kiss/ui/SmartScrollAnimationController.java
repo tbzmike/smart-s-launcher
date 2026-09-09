@@ -12,6 +12,7 @@ final class SmartScrollAnimationController {
     private final SharedPreferences prefs;
     private final float density;
     private boolean frameScheduled;
+    private boolean transformsApplied;
 
     SmartScrollAnimationController(ListView listView) {
         this.listView = listView;
@@ -20,6 +21,17 @@ final class SmartScrollAnimationController {
     }
 
     void requestApply() {
+        String style = activeTransformStyle();
+        if (style == null) {
+            // Classic/none deliberately have no per-scroll transforms. Do not walk every visible
+            // child on every scroll callback just to write the identity properties again. If the
+            // user has switched away from a transformed style, clean it up once and then stay idle.
+            if (transformsApplied) {
+                transformsApplied = false;
+                resetChildren();
+            }
+            return;
+        }
         if (frameScheduled) return;
         frameScheduled = true;
         listView.postOnAnimation(() -> {
@@ -28,19 +40,26 @@ final class SmartScrollAnimationController {
         });
     }
 
-    private void apply() {
-        if (!prefs.getBoolean("smart-animations-enabled", true)) {
-            resetChildren();
-            return;
-        }
+    private String activeTransformStyle() {
+        if (!prefs.getBoolean("smart-animations-enabled", true)) return null;
         String style = prefs.getString("smart-animation-scroll", "classic");
-        if (style == null || "none".equals(style) || "classic".equals(style)) {
-            resetChildren();
+        if (style == null || "none".equals(style) || "classic".equals(style)) return null;
+        return style;
+    }
+
+    private void apply() {
+        String style = activeTransformStyle();
+        if (style == null) {
+            if (transformsApplied) {
+                transformsApplied = false;
+                resetChildren();
+            }
             return;
         }
 
         float center = listView.getHeight() / 2f;
         if (center <= 0f) return;
+        transformsApplied = true;
         int count = listView.getChildCount();
         for (int i = 0; i < count; i++) {
             View child = listView.getChildAt(i);
