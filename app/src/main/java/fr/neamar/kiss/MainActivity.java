@@ -531,13 +531,15 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // publishing the empty query so the QUERY -> HISTORY result set is rebuilt and bottom-pinned.
         if (resetDefaultHistoryAfterSearchLaunch) {
             forwarderManager.prepareDefaultHistoryAfterSearchLaunch();
-            cancelSearch();
             if (!TextUtils.isEmpty(searchEditText.getText())) {
                 clearSearchText();
             }
-            // Emptying the EditText only changes UI chrome; it does not publish HISTORY. Always
-            // replace the old QUERY adapter with the actual default history result set.
-            showHistory();
+            // A cancelled provider query can still be unwinding on the serialized search worker.
+            // Do not leave its QUERY adapter visible while the authoritative History search waits
+            // for that worker. Restore a safe cached/recent History snapshot immediately, refresh
+            // that snapshot on the independent history-seed worker, then let the full History
+            // search run on the normal serialized lane.
+            SearchHandler.getInstance().restoreHomeHistory(this);
             displayClearOnInput();
             hideKeyboard();
         } else if (refreshDeferredBackground
