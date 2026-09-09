@@ -1,0 +1,61 @@
+name: Refine Smart S 3.30.76 Vertical Cards
+
+on:
+  push:
+    branches:
+      - fix/3.30.76-scroll-icon-performance-v2
+    paths:
+      - .github/scripts/refine_33076_vertical_cards.py
+      - .github/workflows/refine-33076-vertical-cards.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Apply guarded Vertical Cards patch
+        run: |
+          set -euxo pipefail
+          python3 .github/scripts/refine_33076_vertical_cards.py
+          git diff --check
+      - name: Verify preserved and optimized wiring
+        run: |
+          set -euxo pipefail
+          FILE=app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          grep -q 'AutoScrollPreviewTextView lastMessage' "$FILE"
+          grep -q 'result.bindDrawable(renderedIcon' "$FILE"
+          ! grep -q 'if (iconDrawable == null) iconDrawable = result.getDrawable(mainActivity)' "$FILE"
+          grep -q 'SmartAnimationEngine.animateTileListItem' "$FILE"
+          grep -q 'SmartAnimationEngine.isEnabled' "$FILE"
+          grep -q 'versionCode 504' app/build.gradle
+          grep -q 'versionName "3.30.76"' app/build.gradle
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+      - name: Verify APK manifest version
+        run: |
+          set -euxo pipefail
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          test -n "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          "$AAPT" dump badging "$APK" | tee /tmp/apk-badging.txt
+          grep -q "versionCode='504'" /tmp/apk-badging.txt
+          grep -q "versionName='3.30.76'" /tmp/apk-badging.txt
+      - name: Commit verified Vertical Cards source
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          git commit -m 'Keep Vertical Cards icon work off the scroll thread'
+          git push origin HEAD:fix/3.30.76-scroll-icon-performance-v2
