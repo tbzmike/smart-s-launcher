@@ -16,6 +16,7 @@ import fr.neamar.kiss.BatteryMonitorActivity;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.activitylauncher.ActivityLauncherActivity;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
@@ -180,6 +181,14 @@ public class ForwarderManager extends Forwarder {
 
     public boolean onOptionsItemSelected(MenuItem item) {
         int itemId = item.getItemId();
+        if (itemId == R.id.activity_launcher) {
+            if (UiEditLock.isLocked(mainActivity)) {
+                UiEditLock.allowEdit(mainActivity);
+                return true;
+            }
+            mainActivity.startActivity(new Intent(mainActivity, ActivityLauncherActivity.class));
+            return true;
+        }
         if (itemId == R.id.app_usage) {
             mainActivity.startActivity(new Intent(mainActivity, AppUsageActivity.class));
             return true;
@@ -206,7 +215,12 @@ public class ForwarderManager extends Forwarder {
         return widgetsForwarder.onOptionsItemSelected(item);
     }
 
-    public void onCreateContextMenu(ContextMenu menu) { if (!UiEditLock.isLocked(mainActivity)) widgetsForwarder.onCreateContextMenu(menu); }
+    public void onCreateContextMenu(ContextMenu menu) {
+        boolean unlocked = !UiEditLock.isLocked(mainActivity);
+        MenuItem activityLauncher = menu.findItem(R.id.activity_launcher);
+        if (activityLauncher != null) activityLauncher.setVisible(unlocked);
+        if (unlocked) widgetsForwarder.onCreateContextMenu(menu);
+    }
 
     public boolean onTouch(View view, MotionEvent event) { experienceTweaks.onTouch(event); return liveWallpaperForwarder.onTouch(view, event); }
 

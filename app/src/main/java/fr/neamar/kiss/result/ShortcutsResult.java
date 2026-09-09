@@ -420,6 +420,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     @Nullable
     private ShortcutInfo getShortCut(Context context) {
+        if (!pojo.isOreoShortcut()) return null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             return ShortcutUtil.getShortCut(context, pojo.getUserHandle().getRealHandle(),
                     pojo.packageName, pojo.getOreoId());

@@ -22,7 +22,12 @@ public final class ShortcutPojo extends PojoWithTags {
 
     public ShortcutPojo(UserHandle userHandle, ShortcutRecord shortcutRecord, String componentName,
                         boolean pinned, boolean dynamic, boolean disabled) {
-        super(ShortcutUtil.generateShortcutId(userHandle, shortcutRecord));
+        this(userHandle, shortcutRecord, componentName, pinned, dynamic, disabled, null);
+    }
+
+    public ShortcutPojo(UserHandle userHandle, ShortcutRecord shortcutRecord, String componentName,
+                        boolean pinned, boolean dynamic, boolean disabled, String explicitId) {
+        super(explicitId == null ? ShortcutUtil.generateShortcutId(userHandle, shortcutRecord) : explicitId);
         this.packageName = shortcutRecord.packageName;
         this.targetPackage = shortcutRecord.targetPackage;
         this.intentUri = shortcutRecord.intentUri;

@@ -112,6 +112,20 @@
             android:theme="@style/SettingTheme" />
 
         <activity
+            android:name=".activitylauncher.ActivityLauncherActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Activity Launcher"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/SettingTheme" />
+        <activity
+            android:name=".activitylauncher.ActivityLauncherDispatchActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Transparent" />
+
+        <activity
             android:name=".DummyActivity"
             android:exported="true"
             android:enabled="false">
