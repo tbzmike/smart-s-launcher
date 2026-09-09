@@ -33,6 +33,7 @@ jobs:
           set -euxo pipefail
           grep -q 'versionCode 508' app/build.gradle
           grep -q 'versionName "3.30.80"' app/build.gradle
+          grep -q 'Smart S Launcher 3.30.80 - Home crash guard and scroll stability' app/build.gradle
           test ! -e app/src/main/java/fr/neamar/kiss/db/DatabaseRecovery.java
           python3 - <<'PY'
           from pathlib import Path
@@ -48,7 +49,19 @@ jobs:
           PY
 
       - name: Apply controlled corruption recovery
-        run: python3 .github/scripts/apply_33081_sqlite_corruption_recovery.py
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('.github/scripts/apply_33081_sqlite_corruption_recovery.py')
+          text=p.read_text()
+          old='Smart S Launcher 3.30.80 - Home crash guards and visible-only scroll animation work'
+          new='Smart S Launcher 3.30.80 - Home crash guard and scroll stability'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one baseline guard to correct, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          python3 .github/scripts/apply_33081_sqlite_corruption_recovery.py
 
       - name: Verify recovery invariants and preservation
         run: |
@@ -78,13 +91,11 @@ jobs:
           for p in Path('app/src/main/java').rglob('*.java'):
               hits += [str(p)] * p.read_text().count('new DB(')
           assert hits == ['app/src/main/java/fr/neamar/kiss/db/DatabaseRecovery.java'], hits
-          # The three old owners must no longer cache independent SQLiteDatabase handles.
           for name in ['DBHelper.java','SmartStateStore.java','NotificationTimelineStore.java']:
               p=Path('app/src/main/java/fr/neamar/kiss/db')/name
               text=p.read_text()
               assert 'static volatile SQLiteDatabase database' not in text, name
           PY
-          # Existing 3.30.80 crash/jank fixes remain present.
           grep -q 'matchedIndices == null || matchedIndices.isEmpty()' app/src/main/java/fr/neamar/kiss/utils/fuzzy/MatchInfo.java
           grep -q 'getGlobalVisibleRect' app/src/main/java/fr/neamar/kiss/ui/AutoMarqueeTextView.java
           grep -q 'getGlobalVisibleRect' app/src/main/java/fr/neamar/kiss/ui/AutoScrollPreviewTextView.java
