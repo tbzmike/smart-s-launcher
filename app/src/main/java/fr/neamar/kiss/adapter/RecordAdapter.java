@@ -50,6 +50,7 @@ import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationBellStyle;
+import fr.neamar.kiss.ui.TextOverflowMode;
 import fr.neamar.kiss.ui.TileVisualStyle;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
@@ -83,7 +84,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private final WeakHashMap<View, Integer> baseRowLayoutWidths = new WeakHashMap<>();
     private final WeakHashMap<View, int[]> baseIconBounds = new WeakHashMap<>();
     private final WeakHashMap<TextView, TextStyleState> baseTextStyles = new WeakHashMap<>();
-    private final WeakHashMap<View, Boolean> overflowConfigured = new WeakHashMap<>();
+    private final WeakHashMap<View, String> overflowConfigured = new WeakHashMap<>();
     private final WeakHashMap<TextView, Boolean> marqueeObservers = new WeakHashMap<>();
     private final WeakHashMap<View, Integer> verticalStyleSignatures = new WeakHashMap<>();
     private String[] sections = new String[0];
@@ -111,9 +112,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
             applyBestNotificationPreview(view, (NotificationPojo) result.getPojo());
         }
-        if (!overflowConfigured.containsKey(view)) {
+        String overflowMode = TextOverflowMode.effectiveMode(parent.getContext());
+        if (!TextUtils.equals(overflowConfigured.get(view), overflowMode)) {
             configureOverflowText(view);
-            overflowConfigured.put(view, Boolean.TRUE);
+            overflowConfigured.put(view, overflowMode);
         }
         if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
         if (parent instanceof AbsListView) {
@@ -291,12 +293,17 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private void configureOverflowText(View view) {
         if (view instanceof TextView && !(view instanceof Button)) {
             TextView text = (TextView) view;
+            if (TextOverflowMode.isAutoExpandForHistory(view.getContext())) {
+                configureExpandedText(text);
+                return;
+            }
             if (text.getId() == R.id.item_communication_body) {
                 text.setSingleLine(false);
                 text.setMaxLines(Integer.MAX_VALUE);
                 text.setHorizontallyScrolling(false);
                 text.setEllipsize(null);
                 text.setHorizontalFadingEdgeEnabled(false);
+                text.setSelected(false);
                 return;
             }
             configureMarquee(text);
@@ -308,6 +315,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureMarquee(TextView text) {
+        if (TextOverflowMode.isAutoExpandForHistory(text.getContext())) {
+            configureExpandedText(text);
+            return;
+        }
         text.setSingleLine(true);
         text.setMaxLines(1);
         text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
@@ -319,6 +330,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         makeTextUseAvailableWidth(text);
         ensureMarqueeObserver(text);
         updateMarqueeActivation(text);
+    }
+
+    private void configureExpandedText(TextView text) {
+        text.setSelected(false);
+        text.setSingleLine(false);
+        text.setMaxLines(Integer.MAX_VALUE);
+        text.setHorizontallyScrolling(false);
+        text.setEllipsize(null);
+        text.setHorizontalFadingEdgeEnabled(false);
+        text.setFocusable(false);
+        text.setFocusableInTouchMode(false);
+        makeTextUseAvailableWidth(text);
     }
 
     private void ensureMarqueeObserver(TextView text) {
@@ -431,6 +454,14 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureVerticalHistoryBodyLines(View row, int[] ids, int lines) {
+        if (TextOverflowMode.isAutoExpandForHistory(row.getContext())) {
+            for (int id : ids) {
+                View candidate = row.findViewById(id);
+                if (!(candidate instanceof TextView) || candidate.getVisibility() == View.GONE) continue;
+                configureExpandedText((TextView) candidate);
+            }
+            return;
+        }
         for (int id : ids) {
             View candidate = row.findViewById(id);
             if (!(candidate instanceof TextView) || candidate.getVisibility() == View.GONE) continue;
@@ -538,6 +569,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         result = 31 * result + safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
         result = 31 * result + safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
         result = 31 * result + safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
+        result = 31 * result + TextOverflowMode.effectiveMode(context).hashCode();
         result = 31 * result + String.valueOf(prefs.getString("smart-list-label-font", "sans_bold")).hashCode();
         result = 31 * result + String.valueOf(prefs.getString("smart-list-body-font", "sans_normal")).hashCode();
         result = 31 * result + String.valueOf(prefs.getString("smart-list-label-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();

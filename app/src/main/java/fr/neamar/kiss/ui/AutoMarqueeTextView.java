@@ -12,9 +12,9 @@ import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 
 /**
- * Single-line text that continuously scrolls whenever its complete content does not fit.
- * Generic row styling is not allowed to replace this behavior with END ellipsis or clipped
- * multi-line text: labels, titles and history metadata must always remain fully readable.
+ * Long-text view shared by Smart S result layouts.
+ * Auto-scroll preserves the compact one-line marquee. Auto-expand disables marquee work and lets
+ * the text wrap to unlimited lines so its parent tile can grow until the complete text is visible.
  */
 public class AutoMarqueeTextView extends AppCompatTextView {
     private boolean behaviorLocked;
@@ -36,23 +36,20 @@ public class AutoMarqueeTextView extends AppCompatTextView {
 
     private void init() {
         behaviorLocked = false;
-        super.setSingleLine(true);
-        super.setMaxLines(1);
-        super.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        setMarqueeRepeatLimit(-1);
-        super.setHorizontallyScrolling(true);
-        setHorizontalFadingEdgeEnabled(true);
         setFocusable(false);
         setFocusableInTouchMode(false);
-        setSelected(true);
         behaviorLocked = true;
+        applyConfiguredBehavior();
+    }
+
+    private boolean isAutoExpand() {
+        return TextOverflowMode.isAutoExpandForHistory(getContext());
     }
 
     @Override
     public void setSingleLine(boolean singleLine) {
         if (behaviorLocked) {
-            super.setSingleLine(true);
-            super.setMaxLines(1);
+            applyConfiguredBehavior();
             return;
         }
         super.setSingleLine(singleLine);
@@ -60,37 +57,54 @@ public class AutoMarqueeTextView extends AppCompatTextView {
 
     @Override
     public void setMaxLines(int maxLines) {
-        super.setMaxLines(behaviorLocked ? 1 : maxLines);
+        if (behaviorLocked) {
+            super.setMaxLines(isAutoExpand() ? Integer.MAX_VALUE : 1);
+            return;
+        }
+        super.setMaxLines(maxLines);
     }
 
     @Override
     public void setEllipsize(TextUtils.TruncateAt where) {
-        super.setEllipsize(behaviorLocked ? TextUtils.TruncateAt.MARQUEE : where);
+        if (behaviorLocked) {
+            super.setEllipsize(isAutoExpand() ? null : TextUtils.TruncateAt.MARQUEE);
+            return;
+        }
+        super.setEllipsize(where);
     }
 
     @Override
     public void setHorizontallyScrolling(boolean whether) {
-        super.setHorizontallyScrolling(behaviorLocked || whether);
+        if (behaviorLocked) {
+            super.setHorizontallyScrolling(!isAutoExpand());
+            return;
+        }
+        super.setHorizontallyScrolling(whether);
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         applySearchAppearanceIfNeeded();
-        restoreMarqueeBehavior();
-        restartMarquee();
+        applyConfiguredBehavior();
+        if (isAutoExpand()) requestLayout();
+        else restartMarquee();
     }
 
     @Override
     protected void onTextChanged(CharSequence text, int start, int lengthBefore, int lengthAfter) {
         super.onTextChanged(text, start, lengthBefore, lengthAfter);
-        if (isAttachedToWindow()) post(this::restartMarquee);
+        if (!isAttachedToWindow()) return;
+        if (isAutoExpand()) requestLayout();
+        else post(this::restartMarquee);
     }
 
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
-        if (isAttachedToWindow() && width != oldWidth) post(this::restartMarquee);
+        if (isAttachedToWindow() && width != oldWidth && !isAutoExpand()) {
+            post(this::restartMarquee);
+        }
     }
 
     private void applySearchAppearanceIfNeeded() {
@@ -108,18 +122,30 @@ public class AutoMarqueeTextView extends AppCompatTextView {
         }
     }
 
-    private void restoreMarqueeBehavior() {
+    private void applyConfiguredBehavior() {
         if (!behaviorLocked) return;
+        if (isAutoExpand()) {
+            super.setSingleLine(false);
+            super.setMaxLines(Integer.MAX_VALUE);
+            super.setEllipsize(null);
+            super.setHorizontallyScrolling(false);
+            setMarqueeRepeatLimit(0);
+            setHorizontalFadingEdgeEnabled(false);
+            setSelected(false);
+            return;
+        }
         super.setSingleLine(true);
         super.setMaxLines(1);
         super.setEllipsize(TextUtils.TruncateAt.MARQUEE);
         setMarqueeRepeatLimit(-1);
         super.setHorizontallyScrolling(true);
         setHorizontalFadingEdgeEnabled(true);
+        setSelected(true);
     }
 
     private void restartMarquee() {
-        restoreMarqueeBehavior();
+        applyConfiguredBehavior();
+        if (isAutoExpand()) return;
         setSelected(false);
         setSelected(true);
         invalidate();
@@ -127,23 +153,23 @@ public class AutoMarqueeTextView extends AppCompatTextView {
 
     @Override
     public boolean isFocused() {
-        return isShown() && hasWindowFocus();
+        return isAutoExpand() ? super.isFocused() : isShown() && hasWindowFocus();
     }
 
     @Override
     public boolean isSelected() {
-        return isShown() || super.isSelected();
+        return isAutoExpand() ? super.isSelected() : isShown() || super.isSelected();
     }
 
     @Override
     protected void onFocusChanged(boolean focused, int direction, Rect previouslyFocusedRect) {
         super.onFocusChanged(focused, direction, previouslyFocusedRect);
-        if (isShown()) restartMarquee();
+        if (isShown() && !isAutoExpand()) restartMarquee();
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
-        if (hasWindowFocus) restartMarquee();
+        if (hasWindowFocus && !isAutoExpand()) restartMarquee();
     }
 }

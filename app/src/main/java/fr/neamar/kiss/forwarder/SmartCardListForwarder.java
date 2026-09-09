@@ -31,6 +31,7 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
 import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
+import fr.neamar.kiss.ui.TextOverflowMode;
 
 /**
  * Vertical Smart Card renderer. The visible card has its own deliberate layout, while the real
@@ -575,7 +576,7 @@ final class SmartCardListForwarder extends Forwarder {
         NotificationBellStyle.apply(cardTitle,
                 NotificationBellStyle.isNotificationItem(mainActivity, result, source));
         center.addView(cardTitle, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
+                ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(31) * Math.max(90, namePercent) / 100)));
 
         if (!TextUtils.isEmpty(subtitle)) {
             AutoMarqueeTextView meta = new AutoMarqueeTextView(mainActivity);
@@ -585,7 +586,7 @@ final class SmartCardListForwarder extends Forwarder {
             meta.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             meta.setShadowLayer(dp(1), 0f, dp(1), Color.argb(160, 0, 0, 0));
             center.addView(meta, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(27)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(27))));
         }
 
         TextView messageView = null;
@@ -622,7 +623,7 @@ final class SmartCardListForwarder extends Forwarder {
             lastMessage.setPadding(0, dp(2), 0, dp(2));
             lastMessage.setShadowLayer(dp(1), 0f, dp(1), Color.argb(150, 0, 0, 0));
             center.addView(lastMessage, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(31))));
             messageView = lastMessage;
         } else if (TextUtils.isEmpty(subtitle)) {
             AutoMarqueeTextView context = new AutoMarqueeTextView(mainActivity);
@@ -631,7 +632,7 @@ final class SmartCardListForwarder extends Forwarder {
             context.setTextSize(12f);
             context.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             center.addView(context, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(25)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(25))));
         }
 
         if (call != null && call.kind == CommunicationPojo.Kind.CALL
@@ -645,7 +646,7 @@ final class SmartCardListForwarder extends Forwarder {
             callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
             callerName.setContentDescription("Caller: " + call.displayName);
             center.addView(callerName, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(31) * Math.max(90, namePercent) / 100)));
         }
 
         prepareSourceForDetails(source);
@@ -755,13 +756,27 @@ final class SmartCardListForwarder extends Forwarder {
         return text == null ? "" : text.toString().trim();
     }
 
+    private int textRowHeight(int scrollingHeight) {
+        return TextOverflowMode.isAutoExpandForHistory(mainActivity)
+                ? ViewGroup.LayoutParams.WRAP_CONTENT : scrollingHeight;
+    }
+
     private void configureCollapsedMessage(TextView text) {
-        text.setSingleLine(true);
-        text.setMaxLines(1);
-        text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        text.setMarqueeRepeatLimit(-1);
-        text.setHorizontallyScrolling(true);
-        text.setSelected(true);
+        if (TextOverflowMode.isAutoExpandForHistory(mainActivity)) {
+            text.setSelected(false);
+            text.setHorizontallyScrolling(false);
+            text.setSingleLine(false);
+            text.setMaxLines(Integer.MAX_VALUE);
+            text.setEllipsize(null);
+            text.setHorizontalFadingEdgeEnabled(false);
+        } else {
+            text.setSingleLine(true);
+            text.setMaxLines(1);
+            text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+            text.setMarqueeRepeatLimit(-1);
+            text.setHorizontallyScrolling(true);
+            text.setSelected(true);
+        }
         text.setTextColor(Color.WHITE);
         text.setTextSize(13f);
         text.setGravity(Gravity.START);
@@ -769,6 +784,7 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private boolean messageNeedsExpansion(TextView text) {
+        if (TextOverflowMode.isAutoExpandForHistory(mainActivity)) return false;
         CharSequence value = text.getText();
         if (TextUtils.isEmpty(value)) return false;
         int available = text.getWidth() - text.getPaddingLeft() - text.getPaddingRight();

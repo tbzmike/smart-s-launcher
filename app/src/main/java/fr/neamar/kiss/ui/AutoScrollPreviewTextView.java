@@ -9,9 +9,9 @@ import android.view.View;
 import androidx.appcompat.widget.AppCompatTextView;
 
 /**
- * Two-line preview that advances through longer text a complete line at a time.
- * The complete text remains laid out: no caller may convert this view back to a one-line
- * marquee or END-ellipsis it. This protects message bodies from generic history styling.
+ * Notification/message preview shared by Smart S result tiles.
+ * Auto-scroll keeps the compact two-line stepping preview. Auto-expand removes the timer and height
+ * cap so every laid-out line contributes to the tile height and the complete text stays visible.
  */
 public class AutoScrollPreviewTextView extends AppCompatTextView {
     private static final int VISIBLE_LINES = 2;
@@ -45,12 +45,14 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         super.setMaxLines(Integer.MAX_VALUE);
         super.setHorizontallyScrolling(false);
         super.setEllipsize(null);
-        setHorizontalFadingEdgeEnabled(false);
-        setVerticalFadingEdgeEnabled(true);
-        setFadingEdgeLength(dp(8));
         setFocusable(false);
         setFocusableInTouchMode(false);
         behaviorLocked = true;
+        applyConfiguredBehavior();
+    }
+
+    private boolean isAutoExpand() {
+        return TextOverflowMode.isAutoExpandForHistory(getContext());
     }
 
     @Override
@@ -83,8 +85,15 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         super.onAttachedToWindow();
         attached = true;
         SmartTextAppearance.applySearchBody(this);
-        restoreFullTextBehavior();
-        post(this::restartAutoScroll);
+        applyConfiguredBehavior();
+        if (isAutoExpand()) {
+            removeCallbacks(scrollStep);
+            firstVisibleLine = 0;
+            scrollTo(0, 0);
+            requestLayout();
+        } else {
+            post(this::restartAutoScroll);
+        }
     }
 
     @Override
@@ -97,21 +106,27 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
     @Override
     protected void onTextChanged(CharSequence text, int start, int lengthBefore, int lengthAfter) {
         super.onTextChanged(text, start, lengthBefore, lengthAfter);
+        removeCallbacks(scrollStep);
         firstVisibleLine = 0;
         scrollTo(0, 0);
-        if (attached) post(this::restartAutoScroll);
+        if (!attached) return;
+        if (isAutoExpand()) requestLayout();
+        else post(this::restartAutoScroll);
     }
 
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
-        if (attached && (width != oldWidth || height != oldHeight)) post(this::restartAutoScroll);
+        if (attached && (width != oldWidth || height != oldHeight) && !isAutoExpand()) {
+            post(this::restartAutoScroll);
+        }
     }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        restoreFullTextBehavior();
+        applyConfiguredBehavior();
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        if (isAutoExpand()) return;
 
         Layout layout = getLayout();
         int contentHeight;
@@ -131,25 +146,27 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
         setMeasuredDimension(getMeasuredWidth(), desiredHeight);
     }
 
-    private void restoreFullTextBehavior() {
+    private void applyConfiguredBehavior() {
         if (!behaviorLocked) return;
         super.setSingleLine(false);
         super.setMaxLines(Integer.MAX_VALUE);
         super.setHorizontallyScrolling(false);
         super.setEllipsize(null);
         setHorizontalFadingEdgeEnabled(false);
+        setVerticalFadingEdgeEnabled(!isAutoExpand());
+        if (!isAutoExpand()) setFadingEdgeLength(dp(8));
     }
 
     private void restartAutoScroll() {
         removeCallbacks(scrollStep);
-        restoreFullTextBehavior();
+        applyConfiguredBehavior();
         firstVisibleLine = 0;
         scrollTo(0, 0);
-        if (attached) postDelayed(scrollStep, STEP_DELAY_MS);
+        if (attached && !isAutoExpand()) postDelayed(scrollStep, STEP_DELAY_MS);
     }
 
     private void advancePreview() {
-        if (!attached) return;
+        if (!attached || isAutoExpand()) return;
         Layout layout = getLayout();
         if (layout == null) {
             postDelayed(scrollStep, STEP_DELAY_MS);

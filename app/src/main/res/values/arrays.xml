@@ -36,6 +36,14 @@
         <item>horizontal_names</item>
         <item>square_u</item>
     </string-array>
+    <string-array name="smartTextOverflowEntries" translatable="false">
+        <item>Auto-scroll text (compact tiles)</item>
+        <item>Auto-expand tiles (show 100% of text)</item>
+    </string-array>
+    <string-array name="smartTextOverflowValues" translatable="false">
+        <item>auto_scroll</item>
+        <item>auto_expand</item>
+    </string-array>
     <string-array name="taggedResultSortModeEntries">
         <item>@string/tagged_result_sort_mode_default</item><item>@string/history_recency</item><item>@string/history_frecency</item><item>@string/history_frequency</item><item>@string/history_adaptive</item><item>@string/history_time</item><item>@string/history_alphabetically</item>
     </string-array>

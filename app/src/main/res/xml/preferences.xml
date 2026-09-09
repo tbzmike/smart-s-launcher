@@ -30,6 +30,13 @@
             app:title="App history layout"
             app:useSimpleSummaryProvider="true" />
         <ListPreference
+            app:defaultValue="auto_scroll"
+            app:entries="@array/smartTextOverflowEntries"
+            app:entryValues="@array/smartTextOverflowValues"
+            app:key="smart-text-overflow-mode"
+            app:title="Long text display (Vertical list &amp; cards)"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
             app:defaultValue="recency"
             app:entries="@array/historyModeEntries"
             app:entryValues="@array/historyModeValues"

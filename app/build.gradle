@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.74 - smooth Home scrolling and marquee performance
-        versionCode 502
-        versionName "3.30.74"
+        // Smart S Launcher 3.30.75 - selectable auto-scroll or full-text expanding tiles
+        versionCode 503
+        versionName "3.30.75"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
