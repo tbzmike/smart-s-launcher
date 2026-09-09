@@ -44,6 +44,9 @@ jobs:
               'app/src/main/java/fr/neamar/kiss/db/DBHelper.java',
               'app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java',
               'app/src/main/java/fr/neamar/kiss/db/NotificationTimelineStore.java',
+              'app/src/main/java/fr/neamar/kiss/db/LaunchHistoryStatsStore.java',
+              'app/src/main/java/fr/neamar/kiss/db/LaunchStatsProvider.java',
+              'app/src/main/java/fr/neamar/kiss/db/HistoryItemUsageTodayStore.java',
           ])
           assert sorted(hits) == expected, (hits, expected)
           PY
@@ -51,17 +54,7 @@ jobs:
       - name: Apply controlled corruption recovery
         run: |
           set -euxo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('.github/scripts/apply_33081_sqlite_corruption_recovery.py')
-          text=p.read_text()
-          old='Smart S Launcher 3.30.80 - Home crash guards and visible-only scroll animation work'
-          new='Smart S Launcher 3.30.80 - Home crash guard and scroll stability'
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one baseline guard to correct, found {text.count(old)}')
-          p.write_text(text.replace(old, new, 1))
-          PY
-          python3 .github/scripts/apply_33081_sqlite_corruption_recovery.py
+          python3 .github/scripts/apply_33081_sqlite_corruption_recovery_v2.py
 
       - name: Verify recovery invariants and preservation
         run: |
@@ -84,6 +77,9 @@ jobs:
           grep -q 'DatabaseRecovery.run(context' "$DBH"
           grep -q 'DatabaseRecovery.run(context' "$SMART"
           grep -q 'DatabaseRecovery.run(context' "$TIMELINE"
+          grep -q 'DatabaseRecovery.run(context' app/src/main/java/fr/neamar/kiss/db/LaunchHistoryStatsStore.java
+          grep -q 'DatabaseRecovery.run(context' app/src/main/java/fr/neamar/kiss/db/LaunchStatsProvider.java
+          grep -q 'DatabaseRecovery.run(context' app/src/main/java/fr/neamar/kiss/db/HistoryItemUsageTodayStore.java
           grep -q 'latestNotificationsCache = null;' "$SMART"
           python3 - <<'PY'
           from pathlib import Path
@@ -145,7 +141,10 @@ jobs:
             app/src/main/java/fr/neamar/kiss/db/DBHelper.java \
             app/src/main/java/fr/neamar/kiss/db/DatabaseRecovery.java \
             app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java \
-            app/src/main/java/fr/neamar/kiss/db/NotificationTimelineStore.java
+            app/src/main/java/fr/neamar/kiss/db/NotificationTimelineStore.java \
+            app/src/main/java/fr/neamar/kiss/db/LaunchHistoryStatsStore.java \
+            app/src/main/java/fr/neamar/kiss/db/LaunchStatsProvider.java \
+            app/src/main/java/fr/neamar/kiss/db/HistoryItemUsageTodayStore.java
           git diff --cached --check
           git commit -m 'Recover safely from corrupt Smart S database'
           git push origin HEAD:fix/3.30.81-sqlite-corruption-recovery
