@@ -57,3 +57,17 @@ replace_once(
 # Execute the fully guarded combined patch in this checkout without rewriting the retained v1 file.
 namespace = {'__name__': '__main__', '__file__': str(base_path)}
 exec(compile(source, str(base_path), 'exec'), namespace)
+
+# Method-body wrapping preserves original indentation verbatim, including whitespace-only blank
+# lines. Normalize trailing whitespace after the guarded transformation so the generated Java is
+# diff-clean without changing any executable source text.
+for path in [
+    Path('app/src/main/java/fr/neamar/kiss/db/DBHelper.java'),
+    Path('app/src/main/java/fr/neamar/kiss/db/SmartStateStore.java'),
+    Path('app/src/main/java/fr/neamar/kiss/db/NotificationTimelineStore.java'),
+    Path('app/src/main/java/fr/neamar/kiss/db/LaunchHistoryStatsStore.java'),
+    Path('app/src/main/java/fr/neamar/kiss/db/LaunchStatsProvider.java'),
+    Path('app/src/main/java/fr/neamar/kiss/db/HistoryItemUsageTodayStore.java'),
+]:
+    lines = path.read_text().splitlines()
+    path.write_text('\n'.join(line.rstrip() for line in lines) + '\n')
