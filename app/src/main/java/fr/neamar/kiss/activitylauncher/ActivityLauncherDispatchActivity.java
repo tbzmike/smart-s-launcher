@@ -13,8 +13,8 @@ import androidx.annotation.Nullable;
 import java.net.URISyntaxException;
 
 /**
- * Short-lived bridge used only when a saved target is a Service or BroadcastReceiver.
- * It has no discovery code, no workers and no background lifecycle.
+ * Short-lived user-tap bridge for saved Service, BroadcastReceiver and privileged component
+ * targets. It contains no discovery workers, polling or background lifecycle.
  */
 public final class ActivityLauncherDispatchActivity extends Activity {
     private static final String EXTRA_TARGET_URI =
@@ -53,7 +53,22 @@ public final class ActivityLauncherDispatchActivity extends Activity {
 
     public static boolean executeTarget(@NonNull Context context, @NonNull Intent target,
                                         @NonNull String kind) {
+        if (ActivityLauncherStore.KIND_PRIVILEGED_ACTIVITY.equals(kind)
+                || ActivityLauncherStore.KIND_PRIVILEGED_SERVICE.equals(kind)
+                || ActivityLauncherStore.KIND_PRIVILEGED_BROADCAST.equals(kind)) {
+            return ActivityLauncherPrivilegeBridge.executePrivilegedTarget(context, target, kind);
+        }
+
         Intent intent = new Intent(target);
+        if (intent.getComponent() != null
+                && !ActivityLauncherPrivilegeBridge.isComponentEffectivelyEnabled(
+                context, intent.getComponent())) {
+            if (ActivityLauncherPrivilegeBridge.enableComponent(context, intent.getComponent())
+                    != ActivityLauncherPrivilegeBridge.Result.SUCCESS) {
+                return false;
+            }
+        }
+
         try {
             if (ActivityLauncherStore.KIND_SERVICE.equals(kind)) {
                 return context.startService(intent) != null;
