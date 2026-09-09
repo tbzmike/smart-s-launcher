@@ -18,6 +18,10 @@ import fr.neamar.kiss.searcher.Searcher;
  */
 public class AutoMarqueeTextView extends AppCompatTextView {
     private boolean behaviorLocked;
+    private final Rect visibleRect = new Rect();
+    private final Runnable deferredLayoutRequest = () -> {
+        if (isAttachedToWindow()) requestLayout();
+    };
 
     public AutoMarqueeTextView(Context context) {
         super(context);
@@ -87,15 +91,21 @@ public class AutoMarqueeTextView extends AppCompatTextView {
         super.onAttachedToWindow();
         applySearchAppearanceIfNeeded();
         applyConfiguredBehavior();
-        if (isAutoExpand()) requestLayout();
+        if (isAutoExpand()) scheduleLayoutRequest();
         else restartMarquee();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        removeCallbacks(deferredLayoutRequest);
+        super.onDetachedFromWindow();
     }
 
     @Override
     protected void onTextChanged(CharSequence text, int start, int lengthBefore, int lengthAfter) {
         super.onTextChanged(text, start, lengthBefore, lengthAfter);
         if (!isAttachedToWindow()) return;
-        if (isAutoExpand()) requestLayout();
+        if (isAutoExpand()) scheduleLayoutRequest();
         else post(this::restartMarquee);
     }
 
@@ -143,6 +153,22 @@ public class AutoMarqueeTextView extends AppCompatTextView {
         setSelected(true);
     }
 
+    private void scheduleLayoutRequest() {
+        // Text often changes while History/Card containers are already in a measure/layout pass.
+        // Requesting another layout synchronously forces Android into a second pass and was visible
+        // in the captured frame-drop logs. Coalesce the resize onto the next animation frame.
+        removeCallbacks(deferredLayoutRequest);
+        postOnAnimation(deferredLayoutRequest);
+    }
+
+    private boolean isActuallyVisibleOnScreen() {
+        if (!isShown() || !isAttachedToWindow() || !hasWindowFocus()) return false;
+        visibleRect.setEmpty();
+        return getGlobalVisibleRect(visibleRect)
+                && visibleRect.width() > 0
+                && visibleRect.height() > 0;
+    }
+
     private void restartMarquee() {
         applyConfiguredBehavior();
         if (isAutoExpand()) return;
@@ -153,12 +179,14 @@ public class AutoMarqueeTextView extends AppCompatTextView {
 
     @Override
     public boolean isFocused() {
-        return isAutoExpand() ? super.isFocused() : isShown() && hasWindowFocus();
+        // ScrollView keeps off-screen cards attached. isShown() alone therefore marked every row as
+        // marquee-active and continuously invalidated text that was nowhere near the viewport.
+        return isAutoExpand() ? super.isFocused() : isActuallyVisibleOnScreen();
     }
 
     @Override
     public boolean isSelected() {
-        return isAutoExpand() ? super.isSelected() : isShown() || super.isSelected();
+        return isAutoExpand() ? super.isSelected() : isActuallyVisibleOnScreen();
     }
 
     @Override
