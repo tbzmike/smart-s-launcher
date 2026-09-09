@@ -78,7 +78,7 @@ jobs:
           # Keep the safe lightweight 3.30.77 caches and other performance work.
           grep -q 'homeResultSnapshot' "$SEARCH"
           grep -q 'canRetainWarmResult' "$SEARCH"
-          grep -q 'BITMAP_CACHE_BYTES' "$ICONS"
+          grep -q 'MAX_BITMAP_KB = 16 \* 1024' "$ICONS"
           grep -q 'snapshotResults()' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
 
           # Existing behavior remains wired.
