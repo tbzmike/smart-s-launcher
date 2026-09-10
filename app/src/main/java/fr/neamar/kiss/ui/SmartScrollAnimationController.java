@@ -12,6 +12,8 @@ final class SmartScrollAnimationController {
     private final SharedPreferences prefs;
     private final float density;
     private boolean frameScheduled;
+    private boolean transformsActive;
+    private String activeStyle;
 
     SmartScrollAnimationController(ListView listView) {
         this.listView = listView;
@@ -20,7 +22,16 @@ final class SmartScrollAnimationController {
     }
 
     void requestApply() {
+        boolean enabled = prefs.getBoolean("smart-animations-enabled", true);
+        String style = prefs.getString("smart-animation-scroll", "classic");
+        boolean needsTransforms = enabled && style != null
+                && !"none".equals(style) && !"classic".equals(style);
+
+        // Classic/none scrolling has no continuous transform. Do not enqueue a frame callback on
+        // every scroll event merely to rewrite identity properties that are already at identity.
+        if (!needsTransforms && !transformsActive) return;
         if (frameScheduled) return;
+
         frameScheduled = true;
         listView.postOnAnimation(() -> {
             frameScheduled = false;
@@ -30,13 +41,22 @@ final class SmartScrollAnimationController {
 
     private void apply() {
         if (!prefs.getBoolean("smart-animations-enabled", true)) {
-            resetChildren();
+            clearTransformsIfNeeded();
             return;
         }
+
         String style = prefs.getString("smart-animation-scroll", "classic");
         if (style == null || "none".equals(style) || "classic".equals(style)) {
-            resetChildren();
+            clearTransformsIfNeeded();
             return;
+        }
+
+        // A style change can leave properties behind that the new style does not own. Reset once
+        // at the transition rather than resetting every property on every child every frame.
+        if (!transformsActive || !style.equals(activeStyle)) {
+            resetChildren();
+            transformsActive = true;
+            activeStyle = style;
         }
 
         float center = listView.getHeight() / 2f;
@@ -48,7 +68,6 @@ final class SmartScrollAnimationController {
             float childCenter = (child.getTop() + child.getBottom()) / 2f;
             float distance = Math.max(-1f, Math.min(1f, (childCenter - center) / center));
             float abs = Math.abs(distance);
-            SmartAnimationEngine.reset(child);
 
             switch (style) {
                 case "focus":
@@ -134,10 +153,17 @@ final class SmartScrollAnimationController {
                     child.setAlpha(1f - abs * 0.14f);
                     break;
                 default:
-                    SmartAnimationEngine.reset(child);
-                    break;
+                    clearTransformsIfNeeded();
+                    return;
             }
         }
+    }
+
+    private void clearTransformsIfNeeded() {
+        if (!transformsActive) return;
+        resetChildren();
+        transformsActive = false;
+        activeStyle = null;
     }
 
     void resetChildren() {
