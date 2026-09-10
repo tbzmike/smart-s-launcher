@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.85 - expanded verified animation style library
-        versionCode 513
-        versionName "3.30.85"
+        // Smart S Launcher 3.30.86 - history metadata and scroll performance repair
+        versionCode 514
+        versionName "3.30.86"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
