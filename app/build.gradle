@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.83 - reusable exact notification destination routes
-        versionCode 511
-        versionName "3.30.83"
+        // Smart S Launcher 3.30.84 - distinct notification icon/message interactions
+        versionCode 512
+        versionName "3.30.84"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

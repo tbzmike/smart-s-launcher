@@ -17,6 +17,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.SectionIndexer;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.DialogFragment;
@@ -52,6 +53,7 @@ import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.TextOverflowMode;
 import fr.neamar.kiss.ui.TileVisualStyle;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
@@ -207,12 +209,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureNotificationTileClick(View view, Result<?> result) {
+        if (!(result.getPojo() instanceof NotificationPojo)) return;
+        NotificationPojo notification = (NotificationPojo) result.getPojo();
+
         View.OnClickListener openExactTarget = v -> {
             SearchHandler.getInstance().cancelSearch();
             RecentLaunchTracker.remember(result.getPojo());
             promoteHistoryResult(result);
             result.launch(v.getContext(), v, parent);
         };
+        View.OnClickListener openApp = v -> openNotificationApp(result, notification, v);
         View.OnLongClickListener openRichNotification = v -> {
             int position = results.indexOf(result);
             if (position >= 0) {
@@ -222,18 +228,59 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             return false;
         };
 
+        // Row/message taps open the exact notification destination. The icon is deliberately
+        // excluded from this group and always performs a normal application launch instead.
         view.setOnClickListener(openExactTarget);
         view.setOnLongClickListener(openRichNotification);
-        int[] ids = new int[]{R.id.item_notification_icon, R.id.item_notification_native_container,
-                R.id.item_notification_app,
-                R.id.item_notification_title, R.id.item_notification_text};
-        for (int id : ids) {
+        int[] messageIds = new int[]{R.id.item_notification_native_container,
+                R.id.item_notification_app, R.id.item_notification_title,
+                R.id.item_notification_text};
+        for (int id : messageIds) {
             View child = view.findViewById(id);
             if (child != null) {
                 child.setOnClickListener(openExactTarget);
                 child.setOnLongClickListener(openRichNotification);
             }
         }
+
+        View icon = view.findViewById(R.id.item_notification_icon);
+        if (icon != null) {
+            icon.setClickable(true);
+            icon.setOnClickListener(openApp);
+            // Long-pressing the icon still exposes the same notification popup as the message.
+            icon.setOnLongClickListener(openRichNotification);
+        }
+    }
+
+    /**
+     * Normal app launch used by notification icons in every renderer. This intentionally does
+     * not touch the exact saved notification destination, so an expired route cannot break an
+     * ordinary app-icon tap.
+     */
+    private void openNotificationApp(Result<?> result, NotificationPojo notification, View source) {
+        if (result == null || notification == null || source == null) return;
+        SearchHandler.getInstance().cancelSearch();
+        Context context = source.getContext();
+        parent.externalResultLaunchStarting();
+        boolean launched = AppLaunchUtils.launchPackage(context, notification.packageName);
+        if (launched) {
+            parent.externalResultLaunchOccurred();
+        } else {
+            parent.externalResultLaunchCancelled();
+            Toast.makeText(context, "Unable to open " + notification.appName + ".",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Shared entry point for custom Home renderers so Search and Home use the same rule. */
+    public void openNotificationApp(final int pos, View source) {
+        if (pos < 0 || pos >= getCount() || source == null) return;
+        Result<?> result = getItem(pos);
+        if (!(result.getPojo() instanceof NotificationPojo)) {
+            onClick(pos, source);
+            return;
+        }
+        openNotificationApp(result, (NotificationPojo) result.getPojo(), source);
     }
 
     private void recordExplicitSelection(Context context, Pojo pojo) {

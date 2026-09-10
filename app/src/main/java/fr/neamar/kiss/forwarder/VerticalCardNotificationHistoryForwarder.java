@@ -460,7 +460,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         Pojo pojo = result.getPojo();
         if (!(pojo instanceof AppPojo)
                 && !(pojo instanceof ShortcutPojo)
-                && !(pojo instanceof DisabledAppPojo)) {
+                && !(pojo instanceof DisabledAppPojo)
+                && !(pojo instanceof NotificationPojo)) {
             return;
         }
 
@@ -470,7 +471,12 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         icon.setClickable(true);
         icon.setOnClickListener(v -> {
             int currentPosition = resolveAdapterPosition(stableId);
-            if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, wrapper);
+            if (currentPosition < 0) return;
+            if (pojo instanceof NotificationPojo) {
+                mainActivity.adapter.openNotificationApp(currentPosition, icon);
+            } else {
+                mainActivity.adapter.onClick(currentPosition, wrapper);
+            }
         });
 
         if (!(icon.getParent() instanceof ViewGroup)) return;
@@ -566,6 +572,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
     private void applyNotificationClickRecursively(View view, View.OnClickListener listener) {
         if (view == null || view instanceof Button || isDetailsToggle(view)) return;
+        // The app icon has its own normal-launch action. Never replace it with the message route.
+        if (view.getId() == fr.neamar.kiss.R.id.item_notification_icon) return;
         view.setClickable(true);
         view.setOnClickListener(listener);
         if (!(view instanceof ViewGroup)) return;
