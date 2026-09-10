@@ -16,8 +16,6 @@ import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.pojo.AppPojo;
-import fr.neamar.kiss.pojo.CommunicationPojo;
-import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.SmartTextAppearance;
 import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
@@ -145,23 +143,25 @@ final class HistoryVisualEnhancer {
 
             Result<?> result = activity.adapter.getItem(position);
             if (result == null || result.getPojo() == null) continue;
-            UniversalHistoryTimestamp.bind(row, result, activity);
 
+            // UniversalHistoryTimestamp and the enrichment pass must share the same layout-owned
+            // metadata TextView. This prevents two independent metadata views from competing for
+            // row height/content while still keeping the richer usage information.
+            UniversalHistoryTimestamp.bind(row, result, activity);
             TextView metadataView = findMetadataView(row);
             if (metadataView == null) continue;
+
             LaunchStatsProvider.LaunchStats launchStats =
                     stats.get(result.getPojo().getHistoryId());
             StringBuilder metadata = new StringBuilder();
-            if (result.getPojo() instanceof NotificationPojo) {
-                long postTime = ((NotificationPojo) result.getPojo()).postTime;
-                if (postTime > 0L) appendMetadata(metadata,
-                        "Posted " + timeFormat.format(new java.util.Date(postTime)));
-            } else if (result.getPojo() instanceof CommunicationPojo) {
-                long eventTime = ((CommunicationPojo) result.getPojo()).timestamp;
-                if (eventTime > 0L) appendMetadata(metadata,
-                        "Item time " + timeFormat.format(new java.util.Date(eventTime)));
-            }
-            if (launchStats != null && launchStats.lastLaunchTime > 0L) {
+            CharSequence baseMetadata = metadataView.getText();
+            if (!TextUtils.isEmpty(baseMetadata)) metadata.append(baseMetadata);
+
+            // For app rows the universal timestamp already represents last launch time. For
+            // notification/communication rows it represents the event time, so last-opened remains
+            // useful supplemental information rather than a duplicate timestamp.
+            if (!(result.getPojo() instanceof AppPojo)
+                    && launchStats != null && launchStats.lastLaunchTime > 0L) {
                 appendMetadata(metadata, "Last opened "
                         + timeFormat.format(new java.util.Date(launchStats.lastLaunchTime)));
             }
@@ -171,15 +171,11 @@ final class HistoryVisualEnhancer {
                 appendMetadata(metadata, "Used today "
                         + formatDuration(foregroundMs == null ? 0L : foregroundMs));
             }
-            int opensToday = launchStats == null ? 0 : launchStats.launchesToday;
-            appendMetadata(metadata, opensToday
-                    + (opensToday == 1 ? " open today" : " opens today"));
 
             metadataView.setText(metadata);
             metadataView.setVisibility(metadata.length() == 0 ? View.GONE : View.VISIBLE);
             if (metadata.length() > 0) {
                 SmartTextAppearance.applyHistoryMetadata(metadataView);
-                configureMarquee(metadataView);
             }
         }
     }
@@ -200,17 +196,5 @@ final class HistoryVisualEnhancer {
         long hours = totalMinutes / 60L;
         long minutes = totalMinutes % 60L;
         return hours > 0L ? hours + "h " + minutes + "m" : minutes + "m";
-    }
-
-    private void configureMarquee(TextView text) {
-        text.setSingleLine(true);
-        text.setMaxLines(1);
-        text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        text.setMarqueeRepeatLimit(-1);
-        text.setHorizontallyScrolling(true);
-        text.setHorizontalFadingEdgeEnabled(true);
-        text.setSelected(true);
-        text.setFocusable(false);
-        text.setFocusableInTouchMode(false);
     }
 }
