@@ -20,6 +20,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
@@ -43,7 +44,7 @@ public final class UniversalHistoryTimestamp {
 
     public static void bind(@NonNull View row, @NonNull Result<?> result, @NonNull Context context) {
         if (!isHistorySurface(context)) {
-            TextView existing = findTaggedTimestamp(row);
+            TextView existing = findTimestamp(row);
             if (existing != null) existing.setVisibility(View.GONE);
             return;
         }
@@ -151,9 +152,20 @@ public final class UniversalHistoryTimestamp {
     }
 
     private static TextView ensureTimestampView(View row, Context context) {
+        // Every current history row layout already exposes this stable slot. Reusing it prevents
+        // a second metadata TextView from being appended beside the enrichment metadata and keeps
+        // row measurement/recycling deterministic.
+        View stable = row.findViewById(R.id.item_history_meta);
+        if (stable instanceof TextView) {
+            TextView timestamp = (TextView) stable;
+            timestamp.setTag(VIEW_TAG);
+            return timestamp;
+        }
+
         TextView existing = findTaggedTimestamp(row);
         if (existing != null) return existing;
 
+        // Compatibility fallback for a custom/legacy result layout without item_history_meta.
         LinearLayout container = findBestVerticalTextContainer(row);
         if (container == null) return null;
 
@@ -168,6 +180,12 @@ public final class UniversalHistoryTimestamp {
         params.topMargin = dp(context, 2);
         container.addView(timestamp, params);
         return timestamp;
+    }
+
+    private static TextView findTimestamp(View row) {
+        View stable = row.findViewById(R.id.item_history_meta);
+        if (stable instanceof TextView) return (TextView) stable;
+        return findTaggedTimestamp(row);
     }
 
     private static TextView findTaggedTimestamp(View view) {
