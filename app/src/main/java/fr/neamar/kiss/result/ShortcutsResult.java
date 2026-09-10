@@ -41,7 +41,6 @@ import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.ui.ListPopup;
-import fr.neamar.kiss.ui.NotificationPopupDialog;
 import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
@@ -162,7 +161,8 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 TileLaunchCounter.recordNotification(
                         context, latestActive.id, latestActive.postTime);
                 if (!NotificationListener.openLatestNotification(context, groupKey)) {
-                    NotificationPopupDialog.showGroup(context, groupKey);
+                    Toast.makeText(context, "No exact notification destination is available.",
+                            Toast.LENGTH_SHORT).show();
                 }
             };
             row.setOnClickListener(exactNotificationClick);

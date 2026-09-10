@@ -80,7 +80,7 @@ public final class NotificationHistoryResolver {
             boolean liveIndividual = notification.exactNotificationId.startsWith(
                     NotificationListener.NOTIFICATION_SCHEME)
                     && NotificationListener.isNotificationActive(
-                    context, notification.exactNotificationId);
+                    context, notification.exactNotificationId, notification.postTime);
             boolean liveGroup = !NotificationListener.getGroupNotifications(
                     context, notification.groupKey).isEmpty();
             if (liveIndividual || liveGroup) {

@@ -23,12 +23,13 @@ import java.util.List;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.notification.NotificationPendingIntentStore;
 
 /**
  * Opens the exact destination represented by a saved notification when Android exposes a stable
- * route for it. App-published conversation shortcuts are preferred because they represent the
- * durable exact conversation/action; the posting app's original PendingIntent is the second exact
- * route. Notification title/body text is deliberately never guessed into a private deep link.
+ * route for it. The posting app's original PendingIntent is authoritative; app-published
+ * conversation shortcuts and their verified intent URI provide durable fallbacks. Notification
+ * title/body text is deliberately never guessed into a private deep link.
  */
 public final class SavedNotificationDestinationResolver {
     private static final String TAG = SavedNotificationDestinationResolver.class.getSimpleName();
@@ -50,17 +51,33 @@ public final class SavedNotificationDestinationResolver {
         }
     }
 
+    /** Exact shortcut identity and serializable route captured while a notification is live. */
+    public static final class CapturedShortcutRoute {
+        public final String shortcutId;
+        public final String routeUri;
+
+        CapturedShortcutRoute(@NonNull String shortcutId, @Nullable String routeUri) {
+            this.shortcutId = shortcutId;
+            this.routeUri = routeUri == null ? "" : routeUri;
+        }
+    }
+
     public static boolean hasExactTarget(@NonNull Context context,
                                          @Nullable NotificationHistoryRecord record) {
         if (record == null) return false;
         if (!TextUtils.isEmpty(record.notificationId)
-                && (NotificationListener.isNotificationActive(context, record.notificationId)
-                || NotificationListener.hasRetainedContentIntent(record.notificationId))) {
+                && (NotificationListener.isNotificationActive(
+                context, record.notificationId, record.postTime)
+                || NotificationListener.hasRetainedContentIntent(
+                record.notificationId, record.postTime))) {
             return true;
         }
-        return !TextUtils.isEmpty(record.routeUri)
+        return NotificationPendingIntentStore.has(context, record.pendingIntentToken)
+                || !TextUtils.isEmpty(record.routeUri)
                 || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                && !TextUtils.isEmpty(record.shortcutId));
+                && (!TextUtils.isEmpty(record.shortcutId)
+                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && !TextUtils.isEmpty(record.locusId))));
     }
 
     /**
@@ -103,11 +120,21 @@ public final class SavedNotificationDestinationResolver {
 
     private static boolean openExactNow(@NonNull Context context,
                                         @NonNull NotificationHistoryRecord record) {
-        if (openPublishedShortcut(context, record)) return true;
-        if (openPersistedRoute(context, record)) return true;
+        // The posting application's original notification tap route is authoritative. Reuse its
+        // Android-managed relay before trying semantically equivalent durable shortcut routes.
+        if (!TextUtils.isEmpty(record.notificationId)
+                && NotificationListener.openNotification(context, record)) {
+            return true;
+        }
+        return openDurableFallback(context, record);
+    }
 
-        return !TextUtils.isEmpty(record.notificationId)
-                && NotificationListener.openNotification(context, record.notificationId);
+    /** Try only exact persisted fallbacks after an original notification PendingIntent expires. */
+    public static boolean openDurableFallback(@NonNull Context context,
+                                              @Nullable NotificationHistoryRecord record) {
+        if (record == null) return false;
+        if (openPublishedShortcut(context, record)) return true;
+        return openPersistedRoute(context, record);
     }
 
     /**
@@ -144,15 +171,23 @@ public final class SavedNotificationDestinationResolver {
     }
 
     @Nullable
-    public static String capturePublishedShortcutRoute(@NonNull Context context,
-                                                       @NonNull String packageName,
-                                                       @Nullable String shortcutId,
-                                                       @Nullable android.os.UserHandle user) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || TextUtils.isEmpty(shortcutId)
+    public static CapturedShortcutRoute capturePublishedShortcutRoute(
+            @NonNull Context context,
+            @NonNull String packageName,
+            @Nullable String shortcutId,
+            @Nullable String locusId,
+            @Nullable android.os.UserHandle user) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O
                 || TextUtils.isEmpty(packageName) || user == null) return null;
-        ShortcutInfo shortcut = ShortcutUtil.getShortCut(
-                context, user, packageName, shortcutId);
-        return shortcut == null ? null : routeUriFromShortcut(context, shortcut, packageName);
+        ShortcutInfo shortcut = TextUtils.isEmpty(shortcutId) ? null
+                : ShortcutUtil.getShortCut(context, user, packageName, shortcutId);
+        if (shortcut == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && !TextUtils.isEmpty(locusId)) {
+            shortcut = findShortcutByLocus(context, user, packageName, locusId);
+        }
+        if (shortcut == null) return null;
+        return new CapturedShortcutRoute(shortcut.getId(),
+                routeUriFromShortcut(context, shortcut, packageName));
     }
 
     private static boolean openPersistedRoute(@NonNull Context context,
@@ -213,14 +248,18 @@ public final class SavedNotificationDestinationResolver {
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private static void persistRouteIfMissing(@NonNull Context context,
-                                              @NonNull NotificationHistoryRecord record,
-                                              @NonNull ShortcutInfo shortcut) {
-        if (!TextUtils.isEmpty(record.routeUri)) return;
+    private static void persistResolvedShortcut(@NonNull Context context,
+                                                @NonNull NotificationHistoryRecord record,
+                                                @NonNull ShortcutInfo shortcut) {
         String route = routeUriFromShortcut(context, shortcut, record.packageName);
-        if (TextUtils.isEmpty(route)) return;
-        record.routeUri = route;
-        SmartStateStore.updateNotificationRoute(context, record.dbId, route);
+        boolean shortcutChanged = !TextUtils.equals(record.shortcutId, shortcut.getId());
+        boolean routeChanged = !TextUtils.isEmpty(route)
+                && !TextUtils.equals(record.routeUri, route);
+        if (!shortcutChanged && !routeChanged) return;
+        record.shortcutId = shortcut.getId();
+        if (routeChanged) record.routeUri = route;
+        SmartStateStore.updateNotificationShortcutRoute(
+                context, record.dbId, record.shortcutId, record.routeUri);
     }
 
     /**
@@ -232,7 +271,9 @@ public final class SavedNotificationDestinationResolver {
         if (record == null
                 || Build.VERSION.SDK_INT < Build.VERSION_CODES.O
                 || TextUtils.isEmpty(record.packageName)
-                || TextUtils.isEmpty(record.shortcutId)) {
+                || (TextUtils.isEmpty(record.shortcutId)
+                && (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                || TextUtils.isEmpty(record.locusId)))) {
             return false;
         }
         return openConversationShortcut(context, record);
@@ -256,11 +297,11 @@ public final class SavedNotificationDestinationResolver {
             for (android.os.UserHandle profile : profiles) {
                 if (userManager.getSerialNumberForUser(profile) != record.userSerial) continue;
                 preferred = findShortcut(context, userManager, profile,
-                        record.packageName, record.shortcutId);
+                        record.packageName, record.shortcutId, record.locusId);
                 if (preferred != null) break;
             }
             if (preferred != null) {
-                persistRouteIfMissing(context, record, preferred);
+                persistResolvedShortcut(context, record, preferred);
                 return launch(launcherApps, preferred);
             }
         }
@@ -271,12 +312,12 @@ public final class SavedNotificationDestinationResolver {
         List<ShortcutInfo> matches = new ArrayList<>(2);
         for (android.os.UserHandle profile : profiles) {
             ShortcutInfo shortcut = findShortcut(context, userManager, profile,
-                    record.packageName, record.shortcutId);
+                    record.packageName, record.shortcutId, record.locusId);
             if (shortcut != null) matches.add(shortcut);
             if (matches.size() > 1) return false;
         }
         if (matches.size() != 1) return false;
-        persistRouteIfMissing(context, record, matches.get(0));
+        persistResolvedShortcut(context, record, matches.get(0));
         return launch(launcherApps, matches.get(0));
     }
 
@@ -286,14 +327,44 @@ public final class SavedNotificationDestinationResolver {
                                              @NonNull UserManager userManager,
                                              @NonNull android.os.UserHandle profile,
                                              @NonNull String packageName,
-                                             @NonNull String shortcutId) {
+                                             @Nullable String shortcutId,
+                                             @Nullable String locusId) {
         try {
             if (!userManager.isUserRunning(profile) || !userManager.isUserUnlocked(profile)) return null;
-            return ShortcutUtil.getShortCut(context, profile, packageName, shortcutId);
-        } catch (IllegalStateException | SecurityException e) {
+            ShortcutInfo shortcut = TextUtils.isEmpty(shortcutId) ? null
+                    : ShortcutUtil.getShortCut(context, profile, packageName, shortcutId);
+            if (shortcut != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                    || TextUtils.isEmpty(locusId)) return shortcut;
+            return findShortcutByLocus(context, profile, packageName, locusId);
+        } catch (RuntimeException e) {
             Log.w(TAG, "Unable to resolve saved notification shortcut", e);
             return null;
         }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    @Nullable
+    private static ShortcutInfo findShortcutByLocus(@NonNull Context context,
+                                                    @NonNull android.os.UserHandle profile,
+                                                    @NonNull String packageName,
+                                                    @NonNull String locusId) {
+        ShortcutInfo match = null;
+        try {
+            for (ShortcutInfo candidate : ShortcutUtil.getShortcuts(context, packageName)) {
+                if (candidate == null || !candidate.isEnabled()
+                        || !profile.equals(candidate.getUserHandle())
+                        || candidate.getLocusId() == null
+                        || !TextUtils.equals(locusId, candidate.getLocusId().getId())) {
+                    continue;
+                }
+                if (match != null && !TextUtils.equals(match.getId(), candidate.getId())) return null;
+                match = candidate;
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to resolve notification shortcut locus", e);
+            return null;
+        }
+        return match;
     }
 
     @RequiresApi(Build.VERSION_CODES.O)

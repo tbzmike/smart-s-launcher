@@ -112,6 +112,13 @@
             android:theme="@style/SettingTheme" />
 
         <activity
+            android:name=".notification.NotificationRouteRelayActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Transparent" />
+
+        <activity
             android:name=".activitylauncher.ActivityLauncherActivity"
             android:exported="false"
             android:excludeFromRecents="true"

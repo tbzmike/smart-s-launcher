@@ -41,7 +41,6 @@ import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.ui.ListPopup;
-import fr.neamar.kiss.ui.NotificationPopupDialog;
 import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.utils.AppIconMemoryCache;
 import fr.neamar.kiss.utils.AppLaunchUtils;
@@ -150,7 +149,8 @@ public class AppResult extends ResultWithTags<AppPojo> {
                 TileLaunchCounter.recordNotification(context, latest.id, latest.postTime);
             }
             if (!NotificationListener.openLatestNotification(context, packageKey)) {
-                NotificationPopupDialog.showGroup(context, packageKey);
+                Toast.makeText(context, "No exact notification destination is available.",
+                        Toast.LENGTH_SHORT).show();
             }
         };
         row.setOnClickListener(exactNotificationClick);

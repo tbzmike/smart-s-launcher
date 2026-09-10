@@ -244,7 +244,8 @@ public final class LockedNotificationHistoryDialog {
             counter.setText((index + 1) + " / " + records.size());
 
             boolean active = record.notificationId != null
-                    && NotificationListener.isNotificationActive(context, record.notificationId);
+                    && NotificationListener.isNotificationActive(
+                    context, record.notificationId, record.postTime);
             String expanded = active
                     ? NotificationListener.getExpandedNotificationText(context, record.notificationId)
                     : record.text;

@@ -194,7 +194,8 @@ public final class RichNotificationHistoryDialog {
         private void render() {
             NotificationHistoryRecord record = records.get(index);
             boolean active = record.notificationId != null
-                    && NotificationListener.isNotificationActive(context, record.notificationId);
+                    && NotificationListener.isNotificationActive(
+                    context, record.notificationId, record.postTime);
             String expanded = active
                     ? NotificationListener.getExpandedNotificationText(context, record.notificationId)
                     : record.text;

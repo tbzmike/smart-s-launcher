@@ -95,7 +95,8 @@ public class SettingsResult extends Result<SettingPojo> {
         String exactNotificationId = notification.exactNotificationId;
         boolean exactActive = exactNotificationId.startsWith(
                 NotificationListener.NOTIFICATION_SCHEME)
-                && NotificationListener.isNotificationActive(context, exactNotificationId);
+                && NotificationListener.isNotificationActive(
+                context, exactNotificationId, notification.postTime);
         View.OnClickListener openExact = v -> launchNotificationTarget(context, notification);
         nativeContainer.setInterceptChildTouches(true);
         nativeContainer.setOnClickListener(openExact);
@@ -248,7 +249,8 @@ public class SettingsResult extends Result<SettingPojo> {
 
         String exactId = notification.exactNotificationId;
         if (exactId.startsWith(NotificationListener.NOTIFICATION_SCHEME)
-                && NotificationListener.isNotificationActive(context, exactId)
+                && NotificationListener.isNotificationActive(
+                context, exactId, notification.postTime)
                 && NotificationListener.openNotification(context, exactId)) {
             launchSucceeded = true;
             return;

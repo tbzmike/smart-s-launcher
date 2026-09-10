@@ -23,7 +23,7 @@ public final class NotificationTimelineStore {
                                                        @NonNull String notificationId) {
         return DatabaseRecovery.run(context, recoveryDb -> {
         try (Cursor cursor = recoveryDb.query("notification_history",
-                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent", "shortcut_id", "user_serial", "route_uri"},
+                SmartStateStore.notificationProjection(),
                 "notification_id=?", new String[]{notificationId}, null, null,
                 "post_time DESC, _id DESC", "1")) {
             if (!cursor.moveToFirst()) return null;
@@ -34,13 +34,44 @@ public final class NotificationTimelineStore {
     }
 
     @Nullable
+    public static NotificationHistoryRecord findExact(@NonNull Context context,
+                                                      @NonNull String notificationId,
+                                                      long postTime) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+        if (postTime <= 0L) return null;
+        try (Cursor cursor = recoveryDb.query("notification_history",
+                SmartStateStore.notificationProjection(),
+                "notification_id=? AND post_time=?",
+                new String[]{notificationId, Long.toString(postTime)},
+                null, null, "_id DESC", "1")) {
+            return cursor.moveToFirst() ? read(cursor) : null;
+        }
+
+        });
+    }
+
+    @Nullable
     public static NotificationHistoryRecord findByDbId(@NonNull Context context, long dbId) {
         return DatabaseRecovery.run(context, recoveryDb -> {
         if (dbId <= 0L) return null;
         try (Cursor cursor = recoveryDb.query("notification_history",
-                new String[]{"_id", "notification_id", "package", "app_name", "title", "body",
-                        "post_time", "is_permanent", "shortcut_id", "user_serial", "route_uri"},
+                SmartStateStore.notificationProjection(),
                 "_id=?", new String[]{Long.toString(dbId)}, null, null, null, "1")) {
+            return cursor.moveToFirst() ? read(cursor) : null;
+        }
+
+        });
+    }
+
+    @Nullable
+    public static NotificationHistoryRecord findByPendingIntentToken(
+            @NonNull Context context, @Nullable String token) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+        if (token == null || token.isEmpty()) return null;
+        try (Cursor cursor = recoveryDb.query("notification_history",
+                SmartStateStore.notificationProjection(),
+                "pending_intent_token=?", new String[]{token}, null, null,
+                "post_time DESC, _id DESC", "1")) {
             return cursor.moveToFirst() ? read(cursor) : null;
         }
 
@@ -60,7 +91,7 @@ public final class NotificationTimelineStore {
         List<NotificationHistoryRecord> result = new ArrayList<>();
         String limitText = limit > 0 ? Integer.toString(limit) : null;
         try (Cursor cursor = recoveryDb.query("notification_history",
-                new String[]{"_id", "notification_id", "package", "app_name", "title", "body", "post_time", "is_permanent", "shortcut_id", "user_serial", "route_uri"},
+                SmartStateStore.notificationProjection(),
                 "post_time>?", new String[]{Long.toString(Math.max(0L, afterTimestamp))},
                 null, null, "post_time ASC, _id ASC", limitText)) {
             while (cursor.moveToNext()) result.add(read(cursor));
@@ -83,6 +114,8 @@ public final class NotificationTimelineStore {
         record.shortcutId = cursor.getString(8);
         record.userSerial = cursor.getLong(9);
         record.routeUri = cursor.getString(10);
+        record.pendingIntentToken = cursor.getString(11);
+        record.locusId = cursor.getString(12);
         return record;
     }
 }

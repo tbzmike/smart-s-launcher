@@ -4,6 +4,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
+import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.os.Build;
@@ -23,7 +24,7 @@ import fr.neamar.kiss.utils.UserHandle;
 class DB extends SQLiteOpenHelper {
 
     static final String DB_NAME = "kiss.s3db";
-    private final static int DB_VERSION = 16;
+    private final static int DB_VERSION = 17;
     private static final String TAG = DB.class.getSimpleName();
 
     private final Context mContext;
@@ -67,7 +68,7 @@ class DB extends SQLiteOpenHelper {
     private void addSmartLauncherStateTables(SQLiteDatabase database) {
         database.execSQL("CREATE TABLE IF NOT EXISTS app_catalog ( _id INTEGER PRIMARY KEY AUTOINCREMENT, package TEXT NOT NULL, class TEXT NOT NULL, label TEXT NOT NULL, user_serial INTEGER NOT NULL DEFAULT 0, UNIQUE(package,class,user_serial))");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_app_catalog_package ON app_catalog(package)");
-        database.execSQL("CREATE TABLE IF NOT EXISTS notification_history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id TEXT NOT NULL, package TEXT NOT NULL, app_name TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', post_time INTEGER NOT NULL, is_permanent INTEGER NOT NULL DEFAULT 0, shortcut_id TEXT NOT NULL DEFAULT '', user_serial INTEGER NOT NULL DEFAULT -1, route_uri TEXT NOT NULL DEFAULT '')");
+        database.execSQL("CREATE TABLE IF NOT EXISTS notification_history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, notification_id TEXT NOT NULL, package TEXT NOT NULL, app_name TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', post_time INTEGER NOT NULL, is_permanent INTEGER NOT NULL DEFAULT 0, shortcut_id TEXT NOT NULL DEFAULT '', user_serial INTEGER NOT NULL DEFAULT -1, route_uri TEXT NOT NULL DEFAULT '', pending_intent_token TEXT NOT NULL DEFAULT '', locus_id TEXT NOT NULL DEFAULT '')");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_time ON notification_history(post_time DESC)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package ON notification_history(package)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package_time ON notification_history(package,post_time DESC)");
@@ -120,11 +121,33 @@ class DB extends SQLiteOpenHelper {
                     // fall through
                 case 15:
                     database.execSQL("ALTER TABLE notification_history ADD COLUMN route_uri TEXT NOT NULL DEFAULT ''");
+                    // fall through
+                case 16:
+                    addColumnIfMissing(database, "notification_history", "pending_intent_token",
+                            "TEXT NOT NULL DEFAULT ''");
+                    addColumnIfMissing(database, "notification_history", "locus_id",
+                            "TEXT NOT NULL DEFAULT ''");
                     break;
                 default:
                     break;
             }
         }
+    }
+
+    private static void addColumnIfMissing(SQLiteDatabase database, String table,
+                                           String column, String declaration) {
+        boolean present = false;
+        try (Cursor cursor = database.rawQuery("PRAGMA table_info(" + table + ")", null)) {
+            int nameIndex = cursor.getColumnIndex("name");
+            while (nameIndex >= 0 && cursor.moveToNext()) {
+                if (column.equals(cursor.getString(nameIndex))) {
+                    present = true;
+                    break;
+                }
+            }
+        }
+        if (!present) database.execSQL(
+                "ALTER TABLE " + table + " ADD COLUMN " + column + " " + declaration);
     }
 
     @Override
