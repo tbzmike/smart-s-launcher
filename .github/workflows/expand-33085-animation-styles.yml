@@ -1,0 +1,185 @@
+name: Expand Smart S 3.30.85 Animation Styles
+
+on:
+  push:
+    branches:
+      - feature/3.30.85-animation-styles
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: expand-33085-animation-styles
+  cancel-in-progress: true
+
+jobs:
+  expand:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify exact 3.30.84 animation baseline
+        run: |
+          set -euxo pipefail
+          ENGINE=app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java
+          ARRAYS=app/src/main/res/values/arrays_smart_features.xml
+          MAIN=app/src/main/java/fr/neamar/kiss/MainActivity.java
+          CARDS=app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java
+          LIST=app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java
+
+          grep -q 'versionCode 512' app/build.gradle
+          grep -q 'versionName "3.30.84"' app/build.gradle
+          grep -q '<item>Helix</item>' "$ARRAYS"
+          grep -q '<item>Whirl</item>' "$ARRAYS"
+          grep -q '<item>Orbit</item>' "$ARRAYS"
+          ! grep -q '<item>Parallax</item>' "$ARRAYS"
+          ! grep -q 'case "accordion"' "$ENGINE"
+          ! grep -q 'animateWindowEnter' "$ENGINE"
+          ! grep -q 'SmartAnimationEngine.animateWindowEnter' "$MAIN"
+
+          # Existing no-refresh-during-scroll architecture must be present before editing.
+          grep -q 'ScrollIdleGate' "$LIST"
+          grep -q 'ScrollIdleGate' "$CARDS"
+          grep -q 'if (isScrollInProgress())' "$CARDS"
+          grep -q 'runWhenScrollIdle' "$CARDS"
+
+      - name: Apply guarded animation expansion
+        run: python3 .github/scripts/apply_33085_animation_styles.py
+
+      - name: Verify every new style is wired and scroll hot path stays clean
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          root = Path('.')
+          build = (root / 'app/build.gradle').read_text()
+          engine = (root / 'app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java').read_text()
+          arrays_path = root / 'app/src/main/res/values/arrays_smart_features.xml'
+          main = (root / 'app/src/main/java/fr/neamar/kiss/MainActivity.java').read_text()
+          preview = (root / 'app/src/main/java/fr/neamar/kiss/preference/UiLivePreviewPreference.java').read_text()
+          cards = (root / 'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java').read_text()
+          animated_list = (root / 'app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java').read_text()
+
+          assert 'versionCode 513' in build
+          assert 'versionName "3.30.85"' in build
+
+          tree = ET.parse(arrays_path)
+          arrays = {node.attrib['name']: [item.text for item in node.findall('item')]
+                    for node in tree.getroot().findall('string-array')}
+          pairs = [
+              ('smart_scroll_animation_entries', 'smart_scroll_animation_values'),
+              ('smart_enter_animation_entries', 'smart_enter_animation_values'),
+              ('smart_exit_animation_entries', 'smart_exit_animation_values'),
+              ('smart_popup_animation_entries', 'smart_popup_animation_values'),
+              ('smart_switch_animation_entries', 'smart_switch_animation_values'),
+              ('smart_toast_animation_entries', 'smart_toast_animation_values'),
+          ]
+          for entries, values in pairs:
+              assert len(arrays[entries]) == len(arrays[values]), (entries, values)
+
+          expected_arrays = {
+              'smart_scroll_animation_values': {'parallax','swing','accordion','spiral','cube'},
+              'smart_enter_animation_values': {'drop','swing','fold','pop','cube'},
+              'smart_exit_animation_values': {'drop','swing','fold','collapse','cube'},
+              'smart_popup_animation_values': {'drop','swing','fold','pop','cube'},
+              'smart_switch_animation_values': {'parallax','swing','fold','cube','reveal'},
+              'smart_toast_animation_values': {'pop','swing','drop'},
+          }
+          for name, values in expected_arrays.items():
+              assert values.issubset(set(arrays[name])), (name, values - set(arrays[name]))
+
+          # Every newly selectable engine value must have a concrete implementation.
+          for style in ('parallax','swing','accordion','spiral','cube','drop','fold','pop',
+                        'collapse','reveal'):
+              assert f'"{style}"' in engine, style
+
+          assert 'public static void animateWindowEnter(View view)' in engine
+          assert 'public static void animateWindowExit(View view)' in engine
+          assert '"smart-animation-window-enter"' in engine
+          assert '"smart-animation-window-exit"' in engine
+          assert 'SmartAnimationEngine.animateWindowEnter(findViewById(android.R.id.content));' in main
+          assert 'SmartAnimationEngine.animateWindowExit(findViewById(android.R.id.content));' in main
+
+          # New scroll styles must also be represented in the live settings preview.
+          for style in ('parallax','swing','accordion','spiral','cube'):
+              assert f'case "{style}"' in preview, style
+
+          # Guard the scroll-style method: visual transforms only, no background/queued work.
+          start = engine.index('public static void animateTileListItem')
+          end = engine.index('public static void reset', start)
+          scroll_method = engine[start:end]
+          forbidden = ('new Thread', 'Executor', 'Handler', 'postDelayed', 'runAsync',
+                       'CompletableFuture', 'ScheduledExecutor')
+          for token in forbidden:
+              assert token not in scroll_method, token
+
+          # Existing scroll-idle gates must remain intact after the patch.
+          assert 'ScrollIdleGate' in animated_list
+          assert 'ScrollIdleGate' in cards
+          assert 'if (isScrollInProgress())' in cards
+          assert 'runWhenScrollIdle' in cards
+
+          # The new window animation may not delay or wrap app launches.
+          assert 'postDelayed' not in engine[engine.index('public static void animateWindowExit'):engine.index('public static void animatePopupViewIn')]
+          PY
+          git diff --check
+
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify APK manifest versions
+        run: |
+          set -euxo pipefail
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          DEBUG_APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          RELEASE_APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
+          "$AAPT" dump badging "$DEBUG_APK" | tee /tmp/debug-badging.txt
+          "$AAPT" dump badging "$RELEASE_APK" | tee /tmp/release-badging.txt
+          grep -q "versionCode='513'" /tmp/debug-badging.txt
+          grep -q "versionName='3.30.85'" /tmp/debug-badging.txt
+          grep -q "versionCode='513'" /tmp/release-badging.txt
+          grep -q "versionName='3.30.85'" /tmp/release-badging.txt
+
+      - name: Upload verified debug APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Smart-S-Launcher-3.30.85-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload verified release APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Smart-S-Launcher-3.30.85-release-unsigned.apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit verified source changes
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            app/build.gradle \
+            app/src/main/res/values/arrays_smart_features.xml \
+            app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java \
+            app/src/main/java/fr/neamar/kiss/MainActivity.java \
+            app/src/main/java/fr/neamar/kiss/preference/UiLivePreviewPreference.java
+          git diff --cached --check
+          git commit -m 'Expand verified animation styles in 3.30.85'
+          git push origin HEAD:feature/3.30.85-animation-styles
