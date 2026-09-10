@@ -71,6 +71,7 @@ import fr.neamar.kiss.ui.AnimatedListView;
 import fr.neamar.kiss.ui.KeyboardScrollHider;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.SearchEditText;
+import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.Permission;
@@ -573,11 +574,15 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
         super.onResume();
         homeLifecycleState.onResumeCompleted();
+        // Window animation is launcher-owned and starts only after Home has resumed.
+        SmartAnimationEngine.animateWindowEnter(findViewById(android.R.id.content));
     }
 
 
     @Override
     protected void onPause() {
+        // Do not delay external launches: animate our own decor while Android transfers focus.
+        SmartAnimationEngine.animateWindowExit(findViewById(android.R.id.content));
         launcherUiResumed = false;
         forwarderManager.onPause();
         super.onPause();

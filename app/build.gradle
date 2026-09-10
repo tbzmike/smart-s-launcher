@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.84 - distinct notification icon/message interactions
-        versionCode 512
-        versionName "3.30.84"
+        // Smart S Launcher 3.30.85 - expanded verified animation style library
+        versionCode 513
+        versionName "3.30.85"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
