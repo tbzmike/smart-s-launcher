@@ -1,5 +1,6 @@
 package fr.neamar.kiss.ui;
 
+import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -23,9 +24,19 @@ public final class ScrollIdleGate {
     private boolean touching;
     private boolean scrolling;
     private boolean destroyed;
+    private boolean settleScheduled;
+    private long lastMotionUptime;
 
     private final Runnable settleRunnable = () -> {
+        settleScheduled = false;
         if (destroyed || touching) return;
+
+        long elapsed = Math.max(0L, SystemClock.uptimeMillis() - lastMotionUptime);
+        if (elapsed < IDLE_DELAY_MS) {
+            scheduleIdleCheck(IDLE_DELAY_MS - elapsed);
+            return;
+        }
+
         scrolling = false;
         if (pending.isEmpty()) return;
 
@@ -44,13 +55,15 @@ public final class ScrollIdleGate {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 touching = true;
+                lastMotionUptime = SystemClock.uptimeMillis();
                 markScrolling();
-                host.removeCallbacks(settleRunnable);
+                cancelIdleCheck();
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 touching = false;
-                scheduleIdleCheck();
+                lastMotionUptime = SystemClock.uptimeMillis();
+                scheduleIdleCheck(IDLE_DELAY_MS);
                 break;
             default:
                 break;
@@ -58,8 +71,9 @@ public final class ScrollIdleGate {
     }
 
     public void onScrollChanged() {
+        lastMotionUptime = SystemClock.uptimeMillis();
         markScrolling();
-        if (!touching) scheduleIdleCheck();
+        if (!touching) scheduleIdleCheck(IDLE_DELAY_MS);
     }
 
     public boolean isScrolling() {
@@ -89,7 +103,7 @@ public final class ScrollIdleGate {
 
     public void destroy() {
         destroyed = true;
-        host.removeCallbacks(settleRunnable);
+        cancelIdleCheck();
         pending.clear();
         scrollStartedListeners.clear();
     }
@@ -101,9 +115,15 @@ public final class ScrollIdleGate {
         for (Runnable listener : listeners) listener.run();
     }
 
-    private void scheduleIdleCheck() {
-        if (destroyed) return;
+    private void scheduleIdleCheck(long delayMs) {
+        if (destroyed || settleScheduled) return;
+        settleScheduled = true;
+        host.postDelayed(settleRunnable, Math.max(1L, delayMs));
+    }
+
+    private void cancelIdleCheck() {
+        if (!settleScheduled) return;
         host.removeCallbacks(settleRunnable);
-        host.postDelayed(settleRunnable, IDLE_DELAY_MS);
+        settleScheduled = false;
     }
 }
