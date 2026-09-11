@@ -73,13 +73,26 @@ final class HistoryVisualEnhancer {
     }
 
     private void requestRefresh() {
-        if (destroyed) return;
+        if (destroyed || !UniversalHistoryTimestamp.isHistorySurface(activity)) {
+            refreshPending = false;
+            return;
+        }
         refreshPending = true;
         historyDisplayForwarder.runWhenScrollIdle(refreshAtIdle);
     }
 
     private void onScrollStarted() {
         if (destroyed) return;
+        if (!UniversalHistoryTimestamp.isHistorySurface(activity)) {
+            // The native-list listener remains attached while QUERY owns the same ListView. Cancel
+            // any History-only work instead of letting search scrolling schedule another metadata
+            // pass against recycled query rows.
+            generation++;
+            refreshPending = false;
+            if (inFlight != null) inFlight.cancel(true);
+            inFlight = null;
+            return;
+        }
         generation++;
         refreshPending = true;
         if (inFlight != null) inFlight.cancel(true);
@@ -88,7 +101,10 @@ final class HistoryVisualEnhancer {
     }
 
     private void refreshNow() {
-        if (destroyed) return;
+        if (destroyed || !UniversalHistoryTimestamp.isHistorySurface(activity)) {
+            refreshPending = false;
+            return;
+        }
         if (historyDisplayForwarder.isScrollInProgress()) {
             requestRefresh();
             return;
@@ -116,6 +132,12 @@ final class HistoryVisualEnhancer {
                                AppUsageTodayStore.Snapshot usage) {
         if (destroyed || taskGeneration != generation) return;
         inFlight = null;
+        if (!UniversalHistoryTimestamp.isHistorySurface(activity)) {
+            // A History load can finish after the user has started typing. Never decorate the
+            // current QUERY tree with data loaded for the previous History surface.
+            refreshPending = false;
+            return;
+        }
         if (historyDisplayForwarder.isScrollInProgress()) {
             requestRefresh();
             return;
@@ -129,7 +151,10 @@ final class HistoryVisualEnhancer {
 
     private void applyStatsToVisibleRows(Map<String, LaunchStatsProvider.LaunchStats> stats,
                                          AppUsageTodayStore.Snapshot usage) {
-        if (activity.list == null || activity.adapter == null) return;
+        if (!UniversalHistoryTimestamp.isHistorySurface(activity)
+                || activity.list == null || activity.adapter == null) {
+            return;
+        }
         int first = activity.list.getFirstVisiblePosition();
         java.text.DateFormat timeFormat = DateFormat.getTimeFormat(activity);
 
