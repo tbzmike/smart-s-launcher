@@ -45,7 +45,14 @@ public final class UniversalHistoryTimestamp {
     public static void bind(@NonNull View row, @NonNull Result<?> result, @NonNull Context context) {
         if (!isHistorySurface(context)) {
             TextView existing = findTimestamp(row);
-            if (existing != null) existing.setVisibility(View.GONE);
+            if (existing != null) {
+                // List rows are recycled across History and QUERY. Hiding the metadata view alone
+                // leaves its previous enriched text attached to that recycled row; an asynchronous
+                // History enrichment finishing after search starts can then append the same suffix
+                // again and again. Clear the stale payload as well as hiding the view.
+                existing.setText(null);
+                existing.setVisibility(View.GONE);
+            }
             return;
         }
 
