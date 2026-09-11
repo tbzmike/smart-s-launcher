@@ -1,7 +1,6 @@
 package fr.neamar.kiss.searcher;
 
 import android.content.SharedPreferences;
-import android.content.pm.ShortcutInfo;
 import android.os.UserManager;
 
 import androidx.core.content.ContextCompat;
@@ -16,6 +15,7 @@ import java.util.Set;
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.activitylauncher.ActivityLauncherStore;
 import fr.neamar.kiss.dataprovider.simpleprovider.NotificationProvider;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
@@ -71,25 +71,9 @@ public class HistorySearcher extends Searcher {
             }
         }
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            for (String id : excludedFromHistory) {
-                Pojo pojo = dataHandler.getItemById(id);
-                if (pojo instanceof AppPojo) {
-                    List<ShortcutInfo> shortcutInfos = ShortcutUtil.getShortcuts(
-                            activity, ((AppPojo) pojo).packageName);
-                    for (ShortcutInfo shortcutInfo : shortcutInfos) {
-                        ShortcutRecord shortcutRecord = ShortcutUtil.createShortcutRecord(
-                                activity, shortcutInfo, !shortcutInfo.isPinned());
-                        if (shortcutRecord != null) {
-                            excludedPojoById.add(ShortcutUtil.generateShortcutId(
-                                    new UserHandle(activity, shortcutInfo.getUserHandle()),
-                                    shortcutRecord));
-                        }
-                    }
-                }
-            }
-        }
-
+        // App rows and shortcut rows are independent launch targets. DataHandler records the exact
+        // id that was launched, so an app-level history exclusion must not be expanded into every
+        // shortcut published by that app. Exact shortcut ids remain independently excludable.
         if (excludeFavorites) {
             for (Pojo favoritePojo : dataHandler.getFavorites()) {
                 excludedPojoById.add(favoritePojo.id);
@@ -260,10 +244,26 @@ public class HistorySearcher extends Searcher {
     private Pojo resolveRememberedShortcut(MainActivity activity, DataHandler dataHandler,
                                             String requestedId) {
         UserManager userManager = ContextCompat.getSystemService(activity, UserManager.class);
-        if (userManager == null) return null;
 
         for (ShortcutRecord record : DBHelper.getShortcuts(activity)) {
             if (record == null || record.packageName == null || record.intentUri == null) continue;
+
+            // Activity Launcher/IceBox-style managed targets use a content-derived stable id rather
+            // than ShortcutUtil.generateShortcutId(). Recover them with the same identity used by
+            // LoadShortcutsPojos and by the history writer, so provider reloads cannot orphan them.
+            if (ActivityLauncherStore.isManaged(record)) {
+                String stableId = ActivityLauncherStore.stablePojoId(record);
+                if (requestedId.equals(stableId)) {
+                    ShortcutPojo pojo = new ShortcutPojo(UserHandle.OWNER, record, null,
+                            true, false, false, stableId);
+                    pojo.setName(ActivityLauncherStore.displayLabel(activity, record));
+                    pojo.setTags(dataHandler.getTagsHandler().getTags(pojo.id));
+                    return pojo;
+                }
+                continue;
+            }
+
+            if (userManager == null) continue;
             for (android.os.UserHandle profile : userManager.getUserProfiles()) {
                 UserHandle user = new UserHandle(activity, profile);
                 if (!requestedId.equals(ShortcutUtil.generateShortcutId(user, record))) continue;
