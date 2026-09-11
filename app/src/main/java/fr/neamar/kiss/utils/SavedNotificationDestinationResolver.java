@@ -6,19 +6,24 @@ import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ShortcutInfo;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.UserManager;
 import android.text.TextUtils;
+import android.util.Base64;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.core.content.ContextCompat;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
@@ -36,6 +41,9 @@ public final class SavedNotificationDestinationResolver {
     private static final long ENABLE_SETTLE_DELAY_MS = 500L;
     private static final long EXACT_RETRY_DELAY_MS = 400L;
     private static final int EXACT_RETRY_COUNT = 3;
+    private static final String FAIREMAIL_PACKAGE = "eu.faircode.email";
+    private static final Pattern FAIREMAIL_UNSEEN_TAG =
+            Pattern.compile("unseen\\.(-?\\d+)\\.(\\d+)");
 
     private SavedNotificationDestinationResolver() {}
 
@@ -74,6 +82,7 @@ public final class SavedNotificationDestinationResolver {
         }
         return NotificationPendingIntentStore.has(context, record.pendingIntentToken)
                 || !TextUtils.isEmpty(record.routeUri)
+                || hasRecoverableKnownRoute(record)
                 || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && (!TextUtils.isEmpty(record.shortcutId)
                 || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -134,7 +143,85 @@ public final class SavedNotificationDestinationResolver {
                                               @Nullable NotificationHistoryRecord record) {
         if (record == null) return false;
         if (openPublishedShortcut(context, record)) return true;
+        if (TextUtils.isEmpty(record.routeUri)) recoverKnownDurableRoute(context, record);
         return openPersistedRoute(context, record);
+    }
+
+    /**
+     * Recover exact routes for apps whose notification identity itself exposes a documented,
+     * durable message identifier. This never derives a destination from notification title/body.
+     *
+     * FairEmail posts message notifications with a tag shaped as unseen.<group>.<messageId>.
+     * Smart S persists StatusBarNotification#getKey() (Base64 encoded) as notificationId, so an
+     * existing history row still contains that exact message ID even after Android invalidates the
+     * original PendingIntent when the app is frozen. FairEmail's exported ActivityMain accepts the
+     * stable message://email.faircode.eu#<messageId> route. Persist the recovered URI immediately
+     * so subsequent opens no longer depend on Android's notification token or key format.
+     */
+    private static boolean recoverKnownDurableRoute(@NonNull Context context,
+                                                    @NonNull NotificationHistoryRecord record) {
+        if (!FAIREMAIL_PACKAGE.equals(record.packageName)
+                || TextUtils.isEmpty(record.notificationId)) return false;
+
+        String prefix = NotificationListener.NOTIFICATION_SCHEME;
+        if (!record.notificationId.startsWith(prefix)) return false;
+        String encodedKey = record.notificationId.substring(prefix.length());
+        if (TextUtils.isEmpty(encodedKey)) return false;
+
+        final String notificationKey;
+        try {
+            notificationKey = new String(Base64.decode(encodedKey,
+                    Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG, "Unable to decode saved FairEmail notification key", e);
+            return false;
+        }
+
+        Matcher matcher = FAIREMAIL_UNSEEN_TAG.matcher(notificationKey);
+        if (!matcher.find()) return false;
+
+        final long messageId;
+        try {
+            messageId = Long.parseLong(matcher.group(2));
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        if (messageId <= 0L) return false;
+
+        Uri data = new Uri.Builder()
+                .scheme("message")
+                .authority("email.faircode.eu")
+                .fragment(Long.toString(messageId))
+                .build();
+        Intent exact = new Intent(Intent.ACTION_VIEW, data)
+                .setPackage(FAIREMAIL_PACKAGE)
+                .addCategory(Intent.CATEGORY_DEFAULT)
+                .addCategory(Intent.CATEGORY_BROWSABLE);
+        String route = exact.toUri(Intent.URI_INTENT_SCHEME);
+        if (TextUtils.isEmpty(route)) return false;
+
+        record.routeUri = route;
+        if (record.dbId > 0L) SmartStateStore.updateNotificationRoute(context, record.dbId, route);
+        return true;
+    }
+
+    private static boolean hasRecoverableKnownRoute(@NonNull NotificationHistoryRecord record) {
+        if (!FAIREMAIL_PACKAGE.equals(record.packageName)
+                || TextUtils.isEmpty(record.notificationId)
+                || !record.notificationId.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
+            return false;
+        }
+        String encodedKey = record.notificationId.substring(
+                NotificationListener.NOTIFICATION_SCHEME.length());
+        try {
+            String notificationKey = new String(Base64.decode(encodedKey,
+                    Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING), StandardCharsets.UTF_8);
+            Matcher matcher = FAIREMAIL_UNSEEN_TAG.matcher(notificationKey);
+            if (!matcher.find()) return false;
+            return Long.parseLong(matcher.group(2)) > 0L;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     /**
