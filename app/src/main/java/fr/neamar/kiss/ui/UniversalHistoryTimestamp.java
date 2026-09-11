@@ -71,14 +71,6 @@ public final class UniversalHistoryTimestamp {
         return activity.searchEditText == null || activity.searchEditText.length() == 0;
     }
 
-    /**
-     * Clear metadata carried by a recycled History row before it is rebound as a QUERY result.
-     * This is intentionally safe to call from every adapter bind.
-     */
-    public static void clearIfNotHistory(@NonNull View row, @NonNull Context context) {
-        if (!isHistorySurface(context)) clearTimestamp(row);
-    }
-
     private static void clearTimestamp(View row) {
         TextView existing = findTimestamp(row);
         if (existing == null) return;
