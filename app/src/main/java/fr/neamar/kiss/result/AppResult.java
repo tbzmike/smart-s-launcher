@@ -385,6 +385,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
             }
             launcher.startMainActivity(getClassName(), pojo.userHandle.getRealHandle(), sourceBounds, opts);
             markLaunchSucceeded(wasFrozen, v);
+            rememberSuccessfulHistoryTarget(context);
         } catch (ActivityNotFoundException | NullPointerException | SecurityException e) {
             Log.w(TAG, "Unable to launch activity", e);
 
@@ -392,6 +393,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
             // PackageManager state. Try the package launch intent before treating the app as broken.
             if (wasFrozen && AppLaunchUtils.launchPackage(context, pojo.packageName)) {
                 markLaunchSucceeded(true, v);
+                rememberSuccessfulHistoryTarget(context);
                 return;
             }
 
@@ -417,6 +419,24 @@ public class AppResult extends ResultWithTags<AppPojo> {
             clearVisibleDisabledFilter(parentView);
             clearIcon();
         }
+    }
+
+    /**
+     * HistorySearcher already knows how to recover a recently selected item when a provider is
+     * rebuilding, but that bridge must be populated by the successful launch itself. Mirror the
+     * same freeze/exclusion gates used by DataHandler.addToHistory so this never bypasses an
+     * explicit history privacy setting.
+     */
+    private void rememberSuccessfulHistoryTarget(@NonNull Context context) {
+        String historyId = pojo.getHistoryId();
+        if (historyId == null
+                || PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean("freeze-history", false)
+                || KissApplication.getApplication(context).getDataHandler()
+                .getExcludedFromHistory().contains(historyId)) {
+            return;
+        }
+        fr.neamar.kiss.utils.RecentLaunchTracker.remember(pojo);
     }
 
     @Nullable
