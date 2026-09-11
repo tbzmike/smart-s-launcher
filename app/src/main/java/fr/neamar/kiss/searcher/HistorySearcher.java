@@ -122,7 +122,11 @@ public class HistorySearcher extends Searcher {
             String historyId = records.get(i).record;
             if (historyId == null || excludedPojoById.contains(historyId)) continue;
 
-            Pojo pojo = dataHandler.getItemById(historyId);
+            // A DB history row is authoritative. Resolve it through the live provider first, then
+            // the exact recently launched object, then the persisted shortcut catalog. Doing this
+            // in the primary recency pass prevents the later full refresh from replacing a correct
+            // warm Home row with a list that temporarily cannot resolve a dynamic shortcut.
+            Pojo pojo = resolveHistoryTarget(activity, dataHandler, historyId);
             if (pojo == null || excludedPojoById.contains(pojo.id)) continue;
 
             pojo.relevance = HistoryRecencyOrder.relevanceForNewestFirstIndex(recordCount, i);
@@ -156,11 +160,7 @@ public class HistorySearcher extends Searcher {
                 continue;
             }
 
-            Pojo recovered = RecentLaunchTracker.resolve(historyId);
-            if (recovered == null) recovered = dataHandler.getItemById(historyId);
-            if (recovered == null && historyId.startsWith(ShortcutPojo.SCHEME)) {
-                recovered = resolveRememberedShortcut(activity, dataHandler, historyId);
-            }
+            Pojo recovered = resolveHistoryTarget(activity, dataHandler, historyId);
             if (recovered == null || excludedPojoById.contains(recovered.id)) continue;
 
             int recoveredRelevance = historyMode == HistoryMode.ALPHABETICALLY
@@ -203,10 +203,8 @@ public class HistorySearcher extends Searcher {
             recentPojo = pojos.remove(existingIndex);
         }
 
-        if (recentPojo == null) recentPojo = dataHandler.getItemById(mostRecentId);
-        if (recentPojo == null) recentPojo = RecentLaunchTracker.resolve(mostRecentId);
-        if (recentPojo == null && mostRecentId.startsWith(ShortcutPojo.SCHEME)) {
-            recentPojo = resolveRememberedShortcut(activity, dataHandler, mostRecentId);
+        if (recentPojo == null) {
+            recentPojo = resolveHistoryTarget(activity, dataHandler, mostRecentId);
         }
         if (recentPojo == null || excludedPojoById.contains(recentPojo.id)) return;
 
@@ -220,6 +218,20 @@ public class HistorySearcher extends Searcher {
         // relevance moves this item upward one position at a time.
         recentPojo.relevance = Integer.MAX_VALUE;
         pojos.add(recentPojo);
+    }
+
+    /**
+     * Resolve one persisted history identity without changing what was launched. The DB id remains
+     * the authority; provider state is only one possible representation of that exact target.
+     */
+    private Pojo resolveHistoryTarget(MainActivity activity, DataHandler dataHandler,
+                                      String historyId) {
+        Pojo pojo = dataHandler.getItemById(historyId);
+        if (pojo == null) pojo = RecentLaunchTracker.resolve(historyId);
+        if (pojo == null && historyId.startsWith(ShortcutPojo.SCHEME)) {
+            pojo = resolveRememberedShortcut(activity, dataHandler, historyId);
+        }
+        return pojo;
     }
 
     private int indexOfHistoryId(List<Pojo> pojos, String historyId) {
@@ -341,10 +353,12 @@ public class HistorySearcher extends Searcher {
             return app.isExcludedFromHistory() || excludedPackages.contains(app.packageName);
         }
         if (pojo instanceof ShortcutPojo) {
-            ShortcutPojo shortcut = (ShortcutPojo) pojo;
-            return excludedPackages.contains(shortcut.packageName)
-                    || (shortcut.targetPackage != null
-                    && excludedPackages.contains(shortcut.targetPackage));
+            // A shortcut is an independently launched history target. DataHandler writes the
+            // shortcut's exact history id, and the warm Home snapshot also filters by that exact id.
+            // Do not later erase the shortcut merely because its publisher/target app is excluded
+            // as an app row; that mismatch is what caused a shortcut to appear briefly on return
+            // and disappear when the authoritative HistorySearcher completed.
+            return false;
         }
         if (pojo instanceof NotificationPojo) {
             return excludedPackages.contains(((NotificationPojo) pojo).packageName);
