@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.89 - preserve launched shortcuts across provider refresh
-        versionCode 517
-        versionName "3.30.89"
+        // Smart S Launcher 3.30.90 - prevent search metadata timestamp accumulation
+        versionCode 518
+        versionName "3.30.90"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
