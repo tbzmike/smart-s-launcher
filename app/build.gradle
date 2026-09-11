@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.86 - history metadata and scroll performance repair
-        versionCode 514
-        versionName "3.30.86"
+        // Smart S Launcher 3.30.87 - durable app and shortcut history recovery
+        versionCode 515
+        versionName "3.30.87"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
