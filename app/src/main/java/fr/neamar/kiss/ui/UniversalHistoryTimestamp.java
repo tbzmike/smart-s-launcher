@@ -44,15 +44,7 @@ public final class UniversalHistoryTimestamp {
 
     public static void bind(@NonNull View row, @NonNull Result<?> result, @NonNull Context context) {
         if (!isHistorySurface(context)) {
-            TextView existing = findTimestamp(row);
-            if (existing != null) {
-                // List rows are recycled across History and QUERY. Hiding the metadata view alone
-                // leaves its previous enriched text attached to that recycled row; an asynchronous
-                // History enrichment finishing after search starts can then append the same suffix
-                // again and again. Clear the stale payload as well as hiding the view.
-                existing.setText(null);
-                existing.setVisibility(View.GONE);
-            }
+            clearTimestamp(row);
             return;
         }
 
@@ -72,10 +64,29 @@ public final class UniversalHistoryTimestamp {
         }
     }
 
-    private static boolean isHistorySurface(Context context) {
+    /** True only while launcher rows belong to the normal empty-query History/Home surface. */
+    public static boolean isHistorySurface(@NonNull Context context) {
         if (!(context instanceof MainActivity)) return false;
         MainActivity activity = (MainActivity) context;
         return activity.searchEditText == null || activity.searchEditText.length() == 0;
+    }
+
+    /**
+     * Clear metadata carried by a recycled History row before it is rebound as a QUERY result.
+     * This is intentionally safe to call from every adapter bind.
+     */
+    public static void clearIfNotHistory(@NonNull View row, @NonNull Context context) {
+        if (!isHistorySurface(context)) clearTimestamp(row);
+    }
+
+    private static void clearTimestamp(View row) {
+        TextView existing = findTimestamp(row);
+        if (existing == null) return;
+        // List rows are recycled across History and QUERY. Hiding the metadata view alone leaves
+        // its previous enriched text attached to that recycled row; an asynchronous History
+        // enrichment finishing after search starts can then append the same suffix again and again.
+        existing.setText(null);
+        existing.setVisibility(View.GONE);
     }
 
     private static LaunchStatsProvider.LaunchStats resolveStats(Pojo pojo) {
