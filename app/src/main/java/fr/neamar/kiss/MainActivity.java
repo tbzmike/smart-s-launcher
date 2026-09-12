@@ -525,7 +525,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // Persistent notification details are only a rendering cache. Reconcile them against
         // Android's panel without delaying the first Home frame; a changed active set requests a
         // normal refresh when the background verification completes.
-        NotificationListener.reconcileActiveNotificationsAsync();
+        NotificationListener.reconcileActiveNotificationsAsync(this);
 
         // A successful launch from a query must return to the real default History tree, not a
         // visually frozen copy of the old query results. Arm the Vertical Cards renderer before

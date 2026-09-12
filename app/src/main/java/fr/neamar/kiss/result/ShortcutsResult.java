@@ -176,8 +176,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 }
             });
         } else {
-            if (latestSaved != null
-                    && SavedNotificationDestinationResolver.hasExactTarget(context, latestSaved)) {
+            if (latestSaved != null) {
                 View.OnClickListener exactSavedNotificationClick = v -> {
                     TileLaunchCounter.recordNotification(
                             context, latestSaved.notificationId, latestSaved.postTime);

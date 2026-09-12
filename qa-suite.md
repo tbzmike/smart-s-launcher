@@ -123,6 +123,9 @@ As best as possible, only actual KISS code is tested, not standard Android syste
 * [ ] Post a notification and open ordinary Vertical List: its exact live row shows Mark read and dismisses only that Android notification
 * [ ] Leave that notification active, restart or upgrade Smart S, then tap its saved message: the exact notification destination is rehydrated from Android and opens the same message/conversation
 * [ ] Reopen the saved notification in full, rich, and locked history views: the action remains labelled Open notification and never silently changes into an app launch
+* [ ] With a notification still present, install a newer Smart S APK and immediately tap Open notification: Smart S waits for notification access to reconnect, refreshes the route, and opens the exact message without showing an unavailable-destination error
+* [ ] Kill the Smart S process while a notification remains active, reopen Launcher Home, and tap its history card: the listener reconnects and the pending exact-open request completes after Android republishes the active snapshot
+* [ ] Repost the same Android notification key with a new post time but identical title/body: the saved entry may reuse the refreshed route; changing either title or body must keep the old entry from opening the replacement message
 * [ ] Swipe the notification away in Android's notification panel, then return Home: its saved history row remains readable but Mark read is absent
 * [ ] Post a newer notification from the same app while an older saved row exists: the older row cannot open, dismiss, or mark the newer notification
 * [ ] Repeat with saved SMS and Truecaller/message history: Mark read appears only while the matched notification is currently present in Android's panel; Open message remains available

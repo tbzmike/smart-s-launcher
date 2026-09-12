@@ -43,13 +43,15 @@ public final class NotificationRouteRelayActivity extends Activity {
             }
             NotificationPendingIntentStore.discard(this, routeToken);
             SmartStateStore.clearNotificationPendingIntentToken(this, routeToken);
-            boolean fallbackOpened = NotificationListener.openExactActiveNotification(this, record)
-                    || SavedNotificationDestinationResolver.openDurableFallback(this, record);
-            if (fallbackOpened && record != null) {
+            SavedNotificationDestinationResolver.OpenResult fallback =
+                    SavedNotificationDestinationResolver.openExactResult(this, record);
+            boolean fallbackOpened = fallback.accepted();
+            if (fallback == SavedNotificationDestinationResolver.OpenResult.OPENED
+                    && record != null) {
                 if (record.notificationId != null && !record.notificationId.isEmpty()) {
                     NotificationUnreadStore.markRead(this, record.notificationId);
                 }
-            } else {
+            } else if (!fallbackOpened) {
                 Toast.makeText(this, "The originating app expired this notification route.",
                         Toast.LENGTH_SHORT).show();
             }

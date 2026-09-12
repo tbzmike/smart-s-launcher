@@ -13,6 +13,7 @@ import android.os.Looper;
 import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.Base64;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -21,7 +22,9 @@ import androidx.core.content.ContextCompat;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,9 +44,12 @@ public final class SavedNotificationDestinationResolver {
     private static final long ENABLE_SETTLE_DELAY_MS = 500L;
     private static final long EXACT_RETRY_DELAY_MS = 400L;
     private static final int EXACT_RETRY_COUNT = 3;
+    private static final long LISTENER_RETRY_DELAY_MS = 250L;
+    private static final int LISTENER_RETRY_COUNT = 40;
     private static final String FAIREMAIL_PACKAGE = "eu.faircode.email";
     private static final Pattern FAIREMAIL_UNSEEN_TAG =
             Pattern.compile("unseen\\.(-?\\d+)\\.(\\d+)");
+    private static final Set<String> PENDING_LISTENER_OPENS = new HashSet<>();
 
     private SavedNotificationDestinationResolver() {}
 
@@ -52,10 +58,12 @@ public final class SavedNotificationDestinationResolver {
         ENABLE_RETRY_STARTED,
         APP_NOT_INSTALLED,
         APP_DISABLED_CANNOT_ENABLE,
+        LISTENER_RETRY_STARTED,
         NO_EXACT_TARGET;
 
         public boolean accepted() {
-            return this == OPENED || this == ENABLE_RETRY_STARTED;
+            return this == OPENED || this == ENABLE_RETRY_STARTED
+                    || this == LISTENER_RETRY_STARTED;
         }
     }
 
@@ -79,7 +87,7 @@ public final class SavedNotificationDestinationResolver {
                 || NotificationListener.hasRetainedContentIntent(
                 record.notificationId, record.postTime)
                 || NotificationListener.hasExactActiveContentIntent(
-                record.notificationId, record.postTime))) {
+                record))) {
             return true;
         }
         return !NotificationPendingIntentStore.findAvailableToken(
@@ -126,8 +134,9 @@ public final class SavedNotificationDestinationResolver {
             }
         }
 
-        return openExactNow(context, record)
-                ? OpenResult.OPENED : OpenResult.NO_EXACT_TARGET;
+        if (openExactNow(context, record)) return OpenResult.OPENED;
+        return scheduleExactOpenAfterListenerReconnect(context, record)
+                ? OpenResult.LISTENER_RETRY_STARTED : OpenResult.NO_EXACT_TARGET;
     }
 
     private static boolean openExactNow(@NonNull Context context,
@@ -148,6 +157,65 @@ public final class SavedNotificationDestinationResolver {
         if (openPublishedShortcut(context, record)) return true;
         if (TextUtils.isEmpty(record.routeUri)) recoverKnownDurableRoute(context, record);
         return openPersistedRoute(context, record);
+    }
+
+    /**
+     * A package replacement can leave notification access granted while Android is still rebinding
+     * the listener. Keep the user's exact-open request pending instead of reporting that the route
+     * is missing before Android makes the active notification available again.
+     */
+    private static boolean scheduleExactOpenAfterListenerReconnect(
+            @NonNull Context context, @NonNull NotificationHistoryRecord record) {
+        if (TextUtils.isEmpty(record.notificationId)
+                || NotificationListener.isReadyForExactNotificationLookup()
+                || !NotificationListener.requestListenerReconnect(context)) {
+            return false;
+        }
+
+        String retryKey = listenerRetryKey(record);
+        synchronized (PENDING_LISTENER_OPENS) {
+            if (!PENDING_LISTENER_OPENS.add(retryKey)) return true;
+        }
+        Context appContext = context.getApplicationContext();
+        Toast.makeText(appContext, "Restoring notification link…", Toast.LENGTH_SHORT).show();
+        scheduleListenerRetry(appContext, record, retryKey, 0);
+        return true;
+    }
+
+    private static void scheduleListenerRetry(@NonNull Context context,
+                                              @NonNull NotificationHistoryRecord record,
+                                              @NonNull String retryKey,
+                                              int attempt) {
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (NotificationListener.isReadyForExactNotificationLookup()) {
+                boolean opened = openExactNow(context, record);
+                finishListenerRetry(retryKey);
+                if (!opened) showListenerRecoveryFailure(context);
+                return;
+            }
+            if (attempt + 1 < LISTENER_RETRY_COUNT) {
+                NotificationListener.requestListenerReconnect(context);
+                scheduleListenerRetry(context, record, retryKey, attempt + 1);
+                return;
+            }
+            finishListenerRetry(retryKey);
+            showListenerRecoveryFailure(context);
+        }, LISTENER_RETRY_DELAY_MS);
+    }
+
+    private static void showListenerRecoveryFailure(@NonNull Context context) {
+        Toast.makeText(context, "Exact notification/message link could not be restored.",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private static String listenerRetryKey(@NonNull NotificationHistoryRecord record) {
+        return record.notificationId + '|' + record.postTime + '|' + record.dbId;
+    }
+
+    private static void finishListenerRetry(@NonNull String retryKey) {
+        synchronized (PENDING_LISTENER_OPENS) {
+            PENDING_LISTENER_OPENS.remove(retryKey);
+        }
     }
 
     /**
@@ -251,6 +319,7 @@ public final class SavedNotificationDestinationResolver {
             }
 
             if (openExactNow(context, record)) return;
+            if (scheduleExactOpenAfterListenerReconnect(context, record)) return;
             if (attempt + 1 < EXACT_RETRY_COUNT) {
                 scheduleExactOpenAfterEnable(context, record, attempt + 1,
                         EXACT_RETRY_DELAY_MS);

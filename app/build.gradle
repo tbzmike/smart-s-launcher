@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.94 - preserve and rehydrate exact notification destinations
-        versionCode 522
-        versionName "3.30.94"
+        // Smart S Launcher 3.30.95 - reconnect and recover exact notification destinations
+        versionCode 523
+        versionName "3.30.95"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

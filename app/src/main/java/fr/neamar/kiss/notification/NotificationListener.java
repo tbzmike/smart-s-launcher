@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.PendingIntent;
 import android.app.RemoteInput;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -11,6 +12,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Base64;
@@ -18,6 +20,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.RemoteViews;
 
+import androidx.core.app.NotificationManagerCompat;
 import androidx.preference.PreferenceManager;
 
 import java.nio.charset.StandardCharsets;
@@ -94,12 +97,15 @@ public class NotificationListener extends NotificationListenerService {
      * treated as proof that a notification is still present in Android's panel.
      */
     private static volatile Set<String> verifiedActiveIds = Collections.emptySet();
+    private static volatile boolean listenerConnected;
     private static volatile boolean activeStateVerified;
     private static final Object GROUP_SNAPSHOT_LOCK = new Object();
     private static volatile Map<String, List<NotificationSnapshot>> verifiedGroupSnapshots =
             Collections.emptyMap();
     private static volatile long notificationStateGeneration;
     private static volatile long verifiedGroupSnapshotGeneration = -1L;
+    private static volatile long lastRebindRequestElapsed;
+    private static final long MIN_REBIND_INTERVAL_MS = 1_000L;
     private SharedPreferences prefs;
     private SharedPreferences details;
 
@@ -110,11 +116,13 @@ public class NotificationListener extends NotificationListenerService {
         publishUnverifiedActiveState();
         // Publish the service instance only after its caches are initialized; MainActivity may
         // request a synchronous reconciliation as soon as Launcher Home resumes.
+        listenerConnected = false;
         instance = this;
     }
 
     @Override public void onDestroy() {
         if (instance == this) {
+            listenerConnected = false;
             instance = null;
             publishUnverifiedActiveState();
             sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
@@ -124,6 +132,7 @@ public class NotificationListener extends NotificationListenerService {
 
     @Override public void onListenerConnected() {
         super.onListenerConnected();
+        listenerConnected = true;
         if (refreshAllNotifications(true)) {
             sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         }
@@ -186,11 +195,13 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     @Override public void onListenerDisconnected() {
+        listenerConnected = false;
         prefs.edit().clear().apply();
         details.edit().clear().apply();
         publishUnverifiedActiveState();
         sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         super.onListenerDisconnected();
+        requestListenerReconnect(this);
     }
 
     @Override public void onNotificationRankingUpdate(RankingMap rankingMap) {
@@ -243,9 +254,8 @@ public class NotificationListener extends NotificationListenerService {
         Notification n = sbn.getNotification();
         if (n == null) return;
         rememberContentIntent(id, sbn.getPostTime(), n.contentIntent);
-        CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
-        CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
-        if (text == null || text.length() == 0) text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
+        String title = historyTitle(n);
+        String text = historyBody(n);
         String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? n.getShortcutId() : null;
         String locusId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && n.getLocusId() != null
                 ? n.getLocusId().getId() : null;
@@ -267,9 +277,26 @@ public class NotificationListener extends NotificationListenerService {
                 (android.os.UserManager) getSystemService(Context.USER_SERVICE);
         if (userManager != null) userSerial = userManager.getSerialNumberForUser(sbn.getUser());
         SmartStateStore.saveNotification(this, id, sbn.getPackageName(), getAppName(sbn.getPackageName()),
-                title == null ? "" : title.toString(), text == null ? "" : text.toString(), sbn.getPostTime(),
+                title, text, sbn.getPostTime(),
                 isPermanentForHistory(sbn), shortcutId, userSerial, routeUri,
                 pendingIntentToken, locusId);
+    }
+
+    private static String historyTitle(Notification notification) {
+        Bundle extras = notification == null ? null : notification.extras;
+        CharSequence title = extras == null ? null
+                : extras.getCharSequence(Notification.EXTRA_TITLE);
+        return title == null ? "" : title.toString();
+    }
+
+    private static String historyBody(Notification notification) {
+        Bundle extras = notification == null ? null : notification.extras;
+        if (extras == null) return "";
+        CharSequence text = extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
+        if (text == null || text.length() == 0) {
+            text = extras.getCharSequence(Notification.EXTRA_TEXT);
+        }
+        return text == null ? "" : text.toString();
     }
 
     private String getAppName(String packageName) {
@@ -287,11 +314,8 @@ public class NotificationListener extends NotificationListenerService {
         Notification n = sbn.getNotification();
         if (n == null) return;
         rememberContentIntent(id, sbn.getPostTime(), n.contentIntent);
-        CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
-        CharSequence text = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
-        if (text == null || text.length() == 0) text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
-        String titleString = title == null ? "" : title.toString();
-        String textString = text == null ? "" : text.toString();
+        String titleString = historyTitle(n);
+        String textString = historyBody(n);
         editor.putString(id + "|package", sbn.getPackageName());
         editor.putString(id + "|group", packageKey);
         editor.putString(id + "|key", sbn.getKey());
@@ -358,7 +382,7 @@ public class NotificationListener extends NotificationListenerService {
     /** Return a defensive platform snapshot for an explicit avatar-cache refresh. */
     public static StatusBarNotification[] activeNotificationsSnapshot() {
         NotificationListener listener = instance;
-        if (listener == null) return null;
+        if (listener == null || !activeStateVerified) return null;
         try {
             StatusBarNotification[] active = listener.getActiveNotifications();
             return active == null ? null : active.clone();
@@ -375,7 +399,7 @@ public class NotificationListener extends NotificationListenerService {
      */
     public static boolean reconcileActiveNotifications() {
         NotificationListener listener = instance;
-        if (listener == null) {
+        if (listener == null || !listenerConnected) {
             publishUnverifiedActiveState();
             return false;
         }
@@ -387,12 +411,17 @@ public class NotificationListener extends NotificationListenerService {
      * Multiple resumes are coalesced, and Home is refreshed only when the verified active set
      * actually changed while it was away.
      */
-    public static void reconcileActiveNotificationsAsync() {
+    public static void reconcileActiveNotificationsAsync(Context context) {
         NotificationListener listener = instance;
-        if (listener == null) {
+        if (listener == null || !listenerConnected) {
             publishUnverifiedActiveState();
+            requestListenerReconnect(context);
             return;
         }
+        startAsyncReconcile(listener);
+    }
+
+    private static void startAsyncReconcile(NotificationListener listener) {
         if (!RECONCILE_RUNNING.compareAndSet(false, true)) return;
         RECONCILE_EXECUTOR.execute(() -> {
             try {
@@ -405,6 +434,48 @@ public class NotificationListener extends NotificationListenerService {
                 RECONCILE_RUNNING.set(false);
             }
         });
+    }
+
+    /** True only after Android confirms that notification-listener operations are safe. */
+    public static boolean isReadyForExactNotificationLookup() {
+        return instance != null && listenerConnected && activeStateVerified;
+    }
+
+    /**
+     * Ask Android to reconnect the listener after process death, reboot, or an APK replacement.
+     * The permission check prevents a retry loop when notification access was revoked by the user.
+     */
+    public static boolean requestListenerReconnect(Context context) {
+        if (context == null) return false;
+        Context appContext = context.getApplicationContext();
+        try {
+            if (!NotificationManagerCompat.getEnabledListenerPackages(appContext)
+                    .contains(appContext.getPackageName())) {
+                return false;
+            }
+            if (isReadyForExactNotificationLookup()) return true;
+            NotificationListener current = instance;
+            if (current != null && listenerConnected) {
+                startAsyncReconcile(current);
+                return true;
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return instance != null;
+
+            long now = SystemClock.elapsedRealtime();
+            synchronized (NotificationListener.class) {
+                if (lastRebindRequestElapsed != 0L
+                        && now - lastRebindRequestElapsed < MIN_REBIND_INTERVAL_MS) {
+                    return true;
+                }
+                lastRebindRequestElapsed = now;
+            }
+            NotificationListenerService.requestRebind(
+                    new ComponentName(appContext, NotificationListener.class));
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to request notification-listener reconnect", e);
+            return false;
+        }
     }
 
     public static Set<String> getVerifiedActiveNotificationIds() {
@@ -659,8 +730,9 @@ public class NotificationListener extends NotificationListenerService {
                             context, saved.dbId, availableToken);
                 }
                 if (NotificationPendingIntentStore.open(context, availableToken)) return true;
-            }
-            if (persistedToken != null && !persistedToken.isEmpty()) {
+                SmartStateStore.clearNotificationPendingIntentToken(context, availableToken);
+                saved.pendingIntentToken = "";
+            } else if (persistedToken != null && !persistedToken.isEmpty()) {
                 SmartStateStore.clearNotificationPendingIntentToken(context, persistedToken);
                 saved.pendingIntentToken = "";
             }
@@ -687,8 +759,8 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     /** True when Android still exposes a content PendingIntent for this exact saved event. */
-    public static boolean hasExactActiveContentIntent(String notificationId, long postTime) {
-        StatusBarNotification sbn = findExactActiveNotification(notificationId, postTime);
+    public static boolean hasExactActiveContentIntent(NotificationHistoryRecord record) {
+        StatusBarNotification sbn = findCompatibleActiveNotification(record);
         return sbn != null && sbn.getNotification() != null
                 && sbn.getNotification().contentIntent != null;
     }
@@ -711,16 +783,16 @@ public class NotificationListener extends NotificationListenerService {
     private static boolean openExactActiveNotification(Context context, String notificationId,
                                                        long expectedPostTime,
                                                        NotificationHistoryRecord saved) {
-        StatusBarNotification sbn = findExactActiveNotification(
-                notificationId, expectedPostTime);
+        StatusBarNotification sbn = saved == null
+                ? findExactActiveNotification(notificationId, expectedPostTime)
+                : findCompatibleActiveNotification(saved);
         if (sbn == null || sbn.getNotification() == null) return false;
         if (!AppLaunchUtils.ensurePackageEnabled(context, sbn.getPackageName())) return false;
 
-        NotificationHistoryRecord activeRecord = saved;
-        if (activeRecord == null || activeRecord.postTime != sbn.getPostTime()) {
-            activeRecord = NotificationTimelineStore.findExact(
-                    context, notificationId, sbn.getPostTime());
-        }
+        NotificationHistoryRecord activeRecord = saved == null
+                ? NotificationTimelineStore.findExact(
+                    context, notificationId, sbn.getPostTime())
+                : saved;
         refreshPublishedShortcutRoute(context, activeRecord, sbn);
 
         PendingIntent contentIntent = sbn.getNotification().contentIntent;
@@ -777,7 +849,7 @@ public class NotificationListener extends NotificationListenerService {
                                                                      long expectedPostTime) {
         if (notificationId == null || notificationId.isEmpty()) return null;
         NotificationListener listener = instance;
-        if (listener == null) return null;
+        if (listener == null || !activeStateVerified) return null;
         try {
             StatusBarNotification[] active = listener.getActiveNotifications();
             if (active == null) return null;
@@ -788,6 +860,41 @@ public class NotificationListener extends NotificationListenerService {
             }
         } catch (RuntimeException e) {
             Log.w(TAG, "Unable to resolve exact active notification identity", e);
+        }
+        return null;
+    }
+
+    private static StatusBarNotification findCompatibleActiveNotification(
+            NotificationHistoryRecord saved) {
+        if (saved == null || saved.notificationId == null || saved.notificationId.isEmpty()) {
+            return null;
+        }
+        StatusBarNotification exact = findExactActiveNotification(
+                saved.notificationId, saved.postTime);
+        if (exact != null) return exact;
+
+        NotificationListener listener = instance;
+        if (listener == null || !activeStateVerified) return null;
+        try {
+            StatusBarNotification[] active = listener.getActiveNotifications();
+            if (active == null) return null;
+            for (StatusBarNotification sbn : active) {
+                if (sbn == null || sbn.getNotification() == null
+                        || sbn.getPostTime() <= saved.postTime
+                        || !saved.notificationId.equals(getTimelineId(sbn))
+                        || saved.packageName == null
+                        || !saved.packageName.equals(sbn.getPackageName())) {
+                    continue;
+                }
+                Notification notification = sbn.getNotification();
+                if (NotificationEventIdentity.hasSameVisibleContent(
+                        saved.title, saved.text,
+                        historyTitle(notification), historyBody(notification))) {
+                    return sbn;
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to match refreshed active notification content", e);
         }
         return null;
     }

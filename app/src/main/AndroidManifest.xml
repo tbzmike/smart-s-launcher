@@ -228,6 +228,15 @@
             </intent-filter>
         </receiver>
         <receiver
+            android:name=".notification.NotificationListenerRecoveryReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <receiver
             android:name=".notification.MediaNotificationCaptureReceiver"
             android:enabled="true"
             android:exported="false">
