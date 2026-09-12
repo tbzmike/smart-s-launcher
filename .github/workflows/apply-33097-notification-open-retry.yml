@@ -66,7 +66,7 @@ jobs:
 
           replace_one(
               'app/build.gradle',
-              '''        // Smart S Launcher 3.30.96 - keep exact routes across in-place notification updates\n        versionCode 524\n        versionName "3.30.96"\n''',
+              '''        // Smart S Launcher 3.30.96 - preserve notification route continuity across in-place updates\n        versionCode 524\n        versionName "3.30.96"\n''',
               '''        // Smart S Launcher 3.30.97 - retry exact opens across listener reconnect windows\n        versionCode 525\n        versionName "3.30.97"\n''')
           PY
 
