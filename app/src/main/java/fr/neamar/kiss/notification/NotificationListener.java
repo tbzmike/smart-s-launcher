@@ -755,7 +755,17 @@ public class NotificationListener extends NotificationListenerService {
         // Cached listener metadata can be cleared during process recreation or an app update while
         // Android still holds the notification. Re-resolve the exact platform row from the stable
         // encoded StatusBarNotification identity and post time before reporting a lost destination.
-        return openExactActiveNotification(context, notificationId, expectedPostTime, saved);
+        if (openExactActiveNotification(context, notificationId, expectedPostTime, saved)) {
+            return true;
+        }
+
+        // A card can be bound from a verified snapshot and then tapped during the short listener
+        // disconnect/rebind window. Do not fail that click immediately. Hand only the scheduling
+        // step to the resolver; calling openExact() here would recurse back into this method.
+        return saved != null
+                && !isReadyForExactNotificationLookup()
+                && SavedNotificationDestinationResolver
+                .scheduleExactOpenAfterListenerReconnectIfNeeded(context, saved);
     }
 
     /** True when Android still exposes a content PendingIntent for this exact saved event. */
@@ -801,7 +811,13 @@ public class NotificationListener extends NotificationListenerService {
                     && SavedNotificationDestinationResolver.openPublishedShortcut(
                     context, activeRecord);
         }
-        rememberContentIntent(notificationId, sbn.getPostTime(), contentIntent);
+        // When Android updates one notification slot in place, the stable notification key and
+        // destination survive while postTime changes. Once compatibility has been verified above,
+        // retain the current PendingIntent under the historical row's postTime so that the saved
+        // row can reuse the healed exact route on its next open attempt.
+        long retainedPostTime = activeRecord != null && activeRecord.postTime > 0L
+                ? activeRecord.postTime : sbn.getPostTime();
+        rememberContentIntent(notificationId, retainedPostTime, contentIntent);
         captureRouteForSavedRecord(context, activeRecord, notificationId, contentIntent);
         if (NotificationPendingIntentStore.sendTarget(context, contentIntent)) {
             NotificationUnreadStore.markRead(context, notificationId);

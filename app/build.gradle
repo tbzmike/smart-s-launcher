@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.96 - preserve notification route continuity across in-place updates
-        versionCode 524
-        versionName "3.30.96"
+        // Smart S Launcher 3.30.97 - retry exact opens across listener reconnect windows
+        versionCode 525
+        versionName "3.30.97"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
