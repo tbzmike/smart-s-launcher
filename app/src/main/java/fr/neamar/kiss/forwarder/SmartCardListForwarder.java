@@ -27,6 +27,7 @@ import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.AppResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
@@ -720,10 +721,14 @@ final class SmartCardListForwarder extends Forwarder {
 
         final TextView expandableMessage = messageView;
         final boolean[] messageExpanded = {false};
+        final boolean directNotification = result.getPojo() instanceof NotificationPojo;
+        final boolean directShortcut = result.getPojo() instanceof ShortcutPojo;
         View.OnClickListener launchOrExpand = v -> {
-            boolean directNotification = result.getPojo() instanceof NotificationPojo;
-            if (!directNotification && expandableMessage != null && !messageExpanded[0]
-                    && messageNeedsExpansion(expandableMessage)) {
+            boolean needsExpansion = expandableMessage != null
+                    && messageNeedsExpansion(expandableMessage);
+            if (shouldExpandMessageBeforeLaunch(
+                    directNotification, directShortcut, expandableMessage != null,
+                    messageExpanded[0], needsExpansion)) {
                 pressAnimation(card);
                 expandMessage(expandableMessage);
                 messageExpanded[0] = true;
@@ -743,6 +748,17 @@ final class SmartCardListForwarder extends Forwarder {
         cardTitle.setOnClickListener(launchOrExpand);
         card.setOnLongClickListener(longPress);
         cardTitle.setOnLongClickListener(longPress);
+        if (directShortcut && expandableMessage != null) {
+            // Shortcut notification previews are informational content inside the shortcut card.
+            // The source adapter TextView can carry an exact-notification click listener; overwrite
+            // it after re-parenting so tapping any shortcut-body text follows the same launch path
+            // as the icon/title and cannot produce an unrelated notification-destination error.
+            expandableMessage.setOnClickListener(launchOrExpand);
+            expandableMessage.setOnLongClickListener(longPress);
+            expandableMessage.setClickable(true);
+            expandableMessage.setFocusable(false);
+            expandableMessage.setFocusableInTouchMode(false);
+        }
         card.setClickable(true);
         cardTitle.setClickable(true);
         card.setFocusable(false);
@@ -750,6 +766,15 @@ final class SmartCardListForwarder extends Forwarder {
         cardTitle.setFocusable(false);
         cardTitle.setFocusableInTouchMode(false);
         return wrapper;
+    }
+
+    static boolean shouldExpandMessageBeforeLaunch(boolean directNotification,
+                                                   boolean directShortcut,
+                                                   boolean hasMessage,
+                                                   boolean alreadyExpanded,
+                                                   boolean needsExpansion) {
+        return !directNotification && !directShortcut && hasMessage
+                && !alreadyExpanded && needsExpansion;
     }
 
     private CharSequence callSummary(CommunicationPojo call) {
