@@ -212,6 +212,11 @@ public class HistorySearcher extends Searcher {
                                       String historyId) {
         Pojo pojo = dataHandler.getItemById(historyId);
         if (pojo == null) pojo = RecentLaunchTracker.resolve(historyId);
+        if (pojo == null
+                && (historyId.startsWith(NotificationListener.NOTIFICATION_SCHEME)
+                || historyId.startsWith(NotificationListener.NOTIFICATION_GROUP_SCHEME))) {
+            pojo = new NotificationProvider(activity).findById(historyId);
+        }
         if (pojo == null && historyId.startsWith(ShortcutPojo.SCHEME)) {
             pojo = resolveRememberedShortcut(activity, dataHandler, historyId);
         }
