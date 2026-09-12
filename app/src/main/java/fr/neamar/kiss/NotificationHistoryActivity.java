@@ -333,23 +333,19 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setGravity(Gravity.END);
 
-        boolean exactTarget = SavedNotificationDestinationResolver.hasExactTarget(this, record);
         Button open = new Button(this);
-        open.setText(exactTarget ? "Open notification" : "Open app");
+        open.setText("Open notification");
         open.setOnClickListener(v -> {
-            if (exactTarget) {
-                SavedNotificationDestinationResolver.OpenResult result =
-                        SavedNotificationDestinationResolver.openExactResult(this, record);
-                if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
-                    AppReinstallSupport.showUninstalledDialog(
-                            this, record.packageName, record.appName);
-                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
-                    Toast.makeText(this, "The app could not be re-enabled.", Toast.LENGTH_SHORT).show();
-                } else if (!result.accepted()) {
-                    openApp(record);
-                }
-            } else {
-                openApp(record);
+            SavedNotificationDestinationResolver.OpenResult result =
+                    SavedNotificationDestinationResolver.openExactResult(this, record);
+            if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
+                AppReinstallSupport.showUninstalledDialog(
+                        this, record.packageName, record.appName);
+            } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
+                Toast.makeText(this, "The app could not be re-enabled.", Toast.LENGTH_SHORT).show();
+            } else if (!result.accepted()) {
+                Toast.makeText(this, "Direct notification/message link is unavailable.",
+                        Toast.LENGTH_SHORT).show();
             }
         });
         buttons.addView(open);

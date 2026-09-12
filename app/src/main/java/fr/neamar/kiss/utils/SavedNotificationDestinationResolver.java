@@ -77,10 +77,13 @@ public final class SavedNotificationDestinationResolver {
                 && (NotificationListener.isNotificationActive(
                 context, record.notificationId, record.postTime)
                 || NotificationListener.hasRetainedContentIntent(
+                record.notificationId, record.postTime)
+                || NotificationListener.hasExactActiveContentIntent(
                 record.notificationId, record.postTime))) {
             return true;
         }
-        return NotificationPendingIntentStore.has(context, record.pendingIntentToken)
+        return !NotificationPendingIntentStore.findAvailableToken(
+                context, record.pendingIntentToken, record.notificationId, record.postTime).isEmpty()
                 || !TextUtils.isEmpty(record.routeUri)
                 || hasRecoverableKnownRoute(record)
                 || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O

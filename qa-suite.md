@@ -121,6 +121,8 @@ As best as possible, only actual KISS code is tested, not standard Android syste
 
 #### Authoritative notification actions in Vertical List
 * [ ] Post a notification and open ordinary Vertical List: its exact live row shows Mark read and dismisses only that Android notification
+* [ ] Leave that notification active, restart or upgrade Smart S, then tap its saved message: the exact notification destination is rehydrated from Android and opens the same message/conversation
+* [ ] Reopen the saved notification in full, rich, and locked history views: the action remains labelled Open notification and never silently changes into an app launch
 * [ ] Swipe the notification away in Android's notification panel, then return Home: its saved history row remains readable but Mark read is absent
 * [ ] Post a newer notification from the same app while an older saved row exists: the older row cannot open, dismiss, or mark the newer notification
 * [ ] Repeat with saved SMS and Truecaller/message history: Mark read appears only while the matched notification is currently present in Android's panel; Open message remains available

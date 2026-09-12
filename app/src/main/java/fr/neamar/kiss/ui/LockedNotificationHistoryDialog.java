@@ -26,7 +26,6 @@ import java.util.List;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationListener;
-import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 
 /**
@@ -344,16 +343,12 @@ public final class LockedNotificationHistoryDialog {
             LinearLayout buttons = new LinearLayout(context);
             buttons.setGravity(Gravity.END);
             Button open = new Button(context);
-            boolean exactTarget = SavedNotificationDestinationResolver.hasExactTarget(context, record);
-            open.setText(exactTarget ? "Open notification" : "Open app");
+            open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                boolean opened = exactTarget
-                        ? SavedNotificationDestinationResolver.openExact(context, record)
-                        : AppLaunchUtils.launchPackage(context, packageName);
+                boolean opened = SavedNotificationDestinationResolver.openExact(context, record);
                 if (!opened) {
-                    Toast.makeText(context, exactTarget
-                                    ? "Unable to open this exact notification" : "App cannot be opened",
+                    Toast.makeText(context, "Direct notification/message link is unavailable.",
                             Toast.LENGTH_SHORT).show();
                     return;
                 }

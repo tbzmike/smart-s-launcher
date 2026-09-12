@@ -27,7 +27,6 @@ import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
-import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 
@@ -318,10 +317,8 @@ public final class RichNotificationHistoryDialog {
                 } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
                     Toast.makeText(context, "The app could not be re-enabled.",
                             Toast.LENGTH_SHORT).show();
-                } else if (AppLaunchUtils.launchPackage(context, record.packageName)) {
-                    SmartAnimationEngine.dismissDialog(dialog);
                 } else {
-                    Toast.makeText(context, "Notification route expired and the app cannot be opened",
+                    Toast.makeText(context, "Direct notification/message link is unavailable.",
                             Toast.LENGTH_SHORT).show();
                 }
             });
@@ -333,38 +330,24 @@ public final class RichNotificationHistoryDialog {
             LinearLayout buttons = new LinearLayout(context);
             buttons.setGravity(Gravity.END);
             Button open = new Button(context);
-            boolean exactTarget = SavedNotificationDestinationResolver.hasExactTarget(context, record);
-            open.setText(exactTarget ? "Open notification" : "Open app");
+            open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                if (!AppLaunchUtils.isPackageInstalled(context, packageName)) {
+                SavedNotificationDestinationResolver.OpenResult result =
+                        SavedNotificationDestinationResolver.openExactResult(context, record);
+                if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
                     AppReinstallSupport.showUninstalledDialog(
                             context, packageName, record.appName);
                     return;
                 }
-                boolean opened;
-                if (exactTarget) {
-                    SavedNotificationDestinationResolver.OpenResult result =
-                            SavedNotificationDestinationResolver.openExactResult(context, record);
-                    if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
-                        AppReinstallSupport.showUninstalledDialog(
-                                context, packageName, record.appName);
-                        return;
-                    }
-                    if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
-                        Toast.makeText(context, "The app could not be re-enabled.",
-                                Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    opened = result.accepted();
-                    if (!opened && result == SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET) {
-                        opened = AppLaunchUtils.launchPackage(context, packageName);
-                    }
-                } else {
-                    opened = AppLaunchUtils.launchPackage(context, packageName);
+                if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
+                    Toast.makeText(context, "The app could not be re-enabled.",
+                            Toast.LENGTH_SHORT).show();
+                    return;
                 }
-                if (!opened) {
-                    Toast.makeText(context, "App cannot be opened", Toast.LENGTH_SHORT).show();
+                if (!result.accepted()) {
+                    Toast.makeText(context, "Direct notification/message link is unavailable.",
+                            Toast.LENGTH_SHORT).show();
                     return;
                 }
                 SmartAnimationEngine.dismissDialog(dialog);

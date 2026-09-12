@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.93 - keep shortcut taps and History identity consistent
-        versionCode 521
-        versionName "3.30.93"
+        // Smart S Launcher 3.30.94 - preserve and rehydrate exact notification destinations
+        versionCode 522
+        versionName "3.30.94"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

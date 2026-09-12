@@ -42,7 +42,7 @@ public final class SmartStateStore {
         values.put("package", packageName);
         values.put("class", activityName);
         values.put("label", label);
-        values.put("user_serial", userSerial);
+        if (userSerial >= 0L) values.put("user_serial", userSerial);
         SQLiteDatabase database = recoveryDb;
 
         database.delete("app_catalog",
@@ -183,11 +183,17 @@ public final class SmartStateStore {
         values.put("body", body == null ? "" : body);
         values.put("post_time", postTime);
         values.put("is_permanent", permanent ? 1 : 0);
-        values.put("shortcut_id", shortcutId == null ? "" : shortcutId);
+        // Route fields are write-on-success for an existing exact notification event. Listener
+        // reconnects and notification refreshes do not always expose every route again; writing an
+        // empty refresh value here used to erase a previously captured direct-message destination.
+        // New rows still receive the table defaults for fields Android did not expose.
+        if (shortcutId != null && !shortcutId.isEmpty()) values.put("shortcut_id", shortcutId);
         values.put("user_serial", userSerial);
-        values.put("route_uri", routeUri == null ? "" : routeUri);
-        values.put("pending_intent_token", pendingIntentToken == null ? "" : pendingIntentToken);
-        values.put("locus_id", locusId == null ? "" : locusId);
+        if (routeUri != null && !routeUri.isEmpty()) values.put("route_uri", routeUri);
+        if (pendingIntentToken != null && !pendingIntentToken.isEmpty()) {
+            values.put("pending_intent_token", pendingIntentToken);
+        }
+        if (locusId != null && !locusId.isEmpty()) values.put("locus_id", locusId);
         try {
             SQLiteDatabase database = recoveryDb;
             if (permanent) {

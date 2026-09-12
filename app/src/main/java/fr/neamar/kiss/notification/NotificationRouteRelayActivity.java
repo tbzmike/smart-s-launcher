@@ -23,6 +23,8 @@ public final class NotificationRouteRelayActivity extends Activity {
         PendingIntent target = readTarget(wrapper);
         String notificationId = wrapper == null ? null
                 : wrapper.getStringExtra(NotificationPendingIntentStore.EXTRA_NOTIFICATION_ID);
+        long postTime = wrapper == null ? 0L
+                : wrapper.getLongExtra(NotificationPendingIntentStore.EXTRA_POST_TIME, 0L);
         String routeToken = wrapper == null ? null
                 : wrapper.getStringExtra(NotificationPendingIntentStore.EXTRA_ROUTE_TOKEN);
 
@@ -35,10 +37,14 @@ public final class NotificationRouteRelayActivity extends Activity {
         } else {
             NotificationHistoryRecord record =
                     NotificationTimelineStore.findByPendingIntentToken(this, routeToken);
+            if (record == null && notificationId != null && !notificationId.isEmpty()
+                    && postTime > 0L) {
+                record = NotificationTimelineStore.findExact(this, notificationId, postTime);
+            }
             NotificationPendingIntentStore.discard(this, routeToken);
             SmartStateStore.clearNotificationPendingIntentToken(this, routeToken);
-            boolean fallbackOpened = SavedNotificationDestinationResolver.openDurableFallback(
-                    this, record);
+            boolean fallbackOpened = NotificationListener.openExactActiveNotification(this, record)
+                    || SavedNotificationDestinationResolver.openDurableFallback(this, record);
             if (fallbackOpened && record != null) {
                 if (record.notificationId != null && !record.notificationId.isEmpty()) {
                     NotificationUnreadStore.markRead(this, record.notificationId);

@@ -23,6 +23,8 @@ public final class NotificationPendingIntentStore {
             "com.tbzmike.smartslauncher.notification.TARGET_PENDING_INTENT";
     static final String EXTRA_NOTIFICATION_ID =
             "com.tbzmike.smartslauncher.notification.NOTIFICATION_ID";
+    static final String EXTRA_POST_TIME =
+            "com.tbzmike.smartslauncher.notification.POST_TIME";
     static final String EXTRA_ROUTE_TOKEN =
             "com.tbzmike.smartslauncher.notification.ROUTE_TOKEN";
 
@@ -42,7 +44,8 @@ public final class NotificationPendingIntentStore {
                     NotificationRouteIdentity.requestCode(token),
                     relayIntent(context, token)
                             .putExtra(EXTRA_TARGET, target)
-                            .putExtra(EXTRA_NOTIFICATION_ID, notificationId),
+                            .putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+                            .putExtra(EXTRA_POST_TIME, postTime),
                     flags(PendingIntent.FLAG_UPDATE_CURRENT));
             return relay == null ? "" : token;
         } catch (RuntimeException e) {
@@ -55,6 +58,28 @@ public final class NotificationPendingIntentStore {
         return find(context, token) != null;
     }
 
+    /**
+     * Resolve a retained route even when an earlier database refresh dropped its token. Route
+     * identities are deterministic for one exact notification event, so the Android-managed relay
+     * can be rediscovered from the persisted notification id and post time without guessing a
+     * destination or opening a different message.
+     */
+    @NonNull
+    public static String findAvailableToken(@NonNull Context context,
+                                            @Nullable String persistedToken,
+                                            @Nullable String notificationId,
+                                            long postTime) {
+        if (persistedToken != null && has(context, persistedToken)) return persistedToken;
+        if (postTime <= 0L) return "";
+
+        String recoveredToken = NotificationRouteIdentity.create(notificationId, postTime);
+        if (!NotificationRouteIdentity.isValid(recoveredToken)
+                || recoveredToken.equals(persistedToken)) {
+            return "";
+        }
+        return has(context, recoveredToken) ? recoveredToken : "";
+    }
+
     public static boolean open(@NonNull Context context, @Nullable String token) {
         PendingIntent relay = find(context, token);
         if (relay == null) return false;
@@ -62,6 +87,7 @@ public final class NotificationPendingIntentStore {
             relay.send();
             return true;
         } catch (PendingIntent.CanceledException | RuntimeException e) {
+            relay.cancel();
             Log.w(TAG, "Saved notification relay is no longer available", e);
             return false;
         }
