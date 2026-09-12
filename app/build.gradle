@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.92 - commit clicked shortcuts/features before Home restore
-        versionCode 520
-        versionName "3.30.92"
+        // Smart S Launcher 3.30.93 - keep shortcut taps and History identity consistent
+        versionCode 521
+        versionName "3.30.93"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
