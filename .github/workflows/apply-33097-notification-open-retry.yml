@@ -1,0 +1,94 @@
+name: Apply 3.30.97 notification open retry fix
+
+on:
+  push:
+    branches:
+      - fix/3.30.97-notification-open-retry
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Apply verified notification-open continuity patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_one(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count == 0:
+                  if new in text:
+                      print(f'{path}: already patched')
+                      return
+                  raise SystemExit(f'{path}: expected anchor not found')
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one anchor, found {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print(f'{path}: patched')
+
+          replace_one(
+              'app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java',
+              '''                if (!NotificationListener.openLatestNotification(context, groupKey)) {\n''',
+              '''                if (!NotificationListener.openNotification(context, latestActive.id)) {\n''')
+
+          resolver_anchor = '''    private static boolean scheduleExactOpenAfterListenerReconnect(\n            @NonNull Context context, @NonNull NotificationHistoryRecord record) {\n'''
+          resolver_wrapper = '''    /**\n     * Queue the existing listener-reconnect retry without re-entering openExact(). Notification\n     * clicks use this only after their immediate exact-route attempts fail while listener state is\n     * unverified, so accepting the retry suppresses a premature \"destination unavailable\" toast.\n     */\n    public static boolean scheduleExactOpenAfterListenerReconnectIfNeeded(\n            @NonNull Context context, @Nullable NotificationHistoryRecord record) {\n        return record != null\n                && scheduleExactOpenAfterListenerReconnect(context, record);\n    }\n\n'''
+          replace_one(
+              'app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java',
+              resolver_anchor,
+              resolver_wrapper + resolver_anchor)
+
+          listener_old = '''        // Cached listener metadata can be cleared during process recreation or an app update while\n        // Android still holds the notification. Re-resolve the exact platform row from the stable\n        // encoded StatusBarNotification identity and post time before reporting a lost destination.\n        return openExactActiveNotification(context, notificationId, expectedPostTime, saved);\n'''
+          listener_new = '''        // Cached listener metadata can be cleared during process recreation or an app update while\n        // Android still holds the notification. Re-resolve the exact platform row from the stable\n        // encoded StatusBarNotification identity and post time before reporting a lost destination.\n        if (openExactActiveNotification(context, notificationId, expectedPostTime, saved)) {\n            return true;\n        }\n\n        // A card can be bound from a verified snapshot and then tapped during the short listener\n        // disconnect/rebind window. Do not fail that click immediately. Hand only the scheduling\n        // step to the resolver; calling openExact() here would recurse back into this method.\n        return saved != null\n                && !isReadyForExactNotificationLookup()\n                && SavedNotificationDestinationResolver\n                .scheduleExactOpenAfterListenerReconnectIfNeeded(context, saved);\n'''
+          replace_one(
+              'app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java',
+              listener_old,
+              listener_new)
+
+          retained_old = '''        rememberContentIntent(notificationId, sbn.getPostTime(), contentIntent);\n        captureRouteForSavedRecord(context, activeRecord, notificationId, contentIntent);\n'''
+          retained_new = '''        // When Android updates one notification slot in place, the stable notification key and\n        // destination survive while postTime changes. Once compatibility has been verified above,\n        // retain the current PendingIntent under the historical row's postTime so that the saved\n        // row can reuse the healed exact route on its next open attempt.\n        long retainedPostTime = activeRecord != null && activeRecord.postTime > 0L\n                ? activeRecord.postTime : sbn.getPostTime();\n        rememberContentIntent(notificationId, retainedPostTime, contentIntent);\n        captureRouteForSavedRecord(context, activeRecord, notificationId, contentIntent);\n'''
+          replace_one(
+              'app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java',
+              retained_old,
+              retained_new)
+
+          replace_one(
+              'app/build.gradle',
+              '''        // Smart S Launcher 3.30.96 - keep exact routes across in-place notification updates\n        versionCode 524\n        versionName "3.30.96"\n''',
+              '''        // Smart S Launcher 3.30.97 - retry exact opens across listener reconnect windows\n        versionCode 525\n        versionName "3.30.97"\n''')
+          PY
+
+          git diff --check
+          grep -q 'openNotification(context, latestActive.id)' app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java
+          grep -q 'scheduleExactOpenAfterListenerReconnectIfNeeded' app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          grep -q 'versionCode 525' app/build.gradle
+          grep -q 'versionName "3.30.97"' app/build.gradle
+
+      - name: Commit patched source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java \
+            app/src/main/java/fr/neamar/kiss/utils/SavedNotificationDestinationResolver.java
+          if git diff --cached --quiet; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
+          git commit -m "Retry exact notification opens after listener reconnect"
+          git push origin HEAD:fix/3.30.97-notification-open-retry
