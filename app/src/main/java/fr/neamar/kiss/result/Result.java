@@ -90,6 +90,19 @@ public abstract class Result<T extends Pojo> {
         this.pojo = pojo;
     }
 
+    /**
+     * Targets that leave Launcher Home must use the same launch-return protection. SettingPojo
+     * includes installed deep features, so feature clicks cannot bypass the History restoration
+     * path merely because they are rendered by SettingsResult rather than AppResult.
+     */
+    static boolean isExternalLaunchTarget(@NonNull Pojo pojo) {
+        return pojo instanceof AppPojo
+                || pojo instanceof ShortcutPojo
+                || pojo instanceof DisabledAppPojo
+                || pojo instanceof NotificationPojo
+                || pojo instanceof SettingPojo;
+    }
+
     public static Result<?> fromPojo(QueryInterface parent, @NonNull Pojo pojo) {
         if (pojo instanceof AppPojo)
             return new AppResult((AppPojo) pojo);
@@ -454,24 +467,24 @@ public abstract class Result<T extends Pojo> {
     public final void launch(Context context, View v, @Nullable QueryInterface queryInterface) {
         Log.i(this.getClass().getSimpleName(), "Launching " + pojo.id);
 
-        boolean externalTarget = queryInterface != null
-                && (pojo instanceof AppPojo
-                || pojo instanceof ShortcutPojo
-                || pojo instanceof DisabledAppPojo
-                || pojo instanceof NotificationPojo);
+        boolean externalTarget = queryInterface != null && isExternalLaunchTarget(pojo);
         if (externalTarget) queryInterface.externalResultLaunchStarting();
 
         // Start the target only after the launcher has stopped accepting background card mutation.
         doLaunch(context, v);
 
-        // LauncherApps/PendingIntent targets can be translucent and may pause without stopping
-        // MainActivity. Keep the protection only for a verified successful external launch.
+        // Persist the exact clicked target before the launch-return lifecycle is armed. Dynamic
+        // shortcuts and installed features can disappear from providers while their external
+        // activity is taking focus; History must already contain and remember the clicked identity
+        // before MainActivity can receive a resume/HOME callback.
+        recordLaunch(context, queryInterface);
+
+        // LauncherApps/PendingIntent/Setting targets can be translucent and may pause without
+        // stopping MainActivity. Keep the protection only for a verified successful external launch.
         if (externalTarget) {
             if (didLaunchExternalActivity()) queryInterface.externalResultLaunchOccurred();
             else queryInterface.externalResultLaunchCancelled();
         }
-
-        recordLaunch(context, queryInterface);
     }
 
     protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {
