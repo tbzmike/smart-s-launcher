@@ -335,7 +335,6 @@ public class SettingsResult extends Result<SettingPojo> {
 
     @Override
     protected boolean canAddToHistory() {
-        if (pojo instanceof NotificationPojo) return false;
         return launchSucceeded;
     }
 
