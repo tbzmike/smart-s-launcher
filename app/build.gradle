@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.91 - persist launched shortcuts and notifications in History
-        versionCode 519
-        versionName "3.30.91"
+        // Smart S Launcher 3.30.92 - commit clicked shortcuts/features before Home restore
+        versionCode 520
+        versionName "3.30.92"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
