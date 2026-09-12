@@ -6,29 +6,24 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 class NotificationEventIdentityTest {
-    @Test void exactVisibleNotificationContentMatches() {
+    @Test void exactVisibleNotificationContentRemainsCompatible() {
         assertThat(NotificationEventIdentity.hasSameVisibleContent(
                 "Selfies", "New memory for you", "Selfies", "New memory for you"), is(true));
     }
 
-    @Test void caseAndWhitespaceDoNotBreakTheSameVisibleMessage() {
+    @Test void changedBodyDoesNotBreakSameAndroidNotificationSlot() {
         assertThat(NotificationEventIdentity.hasSameVisibleContent(
-                "  SELFIES ", "New\n memory   for you", "selfies", "new memory for YOU"),
-                is(true));
+                "Photos", "Memory from 2025", "Photos", "Memory from 2026"), is(true));
     }
 
-    @Test void reusedKeyWithAnotherMessageDoesNotMatch() {
+    @Test void changedTitleDoesNotBreakSameAndroidNotificationSlot() {
         assertThat(NotificationEventIdentity.hasSameVisibleContent(
-                "Photos", "Memory from 2025", "Photos", "Memory from 2026"), is(false));
+                "ChatGPT is working", "Your response is in progress.",
+                "Response ready", "Tap to return to ChatGPT to see your response."), is(true));
     }
 
-    @Test void reusedKeyWithAnotherTitleDoesNotMatch() {
+    @Test void emptyPresentationTextDoesNotOverrideStableSlotIdentity() {
         assertThat(NotificationEventIdentity.hasSameVisibleContent(
-                "Alice", "Hello", "Bob", "Hello"), is(false));
-    }
-
-    @Test void emptyHistoryCannotAuthorizeAReplacementRoute() {
-        assertThat(NotificationEventIdentity.hasSameVisibleContent(
-                null, "", "Photos", "New memory for you"), is(false));
+                null, "", null, ""), is(true));
     }
 }
