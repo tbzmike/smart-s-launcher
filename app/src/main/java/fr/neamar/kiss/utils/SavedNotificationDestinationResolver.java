@@ -160,14 +160,9 @@ public final class SavedNotificationDestinationResolver {
     }
 
     /**
-     * A package replacement can leave notification access granted while Android is still rebinding
-     * the listener. Keep the user's exact-open request pending instead of reporting that the route
-     * is missing before Android makes the active notification available again.
-     */
-    /**
-     * Queue the existing listener-reconnect retry without re-entering openExact(). Notification
-     * clicks use this only after their immediate exact-route attempts fail while listener state is
-     * unverified, so accepting the retry suppresses a premature "destination unavailable" toast.
+     * Queue the existing listener-reconnect retry without re-entering openExact(). Active
+     * notification clicks use this after immediate exact-route resolution fails while listener
+     * state is unverified, suppressing a premature destination-unavailable error.
      */
     public static boolean scheduleExactOpenAfterListenerReconnectIfNeeded(
             @NonNull Context context, @Nullable NotificationHistoryRecord record) {
@@ -175,6 +170,11 @@ public final class SavedNotificationDestinationResolver {
                 && scheduleExactOpenAfterListenerReconnect(context, record);
     }
 
+    /**
+     * A package replacement can leave notification access granted while Android is still rebinding
+     * the listener. Keep the user's exact-open request pending instead of reporting that the route
+     * is missing before Android makes the active notification available again.
+     */
     private static boolean scheduleExactOpenAfterListenerReconnect(
             @NonNull Context context, @NonNull NotificationHistoryRecord record) {
         if (TextUtils.isEmpty(record.notificationId)

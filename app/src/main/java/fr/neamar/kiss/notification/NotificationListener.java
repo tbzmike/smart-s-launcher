@@ -701,7 +701,15 @@ public class NotificationListener extends NotificationListenerService {
                 : NotificationTimelineStore.findLatest(context, notificationId);
         long expectedPostTime = activePostTime > 0L ? activePostTime
                 : saved == null ? 0L : saved.postTime;
-        return openNotification(context, notificationId, expectedPostTime, saved);
+        if (openNotification(context, notificationId, expectedPostTime, saved)) return true;
+
+        // This overload is the active-card entry point. If the card was rendered from a verified
+        // snapshot but Android disconnected the listener before the tap, preserve the user's exact
+        // open request and let the resolver's existing rebind loop retry it after verification.
+        return saved != null
+                && !isReadyForExactNotificationLookup()
+                && SavedNotificationDestinationResolver
+                .scheduleExactOpenAfterListenerReconnectIfNeeded(context, saved);
     }
 
     /** Open the exact persisted event, even when its StatusBarNotification key was reused later. */
@@ -755,17 +763,7 @@ public class NotificationListener extends NotificationListenerService {
         // Cached listener metadata can be cleared during process recreation or an app update while
         // Android still holds the notification. Re-resolve the exact platform row from the stable
         // encoded StatusBarNotification identity and post time before reporting a lost destination.
-        if (openExactActiveNotification(context, notificationId, expectedPostTime, saved)) {
-            return true;
-        }
-
-        // A card can be bound from a verified snapshot and then tapped during the short listener
-        // disconnect/rebind window. Do not fail that click immediately. Hand only the scheduling
-        // step to the resolver; calling openExact() here would recurse back into this method.
-        return saved != null
-                && !isReadyForExactNotificationLookup()
-                && SavedNotificationDestinationResolver
-                .scheduleExactOpenAfterListenerReconnectIfNeeded(context, saved);
+        return openExactActiveNotification(context, notificationId, expectedPostTime, saved);
     }
 
     /** True when Android still exposes a content PendingIntent for this exact saved event. */
