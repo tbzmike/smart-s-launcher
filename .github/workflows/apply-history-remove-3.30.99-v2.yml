@@ -1,0 +1,66 @@
+name: Apply Smart S 3.30.99 History Removal
+
+on:
+  push:
+    branches:
+      - fix/3.30.99-history-remove-item
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-33099-history-removal
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact 3.30.98 baseline
+        run: |
+          set -euxo pipefail
+          grep -q 'versionCode 526' app/build.gradle
+          grep -q 'versionName "3.30.98"' app/build.gradle
+          grep -q 'if (result.getPojo() instanceof NotificationPojo' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          grep -q 'canRemoveFromHistory(context) && isShowingHistory()' app/src/main/java/fr/neamar/kiss/result/Result.java
+          grep -q '<string name="menu_remove">Remove from history</string>' app/src/main/res/values/strings.xml
+
+      - name: Apply guarded source patch
+        run: python3 .github/scripts/apply_history_remove_33099.py
+
+      - name: Verify intended changes
+        run: |
+          set -euxo pipefail
+          grep -q 'versionCode 527' app/build.gradle
+          grep -q 'versionName "3.30.99"' app/build.gradle
+          grep -q 'isShowingHistory() && !UiEditLock.isLocked(context)' app/src/main/java/fr/neamar/kiss/result/Result.java
+          grep -q 'if (UiEditLock.isLocked(context)) return true;' app/src/main/java/fr/neamar/kiss/result/Result.java
+          grep -q 'NotificationTimelineState.hideFromHistory' app/src/main/java/fr/neamar/kiss/result/Result.java
+          grep -q 'NotificationTimelineState.isHiddenFromHistory' app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java
+          grep -q '<string name="menu_remove">Remove item</string>' app/src/main/res/values/strings.xml
+          ! grep -q 'canRemoveFromHistory(context) && isShowingHistory()' app/src/main/java/fr/neamar/kiss/result/Result.java
+          git diff --check
+          git diff -- app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/result/Result.java \
+            app/src/main/java/fr/neamar/kiss/notification/NotificationTimelineState.java \
+            app/src/main/java/fr/neamar/kiss/searcher/HistorySearcher.java \
+            app/src/main/res/values/strings.xml
+
+      - name: Commit targeted source changes
+        run: |
+          set -euxo pipefail
+          rm -f .github/workflows/apply-history-remove-3.30.99.yml
+          rm -f .github/workflows/apply-history-remove-3.30.99-v2.yml
+          rm -f .github/scripts/apply_history_remove_33099.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'Implement universal history item removal in 3.30.99'
+          git push origin HEAD:fix/3.30.99-history-remove-item
