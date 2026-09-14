@@ -22,6 +22,7 @@ import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.notification.NotificationTimelineState;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
@@ -298,12 +299,13 @@ public class HistorySearcher extends Searcher {
         pojos.removeIf(pojo -> pojo instanceof NotificationPojo
                 && pojo.id.startsWith(NotificationListener.NOTIFICATION_GROUP_SCHEME));
 
-        List<NotificationPojo> newestFirst = new NotificationProvider(activity).getPojos();
+        List<NotificationPojo> newestFirst = new ArrayList<>(
+                new NotificationProvider(activity).getPojos());
+        newestFirst.removeIf(notification -> NotificationTimelineState.isHiddenFromHistory(
+                activity, notification.exactNotificationId, notification.postTime));
         if (newestFirst.isEmpty()) return;
         if (newestFirst.size() > max) {
             newestFirst = new ArrayList<>(newestFirst.subList(0, max));
-        } else {
-            newestFirst = new ArrayList<>(newestFirst);
         }
         newestFirst.sort(Comparator.comparingLong(p -> p.postTime));
 

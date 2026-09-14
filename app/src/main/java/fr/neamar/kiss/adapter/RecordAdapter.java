@@ -788,10 +788,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         Context context = v.getContext();
         recordExplicitSelection(context, result.getPojo());
         promoteHistoryResult(result);
-        if (result.getPojo() instanceof NotificationPojo
-                && NotificationHistoryResolver.showForPojo(context, result.getPojo())) {
-            return;
-        }
         if (UiEditLock.isLocked(context)) {
             NotificationHistoryResolver.showForPojo(context, result.getPojo());
             return;

@@ -52,6 +52,7 @@ import fr.neamar.kiss.adapter.RecordAdapter;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.normalizer.StringNormalizer;
+import fr.neamar.kiss.notification.NotificationTimelineState;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.ContactsPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
@@ -62,6 +63,7 @@ import fr.neamar.kiss.pojo.SearchPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.pojo.TagDummyPojo;
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
@@ -347,6 +349,9 @@ public abstract class Result<T extends Pojo> {
      */
     public ListPopup getPopupMenu(final Context context, final RecordAdapter parent, final View parentView) {
         ArrayAdapter<ListPopup.Item> popupMenuAdapter = new ArrayAdapter<>(context, R.layout.popup_list_item);
+        if (isShowingHistory() && !UiEditLock.isLocked(context)) {
+            popupMenuAdapter.add(new ListPopup.Item(context, R.string.menu_remove));
+        }
         buildPopupMenu(context, popupMenuAdapter);
         ListPopup menu = inflatePopupMenu(popupMenuAdapter, context);
 
@@ -367,9 +372,6 @@ public abstract class Result<T extends Pojo> {
      * Default popup menu implementation, can be overridden by children class to display a more specific menu
      */
     protected void buildPopupMenu(Context context, ArrayAdapter<ListPopup.Item> adapter) {
-        if (canRemoveFromHistory(context) && isShowingHistory()) {
-            adapter.add(new ListPopup.Item(context, R.string.menu_remove));
-        }
         if (isAllowedAsFavorite()) {
             // If app already pinned, do not display the "add to favorite" option
             // otherwise don't show the "remove favorite button"
@@ -413,6 +415,7 @@ public abstract class Result<T extends Pojo> {
      */
     boolean popupMenuClickHandler(Context context, RecordAdapter parent, @StringRes int stringId, View parentView) {
         if (stringId == R.string.menu_remove) {
+            if (UiEditLock.isLocked(context)) return true;
             removeFromResultsAndHistory(context, parent);
             return true;
         } else if (stringId == R.string.menu_favorites_add) {
@@ -662,6 +665,11 @@ public abstract class Result<T extends Pojo> {
     }
 
     void removeFromHistory(Context context) {
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            NotificationTimelineState.hideFromHistory(
+                    context, notification.exactNotificationId, notification.postTime);
+        }
         DBHelper.removeFromHistory(context, pojo.getHistoryId());
     }
 
