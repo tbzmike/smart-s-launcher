@@ -1,0 +1,170 @@
+from pathlib import Path
+
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"Expected exactly one {label} anchor, found {count}")
+    return text.replace(old, new, 1)
+
+
+gradle = Path("app/build.gradle")
+g = gradle.read_text()
+if 'versionName "3.30.98"' in g:
+    print("3.30.98 already applied; nothing to patch.")
+    raise SystemExit(0)
+g = replace_once(
+    g,
+    "// Smart S Launcher 3.30.97 - retry exact opens across listener reconnect windows",
+    "// Smart S Launcher 3.30.98 - prefer the live exact notification route before retained fallbacks",
+    "version comment",
+)
+g = replace_once(g, "versionCode 525", "versionCode 526", "versionCode")
+g = replace_once(g, 'versionName "3.30.97"', 'versionName "3.30.98"', "versionName")
+gradle.write_text(g)
+
+listener = Path("app/src/main/java/fr/neamar/kiss/notification/NotificationListener.java")
+s = listener.read_text()
+
+public_start = s.index("    public static boolean openNotification(Context context, String notificationId) {")
+public_end = s.index(
+    "\n    /** Open the exact persisted event, even when its StatusBarNotification key was reused later. */",
+    public_start,
+)
+new_public = '''    public static boolean openNotification(Context context, String notificationId) {
+        return openNotification(context, notificationId, 0L);
+    }
+
+    /**
+     * Open the exact notification snapshot that was bound to the UI. Supplying its post time
+     * prevents a listener disconnect between bind and tap from silently switching to another
+     * event that happens to reuse the same Android notification key.
+     */
+    public static boolean openNotification(Context context, String notificationId,
+                                           long boundPostTime) {
+        if (notificationId == null || notificationId.isEmpty()) return false;
+
+        StatusBarNotification active = findExactActiveNotification(notificationId, 0L);
+        long activePostTime = active == null ? 0L : active.getPostTime();
+        long expectedPostTime = boundPostTime > 0L ? boundPostTime : activePostTime;
+        NotificationHistoryRecord saved = expectedPostTime > 0L
+                ? NotificationTimelineStore.findExact(context, notificationId, expectedPostTime)
+                : null;
+        if (saved == null && activePostTime > 0L) {
+            saved = NotificationTimelineStore.findExact(context, notificationId, activePostTime);
+        }
+        if (saved == null) {
+            saved = NotificationTimelineStore.findLatest(context, notificationId);
+        }
+        if (expectedPostTime <= 0L && saved != null) expectedPostTime = saved.postTime;
+        if (openNotification(context, notificationId, expectedPostTime, saved)) return true;
+
+        // If Android disconnected the listener after the card was rendered, preserve the
+        // exact bound event and let the existing listener-rebind loop retry verification.
+        return saved != null
+                && !isReadyForExactNotificationLookup()
+                && SavedNotificationDestinationResolver
+                .scheduleExactOpenAfterListenerReconnectIfNeeded(context, saved);
+    }
+'''
+s = s[:public_start] + new_public + s[public_end:]
+
+private_start = s.index(
+    "    private static boolean openNotification(Context context, String notificationId,\n"
+)
+private_end = s.index(
+    "\n    /** True when Android still exposes a content PendingIntent for this exact saved event. */",
+    private_start,
+)
+new_private = '''    private static boolean openNotification(Context context, String notificationId,
+                                            long expectedPostTime,
+                                            NotificationHistoryRecord saved) {
+
+        // Prefer Android's current live notification object. A saved relay can outlive the
+        // posting app's nested PendingIntent and therefore report that the relay activity
+        // launched even though the exact message target has already expired. The active row
+        // is the freshest authoritative destination whenever listener state is verified.
+        if (openExactActiveNotification(context, notificationId, expectedPostTime, saved)) {
+            return true;
+        }
+
+        // Next try the process-retained original target. Unlike the relay activity this send
+        // is synchronous, so a canceled target is detected here and we can continue safely.
+        PendingIntent retained = getRetainedContentIntent(notificationId, expectedPostTime);
+        if (retained != null) {
+            if (NotificationPendingIntentStore.sendTarget(context, retained)) {
+                captureRouteForSavedRecord(context, saved, notificationId, retained);
+                NotificationUnreadStore.markRead(context, notificationId);
+                return true;
+            }
+            forgetRetainedContentIntent(notificationId, retained);
+        }
+
+        // Only after live routes fail do we replay the Android-managed historical relay.
+        // Its activity contains its own exact-route recovery path if the nested target was
+        // canceled while the saved history row itself is still recoverable.
+        if (saved != null) {
+            String persistedToken = saved.pendingIntentToken;
+            String availableToken = NotificationPendingIntentStore.findAvailableToken(
+                    context, persistedToken, notificationId, expectedPostTime);
+            if (!availableToken.isEmpty()) {
+                if (!availableToken.equals(persistedToken)) {
+                    saved.pendingIntentToken = availableToken;
+                    SmartStateStore.updateNotificationPendingIntentToken(
+                            context, saved.dbId, availableToken);
+                }
+                if (NotificationPendingIntentStore.open(context, availableToken)) return true;
+                SmartStateStore.clearNotificationPendingIntentToken(context, availableToken);
+                saved.pendingIntentToken = "";
+            } else if (persistedToken != null && !persistedToken.isEmpty()) {
+                SmartStateStore.clearNotificationPendingIntentToken(context, persistedToken);
+                saved.pendingIntentToken = "";
+            }
+        }
+        return false;
+    }
+'''
+s = s[:private_start] + new_private + s[private_end:]
+
+old_send = '''        // When Android updates one notification slot in place, the stable notification key and
+        // destination survive while postTime changes. Once compatibility has been verified above,
+        // retain the current PendingIntent under the historical row's postTime so that the saved
+        // row can reuse the healed exact route on its next open attempt.
+        long retainedPostTime = activeRecord != null && activeRecord.postTime > 0L
+                ? activeRecord.postTime : sbn.getPostTime();
+        rememberContentIntent(notificationId, retainedPostTime, contentIntent);
+        captureRouteForSavedRecord(context, activeRecord, notificationId, contentIntent);
+        if (NotificationPendingIntentStore.sendTarget(context, contentIntent)) {
+            NotificationUnreadStore.markRead(context, notificationId);
+            return true;
+        }
+        forgetRetainedContentIntent(notificationId, contentIntent);'''
+new_send = '''        // Do not replace a durable route until the posting application's current target has
+        // actually accepted the launch. This prevents a canceled in-place update from poisoning
+        // the saved row with another dead relay.
+        if (NotificationPendingIntentStore.sendTarget(context, contentIntent)) {
+            // When Android updates one notification slot in place, the stable notification key
+            // and destination survive while postTime changes. Heal the historical row only after
+            // the live destination has accepted the launch.
+            long retainedPostTime = activeRecord != null && activeRecord.postTime > 0L
+                    ? activeRecord.postTime : sbn.getPostTime();
+            rememberContentIntent(notificationId, retainedPostTime, contentIntent);
+            captureRouteForSavedRecord(context, activeRecord, notificationId, contentIntent);
+            NotificationUnreadStore.markRead(context, notificationId);
+            return true;
+        }
+        forgetRetainedContentIntent(notificationId, contentIntent);'''
+s = replace_once(s, old_send, new_send, "active-send healing")
+listener.write_text(s)
+
+shortcuts = Path("app/src/main/java/fr/neamar/kiss/result/ShortcutsResult.java")
+q = shortcuts.read_text()
+q = replace_once(
+    q,
+    "if (!NotificationListener.openNotification(context, latestActive.id)) {",
+    "if (!NotificationListener.openNotification(\n                        context, latestActive.id, latestActive.postTime)) {",
+    "ShortcutsResult exact open",
+)
+shortcuts.write_text(q)
+
+print("Applied Smart S Launcher 3.30.98 live-route-first notification fix.")
