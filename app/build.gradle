@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.99 - universal unlocked long-press History item removal
-        versionCode 527
-        versionName "3.30.99"
+        // Smart S Launcher 3.30.100 - unlocked Remove item menu in History and Search
+        versionCode 528
+        versionName "3.30.100"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

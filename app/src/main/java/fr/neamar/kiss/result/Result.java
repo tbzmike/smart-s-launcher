@@ -349,7 +349,7 @@ public abstract class Result<T extends Pojo> {
      */
     public ListPopup getPopupMenu(final Context context, final RecordAdapter parent, final View parentView) {
         ArrayAdapter<ListPopup.Item> popupMenuAdapter = new ArrayAdapter<>(context, R.layout.popup_list_item);
-        if (isShowingHistory() && !UiEditLock.isLocked(context)) {
+        if (supportsUnlockedRemovalMenu() && !UiEditLock.isLocked(context)) {
             popupMenuAdapter.add(new ListPopup.Item(context, R.string.menu_remove));
         }
         buildPopupMenu(context, popupMenuAdapter);
@@ -392,8 +392,9 @@ public abstract class Result<T extends Pojo> {
         }
     }
 
-    private boolean isShowingHistory() {
-        return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+    private boolean supportsUnlockedRemovalMenu() {
+        Searcher.Type type = SearchHandler.getInstance().getLastSearchType();
+        return type == Searcher.Type.HISTORY || type == Searcher.Type.QUERY;
     }
 
     private ListPopup inflatePopupMenu(ArrayAdapter<ListPopup.Item> adapter, Context context) {
