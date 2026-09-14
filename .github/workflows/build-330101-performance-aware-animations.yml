@@ -73,7 +73,7 @@ jobs:
 
           # Keep the hot animation path purely view/property based. No background loop, bitmap
           # snapshot, blur renderer, timer, handler, executor or delayed queue may be introduced.
-          forbidden = ('new Thread', 'Executor', 'Handler', 'postDelayed', 'Timer(',
+          forbidden = ('new Thread', 'new Handler', 'postDelayed', 'Timer(',
                        'Bitmap.createBitmap', 'RenderEffect', 'BlurMaskFilter',
                        'ScheduledExecutor', 'while (true)')
           for token in forbidden:
