@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.100 - unlocked Remove item menu in History and Search
-        versionCode 528
-        versionName "3.30.100"
+        // Smart S Launcher 3.30.101 - performance-aware animation safeguards
+        versionCode 529
+        versionName "3.30.101"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

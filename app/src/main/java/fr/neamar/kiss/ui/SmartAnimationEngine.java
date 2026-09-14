@@ -2,8 +2,11 @@ package fr.neamar.kiss.ui;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.app.ActivityManager;
 import android.app.Dialog;
 import android.content.Context;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.content.SharedPreferences;
 import android.view.View;
 import android.view.Window;
@@ -21,6 +24,7 @@ public final class SmartAnimationEngine {
     private SmartAnimationEngine() {}
 
     private static volatile SharedPreferences cachedPreferences;
+    private static final int MAX_STAGGERED_CHILDREN = 12;
 
     private static SharedPreferences prefs(Context context) {
         SharedPreferences local = cachedPreferences;
@@ -37,12 +41,55 @@ public final class SmartAnimationEngine {
     }
 
     public static boolean isEnabled(Context context) {
-        return prefs(context).getBoolean("smart-animations-enabled", true);
+        if (!prefs(context).getBoolean("smart-animations-enabled", true)) return false;
+        // Respect Android's global "remove animations" / animator-duration-scale setting.
+        try {
+            return Settings.Global.getFloat(context.getContentResolver(),
+                    Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f;
+        } catch (RuntimeException ignored) {
+            return true;
+        }
+    }
+
+    private static boolean isPerformanceConstrained(Context context) {
+        ActivityManager activityManager =
+                (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        if (activityManager != null && activityManager.isLowRamDevice()) return true;
+
+        PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        return powerManager != null && powerManager.isPowerSaveMode();
+    }
+
+    private static boolean isHeavyStyle(String style) {
+        switch (style) {
+            case "whirl":
+            case "orbit":
+            case "elastic":
+            case "bounce":
+            case "parallax":
+            case "swing":
+            case "accordion":
+            case "spiral":
+            case "cube":
+            case "fold":
+            case "helix":
+            case "fan":
+                return true;
+            default:
+                return false;
+        }
     }
 
     public static String getStyle(Context context, String key, String fallback) {
         Object value = readPreferenceValue(prefs(context), key);
-        return value instanceof String ? (String) value : fallback;
+        String style = value instanceof String ? (String) value : fallback;
+        if (!isPerformanceConstrained(context) || !isHeavyStyle(style)) return style;
+
+        // Gracefully downgrade expensive multi-axis effects while Battery Saver is active or on
+        // Android low-RAM devices. User selections remain stored and return automatically later.
+        if ("smart-animation-scroll".equals(key)) return "classic";
+        if ("smart-animation-view-switch".equals(key)) return "crossfade";
+        return "fade";
     }
 
     public static long duration(Context context) {
@@ -50,7 +97,8 @@ public final class SmartAnimationEngine {
         SharedPreferences preferences = prefs(context);
         float speed = readSpeedMultiplier(preferences);
         speed = Math.max(0.05f, Math.min(3f, speed));
-        return Math.max(80L, Math.round(base / speed));
+        long resolved = Math.max(80L, Math.round(base / speed));
+        return isPerformanceConstrained(context) ? Math.min(160L, resolved) : resolved;
     }
 
     private static float readSpeedMultiplier(SharedPreferences preferences) {
@@ -597,6 +645,9 @@ public final class SmartAnimationEngine {
         reset(child);
         Context context = child.getContext();
         if (!isEnabled(context)) return;
+        // Never keep a long chain of staggered ViewPropertyAnimators alive for large result lists.
+        // Later/recycled rows render immediately and remain fully interactive.
+        if (index >= MAX_STAGGERED_CHILDREN) return;
 
         String style = getStyle(context, "smart-animation-scroll", "classic");
         if ("none".equals(style)) return;
@@ -696,7 +747,7 @@ public final class SmartAnimationEngine {
         }
 
         long duration = Math.max(120L, duration(context));
-        long delay = Math.min(220L, Math.max(0, index) * ("cascade".equals(style) ? 38L : 24L));
+        long delay = Math.min(140L, Math.max(0, index) * ("cascade".equals(style) ? 28L : 18L));
         child.animate()
                 .alpha(1f)
                 .scaleX(1f)
