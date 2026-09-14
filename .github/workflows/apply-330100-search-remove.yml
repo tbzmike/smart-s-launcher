@@ -18,11 +18,11 @@ jobs:
           ref: fix/3.30.100-search-remove-item
           fetch-depth: 0
 
-      - name: Verify baseline
+      - name: Verify source baseline
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "6c04382c441d3e215f67721f5fee60e215c798c3"
+          git diff --exit-code 6c04382c441d3e215f67721f5fee60e215c798c3 -- app/build.gradle app/src/main/java/fr/neamar/kiss/result/Result.java
           grep -F 'versionCode 527' app/build.gradle
           grep -F 'versionName "3.30.99"' app/build.gradle
           grep -F 'if (isShowingHistory() && !UiEditLock.isLocked(context)) {' app/src/main/java/fr/neamar/kiss/result/Result.java
@@ -37,27 +37,14 @@ jobs:
           result_path = Path('app/src/main/java/fr/neamar/kiss/result/Result.java')
           text = result_path.read_text()
 
-          old_menu = '''        if (isShowingHistory() && !UiEditLock.isLocked(context)) {
-              popupMenuAdapter.add(new ListPopup.Item(context, R.string.menu_remove));
-          }
-          '''
-          new_menu = '''        if (supportsUnlockedRemovalMenu() && !UiEditLock.isLocked(context)) {
-              popupMenuAdapter.add(new ListPopup.Item(context, R.string.menu_remove));
-          }
-          '''
-          if text.count(old_menu) != 1:
-              raise SystemExit(f'Expected menu block once, found {text.count(old_menu)}')
-          text = text.replace(old_menu, new_menu, 1)
+          old_condition = 'isShowingHistory() && !UiEditLock.isLocked(context)'
+          new_condition = 'supportsUnlockedRemovalMenu() && !UiEditLock.isLocked(context)'
+          if text.count(old_condition) != 1:
+              raise SystemExit(f'Expected menu condition once, found {text.count(old_condition)}')
+          text = text.replace(old_condition, new_condition, 1)
 
-          old_helper = '''    private boolean isShowingHistory() {
-              return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
-          }
-          '''
-          new_helper = '''    private boolean supportsUnlockedRemovalMenu() {
-              Searcher.Type type = SearchHandler.getInstance().getLastSearchType();
-              return type == Searcher.Type.HISTORY || type == Searcher.Type.QUERY;
-          }
-          '''
+          old_helper = 'private boolean isShowingHistory() {\n        return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;\n    }'
+          new_helper = 'private boolean supportsUnlockedRemovalMenu() {\n        Searcher.Type type = SearchHandler.getInstance().getLastSearchType();\n        return type == Searcher.Type.HISTORY || type == Searcher.Type.QUERY;\n    }'
           if text.count(old_helper) != 1:
               raise SystemExit(f'Expected history helper once, found {text.count(old_helper)}')
           text = text.replace(old_helper, new_helper, 1)
@@ -65,17 +52,16 @@ jobs:
 
           gradle_path = Path('app/build.gradle')
           gradle = gradle_path.read_text()
-          old_version = '''        // Smart S Launcher 3.30.99 - universal unlocked long-press History item removal
-              versionCode 527
-              versionName "3.30.99"
-          '''
-          new_version = '''        // Smart S Launcher 3.30.100 - unlocked Remove item menu in History and Search
-              versionCode 528
-              versionName "3.30.100"
-          '''
-          if gradle.count(old_version) != 1:
-              raise SystemExit(f'Expected version block once, found {gradle.count(old_version)}')
-          gradle = gradle.replace(old_version, new_version, 1)
+          replacements = {
+              '// Smart S Launcher 3.30.99 - universal unlocked long-press History item removal':
+                  '// Smart S Launcher 3.30.100 - unlocked Remove item menu in History and Search',
+              'versionCode 527': 'versionCode 528',
+              'versionName "3.30.99"': 'versionName "3.30.100"',
+          }
+          for old, new in replacements.items():
+              if gradle.count(old) != 1:
+                  raise SystemExit(f'Expected version token once: {old!r}; found {gradle.count(old)}')
+              gradle = gradle.replace(old, new, 1)
           gradle_path.write_text(gradle)
           PY
 
