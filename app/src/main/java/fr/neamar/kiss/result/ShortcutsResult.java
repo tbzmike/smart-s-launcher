@@ -160,7 +160,8 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             View.OnClickListener exactNotificationClick = v -> {
                 TileLaunchCounter.recordNotification(
                         context, latestActive.id, latestActive.postTime);
-                if (!NotificationListener.openNotification(context, latestActive.id)) {
+                if (!NotificationListener.openNotification(
+                        context, latestActive.id, latestActive.postTime)) {
                     Toast.makeText(context, "No exact notification destination is available.",
                             Toast.LENGTH_SHORT).show();
                 }

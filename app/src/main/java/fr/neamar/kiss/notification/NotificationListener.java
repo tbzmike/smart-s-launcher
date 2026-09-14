@@ -692,20 +692,35 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     public static boolean openNotification(Context context, String notificationId) {
+        return openNotification(context, notificationId, 0L);
+    }
+
+    /**
+     * Open the exact notification snapshot that was bound to the UI. Supplying its post time
+     * prevents a listener disconnect between bind and tap from silently switching to another
+     * event that happens to reuse the same Android notification key.
+     */
+    public static boolean openNotification(Context context, String notificationId,
+                                           long boundPostTime) {
         if (notificationId == null || notificationId.isEmpty()) return false;
 
         StatusBarNotification active = findExactActiveNotification(notificationId, 0L);
         long activePostTime = active == null ? 0L : active.getPostTime();
-        NotificationHistoryRecord saved = activePostTime > 0L
-                ? NotificationTimelineStore.findExact(context, notificationId, activePostTime)
-                : NotificationTimelineStore.findLatest(context, notificationId);
-        long expectedPostTime = activePostTime > 0L ? activePostTime
-                : saved == null ? 0L : saved.postTime;
+        long expectedPostTime = boundPostTime > 0L ? boundPostTime : activePostTime;
+        NotificationHistoryRecord saved = expectedPostTime > 0L
+                ? NotificationTimelineStore.findExact(context, notificationId, expectedPostTime)
+                : null;
+        if (saved == null && activePostTime > 0L) {
+            saved = NotificationTimelineStore.findExact(context, notificationId, activePostTime);
+        }
+        if (saved == null) {
+            saved = NotificationTimelineStore.findLatest(context, notificationId);
+        }
+        if (expectedPostTime <= 0L && saved != null) expectedPostTime = saved.postTime;
         if (openNotification(context, notificationId, expectedPostTime, saved)) return true;
 
-        // This overload is the active-card entry point. If the card was rendered from a verified
-        // snapshot but Android disconnected the listener before the tap, preserve the user's exact
-        // open request and let the resolver's existing rebind loop retry it after verification.
+        // If Android disconnected the listener after the card was rendered, preserve the
+        // exact bound event and let the existing listener-rebind loop retry verification.
         return saved != null
                 && !isReadyForExactNotificationLookup()
                 && SavedNotificationDestinationResolver
@@ -725,8 +740,29 @@ public class NotificationListener extends NotificationListenerService {
                                             long expectedPostTime,
                                             NotificationHistoryRecord saved) {
 
-        // First replay the exact content PendingIntent captured when this historical row arrived.
-        // Android owns the relay, so it remains available across launcher/listener process death.
+        // Prefer Android's current live notification object. A saved relay can outlive the
+        // posting app's nested PendingIntent and therefore report that the relay activity
+        // launched even though the exact message target has already expired. The active row
+        // is the freshest authoritative destination whenever listener state is verified.
+        if (openExactActiveNotification(context, notificationId, expectedPostTime, saved)) {
+            return true;
+        }
+
+        // Next try the process-retained original target. Unlike the relay activity this send
+        // is synchronous, so a canceled target is detected here and we can continue safely.
+        PendingIntent retained = getRetainedContentIntent(notificationId, expectedPostTime);
+        if (retained != null) {
+            if (NotificationPendingIntentStore.sendTarget(context, retained)) {
+                captureRouteForSavedRecord(context, saved, notificationId, retained);
+                NotificationUnreadStore.markRead(context, notificationId);
+                return true;
+            }
+            forgetRetainedContentIntent(notificationId, retained);
+        }
+
+        // Only after live routes fail do we replay the Android-managed historical relay.
+        // Its activity contains its own exact-route recovery path if the nested target was
+        // canceled while the saved history row itself is still recoverable.
         if (saved != null) {
             String persistedToken = saved.pendingIntentToken;
             String availableToken = NotificationPendingIntentStore.findAvailableToken(
@@ -745,25 +781,7 @@ public class NotificationListener extends NotificationListenerService {
                 saved.pendingIntentToken = "";
             }
         }
-
-        // Keep the exact PendingIntent supplied by the posting app. Android removes the
-        // StatusBarNotification when the notification leaves the panel, but the PendingIntent can
-        // remain valid. Retaining it lets recent saved history reopen the same conversation/action
-        // instead of silently degrading to the app's launcher activity.
-        PendingIntent retained = getRetainedContentIntent(notificationId, expectedPostTime);
-        if (retained != null) {
-            captureRouteForSavedRecord(context, saved, notificationId, retained);
-            if (NotificationPendingIntentStore.sendTarget(context, retained)) {
-                NotificationUnreadStore.markRead(context, notificationId);
-                return true;
-            }
-            forgetRetainedContentIntent(notificationId, retained);
-        }
-
-        // Cached listener metadata can be cleared during process recreation or an app update while
-        // Android still holds the notification. Re-resolve the exact platform row from the stable
-        // encoded StatusBarNotification identity and post time before reporting a lost destination.
-        return openExactActiveNotification(context, notificationId, expectedPostTime, saved);
+        return false;
     }
 
     /** True when Android still exposes a content PendingIntent for this exact saved event. */
@@ -809,15 +827,17 @@ public class NotificationListener extends NotificationListenerService {
                     && SavedNotificationDestinationResolver.openPublishedShortcut(
                     context, activeRecord);
         }
-        // When Android updates one notification slot in place, the stable notification key and
-        // destination survive while postTime changes. Once compatibility has been verified above,
-        // retain the current PendingIntent under the historical row's postTime so that the saved
-        // row can reuse the healed exact route on its next open attempt.
-        long retainedPostTime = activeRecord != null && activeRecord.postTime > 0L
-                ? activeRecord.postTime : sbn.getPostTime();
-        rememberContentIntent(notificationId, retainedPostTime, contentIntent);
-        captureRouteForSavedRecord(context, activeRecord, notificationId, contentIntent);
+        // Do not replace a durable route until the posting application's current target has
+        // actually accepted the launch. This prevents a canceled in-place update from poisoning
+        // the saved row with another dead relay.
         if (NotificationPendingIntentStore.sendTarget(context, contentIntent)) {
+            // When Android updates one notification slot in place, the stable notification key
+            // and destination survive while postTime changes. Heal the historical row only after
+            // the live destination has accepted the launch.
+            long retainedPostTime = activeRecord != null && activeRecord.postTime > 0L
+                    ? activeRecord.postTime : sbn.getPostTime();
+            rememberContentIntent(notificationId, retainedPostTime, contentIntent);
+            captureRouteForSavedRecord(context, activeRecord, notificationId, contentIntent);
             NotificationUnreadStore.markRead(context, notificationId);
             return true;
         }
