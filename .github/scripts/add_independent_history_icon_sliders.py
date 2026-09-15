@@ -1,6 +1,7 @@
 from pathlib import Path
 import re
 
+# Trigger note: this temporary script is removed by the successful source commit.
 # This script is run once by the existing CI workflow on the feature branch.
 # It deliberately refuses to guess if the expected 3.30.106 source shape is absent.
 
@@ -215,7 +216,6 @@ g = g[:cm.start(1)] + '535' + g[cm.end(1):]
 g = g.replace('Smart S Launcher 3.30.106 - exposed history icon sizing', 'Smart S Launcher 3.30.107 - independent history icon sizing')
 gradle.write_text(g)
 
-# Remove the temporary workflow; the existing CI workflow is the execution mechanism.
 temp = Path('.github/workflows/add-manual-history-icon-sliders.yml')
 if temp.exists():
     temp.unlink()
