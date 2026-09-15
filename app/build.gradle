@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.104 - WAL mode to stop Vertical Cards touch freezes
-        versionCode 532
-        versionName "3.30.104"
+        // Smart S Launcher 3.30.105 - configurable sizing for notification, shortcut and feature icons
+        versionCode 533
+        versionName "3.30.105"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
