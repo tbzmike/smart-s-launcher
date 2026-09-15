@@ -8,6 +8,9 @@ on:
     branches:
       - master
 
+permissions:
+  contents: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.sha }}
   cancel-in-progress: ${{ !contains(github.ref, 'master') }}
@@ -38,7 +41,7 @@ jobs:
         if: ${{ always() }}
         run: bash ./gradlew testDebugUnitTest --stacktrace
       - name: Upload lint report
-        if: ${{ always() && github.event_name != 'pull_request' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: lint-report
@@ -55,16 +58,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
       - name: set up Java
         uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: 21
       - name: Prepare independent history icon sliders
-        if: ${{ github.event_name == 'push' && github.ref_name == 'feature/icon-size-controls-ui4' && github.event.head_commit.message != 'Expose independent history icon sliders' }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' && github.event.pull_request.head.sha == 'ebb8097a44d7f57b1745b08d5acbcb2dcb2d8532' }}
         run: python3 .github/scripts/add_independent_history_icon_sliders.py
       - name: Verify prepared source
-        if: ${{ github.event_name == 'push' && github.ref_name == 'feature/icon-size-controls-ui4' && github.event.head_commit.message != 'Expose independent history icon sliders' }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' && github.event.pull_request.head.sha == 'ebb8097a44d7f57b1745b08d5acbcb2dcb2d8532' }}
         shell: bash
         run: |
           set -e
@@ -80,24 +85,24 @@ jobs:
       - name: Build APKs
         run: bash ./gradlew assembleDebug assembleRelease --stacktrace
       - name: Unit tests on prepared source
-        if: ${{ github.event_name == 'push' && github.ref_name == 'feature/icon-size-controls-ui4' && github.event.head_commit.message != 'Expose independent history icon sliders' }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' && github.event.pull_request.head.sha == 'ebb8097a44d7f57b1745b08d5acbcb2dcb2d8532' }}
         run: bash ./gradlew test --stacktrace
       - name: Upload debug APK
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: debug
+          name: SmartSLauncher-3.30.107-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           archive: false
       - name: Upload release APK
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: release
+          name: SmartSLauncher-3.30.107-release
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           archive: false
       - name: Commit prepared source and restore original CI
-        if: ${{ github.event_name == 'push' && github.ref_name == 'feature/icon-size-controls-ui4' && github.event.head_commit.message != 'Expose independent history icon sliders' }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' && github.event.pull_request.head.sha == 'ebb8097a44d7f57b1745b08d5acbcb2dcb2d8532' }}
         shell: bash
         run: |
           set -e
@@ -108,4 +113,4 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/src/main/res/xml/preferences.xml app/src/main/res/xml/preferences_smart_features.xml app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java app/build.gradle .github/scripts/add_independent_history_icon_sliders.py .github/workflows/add-manual-history-icon-sliders.yml .github/workflows/ci.yml
           git commit -m 'Expose independent history icon sliders'
-          git push origin HEAD:feature/icon-size-controls-ui4
+          git push origin HEAD:${{ github.head_ref }}
