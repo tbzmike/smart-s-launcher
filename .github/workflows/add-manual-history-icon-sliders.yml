@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   update-build:
-    if: ${{ github.event.head_commit.message != 'Add independent history icon size sliders' && github.event.head_commit.message != 'Expose independent history icon sliders' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,8 +17,9 @@ jobs:
           ref: feature/icon-size-controls-ui4
 
       - name: Add independent sliders and wire rendering
-        shell: python
+        shell: bash
         run: |
+          python3 <<'PY'
           from pathlib import Path
           import re
 
@@ -30,11 +30,11 @@ jobs:
               raise SystemExit('History icon sizing category not found in preferences.xml')
 
           replacements = {
-              '''            <SwitchPreference
+              'smart-list-resize-notification-icons': ('''            <SwitchPreference
                 app:defaultValue="true"
                 app:key="smart-list-resize-notification-icons"
                 app:title="Resize notification / profile pictures"
-                app:summary="WhatsApp and other notification/profile pictures follow App icon size." />''': '''            <SwitchPreference
+                app:summary="WhatsApp and other notification/profile pictures follow App icon size." />''', '''            <SwitchPreference
                 app:defaultValue="true"
                 app:key="smart-list-resize-notification-icons"
                 app:title="Resize notification / profile pictures"
@@ -46,12 +46,12 @@ jobs:
                 android:max="240"
                 app:min="50"
                 app:showSeekBarValue="true"
-                app:title="Notification / profile picture size (%)" />''',
-              '''            <SwitchPreference
+                app:title="Notification / profile picture size (%)" />'''),
+              'smart-list-resize-shortcut-icons': ('''            <SwitchPreference
                 app:defaultValue="true"
                 app:key="smart-list-resize-shortcut-icons"
                 app:title="Resize shortcut icons"
-                app:summary="Launcher shortcut icons follow App icon size." />''': '''            <SwitchPreference
+                app:summary="Launcher shortcut icons follow App icon size." />''', '''            <SwitchPreference
                 app:defaultValue="true"
                 app:key="smart-list-resize-shortcut-icons"
                 app:title="Resize shortcut icons"
@@ -63,12 +63,12 @@ jobs:
                 android:max="240"
                 app:min="50"
                 app:showSeekBarValue="true"
-                app:title="Shortcut icon size (%)" />''',
-              '''            <SwitchPreference
+                app:title="Shortcut icon size (%)" />'''),
+              'smart-list-resize-feature-icons': ('''            <SwitchPreference
                 app:defaultValue="true"
                 app:key="smart-list-resize-feature-icons"
                 app:title="Resize settings / feature icons"
-                app:summary="Smart S settings and feature icons follow App icon size." />''': '''            <SwitchPreference
+                app:summary="Smart S settings and feature icons follow App icon size." />''', '''            <SwitchPreference
                 app:defaultValue="true"
                 app:key="smart-list-resize-feature-icons"
                 app:title="Resize settings / feature icons"
@@ -80,12 +80,12 @@ jobs:
                 android:max="240"
                 app:min="50"
                 app:showSeekBarValue="true"
-                app:title="Settings / feature icon size (%)" />''',
-              '''            <SwitchPreference
+                app:title="Settings / feature icon size (%)" />'''),
+              'smart-list-resize-contact-icons': ('''            <SwitchPreference
                 app:defaultValue="true"
                 app:key="smart-list-resize-contact-icons"
                 app:title="Resize contact / avatar pictures"
-                app:summary="Contact and avatar pictures follow App icon size." />''': '''            <SwitchPreference
+                app:summary="Contact and avatar pictures follow App icon size." />''', '''            <SwitchPreference
                 app:defaultValue="true"
                 app:key="smart-list-resize-contact-icons"
                 app:title="Resize contact / avatar pictures"
@@ -97,12 +97,15 @@ jobs:
                 android:max="240"
                 app:min="50"
                 app:showSeekBarValue="true"
-                app:title="Contact / avatar picture size (%)" />'''
+                app:title="Contact / avatar picture size (%)" />''')
           }
-          for old, new in replacements.items():
-              if old not in text:
-                  raise SystemExit('Expected history icon preference block not found; source changed unexpectedly')
-              text = text.replace(old, new, 1)
+          for key, (old, new) in replacements.items():
+              if key not in text:
+                  raise SystemExit(f'Expected existing toggle {key} not found')
+              if 'SeekBarPreference' not in text[text.index(key):text.index(key)+1000]:
+                  if old not in text:
+                      raise SystemExit(f'Expected block for {key} not found')
+                  text = text.replace(old, new, 1)
           text = text.replace(
               'app:summary="These switches control which history icon types follow the existing App icon size setting."',
               'app:summary="Each switch enables its own manual 50%–240% size slider. 100% is the native size; 110% preserves the previous default."',
@@ -111,13 +114,12 @@ jobs:
 
           smart = Path('app/src/main/res/xml/preferences_smart_features.xml')
           smart_text = smart.read_text()
-          if 'smart-list-notification-icon-size-percent' not in smart_text:
-              smart_replacements = {
-                  '''        <SwitchPreference
+          smart_blocks = [
+              ('smart-list-resize-notification-icons', '''        <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-notification-icons"
             app:title="Resize notification / profile pictures"
-            app:summary="Apply the existing App icon size setting to WhatsApp and other notification/profile pictures." />''': '''        <SwitchPreference
+            app:summary="Apply the existing App icon size setting to WhatsApp and other notification/profile pictures." />''', '''        <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-notification-icons"
             app:title="Resize notification / profile pictures"
@@ -129,12 +131,12 @@ jobs:
             android:max="240"
             app:min="50"
             app:showSeekBarValue="true"
-            app:title="Notification / profile picture size (%)" />''',
-                  '''        <SwitchPreference
+            app:title="Notification / profile picture size (%)" />'''),
+              ('smart-list-resize-shortcut-icons', '''        <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-shortcut-icons"
             app:title="Resize shortcut icons"
-            app:summary="Apply the existing App icon size setting to launcher shortcut icons." />''': '''        <SwitchPreference
+            app:summary="Apply the existing App icon size setting to launcher shortcut icons." />''', '''        <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-shortcut-icons"
             app:title="Resize shortcut icons"
@@ -146,12 +148,12 @@ jobs:
             android:max="240"
             app:min="50"
             app:showSeekBarValue="true"
-            app:title="Shortcut icon size (%)" />''',
-                  '''        <SwitchPreference
+            app:title="Shortcut icon size (%)" />'''),
+              ('smart-list-resize-feature-icons', '''        <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-feature-icons"
             app:title="Resize settings / feature icons"
-            app:summary="Apply the existing App icon size setting to Smart S settings and feature result icons." />''': '''        <SwitchPreference
+            app:summary="Apply the existing App icon size setting to Smart S settings and feature result icons." />''', '''        <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-feature-icons"
             app:title="Resize settings / feature icons"
@@ -163,12 +165,12 @@ jobs:
             android:max="240"
             app:min="50"
             app:showSeekBarValue="true"
-            app:title="Settings / feature icon size (%)" />''',
-                  '''        <SwitchPreference
+            app:title="Settings / feature icon size (%)" />'''),
+              ('smart-list-resize-contact-icons', '''        <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-contact-icons"
             app:title="Resize contact / avatar pictures"
-            app:summary="Apply the existing App icon size setting to contact and avatar pictures." />''': '''        <SwitchPreference
+            app:summary="Apply the existing App icon size setting to contact and avatar pictures." />''', '''        <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-contact-icons"
             app:title="Resize contact / avatar pictures"
@@ -180,11 +182,12 @@ jobs:
             android:max="240"
             app:min="50"
             app:showSeekBarValue="true"
-            app:title="Contact / avatar picture size (%)" />'''
-              }
-              for old, new in smart_replacements.items():
-                  if old not in smart_text:
-                      raise SystemExit('Expected Smart Features history icon block not found')
+            app:title="Contact / avatar picture size (%)" />''')
+          ]
+          if 'smart-list-notification-icon-size-percent' not in smart_text:
+              for key, old, new in smart_blocks:
+                  if key not in smart_text or old not in smart_text:
+                      raise SystemExit(f'Expected Smart Features block for {key} not found')
                   smart_text = smart_text.replace(old, new, 1)
               smart.write_text(smart_text)
 
@@ -219,8 +222,9 @@ jobs:
                 "smart-list-resize-contact-icons", contactPercent);'''
           if old not in java:
               raise SystemExit('Expected TileVisualStyle sizing block not found')
-          java = java.replace(old, new, 1)
-          tile.write_text(java)
+          if 'smart-list-notification-icon-size-percent' not in java:
+              java = java.replace(old, new, 1)
+              tile.write_text(java)
 
           gradle = Path('app/build.gradle')
           g = gradle.read_text()
@@ -232,13 +236,8 @@ jobs:
           g = g[:cm.start(1)] + '535' + g[cm.end(1):]
           g = g.replace('Smart S Launcher 3.30.106 - exposed history icon sizing', 'Smart S Launcher 3.30.107 - independent history icon sizing')
           gradle.write_text(g)
-
-          wf = Path('.github/workflows/add-manual-history-icon-sliders.yml')
-          # The workflow is only a safe editing/build mechanism; do not leave it in the app source.
-          if wf.exists():
-              wf.unlink()
-
-          print('Added four independent 50%-240% sliders, wired each slider key to TileVisualStyle, and bumped to 3.30.107.')
+          print('Source modifications complete.')
+          PY
 
       - name: Verify source wiring
         shell: bash
@@ -257,7 +256,6 @@ jobs:
           grep -q 'smart-list-feature-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
           grep -q 'smart-list-contact-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
           grep -q '3.30.107' app/build.gradle
-          ! grep -q 'add-manual-history-icon-sliders.yml' <(git ls-files)
 
       - name: Build APK
         run: ./gradlew assembleDebug --no-daemon
@@ -265,12 +263,13 @@ jobs:
       - name: Run unit tests
         run: ./gradlew test --no-daemon
 
-      - name: Commit source changes
+      - name: Commit source changes and remove temporary workflow
         shell: bash
         run: |
+          rm -f .github/workflows/add-manual-history-icon-sliders.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/main/res/xml/preferences.xml app/src/main/res/xml/preferences_smart_features.xml app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java app/build.gradle
+          git add app/src/main/res/xml/preferences.xml app/src/main/res/xml/preferences_smart_features.xml app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java app/build.gradle .github/workflows/add-manual-history-icon-sliders.yml
           git commit -m 'Expose independent history icon sliders'
           git push origin HEAD:feature/icon-size-controls-ui4
 
