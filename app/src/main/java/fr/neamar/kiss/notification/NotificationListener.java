@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
+import android.text.TextUtils;
 import android.util.Base64;
 import android.view.View;
 import android.view.ViewGroup;
@@ -280,6 +281,124 @@ public class NotificationListener extends NotificationListenerService {
                 title, text, sbn.getPostTime(),
                 isPermanentForHistory(sbn), shortcutId, userSerial, routeUri,
                 pendingIntentToken, locusId);
+        if (historyEnabled) {
+            autoRebindStaleRecords(sbn.getPackageName(), id, sbn.getPostTime(), title,
+                    shortcutId, routeUri, pendingIntentToken, locusId);
+        }
+    }
+
+    /**
+     * Repair previously saved history rows that lost their exact destination once a matching live
+     * notification becomes available again, instead of leaving them permanently stale. The lookup
+     * is limited to a handful of same-package/title-or-shortcut candidates already missing an
+     * exact target, so this adds no meaningful battery/RAM cost to ordinary notification posting.
+     */
+    private void autoRebindStaleRecords(String packageName, String freshId, long postTime,
+                                        String title, String shortcutId, String routeUri,
+                                        String pendingIntentToken, String locusId) {
+        if (TextUtils.isEmpty(packageName)) return;
+        List<NotificationHistoryRecord> candidates = SmartStateStore.findRebindCandidates(
+                this, packageName, shortcutId, title, freshId, 5);
+        for (NotificationHistoryRecord candidate : candidates) {
+            if (SavedNotificationDestinationResolver.hasExactTarget(this, candidate)) continue;
+            applyRebind(candidate, freshId, postTime, shortcutId, routeUri, pendingIntentToken,
+                    locusId);
+        }
+    }
+
+    private static void applyRebind(NotificationHistoryRecord record, String freshId, long postTime,
+                                    String shortcutId, String routeUri, String pendingIntentToken,
+                                    String locusId) {
+        record.notificationId = freshId;
+        record.postTime = postTime;
+        if (!TextUtils.isEmpty(shortcutId)) record.shortcutId = shortcutId;
+        if (!TextUtils.isEmpty(routeUri)) record.routeUri = routeUri;
+        if (!TextUtils.isEmpty(locusId)) record.locusId = locusId;
+        if (!TextUtils.isEmpty(pendingIntentToken)) record.pendingIntentToken = pendingIntentToken;
+    }
+
+    /**
+     * Manually repair a stale saved notification's destination from the "Fix notification link"
+     * action. Scans currently active notifications in the same package for the most recent match
+     * by app-published shortcut identity, falling back to an exact saved title match, and rebinds
+     * the record to it. Never guesses a destination from notification text alone.
+     */
+    public static boolean rebindStaleNotification(Context context, NotificationHistoryRecord record) {
+        if (context == null || record == null || record.dbId <= 0L
+                || TextUtils.isEmpty(record.packageName)) {
+            return false;
+        }
+        StatusBarNotification sbn = findLiveNotificationForStaleRecord(record);
+        if (sbn == null) return false;
+        Notification n = sbn.getNotification();
+        if (n == null) return false;
+
+        String freshId = getTimelineId(sbn);
+        rememberContentIntent(freshId, sbn.getPostTime(), n.contentIntent);
+        String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? n.getShortcutId() : null;
+        String locusId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && n.getLocusId() != null
+                ? n.getLocusId().getId() : null;
+        SavedNotificationDestinationResolver.CapturedShortcutRoute capturedShortcut =
+                SavedNotificationDestinationResolver.capturePublishedShortcutRoute(
+                        context, sbn.getPackageName(), shortcutId, locusId, sbn.getUser());
+        String routeUri = null;
+        if (capturedShortcut != null) {
+            shortcutId = capturedShortcut.shortcutId;
+            routeUri = capturedShortcut.routeUri;
+        }
+        String pendingIntentToken = NotificationPendingIntentStore.capture(
+                context, freshId, sbn.getPostTime(), n.contentIntent);
+
+        applyRebind(record, freshId, sbn.getPostTime(), shortcutId, routeUri, pendingIntentToken,
+                locusId);
+        SmartStateStore.rebindNotificationDestination(context, record.dbId, record.notificationId,
+                record.postTime, record.shortcutId, record.routeUri, record.pendingIntentToken,
+                record.locusId);
+        return true;
+    }
+
+    /**
+     * Only same-package active notifications not already tied to this saved row are candidates.
+     * A published shortcut identity is the strongest signal available; an exact (trimmed,
+     * case-insensitive) saved title is the fallback when no shortcut is present on either side.
+     */
+    private static StatusBarNotification findLiveNotificationForStaleRecord(
+            NotificationHistoryRecord record) {
+        NotificationListener listener = instance;
+        if (listener == null || !activeStateVerified) return null;
+        try {
+            StatusBarNotification[] active = listener.getActiveNotifications();
+            if (active == null) return null;
+            StatusBarNotification best = null;
+            for (StatusBarNotification sbn : active) {
+                if (sbn == null || sbn.getNotification() == null
+                        || !record.packageName.equals(sbn.getPackageName())
+                        || (!TextUtils.isEmpty(record.notificationId)
+                        && record.notificationId.equals(getTimelineId(sbn)))) {
+                    continue;
+                }
+                Notification n = sbn.getNotification();
+                String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? n.getShortcutId() : null;
+                boolean matches;
+                if (!TextUtils.isEmpty(record.shortcutId) && !TextUtils.isEmpty(shortcutId)) {
+                    matches = record.shortcutId.equals(shortcutId);
+                } else {
+                    matches = sameTitle(record.title, historyTitle(n));
+                }
+                if (!matches) continue;
+                if (best == null || sbn.getPostTime() > best.getPostTime()) best = sbn;
+            }
+            return best;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to search active notifications for a stale route repair", e);
+            return null;
+        }
+    }
+
+    private static boolean sameTitle(String a, String b) {
+        if (TextUtils.isEmpty(a) || TextUtils.isEmpty(b)) return false;
+        return a.trim().equalsIgnoreCase(b.trim());
     }
 
     private static String historyTitle(Notification notification) {

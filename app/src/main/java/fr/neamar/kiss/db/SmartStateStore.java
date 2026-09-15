@@ -312,6 +312,81 @@ public final class SmartStateStore {
         });
     }
 
+    /**
+     * Repair a stale saved notification row in place, either automatically when a matching live
+     * notification reposts under a new event id, or from the "Fix notification link" action. Only
+     * the fields Android actually re-exposed are written; the row's original title/body/history
+     * position are left untouched so the repair does not look like a new message arrived.
+     */
+    public static void rebindNotificationDestination(@NonNull Context context, long dbId,
+                                                      @Nullable String notificationId, long postTime,
+                                                      @Nullable String shortcutId,
+                                                      @Nullable String routeUri,
+                                                      @Nullable String pendingIntentToken,
+                                                      @Nullable String locusId) {
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        if (dbId <= 0L || notificationId == null || notificationId.isEmpty()) return;
+        ContentValues values = new ContentValues();
+        values.put("notification_id", notificationId);
+        if (postTime > 0L) values.put("post_time", postTime);
+        if (shortcutId != null && !shortcutId.isEmpty()) values.put("shortcut_id", shortcutId);
+        if (routeUri != null && !routeUri.isEmpty()) values.put("route_uri", routeUri);
+        if (pendingIntentToken != null && !pendingIntentToken.isEmpty()) {
+            values.put("pending_intent_token", pendingIntentToken);
+        }
+        if (locusId != null && !locusId.isEmpty()) values.put("locus_id", locusId);
+        recoveryDb.update("notification_history", values, "_id=?",
+                new String[]{Long.toString(dbId)});
+        latestNotificationsCache = null;
+
+        });
+    }
+
+    /**
+     * Find a handful of same-package saved rows that could be the stale counterpart of a freshly
+     * posted notification, matched by app-published shortcut identity first and by exact saved
+     * title otherwise. The small LIMIT keeps this cheap enough to run on every notification post.
+     */
+    @NonNull
+    public static List<NotificationHistoryRecord> findRebindCandidates(
+            @NonNull Context context, @NonNull String packageName, @Nullable String shortcutId,
+            @Nullable String title, @Nullable String excludeNotificationId, int limit) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+        List<NotificationHistoryRecord> result = new ArrayList<>();
+        StringBuilder where = new StringBuilder("package=?");
+        List<String> args = new ArrayList<>();
+        args.add(packageName);
+        if (excludeNotificationId != null && !excludeNotificationId.isEmpty()) {
+            where.append(" AND notification_id<>?");
+            args.add(excludeNotificationId);
+        }
+        where.append(" AND (");
+        boolean hasShortcut = shortcutId != null && !shortcutId.isEmpty();
+        boolean hasTitle = title != null && !title.isEmpty();
+        if (!hasShortcut && !hasTitle) return result;
+        boolean first = true;
+        if (hasShortcut) {
+            where.append("shortcut_id=?");
+            args.add(shortcutId);
+            first = false;
+        }
+        if (hasTitle) {
+            if (!first) where.append(" OR ");
+            where.append("title=?");
+            args.add(title);
+        }
+        where.append(')');
+
+        try (Cursor cursor = recoveryDb.query("notification_history", notificationProjection(),
+                where.toString(), args.toArray(new String[0]), null, null, "post_time DESC",
+                Integer.toString(Math.max(1, limit)))) {
+            while (cursor.moveToNext()) result.add(readNotificationRecord(cursor));
+        }
+        return result;
+
+        });
+    }
+
     public static void clearNotificationPendingIntentToken(@NonNull Context context,
                                                            @Nullable String token) {
         DatabaseRecovery.runVoid(context, recoveryDb -> {

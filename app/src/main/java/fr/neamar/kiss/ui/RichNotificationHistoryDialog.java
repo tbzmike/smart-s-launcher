@@ -329,6 +329,23 @@ public final class RichNotificationHistoryDialog {
         private void addSavedOpenAction(NotificationHistoryRecord record) {
             LinearLayout buttons = new LinearLayout(context);
             buttons.setGravity(Gravity.END);
+            if (!SavedNotificationDestinationResolver.hasExactTarget(context, record)) {
+                Button fix = new Button(context);
+                fix.setText("Fix notification link");
+                AppNativeDialogStyle.styleButton(fix, accent);
+                fix.setOnClickListener(v -> {
+                    if (NotificationListener.rebindStaleNotification(context, record)) {
+                        Toast.makeText(context, "Notification link restored",
+                                Toast.LENGTH_SHORT).show();
+                        render();
+                    } else {
+                        Toast.makeText(context,
+                                "No matching notification found to fix this link",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+                buttons.addView(fix);
+            }
             Button open = new Button(context);
             open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);

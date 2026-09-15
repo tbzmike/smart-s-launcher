@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.101 - performance-aware animation safeguards
-        versionCode 529
-        versionName "3.30.101"
+        // Smart S Launcher 3.30.102 - durable notification routes with Fix notification link
+        versionCode 530
+        versionName "3.30.102"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
