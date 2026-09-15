@@ -352,6 +352,36 @@
             app:title="@string/smart_blur_performance"
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
+
+    <PreferenceCategory
+        app:title="Additional history icon sizing"
+        app:dependency="smart-ui-locked">
+        <Preference
+            app:title="Use the existing App icon size control"
+            app:summary="The four switches below extend the existing Vertical history → App icon size slider to icon types that previously stayed at their native small size."
+            app:selectable="false" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-list-resize-notification-icons"
+            app:title="Resize notification / profile pictures"
+            app:summary="Apply the existing App icon size setting to WhatsApp and other notification/profile pictures." />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-list-resize-shortcut-icons"
+            app:title="Resize shortcut icons"
+            app:summary="Apply the existing App icon size setting to launcher shortcut icons." />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-list-resize-feature-icons"
+            app:title="Resize settings / feature icons"
+            app:summary="Apply the existing App icon size setting to Smart S settings and feature result icons." />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="smart-list-resize-contact-icons"
+            app:title="Resize contact / avatar pictures"
+            app:summary="Apply the existing App icon size setting to contact and avatar pictures." />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="Privacy &amp; network">
         <SwitchPreference
             app:defaultValue="false"
