@@ -66,7 +66,7 @@ public final class TileVisualStyle {
             int height = lp == null ? 0 : lp.height;
             if (width <= 0) width = target.getWidth();
             if (height <= 0) height = target.getHeight();
-            if (width > 0 && height > 0) {
+            if (width > 0 && height > 0 && !EXTRA_ICON_BASE_BOUNDS.containsKey(target)) {
                 EXTRA_ICON_BASE_BOUNDS.put(target, new int[]{width, height});
             }
         }
