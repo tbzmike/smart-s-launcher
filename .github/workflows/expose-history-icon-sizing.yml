@@ -1,0 +1,101 @@
+name: Expose history icon sizing controls
+
+on:
+  push:
+    branches:
+      - feature/icon-size-controls-ui3
+
+permissions:
+  contents: write
+
+jobs:
+  update-build:
+    if: ${{ github.event.head_commit.message != 'Expose history icon sizing controls in Settings' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/icon-size-controls-ui3
+
+      - name: Expose controls and bump version
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          smart = Path('app/src/main/res/xml/preferences_smart_features.xml')
+          text = smart.read_text()
+          old = 'app:title="Additional history icon sizing"\n        app:dependency="smart-ui-locked"'
+          if old in text:
+              text = text.replace(old, 'app:title="Additional history icon sizing"', 1)
+          smart.write_text(text)
+
+          pref = Path('app/src/main/res/xml/preferences.xml')
+          text = pref.read_text()
+          if 'app:title="History icon sizing"' not in text:
+              category = '''\n        <PreferenceCategory app:title="History icon sizing">\n            <Preference\n                app:title="Use App icon size for history icons"\n                app:summary="These switches control which history icon types follow the existing App icon size setting."\n                app:selectable="false" />\n            <SwitchPreference\n                app:defaultValue="true"\n                app:key="smart-list-resize-notification-icons"\n                app:title="Resize notification / profile pictures"\n                app:summary="WhatsApp and other notification/profile pictures follow App icon size." />\n            <SwitchPreference\n                app:defaultValue="true"\n                app:key="smart-list-resize-shortcut-icons"\n                app:title="Resize shortcut icons"\n                app:summary="Launcher shortcut icons follow App icon size." />\n            <SwitchPreference\n                app:defaultValue="true"\n                app:key="smart-list-resize-feature-icons"\n                app:title="Resize settings / feature icons"\n                app:summary="Smart S settings and feature icons follow App icon size." />\n            <SwitchPreference\n                app:defaultValue="true"\n                app:key="smart-list-resize-contact-icons"\n                app:title="Resize contact / avatar pictures"\n                app:summary="Contact and avatar pictures follow App icon size." />\n        </PreferenceCategory>\n'''
+              start = text.index('<PreferenceScreen\n        app:key="ui-holder"')
+              depth = 0
+              pos = None
+              token = re.compile(r'<PreferenceScreen\b|</PreferenceScreen>')
+              for match in token.finditer(text, start):
+                  if match.group().startswith('</'):
+                      depth -= 1
+                      if depth == 0:
+                          pos = match.start()
+                          break
+                  else:
+                      depth += 1
+              if pos is None:
+                  raise SystemExit('ui-holder closing tag not found')
+              text = text[:pos] + category + text[pos:]
+          pref.write_text(text)
+
+          gradle = Path('app/build.gradle')
+          g = gradle.read_text()
+          vm = re.search(r'versionName\s+["\']([^"\']+)["\']', g)
+          cm = re.search(r'versionCode\s+(\d+)', g)
+          if not vm or not cm:
+              raise SystemExit('version fields not found')
+          old_version = vm.group(1)
+          if old_version != '3.30.105':
+              raise SystemExit(f'unexpected baseline version: {old_version}')
+          new_version = '3.30.106'
+          new_code = str(int(cm.group(1)) + 1)
+          g = g[:vm.start(1)] + new_version + g[vm.end(1):]
+          g = g[:cm.start(1)] + new_code + g[cm.end(1):]
+          g = g.replace('Smart S Launcher 3.30.105 - configurable sizing', 'Smart S Launcher 3.30.106 - exposed history icon sizing')
+          gradle.write_text(g)
+          print(f'{old_version} -> {new_version}, versionCode -> {new_code}')
+
+      - name: Verify UI wiring
+        shell: bash
+        run: |
+          grep -q 'History icon sizing' app/src/main/res/xml/preferences.xml
+          grep -q 'smart-list-resize-notification-icons' app/src/main/res/xml/preferences.xml
+          grep -q 'smart-list-resize-shortcut-icons' app/src/main/res/xml/preferences.xml
+          grep -q 'smart-list-resize-feature-icons' app/src/main/res/xml/preferences.xml
+          grep -q 'smart-list-resize-contact-icons' app/src/main/res/xml/preferences.xml
+          grep -q 'smart-list-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+          grep -q '3.30.106' app/build.gradle
+
+      - name: Build APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Run unit tests
+        run: ./gradlew test --no-daemon
+
+      - name: Commit source changes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/res/xml/preferences.xml app/src/main/res/xml/preferences_smart_features.xml app/build.gradle .github/workflows/expose-history-icon-sizing.yml
+          git commit -m 'Expose history icon sizing controls in Settings'
+          git push origin HEAD:feature/icon-size-controls-ui3
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartSLauncher-3.30.106-debug
+          path: app/build/outputs/apk/debug/*.apk
