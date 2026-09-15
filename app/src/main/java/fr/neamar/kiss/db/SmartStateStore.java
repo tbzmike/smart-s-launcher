@@ -186,6 +186,26 @@ public final class SmartStateStore {
         }
     }
 
+    /**
+     * Repoint a saved notification row at a freshly observed live destination ("Fix notification
+     * link" / automatic rebind). Only the routing identifiers are updated; the row's own persisted
+     * title/text stay untouched so the history entry still reads as the original message.
+     */
+    public static void rebindNotificationDestination(@NonNull Context context, long dbId,
+                                                      @NonNull String newNotificationId,
+                                                      @Nullable String newShortcutId) {
+        ContentValues values = new ContentValues();
+        values.put("notification_id", newNotificationId);
+        values.put("shortcut_id", newShortcutId == null ? "" : newShortcutId);
+        try {
+            db(context).update("notification_history", values, "_id=?",
+                    new String[]{Long.toString(dbId)});
+            latestNotificationsCache = null;
+        } catch (SQLiteFullException e) {
+            Log.w(TAG, "Unable to rebind notification destination", e);
+        }
+    }
+
     @NonNull
     public static List<NotificationHistoryRecord> queryNotifications(@NonNull Context context,
                                                                      @Nullable String packageName,

@@ -25,6 +25,14 @@ import fr.neamar.kiss.notification.NotificationListener;
  * route for it. App-published conversation shortcuts are preferred because they represent the
  * durable exact conversation/action; the posting app's original PendingIntent is the second exact
  * route. Notification title/body text is deliberately never guessed into a private deep link.
+ *
+ * <p>Root/Shizuku were evaluated as a way to recover a destination when neither of the above is
+ * available (e.g. an app with no shortcut whose retained PendingIntent was cancelled). Neither is
+ * used: a shell/root identity cannot resurrect a PendingIntent token once the posting app cancels
+ * it, and it cannot discover a route LauncherApps/NotificationListenerService do not already
+ * expose, so it would add attack surface, permission friction, and battery/RAM cost for a
+ * recovery path it cannot actually improve. {@link NotificationListener#rebindStaleNotification}
+ * and the automatic same-title rebind on repost cover the recoverable cases instead.
  */
 public final class SavedNotificationDestinationResolver {
     private static final String TAG = SavedNotificationDestinationResolver.class.getSimpleName();
