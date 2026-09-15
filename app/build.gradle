@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.103 - harden auto-rebind against Vertical Cards instability
-        versionCode 531
-        versionName "3.30.103"
+        // Smart S Launcher 3.30.104 - WAL mode to stop Vertical Cards touch freezes
+        versionCode 532
+        versionName "3.30.104"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

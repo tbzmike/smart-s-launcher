@@ -69,7 +69,14 @@ final class DatabaseRecovery {
             local = database;
             if (local == null || !local.isOpen()) {
                 Context appContext = context.getApplicationContext();
-                database = new DB(appContext).getWritableDatabase();
+                DB helper = new DB(appContext);
+                // Vertical Cards read this database synchronously on the main thread on every
+                // rebuild (SmartStateStore.queryLatestNotificationsByPackage). Background writers
+                // such as the notification auto-rebind repair must never block that read behind
+                // the classic rollback-journal exclusive write lock. WAL lets readers proceed
+                // concurrently with an in-flight writer instead of stalling touch/scroll handling.
+                helper.setWriteAheadLoggingEnabled(true);
+                database = helper.getWritableDatabase();
             }
             return database;
         }
