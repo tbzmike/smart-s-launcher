@@ -344,38 +344,27 @@ public final class SmartStateStore {
 
     /**
      * Find a handful of same-package saved rows that could be the stale counterpart of a freshly
-     * posted notification, matched by app-published shortcut identity first and by exact saved
-     * title otherwise. The small LIMIT keeps this cheap enough to run on every notification post.
+     * posted notification, matched only by app-published shortcut identity (a stable, per-
+     * conversation key). Title text is deliberately not used here: many apps repeat the same
+     * title (for example a contact name) across many unrelated historical messages, so matching
+     * on title alone would silently rebind old, unrelated history rows onto the newest event. The
+     * small LIMIT keeps this cheap enough to run on every notification post.
      */
     @NonNull
     public static List<NotificationHistoryRecord> findRebindCandidates(
             @NonNull Context context, @NonNull String packageName, @Nullable String shortcutId,
-            @Nullable String title, @Nullable String excludeNotificationId, int limit) {
+            @Nullable String excludeNotificationId, int limit) {
+        if (shortcutId == null || shortcutId.isEmpty()) return new ArrayList<>();
         return DatabaseRecovery.run(context, recoveryDb -> {
         List<NotificationHistoryRecord> result = new ArrayList<>();
-        StringBuilder where = new StringBuilder("package=?");
+        StringBuilder where = new StringBuilder("package=? AND shortcut_id=?");
         List<String> args = new ArrayList<>();
         args.add(packageName);
+        args.add(shortcutId);
         if (excludeNotificationId != null && !excludeNotificationId.isEmpty()) {
             where.append(" AND notification_id<>?");
             args.add(excludeNotificationId);
         }
-        where.append(" AND (");
-        boolean hasShortcut = shortcutId != null && !shortcutId.isEmpty();
-        boolean hasTitle = title != null && !title.isEmpty();
-        if (!hasShortcut && !hasTitle) return result;
-        boolean first = true;
-        if (hasShortcut) {
-            where.append("shortcut_id=?");
-            args.add(shortcutId);
-            first = false;
-        }
-        if (hasTitle) {
-            if (!first) where.append(" OR ");
-            where.append("title=?");
-            args.add(title);
-        }
-        where.append(')');
 
         try (Cursor cursor = recoveryDb.query("notification_history", notificationProjection(),
                 where.toString(), args.toArray(new String[0]), null, null, "post_time DESC",

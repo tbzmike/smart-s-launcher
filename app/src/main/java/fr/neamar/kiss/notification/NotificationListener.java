@@ -282,28 +282,41 @@ public class NotificationListener extends NotificationListenerService {
                 isPermanentForHistory(sbn), shortcutId, userSerial, routeUri,
                 pendingIntentToken, locusId);
         if (historyEnabled) {
-            autoRebindStaleRecords(sbn.getPackageName(), id, sbn.getPostTime(), title,
-                    shortcutId, routeUri, pendingIntentToken, locusId);
+            autoRebindStaleRecordsAsync(sbn.getPackageName(), id, sbn.getPostTime(), shortcutId,
+                    routeUri, pendingIntentToken, locusId);
         }
     }
 
     /**
      * Repair previously saved history rows that lost their exact destination once a matching live
-     * notification becomes available again, instead of leaving them permanently stale. The lookup
-     * is limited to a handful of same-package/title-or-shortcut candidates already missing an
-     * exact target, so this adds no meaningful battery/RAM cost to ordinary notification posting.
+     * notification becomes available again, instead of leaving them permanently stale. Matching is
+     * restricted to app-published shortcut identity (see SmartStateStore.findRebindCandidates) and
+     * the lookup/write both run off the calling thread so a slow or failing repair can never delay
+     * or crash notification posting, which is on the hot path for Vertical Cards.
      */
-    private void autoRebindStaleRecords(String packageName, String freshId, long postTime,
-                                        String title, String shortcutId, String routeUri,
-                                        String pendingIntentToken, String locusId) {
-        if (TextUtils.isEmpty(packageName)) return;
-        List<NotificationHistoryRecord> candidates = SmartStateStore.findRebindCandidates(
-                this, packageName, shortcutId, title, freshId, 5);
-        for (NotificationHistoryRecord candidate : candidates) {
-            if (SavedNotificationDestinationResolver.hasExactTarget(this, candidate)) continue;
-            applyRebind(candidate, freshId, postTime, shortcutId, routeUri, pendingIntentToken,
-                    locusId);
-        }
+    private void autoRebindStaleRecordsAsync(String packageName, String freshId, long postTime,
+                                             String shortcutId, String routeUri,
+                                             String pendingIntentToken, String locusId) {
+        if (TextUtils.isEmpty(packageName) || TextUtils.isEmpty(shortcutId)) return;
+        Context appContext = getApplicationContext();
+        RECONCILE_EXECUTOR.execute(() -> {
+            try {
+                List<NotificationHistoryRecord> candidates = SmartStateStore.findRebindCandidates(
+                        appContext, packageName, shortcutId, freshId, 5);
+                for (NotificationHistoryRecord candidate : candidates) {
+                    if (SavedNotificationDestinationResolver.hasExactTarget(appContext, candidate)) {
+                        continue;
+                    }
+                    applyRebind(candidate, freshId, postTime, shortcutId, routeUri,
+                            pendingIntentToken, locusId);
+                    SmartStateStore.rebindNotificationDestination(appContext, candidate.dbId,
+                            candidate.notificationId, candidate.postTime, candidate.shortcutId,
+                            candidate.routeUri, candidate.pendingIntentToken, candidate.locusId);
+                }
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Unable to auto-repair a stale notification route", e);
+            }
+        });
     }
 
     private static void applyRebind(NotificationHistoryRecord record, String freshId, long postTime,

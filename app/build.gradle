@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.102 - durable notification routes with Fix notification link
-        versionCode 530
-        versionName "3.30.102"
+        // Smart S Launcher 3.30.103 - harden auto-rebind against Vertical Cards instability
+        versionCode 531
+        versionName "3.30.103"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
