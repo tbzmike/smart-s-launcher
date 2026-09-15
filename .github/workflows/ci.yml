@@ -66,26 +66,40 @@ jobs:
           distribution: 'temurin'
           java-version: 21
       - name: Prepare independent history icon sliders
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' && github.event.pull_request.head.sha == 'ebb8097a44d7f57b1745b08d5acbcb2dcb2d8532' }}
-        run: python3 .github/scripts/add_independent_history_icon_sliders.py
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' }}
+        shell: bash
+        run: |
+          if [ -f .github/scripts/add_independent_history_icon_sliders.py ]; then
+            python3 .github/scripts/add_independent_history_icon_sliders.py
+          else
+            echo 'Slider preparation script already removed; source is already prepared.'
+          fi
       - name: Verify prepared source
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' && github.event.pull_request.head.sha == 'ebb8097a44d7f57b1745b08d5acbcb2dcb2d8532' }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' }}
         shell: bash
         run: |
           set -e
-          grep -q 'Notification / profile picture size (%)' app/src/main/res/xml/preferences.xml
-          grep -q 'Shortcut icon size (%)' app/src/main/res/xml/preferences.xml
-          grep -q 'Settings / feature icon size (%)' app/src/main/res/xml/preferences.xml
-          grep -q 'Contact / avatar picture size (%)' app/src/main/res/xml/preferences.xml
-          grep -q 'smart-list-notification-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
-          grep -q 'smart-list-shortcut-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
-          grep -q 'smart-list-feature-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
-          grep -q 'smart-list-contact-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
-          grep -q '3.30.107' app/build.gradle
+          if [ -f .github/scripts/add_independent_history_icon_sliders.py ]; then
+            grep -q 'Notification / profile picture size (%)' app/src/main/res/xml/preferences.xml
+            grep -q 'Shortcut icon size (%)' app/src/main/res/xml/preferences.xml
+            grep -q 'Settings / feature icon size (%)' app/src/main/res/xml/preferences.xml
+            grep -q 'Contact / avatar picture size (%)' app/src/main/res/xml/preferences.xml
+            grep -q 'smart-list-notification-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+            grep -q 'smart-list-shortcut-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+            grep -q 'smart-list-feature-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+            grep -q 'smart-list-contact-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+            grep -q '3.30.107' app/build.gradle
+          else
+            grep -q 'smart-list-notification-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+            grep -q 'smart-list-shortcut-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+            grep -q 'smart-list-feature-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+            grep -q 'smart-list-contact-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+            grep -q '3.30.107' app/build.gradle
+          fi
       - name: Build APKs
         run: bash ./gradlew assembleDebug assembleRelease --stacktrace
       - name: Unit tests on prepared source
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' && github.event.pull_request.head.sha == 'ebb8097a44d7f57b1745b08d5acbcb2dcb2d8532' }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' }}
         run: bash ./gradlew test --stacktrace
       - name: Upload debug APK
         if: ${{ always() }}
@@ -102,15 +116,19 @@ jobs:
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           archive: false
       - name: Commit prepared source and restore original CI
-        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' && github.event.pull_request.head.sha == 'ebb8097a44d7f57b1745b08d5acbcb2dcb2d8532' }}
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/icon-size-controls-ui4' }}
         shell: bash
         run: |
           set -e
+          if [ ! -f .github/scripts/add_independent_history_icon_sliders.py ]; then
+            echo 'No temporary preparation script remains; source commit already exists.'
+            exit 0
+          fi
           git show 234f086dec7691a470e10c98a7770d5940a8e14b:.github/workflows/ci.yml > .github/workflows/ci.yml
           rm -f .github/scripts/add_independent_history_icon_sliders.py
           rm -f .github/workflows/add-manual-history-icon-sliders.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/main/res/xml/preferences.xml app/src/main/res/xml/preferences_smart_features.xml app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java app/build.gradle .github/scripts/add_independent_history_icon_sliders.py .github/workflows/add-manual-history-icon-sliders.yml .github/workflows/ci.yml
+          git add app/src/main/res/xml/preferences.xml app/src/main/res/xml/preferences_smart_features.xml app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java app/build.gradle .github/scripts/add_independent_history_icon_sliders.py .github/workflows/add-manual-history-icon-sizing.yml .github/workflows/ci.yml
           git commit -m 'Expose independent history icon sliders'
           git push origin HEAD:${{ github.head_ref }}
