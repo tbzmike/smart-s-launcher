@@ -3,9 +3,8 @@ package fr.neamar.kiss.forwarder;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.AnimationDrawable;
 import android.graphics.drawable.GradientDrawable;
-import android.os.Handler;
-import android.os.Looper;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.text.format.DateUtils;
@@ -23,9 +22,13 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.LaunchHistoryStatsStore;
@@ -44,9 +47,10 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
  * Makes notification-history behavior explicit on the custom Vertical Cards renderer and enriches
  * the existing between-card label with launch activity from the KISS history table.
  *
- * Decoration is applied only when cards are created/rebuilt. It must never run from a permanent
- * global-layout listener because that would recursively walk every card during ordinary layouts
- * and scrolling, and it could overwrite independent metadata such as today's usage time.
+ * Decoration is applied only when cards are created/rebuilt. Unread notifications keep the
+ * original orange/white flashing attention border, but each border now uses a tiny AnimationDrawable
+ * overlay instead of a renderer-wide Handler loop. Card geometry is updated only when layout size
+ * actually changes, keeping notification animation out of the scrolling hot path.
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
@@ -55,47 +59,27 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String DETAILS_TOGGLE_DESCRIPTION = "Show card details";
     private static final float BOTTOM_SWIPE_THRESHOLD_DP = 28f;
     private static final float BOTTOM_SWIPE_AXIS_BIAS = 1.15f;
-    private static final long ATTENTION_PULSE_MS = 550L;
+    private static final int ATTENTION_PULSE_MS = 550;
 
     private final SmartCardListForwarder smartCardListForwarder;
-    private final Handler attentionHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService launchStatsExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "smart-s-card-launch-stats");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
+    private final AtomicBoolean launchStatsRefreshInFlight = new AtomicBoolean(false);
     private final List<AttentionBorder> attentionBorders = new ArrayList<>();
     private ViewGroup column;
     private ScrollView scroller;
     private Map<String, LaunchHistoryStatsStore.Stats> launchStats = Collections.emptyMap();
-    private boolean attentionBright;
+    private boolean launchStatsRefreshRequested;
+    private boolean paused;
+    private volatile boolean destroyed;
 
     private float bottomSwipeDownRawX;
     private float bottomSwipeDownRawY;
     private boolean bottomSwipeStartedOnCard;
     private boolean bottomSwipeTriggered;
-
-    private final Runnable attentionPulse = new Runnable() {
-        @Override
-        public void run() {
-            attentionBright = !attentionBright;
-            for (int i = attentionBorders.size() - 1; i >= 0; i--) {
-                AttentionBorder binding = attentionBorders.get(i);
-                if (!binding.card.isAttachedToWindow()
-                        || !NotificationTimelineState.isUnread(mainActivity, binding.notificationId)) {
-                    binding.card.getOverlay().remove(binding.border);
-                    attentionBorders.remove(i);
-                    continue;
-                }
-                binding.border.setBounds(0, 0,
-                        Math.max(1, binding.card.getWidth()), Math.max(1, binding.card.getHeight()));
-                int stroke = attentionBright ? dp(4) : dp(2);
-                int color = attentionBright
-                        ? Color.argb(255, 255, 255, 255)
-                        : Color.argb(235, 255, 176, 32);
-                binding.border.setStroke(stroke, color);
-                binding.card.invalidate();
-            }
-            if (!attentionBorders.isEmpty()) {
-                attentionHandler.postDelayed(this, ATTENTION_PULSE_MS);
-            }
-        }
-    };
 
     VerticalCardNotificationHistoryForwarder(MainActivity activity,
                                              SmartCardListForwarder smartCardListForwarder) {
@@ -103,17 +87,21 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         this.smartCardListForwarder = smartCardListForwarder;
     }
 
-    void onCreate() { refresh(); }
-    void onResume() { refresh(); }
+    void onCreate() { paused = false; refresh(); }
+    void onResume() { paused = false; refresh(); }
     void onDataSetChanged() { refresh(); }
     void onConfigurationChanged() { refresh(); }
 
     void onPause() {
+        paused = true;
         resetBottomSwipe();
         resetAttentionBorders();
     }
 
     void onDestroy() {
+        destroyed = true;
+        paused = true;
+        launchStatsExecutor.shutdownNow();
         resetBottomSwipe();
         resetAttentionBorders();
         column = null;
@@ -127,6 +115,10 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void refresh() {
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(this::refresh);
+            return;
+        }
         if (!isEnabled()) {
             launchStats = Collections.emptyMap();
             column = null;
@@ -135,9 +127,38 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             resetAttentionBorders();
             return;
         }
-        launchStats = LaunchHistoryStatsStore.getAll(mainActivity);
         resolveViews();
-        if (column != null) column.post(this::apply);
+        if (!paused && column != null) column.post(this::apply);
+        refreshLaunchStatsAsync();
+    }
+
+    private void refreshLaunchStatsAsync() {
+        if (destroyed || paused || !isEnabled()) return;
+        if (!launchStatsRefreshInFlight.compareAndSet(false, true)) {
+            launchStatsRefreshRequested = true;
+            return;
+        }
+        final android.content.Context appContext = mainActivity.getApplicationContext();
+        launchStatsExecutor.execute(() -> {
+            Map<String, LaunchHistoryStatsStore.Stats> fresh;
+            try {
+                fresh = LaunchHistoryStatsStore.getAll(appContext);
+            } catch (RuntimeException ignored) {
+                fresh = Collections.emptyMap();
+            }
+            final Map<String, LaunchHistoryStatsStore.Stats> result = fresh;
+            mainActivity.runOnUiThread(() -> {
+                launchStatsRefreshInFlight.set(false);
+                if (destroyed) return;
+                launchStats = result;
+                resolveViews();
+                if (!paused && column != null) column.post(this::apply);
+                if (launchStatsRefreshRequested) {
+                    launchStatsRefreshRequested = false;
+                    refreshLaunchStatsAsync();
+                }
+            });
+        });
     }
 
     private void resolveViews() {
@@ -150,21 +171,36 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void apply() {
-        if (!isEnabled() || column == null || mainActivity.adapter == null) return;
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(this::apply);
+            return;
+        }
+        if (paused || destroyed || !isEnabled() || column == null || mainActivity.adapter == null) return;
         resetAttentionBorders();
-        int count = Math.min(column.getChildCount(), mainActivity.adapter.getCount());
+        Map<String, Result<?>> resultsByPojoId = new HashMap<>();
+        for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
+            if (result == null) continue;
+            resultsByPojoId.put(result.getPojoId(), result);
+        }
+
+        int count = column.getChildCount();
         for (int position = 0; position < count; position++) {
             View wrapper = column.getChildAt(position);
-            Result<?> result = mainActivity.adapter.getItem(position);
-            final int adapterPosition = position;
+            Object wrapperId = wrapper.getTag();
+            if (!(wrapperId instanceof String)) continue;
+            String stableId = (String) wrapperId;
+            Result<?> result = resultsByPojoId.get(stableId);
+            if (result == null) continue;
 
             applyLaunchStats(wrapper, result);
-            applyEasyIconTap(wrapper, result, adapterPosition);
+            applyEasyIconTap(wrapper, result, stableId);
 
             NotificationPojo notification = result.getPojo() instanceof NotificationPojo
                     ? (NotificationPojo) result.getPojo() : null;
             if (notification != null
-                    && notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
+                    && notification.exactNotificationId.startsWith(
+                    NotificationListener.NOTIFICATION_SCHEME)) {
                 applyNotificationTimelinePreview(wrapper, notification);
                 attachAttentionBorder(wrapper, notification);
             }
@@ -172,27 +208,31 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             applyBottomSwipeTouchRecursively(wrapper);
 
             View.OnLongClickListener historyFirstLongPress = v -> {
+                int currentPosition = resolveAdapterPosition(stableId);
+                if (currentPosition < 0) return false;
                 if (UiEditLock.isLocked(mainActivity)
-                        && mainActivity.adapter.showNotificationHistoryIfAvailable(adapterPosition, v)) {
+                        && mainActivity.adapter.showNotificationHistoryIfAvailable(currentPosition, v)) {
                     return true;
                 }
-                mainActivity.adapter.onLongClick(adapterPosition, v);
+                mainActivity.adapter.onLongClick(currentPosition, v);
                 return true;
             };
             applyLongPressRecursively(wrapper, historyFirstLongPress);
 
             if (notification != null) {
                 View.OnClickListener notificationClick = v -> {
-                    if (notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
-                        NotificationTimelineState.markRead(mainActivity, notification.id);
-                        clearAttentionFor(notification.id);
+                    if (notification.exactNotificationId.startsWith(
+                            NotificationListener.NOTIFICATION_SCHEME)) {
+                        NotificationTimelineState.markRead(mainActivity,
+                                notification.exactNotificationId);
+                        clearAttentionFor(notification.exactNotificationId);
                     }
-                    mainActivity.adapter.onClick(adapterPosition, v);
+                    int currentPosition = resolveAdapterPosition(stableId);
+                    if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, v);
                 };
                 applyNotificationClickRecursively(wrapper, notificationClick);
             }
         }
-        startAttentionPulse();
     }
 
     /** Replace generic card metadata with the exact individual notification preview. */
@@ -269,24 +309,49 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     }
 
     private void attachAttentionBorder(View wrapper, NotificationPojo notification) {
-        if (!NotificationTimelineState.isUnread(mainActivity, notification.id)) return;
+        if (!NotificationTimelineState.isUnread(
+                mainActivity, notification.exactNotificationId)) return;
         View card = cardView(wrapper);
         if (card == null) return;
 
-        GradientDrawable border = new GradientDrawable();
-        border.setColor(Color.TRANSPARENT);
-        border.setCornerRadius(dp(22));
-        border.setStroke(dp(2), Color.argb(235, 255, 176, 32));
-        AttentionBorder binding = new AttentionBorder(card, border, notification.id);
+        AnimationDrawable border = new AnimationDrawable();
+        border.setOneShot(false);
+        border.addFrame(createAttentionFrame(dp(2), Color.argb(235, 255, 176, 32)),
+                ATTENTION_PULSE_MS);
+        border.addFrame(createAttentionFrame(dp(4), Color.WHITE), ATTENTION_PULSE_MS);
+
+        View.OnLayoutChangeListener layoutListener = (v, left, top, right, bottom,
+                                                       oldLeft, oldTop, oldRight, oldBottom) -> {
+            int width = right - left;
+            int height = bottom - top;
+            if (width == oldRight - oldLeft && height == oldBottom - oldTop) return;
+            updateAttentionBounds(v, border);
+        };
+        AttentionBorder binding = new AttentionBorder(
+                card, border, notification.exactNotificationId, layoutListener);
         attentionBorders.add(binding);
+        card.addOnLayoutChangeListener(layoutListener);
         card.post(() -> {
             if (!attentionBorders.contains(binding)
                     || !card.isAttachedToWindow()
-                    || !NotificationTimelineState.isUnread(mainActivity, notification.id)) return;
-            border.setBounds(0, 0, Math.max(1, card.getWidth()), Math.max(1, card.getHeight()));
+                    || !NotificationTimelineState.isUnread(
+                    mainActivity, notification.exactNotificationId)) return;
+            updateAttentionBounds(card, border);
             card.getOverlay().add(border);
-            card.invalidate();
+            border.start();
         });
+    }
+
+    private GradientDrawable createAttentionFrame(int strokeWidth, int strokeColor) {
+        GradientDrawable frame = new GradientDrawable();
+        frame.setColor(Color.TRANSPARENT);
+        frame.setCornerRadius(dp(22));
+        frame.setStroke(strokeWidth, strokeColor);
+        return frame;
+    }
+
+    private void updateAttentionBounds(View card, AnimationDrawable border) {
+        border.setBounds(0, 0, Math.max(1, card.getWidth()), Math.max(1, card.getHeight()));
     }
 
     private View cardView(View wrapper) {
@@ -295,32 +360,24 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         return group.getChildCount() > 0 ? group.getChildAt(0) : null;
     }
 
-    private void startAttentionPulse() {
-        attentionHandler.removeCallbacks(attentionPulse);
-        if (attentionBorders.isEmpty()) return;
-        attentionBright = false;
-        attentionHandler.post(attentionPulse);
-    }
-
     private void clearAttentionFor(String notificationId) {
         for (int i = attentionBorders.size() - 1; i >= 0; i--) {
             AttentionBorder binding = attentionBorders.get(i);
             if (!TextUtils.equals(notificationId, binding.notificationId)) continue;
-            binding.card.getOverlay().remove(binding.border);
-            binding.card.invalidate();
+            removeAttentionBinding(binding);
             attentionBorders.remove(i);
         }
-        if (attentionBorders.isEmpty()) attentionHandler.removeCallbacks(attentionPulse);
     }
 
     private void resetAttentionBorders() {
-        attentionHandler.removeCallbacks(attentionPulse);
-        for (AttentionBorder binding : attentionBorders) {
-            binding.card.getOverlay().remove(binding.border);
-            binding.card.invalidate();
-        }
+        for (AttentionBorder binding : attentionBorders) removeAttentionBinding(binding);
         attentionBorders.clear();
-        attentionBright = false;
+    }
+
+    private void removeAttentionBinding(AttentionBorder binding) {
+        binding.border.stop();
+        binding.card.removeOnLayoutChangeListener(binding.layoutListener);
+        binding.card.getOverlay().remove(binding.border);
     }
 
     private void applyBottomSwipeTouchRecursively(View view) {
@@ -398,12 +455,13 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         bottomSwipeTriggered = false;
     }
 
-    private void applyEasyIconTap(View wrapper, Result<?> result, int adapterPosition) {
+    private void applyEasyIconTap(View wrapper, Result<?> result, String stableId) {
         if (wrapper == null || result == null || result.getPojo() == null) return;
         Pojo pojo = result.getPojo();
         if (!(pojo instanceof AppPojo)
                 && !(pojo instanceof ShortcutPojo)
-                && !(pojo instanceof DisabledAppPojo)) {
+                && !(pojo instanceof DisabledAppPojo)
+                && !(pojo instanceof NotificationPojo)) {
             return;
         }
 
@@ -411,7 +469,15 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         if (icon == null) return;
 
         icon.setClickable(true);
-        icon.setOnClickListener(v -> mainActivity.adapter.onClick(adapterPosition, wrapper));
+        icon.setOnClickListener(v -> {
+            int currentPosition = resolveAdapterPosition(stableId);
+            if (currentPosition < 0) return;
+            if (pojo instanceof NotificationPojo) {
+                mainActivity.adapter.openNotificationApp(currentPosition, icon);
+            } else {
+                mainActivity.adapter.onClick(currentPosition, wrapper);
+            }
+        });
 
         if (!(icon.getParent() instanceof ViewGroup)) return;
         ViewGroup touchParent = (ViewGroup) icon.getParent();
@@ -426,6 +492,15 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             hit.bottom += extra;
             touchParent.setTouchDelegate(new TouchDelegate(hit, icon));
         });
+    }
+
+    private int resolveAdapterPosition(String stableId) {
+        if (mainActivity.adapter == null || TextUtils.isEmpty(stableId)) return -1;
+        for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
+            if (result != null && TextUtils.equals(stableId, result.getPojoId())) return position;
+        }
+        return -1;
     }
 
     private ImageView findFirstVisibleImage(View view) {
@@ -497,6 +572,8 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
     private void applyNotificationClickRecursively(View view, View.OnClickListener listener) {
         if (view == null || view instanceof Button || isDetailsToggle(view)) return;
+        // The app icon has its own normal-launch action. Never replace it with the message route.
+        if (view.getId() == fr.neamar.kiss.R.id.item_notification_icon) return;
         view.setClickable(true);
         view.setOnClickListener(listener);
         if (!(view instanceof ViewGroup)) return;
@@ -512,13 +589,16 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
 
     private static final class AttentionBorder {
         final View card;
-        final GradientDrawable border;
+        final AnimationDrawable border;
         final String notificationId;
+        final View.OnLayoutChangeListener layoutListener;
 
-        AttentionBorder(View card, GradientDrawable border, String notificationId) {
+        AttentionBorder(View card, AnimationDrawable border, String notificationId,
+                        View.OnLayoutChangeListener layoutListener) {
             this.card = card;
             this.border = border;
             this.notificationId = notificationId;
+            this.layoutListener = layoutListener;
         }
     }
 }

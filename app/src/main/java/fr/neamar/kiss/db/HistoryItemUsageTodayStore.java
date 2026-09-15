@@ -42,6 +42,7 @@ public final class HistoryItemUsageTodayStore {
     public static Snapshot getToday(@NonNull Context context,
                                     @NonNull Map<String, String> targetPackageByHistoryId,
                                     boolean usageAccessAvailable) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         if (!usageAccessAvailable) {
             return new Snapshot(false, Collections.emptyMap());
         }
@@ -75,6 +76,8 @@ public final class HistoryItemUsageTodayStore {
             return new Snapshot(false, Collections.emptyMap());
         }
         return new Snapshot(true, Collections.unmodifiableMap(durationByHistoryId));
+
+        });
     }
 
     @NonNull
@@ -83,8 +86,7 @@ public final class HistoryItemUsageTodayStore {
             @NonNull Map<String, String> targetPackageByHistoryId,
             long start) {
         HashMap<String, List<Launch>> launchesByPackage = new HashMap<>();
-        android.database.sqlite.SQLiteDatabase db =
-                new DB(context.getApplicationContext()).getReadableDatabase();
+        android.database.sqlite.SQLiteDatabase db = DatabaseRecovery.getDatabase(context);
         String sql = "SELECT record, timeStamp FROM history "
                 + "WHERE timeStamp >= ? ORDER BY timeStamp ASC";
         try (android.database.Cursor cursor = db.rawQuery(

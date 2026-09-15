@@ -3,6 +3,7 @@ package fr.neamar.kiss.ui;
 import android.content.Context;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
+import android.util.LruCache;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -11,12 +12,15 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 
 import java.util.Date;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.TimeZone;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
@@ -30,20 +34,17 @@ import fr.neamar.kiss.result.Result;
  */
 public final class UniversalHistoryTimestamp {
     private static final String VIEW_TAG = "smart_s_universal_history_timestamp";
-    private static final long STATS_REFRESH_MS = 30_000L;
     private static final int MAX_FIRST_SEEN_ENTRIES = 512;
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static final ConcurrentHashMap<String, Long> FIRST_SEEN = new ConcurrentHashMap<>();
+    private static final LruCache<String, CharSequence> FORMATTED_CACHE = new LruCache<>(512);
+    private static final WeakHashMap<TextView, Boolean> STYLED_VIEWS = new WeakHashMap<>();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
-    private static volatile long statsLoadedAt;
-    private static volatile boolean loadInFlight;
 
     private UniversalHistoryTimestamp() {}
 
     public static void bind(@NonNull View row, @NonNull Result<?> result, @NonNull Context context) {
         if (!isHistorySurface(context)) {
-            TextView existing = findTaggedTimestamp(row);
-            if (existing != null) existing.setVisibility(View.GONE);
+            clearTimestamp(row);
             return;
         }
 
@@ -55,16 +56,29 @@ public final class UniversalHistoryTimestamp {
 
         LaunchStatsProvider.LaunchStats stats = resolveStats(pojo);
         timestampView.setVisibility(View.VISIBLE);
-        timestampView.setText(formatTimestamp(context, resolveTimestamp(pojo, stats), stats));
-        SmartTextAppearance.applyHistoryMetadata(timestampView);
-
-        ensureStatsLoaded(row, result, context);
+        long resolvedTimestamp = resolveTimestamp(pojo, stats);
+        timestampView.setText(formatTimestampCached(context, pojo, resolvedTimestamp, stats));
+        if (!STYLED_VIEWS.containsKey(timestampView)) {
+            SmartTextAppearance.applyHistoryMetadata(timestampView);
+            STYLED_VIEWS.put(timestampView, Boolean.TRUE);
+        }
     }
 
-    private static boolean isHistorySurface(Context context) {
+    /** True only while launcher rows belong to the normal empty-query History/Home surface. */
+    public static boolean isHistorySurface(@NonNull Context context) {
         if (!(context instanceof MainActivity)) return false;
         MainActivity activity = (MainActivity) context;
         return activity.searchEditText == null || activity.searchEditText.length() == 0;
+    }
+
+    private static void clearTimestamp(View row) {
+        TextView existing = findTimestamp(row);
+        if (existing == null) return;
+        // List rows are recycled across History and QUERY. Hiding the metadata view alone leaves
+        // its previous enriched text attached to that recycled row; an asynchronous History
+        // enrichment finishing after search starts can then append the same suffix again and again.
+        existing.setText(null);
+        existing.setVisibility(View.GONE);
     }
 
     private static LaunchStatsProvider.LaunchStats resolveStats(Pojo pojo) {
@@ -97,15 +111,47 @@ public final class UniversalHistoryTimestamp {
     }
 
     public static void invalidateStats() {
-        statsLoadedAt = 0L;
+        launchStats = null;
+        synchronized (FORMATTED_CACHE) {
+            FORMATTED_CACHE.evictAll();
+        }
+    }
+
+    /** Supplies one bulk stats snapshot loaded by the scroll-idle history enrichment pipeline. */
+    public static void updateStats(Map<String, LaunchStatsProvider.LaunchStats> stats) {
+        launchStats = stats == null
+                ? Collections.emptyMap()
+                : Collections.unmodifiableMap(new HashMap<>(stats));
+        synchronized (FORMATTED_CACHE) {
+            FORMATTED_CACHE.evictAll();
+        }
+    }
+
+    private static CharSequence formatTimestampCached(
+            Context context, Pojo pojo, long timestamp, LaunchStatsProvider.LaunchStats stats) {
+        int interactionsToday = stats == null ? 0 : Math.max(0, stats.launchesToday);
+        String historyId = pojo.getHistoryId();
+        if (TextUtils.isEmpty(historyId)) historyId = pojo.id;
+        String locale = context.getResources().getConfiguration().locale.toLanguageTag();
+        String key = historyId + '|' + timestamp + '|' + interactionsToday + '|'
+                + DateFormat.is24HourFormat(context) + '|' + locale + '|'
+                + TimeZone.getDefault().getID();
+        synchronized (FORMATTED_CACHE) {
+            CharSequence cached = FORMATTED_CACHE.get(key);
+            if (cached != null) return cached;
+        }
+        CharSequence formatted = formatTimestamp(context, timestamp, interactionsToday);
+        synchronized (FORMATTED_CACHE) {
+            FORMATTED_CACHE.put(key, formatted);
+        }
+        return formatted;
     }
 
     private static CharSequence formatTimestamp(Context context, long timestamp,
-                                                LaunchStatsProvider.LaunchStats stats) {
+                                                int interactionsToday) {
         Date date = new Date(timestamp);
         java.text.DateFormat dateFormat = DateFormat.getMediumDateFormat(context);
         java.text.DateFormat timeFormat = DateFormat.getTimeFormat(context);
-        int interactionsToday = stats == null ? 0 : Math.max(0, stats.launchesToday);
         return new StringBuilder()
                 .append(dateFormat.format(date))
                 .append("  •  ")
@@ -115,32 +161,21 @@ public final class UniversalHistoryTimestamp {
                 .append(interactionsToday == 1 ? " interaction today" : " interactions today");
     }
 
-    private static void ensureStatsLoaded(View row, Result<?> result, Context context) {
-        long now = System.currentTimeMillis();
-        boolean fresh = launchStats != null && now - statsLoadedAt < STATS_REFRESH_MS;
-        if (fresh || loadInFlight) return;
-        synchronized (UniversalHistoryTimestamp.class) {
-            now = System.currentTimeMillis();
-            fresh = launchStats != null && now - statsLoadedAt < STATS_REFRESH_MS;
-            if (fresh || loadInFlight) return;
-            loadInFlight = true;
-        }
-        Context appContext = context.getApplicationContext();
-        EXECUTOR.execute(() -> {
-            Map<String, LaunchStatsProvider.LaunchStats> loaded = LaunchStatsProvider.loadAll(appContext);
-            launchStats = loaded;
-            statsLoadedAt = System.currentTimeMillis();
-            loadInFlight = false;
-            row.post(() -> {
-                if (row.isAttachedToWindow()) bind(row, result, context);
-            });
-        });
-    }
-
     private static TextView ensureTimestampView(View row, Context context) {
+        // Every current history row layout already exposes this stable slot. Reusing it prevents
+        // a second metadata TextView from being appended beside the enrichment metadata and keeps
+        // row measurement/recycling deterministic.
+        View stable = row.findViewById(R.id.item_history_meta);
+        if (stable instanceof TextView) {
+            TextView timestamp = (TextView) stable;
+            timestamp.setTag(VIEW_TAG);
+            return timestamp;
+        }
+
         TextView existing = findTaggedTimestamp(row);
         if (existing != null) return existing;
 
+        // Compatibility fallback for a custom/legacy result layout without item_history_meta.
         LinearLayout container = findBestVerticalTextContainer(row);
         if (container == null) return null;
 
@@ -155,6 +190,12 @@ public final class UniversalHistoryTimestamp {
         params.topMargin = dp(context, 2);
         container.addView(timestamp, params);
         return timestamp;
+    }
+
+    private static TextView findTimestamp(View row) {
+        View stable = row.findViewById(R.id.item_history_meta);
+        if (stable instanceof TextView) return (TextView) stable;
+        return findTaggedTimestamp(row);
     }
 
     private static TextView findTaggedTimestamp(View view) {

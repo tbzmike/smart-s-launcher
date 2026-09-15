@@ -11,7 +11,9 @@ import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -23,7 +25,9 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
+import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
@@ -47,11 +51,11 @@ public class SearchHandler {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ThreadPoolExecutor historySeedExecutor = new ThreadPoolExecutor(
             1, 1, 15L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1),
-            runnable -> new Thread(runnable, "smart-s-history-seed"),
+            runnable -> lowPriorityThread(runnable, "smart-s-history-seed"),
             new ThreadPoolExecutor.DiscardOldestPolicy());
     private final ThreadPoolExecutor historyPreviewExecutor = new ThreadPoolExecutor(
             1, 1, 15L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1),
-            runnable -> new Thread(runnable, "smart-s-history-preview"),
+            runnable -> lowPriorityThread(runnable, "smart-s-history-preview"),
             new ThreadPoolExecutor.DiscardOldestPolicy());
     private final AtomicLong searchGeneration = new AtomicLong();
     private final AtomicLong completedSearchGeneration = new AtomicLong(-1L);
@@ -60,6 +64,12 @@ public class SearchHandler {
     private SearchHandler() {
         historySeedExecutor.allowCoreThreadTimeOut(true);
         historyPreviewExecutor.allowCoreThreadTimeOut(true);
+    }
+
+    private static Thread lowPriorityThread(Runnable runnable, String name) {
+        Thread thread = new Thread(runnable, name);
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
     }
 
     /** Last search type, needed for refresh. */
@@ -76,6 +86,10 @@ public class SearchHandler {
      * retained; these are provider-owned records, not Result/View/Drawable objects.
      */
     private volatile List<Pojo> historyQuerySeed = Collections.emptyList();
+
+    /** Ready-to-render Home Results retained while QUERY temporarily owns the visible adapter. */
+    private volatile List<Result<?>> homeResultSnapshot = Collections.emptyList();
+    private volatile Result<?> pendingLaunchedResult;
 
     /**
      * Create search task and execute. Query searches publish a small in-memory history preview on a
@@ -111,6 +125,37 @@ public class SearchHandler {
         }
 
         startSearch(type, activity, query, isRefresh, generation);
+    }
+
+    /**
+     * Return from an externally launched QUERY to Home without waiting for the cancelled provider
+     * scan to release the single full-search worker. Full provider/history scans remain serialized;
+     * only an already-resolved History snapshot is published immediately.
+     */
+    public void restoreHomeHistory(@NonNull MainActivity activity) {
+        final long generation = searchGeneration.incrementAndGet();
+        cancelPendingQuery();
+        cancelRunningSearch();
+
+        // The renderer must identify the immediate snapshot as History before its adapter callback
+        // reaches ForwarderManager/Vertical Cards.
+        lastSearchType = Searcher.Type.HISTORY;
+        lastSearchQuery = null;
+
+        boolean restoredWarmHome = publishWarmHomeResultSnapshot(activity, generation);
+        if (!restoredWarmHome) {
+            publishHomeHistoryPreview(activity, generation, historyQuerySeed);
+            refreshHistorySeedAndPublish(activity, generation);
+        } else {
+            // The ready Result snapshot is authoritative for the first frame. Refresh only the
+            // lightweight seed in the background; the complete HistorySearcher below will publish
+            // a real dataset change only if history actually differs.
+            refreshHistorySeed(activity);
+        }
+
+        // Keep the complete HistorySearcher on the normal serialized worker. This avoids racing a
+        // still-unwinding provider QUERY over shared provider-owned Pojo instances/relevance fields.
+        startSearch(Searcher.Type.HISTORY, activity, null, false, generation);
     }
 
     private void startSearch(@NonNull Searcher.Type type, @NonNull MainActivity activity,
@@ -197,6 +242,144 @@ public class SearchHandler {
         });
     }
 
+    /** Refresh the lightweight History seed independently and publish it only while still current. */
+    private void refreshHistorySeedAndPublish(@NonNull MainActivity activity, long generation) {
+        final WeakReference<MainActivity> activityRef = new WeakReference<>(activity);
+        historySeedExecutor.execute(() -> {
+            if (generation != searchGeneration.get()) return;
+            MainActivity currentActivity = activityRef.get();
+            if (currentActivity == null) return;
+
+            List<Pojo> seed = loadHistorySeed(currentActivity);
+            if (generation != searchGeneration.get()) return;
+            historyQuerySeed = seed.isEmpty() ? Collections.emptyList() : seed;
+
+            mainHandler.post(() -> {
+                if (generation != searchGeneration.get()
+                        || completedSearchGeneration.get() == generation) {
+                    return;
+                }
+                MainActivity current = activityRef.get();
+                if (current == null || current.isFinishing()) return;
+                publishHomeHistoryPreview(current, generation, historyQuerySeed);
+            });
+        });
+    }
+
+    public void rememberHomeResults(@NonNull List<Result<?>> results) {
+        if (lastSearchType != Searcher.Type.HISTORY) return;
+        List<Result<?>> safe = new ArrayList<>(results.size());
+        for (Result<?> result : results) {
+            if (canRetainWarmResult(result)) safe.add(result);
+        }
+        homeResultSnapshot = Collections.unmodifiableList(safe);
+    }
+
+    public void rememberLaunchedResult(@NonNull Result<?> result) {
+        if (lastSearchType == Searcher.Type.HISTORY || !canRetainWarmResult(result)) return;
+        pendingLaunchedResult = result;
+    }
+
+    private boolean canRetainWarmResult(Result<?> result) {
+        return result instanceof fr.neamar.kiss.result.AppResult
+                || result instanceof fr.neamar.kiss.result.ShortcutsResult
+                || result instanceof fr.neamar.kiss.result.SettingsResult
+                || result instanceof fr.neamar.kiss.result.PhoneResult
+                || result instanceof fr.neamar.kiss.result.CommunicationResult;
+    }
+
+    private boolean publishWarmHomeResultSnapshot(@NonNull MainActivity activity, long generation) {
+        if (generation != searchGeneration.get() || activity.adapter == null || activity.isFinishing()) {
+            return false;
+        }
+
+        LinkedHashMap<String, Result<?>> readyById = new LinkedHashMap<>();
+        for (Result<?> result : homeResultSnapshot) {
+            if (result == null || result.getPojo() == null) continue;
+            readyById.put(resultKey(result.getPojo()), result);
+        }
+        Result<?> launched = pendingLaunchedResult;
+        pendingLaunchedResult = null;
+        if (launched != null && launched.getPojo() != null) {
+            readyById.put(resultKey(launched.getPojo()), launched);
+        }
+        if (readyById.isEmpty()) return false;
+
+        List<Pojo> seed = new ArrayList<>(readyById.size());
+        for (Result<?> result : readyById.values()) seed.add(result.getPojo());
+        List<Pojo> selected = buildHomeHistoryPreview(activity, seed);
+        if (selected.isEmpty()) return false;
+
+        List<Result<?>> restored = new ArrayList<>(selected.size());
+        for (Pojo pojo : selected) {
+            Result<?> result = readyById.get(resultKey(pojo));
+            if (result != null) restored.add(result);
+        }
+        if (restored.isEmpty()) return false;
+
+        homeResultSnapshot = Collections.unmodifiableList(new ArrayList<>(restored));
+        activity.adapter.updateResults(activity, restored, false, "");
+        return true;
+    }
+
+    private String resultKey(Pojo pojo) {
+        if (pojo == null) return "<null>";
+        return pojo.getClass().getName() + '|' + pojo.id;
+    }
+
+    /** Publish only resolved cached/recent History rows; never start another provider scan here. */
+    private void publishHomeHistoryPreview(@NonNull MainActivity activity, long generation,
+                                           @NonNull List<Pojo> seed) {
+        if (generation != searchGeneration.get() || activity.adapter == null || activity.isFinishing()) {
+            return;
+        }
+
+        List<Pojo> preview = buildHomeHistoryPreview(activity, seed);
+        if (preview.isEmpty()) {
+            // An empty Home is preferable to a stale QUERY tree. The authoritative History search
+            // is already queued and will replace this as soon as the serialized worker is free.
+            activity.adapter.clear();
+            return;
+        }
+        activity.adapter.updateWithPojos(activity, preview, false, "<history>");
+    }
+
+    @NonNull
+    private List<Pojo> buildHomeHistoryPreview(@NonNull MainActivity activity,
+                                               @NonNull List<Pojo> seed) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
+        int maxResults = getConfiguredHistoryResultCount(prefs);
+        if (maxResults <= 0) return Collections.emptyList();
+
+        DataHandler dataHandler = fr.neamar.kiss.KissApplication.getApplication(activity).getDataHandler();
+        Set<String> excluded = new HashSet<>(dataHandler.getExcludedFromHistory());
+        if (prefs.getBoolean("exclude-favorites-history", false)) {
+            for (Pojo favorite : dataHandler.getFavorites()) {
+                if (favorite == null) continue;
+                excluded.add(favorite.id);
+                String historyId = favorite.getHistoryId();
+                if (historyId != null) excluded.add(historyId);
+            }
+        }
+        boolean keepFrozenHistory = prefs.getBoolean("smart-keep-frozen-history", true);
+
+        return HomeHistoryWindow.select(
+                seed,
+                RecentLaunchTracker.getMostRecent(),
+                maxResults,
+                pojo -> pojo == null ? null : pojo.getHistoryId(),
+                pojo -> {
+                    if (pojo == null) return false;
+                    String historyId = pojo.getHistoryId();
+                    if (historyId == null || excluded.contains(historyId) || excluded.contains(pojo.id)) {
+                        return false;
+                    }
+                    return keepFrozenHistory
+                            || !(pojo instanceof AppPojo)
+                            || !((AppPojo) pojo).isDisabled();
+                });
+    }
+
     /**
      * Resolve at most 400 distinct recent history records. DBHelper RECENCY already returns unique
      * record ids; reversing gives the same oldest-to-newest presentation order used by the history
@@ -236,6 +419,17 @@ public class SearchHandler {
             String legacyValue = prefs.getString("number-of-display-elements",
                     String.valueOf(Searcher.DEFAULT_MAX_RESULTS));
             return Math.max(0, Double.valueOf(prefs.getString("number-of-search-results",
+                    legacyValue)).intValue());
+        } catch (NumberFormatException | ClassCastException e) {
+            return Searcher.DEFAULT_MAX_RESULTS;
+        }
+    }
+
+    private int getConfiguredHistoryResultCount(SharedPreferences prefs) {
+        try {
+            String legacyValue = prefs.getString("number-of-display-elements",
+                    String.valueOf(Searcher.DEFAULT_MAX_RESULTS));
+            return Math.max(0, Double.valueOf(prefs.getString("number-of-history-results",
                     legacyValue)).intValue());
         } catch (NumberFormatException | ClassCastException e) {
             return Searcher.DEFAULT_MAX_RESULTS;

@@ -27,7 +27,7 @@ import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
-import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 
 /**
@@ -193,7 +193,8 @@ public final class RichNotificationHistoryDialog {
         private void render() {
             NotificationHistoryRecord record = records.get(index);
             boolean active = record.notificationId != null
-                    && NotificationListener.isNotificationActive(context, record.notificationId);
+                    && NotificationListener.isNotificationActive(
+                    context, record.notificationId, record.postTime);
             String expanded = active
                     ? NotificationListener.getExpandedNotificationText(context, record.notificationId)
                     : record.text;
@@ -306,10 +307,20 @@ public final class RichNotificationHistoryDialog {
             open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                boolean opened = SavedNotificationDestinationResolver.openExact(context, record);
-                if (opened) SmartAnimationEngine.dismissDialog(dialog);
-                else Toast.makeText(context, "Unable to open this exact notification",
-                        Toast.LENGTH_SHORT).show();
+                SavedNotificationDestinationResolver.OpenResult result =
+                        SavedNotificationDestinationResolver.openExactResult(context, record);
+                if (result.accepted()) {
+                    SmartAnimationEngine.dismissDialog(dialog);
+                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
+                    AppReinstallSupport.showUninstalledDialog(
+                            context, record.packageName, record.appName);
+                } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
+                    Toast.makeText(context, "The app could not be re-enabled.",
+                            Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(context, "Direct notification/message link is unavailable.",
+                            Toast.LENGTH_SHORT).show();
+                }
             });
             buttons.addView(open);
             actionArea.addView(buttons);
@@ -318,17 +329,41 @@ public final class RichNotificationHistoryDialog {
         private void addSavedOpenAction(NotificationHistoryRecord record) {
             LinearLayout buttons = new LinearLayout(context);
             buttons.setGravity(Gravity.END);
+            if (!SavedNotificationDestinationResolver.hasExactTarget(context, record)) {
+                Button fix = new Button(context);
+                fix.setText("Fix notification link");
+                AppNativeDialogStyle.styleButton(fix, accent);
+                fix.setOnClickListener(v -> {
+                    if (NotificationListener.rebindStaleNotification(context, record)) {
+                        Toast.makeText(context, "Notification link restored",
+                                Toast.LENGTH_SHORT).show();
+                        render();
+                    } else {
+                        Toast.makeText(context,
+                                "No matching notification found to fix this link",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+                buttons.addView(fix);
+            }
             Button open = new Button(context);
-            boolean exactTarget = SavedNotificationDestinationResolver.hasExactTarget(context, record);
-            open.setText(exactTarget ? "Open notification" : "Open app");
+            open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                boolean opened = exactTarget
-                        ? SavedNotificationDestinationResolver.openExact(context, record)
-                        : AppLaunchUtils.launchPackage(context, packageName);
-                if (!opened) {
-                    Toast.makeText(context, exactTarget
-                                    ? "Unable to open this exact notification" : "App cannot be opened",
+                SavedNotificationDestinationResolver.OpenResult result =
+                        SavedNotificationDestinationResolver.openExactResult(context, record);
+                if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
+                    AppReinstallSupport.showUninstalledDialog(
+                            context, packageName, record.appName);
+                    return;
+                }
+                if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
+                    Toast.makeText(context, "The app could not be re-enabled.",
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (!result.accepted()) {
+                    Toast.makeText(context, "Direct notification/message link is unavailable.",
                             Toast.LENGTH_SHORT).show();
                     return;
                 }

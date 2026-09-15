@@ -1,7 +1,6 @@
 package fr.neamar.kiss.searcher;
 
 import android.content.SharedPreferences;
-import android.content.pm.ShortcutInfo;
 import android.os.UserManager;
 
 import androidx.core.content.ContextCompat;
@@ -16,12 +15,14 @@ import java.util.Set;
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.activitylauncher.ActivityLauncherStore;
 import fr.neamar.kiss.dataprovider.simpleprovider.NotificationProvider;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.notification.NotificationTimelineState;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
@@ -71,25 +72,9 @@ public class HistorySearcher extends Searcher {
             }
         }
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            for (String id : excludedFromHistory) {
-                Pojo pojo = dataHandler.getItemById(id);
-                if (pojo instanceof AppPojo) {
-                    List<ShortcutInfo> shortcutInfos = ShortcutUtil.getShortcuts(
-                            activity, ((AppPojo) pojo).packageName);
-                    for (ShortcutInfo shortcutInfo : shortcutInfos) {
-                        ShortcutRecord shortcutRecord = ShortcutUtil.createShortcutRecord(
-                                activity, shortcutInfo, !shortcutInfo.isPinned());
-                        if (shortcutRecord != null) {
-                            excludedPojoById.add(ShortcutUtil.generateShortcutId(
-                                    new UserHandle(activity, shortcutInfo.getUserHandle()),
-                                    shortcutRecord));
-                        }
-                    }
-                }
-            }
-        }
-
+        // App rows and shortcut rows are independent launch targets. DataHandler records the exact
+        // id that was launched, so an app-level history exclusion must not be expanded into every
+        // shortcut published by that app. Exact shortcut ids remain independently excludable.
         if (excludeFavorites) {
             for (Pojo favoritePojo : dataHandler.getFavorites()) {
                 excludedPojoById.add(favoritePojo.id);
@@ -122,7 +107,11 @@ public class HistorySearcher extends Searcher {
             String historyId = records.get(i).record;
             if (historyId == null || excludedPojoById.contains(historyId)) continue;
 
-            Pojo pojo = dataHandler.getItemById(historyId);
+            // A DB history row is authoritative. Resolve it through the live provider first, then
+            // the exact recently launched object, then the persisted shortcut catalog. Doing this
+            // in the primary recency pass prevents the later full refresh from replacing a correct
+            // warm Home row with a list that temporarily cannot resolve a dynamic shortcut.
+            Pojo pojo = resolveHistoryTarget(activity, dataHandler, historyId);
             if (pojo == null || excludedPojoById.contains(pojo.id)) continue;
 
             pojo.relevance = HistoryRecencyOrder.relevanceForNewestFirstIndex(recordCount, i);
@@ -156,11 +145,7 @@ public class HistorySearcher extends Searcher {
                 continue;
             }
 
-            Pojo recovered = RecentLaunchTracker.resolve(historyId);
-            if (recovered == null) recovered = dataHandler.getItemById(historyId);
-            if (recovered == null && historyId.startsWith(ShortcutPojo.SCHEME)) {
-                recovered = resolveRememberedShortcut(activity, dataHandler, historyId);
-            }
+            Pojo recovered = resolveHistoryTarget(activity, dataHandler, historyId);
             if (recovered == null || excludedPojoById.contains(recovered.id)) continue;
 
             int recoveredRelevance = historyMode == HistoryMode.ALPHABETICALLY
@@ -203,10 +188,8 @@ public class HistorySearcher extends Searcher {
             recentPojo = pojos.remove(existingIndex);
         }
 
-        if (recentPojo == null) recentPojo = dataHandler.getItemById(mostRecentId);
-        if (recentPojo == null) recentPojo = RecentLaunchTracker.resolve(mostRecentId);
-        if (recentPojo == null && mostRecentId.startsWith(ShortcutPojo.SCHEME)) {
-            recentPojo = resolveRememberedShortcut(activity, dataHandler, mostRecentId);
+        if (recentPojo == null) {
+            recentPojo = resolveHistoryTarget(activity, dataHandler, mostRecentId);
         }
         if (recentPojo == null || excludedPojoById.contains(recentPojo.id)) return;
 
@@ -220,6 +203,25 @@ public class HistorySearcher extends Searcher {
         // relevance moves this item upward one position at a time.
         recentPojo.relevance = Integer.MAX_VALUE;
         pojos.add(recentPojo);
+    }
+
+    /**
+     * Resolve one persisted history identity without changing what was launched. The DB id remains
+     * the authority; provider state is only one possible representation of that exact target.
+     */
+    private Pojo resolveHistoryTarget(MainActivity activity, DataHandler dataHandler,
+                                      String historyId) {
+        Pojo pojo = dataHandler.getItemById(historyId);
+        if (pojo == null) pojo = RecentLaunchTracker.resolve(historyId);
+        if (pojo == null
+                && (historyId.startsWith(NotificationListener.NOTIFICATION_SCHEME)
+                || historyId.startsWith(NotificationListener.NOTIFICATION_GROUP_SCHEME))) {
+            pojo = new NotificationProvider(activity).findById(historyId);
+        }
+        if (pojo == null && historyId.startsWith(ShortcutPojo.SCHEME)) {
+            pojo = resolveRememberedShortcut(activity, dataHandler, historyId);
+        }
+        return pojo;
     }
 
     private int indexOfHistoryId(List<Pojo> pojos, String historyId) {
@@ -248,10 +250,26 @@ public class HistorySearcher extends Searcher {
     private Pojo resolveRememberedShortcut(MainActivity activity, DataHandler dataHandler,
                                             String requestedId) {
         UserManager userManager = ContextCompat.getSystemService(activity, UserManager.class);
-        if (userManager == null) return null;
 
         for (ShortcutRecord record : DBHelper.getShortcuts(activity)) {
             if (record == null || record.packageName == null || record.intentUri == null) continue;
+
+            // Activity Launcher/IceBox-style managed targets use a content-derived stable id rather
+            // than ShortcutUtil.generateShortcutId(). Recover them with the same identity used by
+            // LoadShortcutsPojos and by the history writer, so provider reloads cannot orphan them.
+            if (ActivityLauncherStore.isManaged(record)) {
+                String stableId = ActivityLauncherStore.stablePojoId(record);
+                if (requestedId.equals(stableId)) {
+                    ShortcutPojo pojo = new ShortcutPojo(UserHandle.OWNER, record, null,
+                            true, false, false, stableId);
+                    pojo.setName(ActivityLauncherStore.displayLabel(activity, record));
+                    pojo.setTags(dataHandler.getTagsHandler().getTags(pojo.id));
+                    return pojo;
+                }
+                continue;
+            }
+
+            if (userManager == null) continue;
             for (android.os.UserHandle profile : userManager.getUserProfiles()) {
                 UserHandle user = new UserHandle(activity, profile);
                 if (!requestedId.equals(ShortcutUtil.generateShortcutId(user, record))) continue;
@@ -281,12 +299,13 @@ public class HistorySearcher extends Searcher {
         pojos.removeIf(pojo -> pojo instanceof NotificationPojo
                 && pojo.id.startsWith(NotificationListener.NOTIFICATION_GROUP_SCHEME));
 
-        List<NotificationPojo> newestFirst = new NotificationProvider(activity).getPojos();
+        List<NotificationPojo> newestFirst = new ArrayList<>(
+                new NotificationProvider(activity).getPojos());
+        newestFirst.removeIf(notification -> NotificationTimelineState.isHiddenFromHistory(
+                activity, notification.exactNotificationId, notification.postTime));
         if (newestFirst.isEmpty()) return;
         if (newestFirst.size() > max) {
             newestFirst = new ArrayList<>(newestFirst.subList(0, max));
-        } else {
-            newestFirst = new ArrayList<>(newestFirst);
         }
         newestFirst.sort(Comparator.comparingLong(p -> p.postTime));
 
@@ -341,10 +360,12 @@ public class HistorySearcher extends Searcher {
             return app.isExcludedFromHistory() || excludedPackages.contains(app.packageName);
         }
         if (pojo instanceof ShortcutPojo) {
-            ShortcutPojo shortcut = (ShortcutPojo) pojo;
-            return excludedPackages.contains(shortcut.packageName)
-                    || (shortcut.targetPackage != null
-                    && excludedPackages.contains(shortcut.targetPackage));
+            // A shortcut is an independently launched history target. DataHandler writes the
+            // shortcut's exact history id, and the warm Home snapshot also filters by that exact id.
+            // Do not later erase the shortcut merely because its publisher/target app is excluded
+            // as an app row; that mismatch is what caused a shortcut to appear briefly on return
+            // and disappear when the authoritative HistorySearcher completed.
+            return false;
         }
         if (pojo instanceof NotificationPojo) {
             return excludedPackages.contains(((NotificationPojo) pojo).packageName);

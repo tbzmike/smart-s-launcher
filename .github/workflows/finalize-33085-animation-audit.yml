@@ -1,0 +1,175 @@
+name: Finalize Smart S 3.30.85 Animation Audit
+
+on:
+  push:
+    branches:
+      - fix/3.30.85-animation-final-audit
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-33085-animation-audit
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify exact expanded 3.30.85 baseline
+        run: |
+          set -euxo pipefail
+          ARRAYS=app/src/main/res/values/arrays_smart_features.xml
+          ENGINE=app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java
+          LIST=app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java
+          NOTIFY=app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+
+          grep -q 'versionCode 513' app/build.gradle
+          grep -q 'versionName "3.30.85"' app/build.gradle
+          for style in Parallax Swing Accordion Spiral Cube; do grep -q "<item>$style</item>" "$ARRAYS"; done
+          grep -q '<item>Reveal</item>' "$ARRAYS"
+          grep -q 'animateWindowEnter' "$ENGINE"
+          grep -q 'animateWindowExit' "$ENGINE"
+
+          # The first expansion temporarily exposed Toast styles that have no Toast execution path.
+          grep -A12 'name="smart_toast_animation_entries"' "$ARRAYS" | grep -q '<item>Pop</item>'
+          grep -A12 'name="smart_toast_animation_values"' "$ARRAYS" | grep -q '<item>pop</item>'
+
+          # Scroll-idle infrastructure and the prior notification interaction repair must exist.
+          grep -q 'ScrollIdleGate' "$LIST"
+          grep -q 'openNotificationApp' "$NOTIFY"
+          grep -q 'Row/message taps open the exact notification destination' "$NOTIFY"
+
+      - name: Apply final audit corrections
+        run: python3 .github/scripts/finalize_33085_animation_audit.py
+
+      - name: Verify truthful selectors and zero animation work during scroll
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          root = Path('.')
+          arrays_path = root / 'app/src/main/res/values/arrays_smart_features.xml'
+          engine = (root / 'app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java').read_text()
+          main = (root / 'app/src/main/java/fr/neamar/kiss/MainActivity.java').read_text()
+          list_src = (root / 'app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java').read_text()
+          cards = (root / 'app/src/main/java/fr/neamar/kiss/forwarder/SmartCardListForwarder.java').read_text()
+          adapter = (root / 'app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java').read_text()
+          patch = (root / '.github/scripts/apply_33085_animation_styles.py').read_text()
+
+          xml = ET.parse(arrays_path)
+          arrays = {node.attrib['name']: [item.text for item in node.findall('item')]
+                    for node in xml.getroot().findall('string-array')}
+
+          # Existing Toast selector is left exactly as it was before this update.
+          assert arrays['smart_toast_animation_entries'] == ['Fade','Slide up','Scale','Spring','Zoom','None']
+          assert arrays['smart_toast_animation_values'] == ['fade','slide-up','scale','spring','zoom','none']
+          assert 'smart_toast_animation_entries", ["Pop", "Swing", "Drop"]' not in patch
+          assert 'smart_toast_animation_values", ["pop", "swing", "drop"]' not in patch
+
+          # New, actually implemented animation sets remain intact.
+          assert {'parallax','swing','accordion','spiral','cube'}.issubset(set(arrays['smart_scroll_animation_values']))
+          assert {'drop','swing','fold','pop','cube'}.issubset(set(arrays['smart_enter_animation_values']))
+          assert {'drop','swing','fold','collapse','cube'}.issubset(set(arrays['smart_exit_animation_values']))
+          assert {'drop','swing','fold','pop','cube'}.issubset(set(arrays['smart_popup_animation_values']))
+          assert {'parallax','swing','fold','cube','reveal'}.issubset(set(arrays['smart_switch_animation_values']))
+          for style in ('parallax','swing','accordion','spiral','cube','drop','fold','pop','collapse','reveal'):
+              assert f'"{style}"' in engine
+
+          # Window choices now have real lifecycle consumers and no launch-blocking delay.
+          assert 'SmartAnimationEngine.animateWindowEnter(findViewById(android.R.id.content));' in main
+          assert 'SmartAnimationEngine.animateWindowExit(findViewById(android.R.id.content));' in main
+          exit_start = engine.index('public static void animateWindowExit')
+          exit_end = engine.index('public static void animatePopupViewIn', exit_start)
+          window_exit = engine[exit_start:exit_end]
+          for token in ('Handler', 'postDelayed', 'Thread', 'Executor', 'runAsync'):
+              assert token not in window_exit
+
+          # Both standard list animation capture and playback are hard-disabled during touch/fling.
+          prepare_start = list_src.index('public void prepareChangeAnim()')
+          prepare_end = list_src.index('public void animateChange()', prepare_start)
+          animate_start = prepare_end
+          animate_end = list_src.index('private void cancelPendingChangeAnimation()', animate_start)
+          assert 'if (isScrollInProgress()) return;' in list_src[prepare_start:prepare_end]
+          assert 'if (isScrollInProgress()) {' in list_src[animate_start:animate_end]
+          assert 'mItemMap.clear();' in list_src[animate_start:animate_end]
+
+          # Decorative scroll-style execution remains visual-only; no background/queued work.
+          scroll_start = engine.index('public static void animateTileListItem')
+          scroll_end = engine.index('public static void reset', scroll_start)
+          scroll_method = engine[scroll_start:scroll_end]
+          for token in ('new Thread', 'Executor', 'Handler', 'postDelayed', 'runAsync',
+                        'CompletableFuture', 'ScheduledExecutor'):
+              assert token not in scroll_method
+
+          # Vertical Cards keeps its existing scroll-idle guards.
+          assert 'ScrollIdleGate' in cards
+          assert 'if (isScrollInProgress())' in cards
+          assert 'runWhenScrollIdle' in cards
+
+          # Preserve the 3.30.84 notification interaction contract untouched.
+          assert 'openNotificationApp' in adapter
+          assert 'Row/message taps open the exact notification destination' in adapter
+          assert 'item_notification_icon' in adapter
+          PY
+          git diff --check
+
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify APK manifest versions
+        run: |
+          set -euxo pipefail
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          DEBUG_APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          RELEASE_APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
+          "$AAPT" dump badging "$DEBUG_APK" | tee /tmp/debug-badging.txt
+          "$AAPT" dump badging "$RELEASE_APK" | tee /tmp/release-badging.txt
+          grep -q "versionCode='513'" /tmp/debug-badging.txt
+          grep -q "versionName='3.30.85'" /tmp/debug-badging.txt
+          grep -q "versionCode='513'" /tmp/release-badging.txt
+          grep -q "versionName='3.30.85'" /tmp/release-badging.txt
+
+      - name: Upload verified debug APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Smart-S-Launcher-3.30.85-final-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload verified release APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Smart-S-Launcher-3.30.85-final-release-unsigned.apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit final verified source
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            app/src/main/res/values/arrays_smart_features.xml \
+            app/src/main/java/fr/neamar/kiss/ui/AnimatedListView.java \
+            .github/scripts/apply_33085_animation_styles.py
+          git diff --cached --check
+          git commit -m 'Finalize verified 3.30.85 animation behavior'
+          git push origin HEAD:fix/3.30.85-animation-final-audit

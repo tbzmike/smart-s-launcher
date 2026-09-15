@@ -1,0 +1,121 @@
+name: Build Smart S 3.30.101 Performance-Aware Animations
+
+on:
+  push:
+    branches:
+      - fix/3.30.101-performance-aware-animations
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-330101-performance-aware-animations
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify exact 3.30.100 baseline
+        run: |
+          set -euxo pipefail
+          grep -q 'versionCode 528' app/build.gradle
+          grep -q 'versionName "3.30.100"' app/build.gradle
+          ENGINE=app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java
+          grep -q 'public static void animateWindowEnter' "$ENGINE"
+          grep -q 'public static void animateWindowSwitch' "$ENGINE"
+          grep -q 'public static void animateTileListItem' "$ENGINE"
+          grep -q 'case "cube"' "$ENGINE"
+          grep -q 'case "spiral"' "$ENGINE"
+          grep -q 'case "parallax"' "$ENGINE"
+          grep -q 'case "fold"' "$ENGINE"
+
+      - name: Apply guarded performance-aware animation patch
+        run: python3 .github/scripts/apply_330101_performance_aware_animations.py
+
+      - name: Verify animation safety and preserved styles
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          build = Path('app/build.gradle').read_text(encoding='utf-8')
+          engine = Path('app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java').read_text(encoding='utf-8')
+
+          assert 'versionCode 529' in build
+          assert 'versionName "3.30.101"' in build
+          for token in (
+              'MAX_STAGGERED_CHILDREN = 12',
+              'isLowRamDevice()',
+              'isPowerSaveMode()',
+              'Settings.Global.ANIMATOR_DURATION_SCALE',
+              'Math.min(160L, resolved)',
+              'Math.min(140L',
+          ):
+              assert token in engine, token
+
+          for style in ('fade','slide-up','slide-down','slide-left','slide-right','zoom',
+                        'spring','rotate','flip','whirl','orbit','elastic','bounce','drop',
+                        'swing','fold','pop','cube','depth','parallax','accordion','spiral',
+                        'helix','fan','cascade'):
+              assert f'"{style}"' in engine, style
+
+          # Keep the hot animation path purely view/property based. No background loop, bitmap
+          # snapshot, blur renderer, timer, handler, executor or delayed queue may be introduced.
+          forbidden = ('new Thread', 'new Handler', 'postDelayed', 'Timer(',
+                       'Bitmap.createBitmap', 'RenderEffect', 'BlurMaskFilter',
+                       'ScheduledExecutor', 'while (true)')
+          for token in forbidden:
+              assert token not in engine, token
+
+          # Existing history/search and notification work is outside this isolated engine patch.
+          # Only the version file and animation engine are changed by the patch itself.
+          PY
+          git diff --check
+          CHANGED="$(git diff --name-only | sort)"
+          printf '%s\n' "$CHANGED"
+          test "$CHANGED" = $'app/build.gradle\napp/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java'
+
+      - name: Full verification and APK build
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug --stacktrace
+
+      - name: Verify APK identity and version
+        run: |
+          set -euxo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          "$AAPT" dump badging "$APK" | tee /tmp/apk-badging.txt
+          grep -q "versionCode='529'" /tmp/apk-badging.txt
+          grep -q "versionName='3.30.101'" /tmp/apk-badging.txt
+          sha256sum "$APK" | tee /tmp/apk-sha256.txt
+          cp "$APK" Smart-S-Launcher-3.30.101.apk
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.101
+          path: Smart-S-Launcher-3.30.101.apk
+          archive: false
+          retention-days: 90
+
+      - name: Commit verified source changes
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app/build.gradle app/src/main/java/fr/neamar/kiss/ui/SmartAnimationEngine.java
+          git diff --cached --check
+          git commit -m 'Smart S Launcher 3.30.101 performance-aware animations'
+          git push origin HEAD:fix/3.30.101-performance-aware-animations

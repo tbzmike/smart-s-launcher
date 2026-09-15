@@ -112,6 +112,27 @@
             android:theme="@style/SettingTheme" />
 
         <activity
+            android:name=".notification.NotificationRouteRelayActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Transparent" />
+
+        <activity
+            android:name=".activitylauncher.ActivityLauncherActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Activity Launcher"
+            android:parentActivityName=".MainActivity"
+            android:theme="@style/SettingTheme" />
+        <activity
+            android:name=".activitylauncher.ActivityLauncherDispatchActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Transparent" />
+
+        <activity
             android:name=".DummyActivity"
             android:exported="true"
             android:enabled="false">
@@ -204,6 +225,15 @@
                 <action android:name="android.intent.action.PACKAGE_REMOVED" />
                 <action android:name="android.intent.action.PACKAGE_REPLACED" />
                 <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".notification.NotificationListenerRecoveryReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
         <receiver

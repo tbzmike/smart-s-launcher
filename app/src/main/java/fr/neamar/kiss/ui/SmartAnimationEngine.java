@@ -2,8 +2,11 @@ package fr.neamar.kiss.ui;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.app.ActivityManager;
 import android.app.Dialog;
 import android.content.Context;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.content.SharedPreferences;
 import android.view.View;
 import android.view.Window;
@@ -21,6 +24,7 @@ public final class SmartAnimationEngine {
     private SmartAnimationEngine() {}
 
     private static volatile SharedPreferences cachedPreferences;
+    private static final int MAX_STAGGERED_CHILDREN = 12;
 
     private static SharedPreferences prefs(Context context) {
         SharedPreferences local = cachedPreferences;
@@ -37,12 +41,55 @@ public final class SmartAnimationEngine {
     }
 
     public static boolean isEnabled(Context context) {
-        return prefs(context).getBoolean("smart-animations-enabled", true);
+        if (!prefs(context).getBoolean("smart-animations-enabled", true)) return false;
+        // Respect Android's global "remove animations" / animator-duration-scale setting.
+        try {
+            return Settings.Global.getFloat(context.getContentResolver(),
+                    Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f;
+        } catch (RuntimeException ignored) {
+            return true;
+        }
+    }
+
+    private static boolean isPerformanceConstrained(Context context) {
+        ActivityManager activityManager =
+                (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        if (activityManager != null && activityManager.isLowRamDevice()) return true;
+
+        PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        return powerManager != null && powerManager.isPowerSaveMode();
+    }
+
+    private static boolean isHeavyStyle(String style) {
+        switch (style) {
+            case "whirl":
+            case "orbit":
+            case "elastic":
+            case "bounce":
+            case "parallax":
+            case "swing":
+            case "accordion":
+            case "spiral":
+            case "cube":
+            case "fold":
+            case "helix":
+            case "fan":
+                return true;
+            default:
+                return false;
+        }
     }
 
     public static String getStyle(Context context, String key, String fallback) {
         Object value = readPreferenceValue(prefs(context), key);
-        return value instanceof String ? (String) value : fallback;
+        String style = value instanceof String ? (String) value : fallback;
+        if (!isPerformanceConstrained(context) || !isHeavyStyle(style)) return style;
+
+        // Gracefully downgrade expensive multi-axis effects while Battery Saver is active or on
+        // Android low-RAM devices. User selections remain stored and return automatically later.
+        if ("smart-animation-scroll".equals(key)) return "classic";
+        if ("smart-animation-view-switch".equals(key)) return "crossfade";
+        return "fade";
     }
 
     public static long duration(Context context) {
@@ -50,7 +97,8 @@ public final class SmartAnimationEngine {
         SharedPreferences preferences = prefs(context);
         float speed = readSpeedMultiplier(preferences);
         speed = Math.max(0.05f, Math.min(3f, speed));
-        return Math.max(80L, Math.round(base / speed));
+        long resolved = Math.max(80L, Math.round(base / speed));
+        return isPerformanceConstrained(context) ? Math.min(160L, resolved) : resolved;
     }
 
     private static float readSpeedMultiplier(SharedPreferences preferences) {
@@ -97,6 +145,40 @@ public final class SmartAnimationEngine {
         Window window = dialog.getWindow();
         if (window == null) return;
         animateViewIn(window.getDecorView(), preferenceKey, fallback);
+    }
+
+    /** Animate the launcher window whenever Home becomes visible. */
+    public static void animateWindowEnter(View view) {
+        animateViewIn(view, "smart-animation-window-enter", "fade");
+    }
+
+    /**
+     * Animate the launcher-owned window out without delaying the target app launch. The animation
+     * is intentionally view-only: there is no Handler, executor, polling or background work.
+     */
+    public static void animateWindowExit(View view) {
+        if (view == null) return;
+        view.animate().cancel();
+        if (!isEnabled(view.getContext())) {
+            reset(view);
+            return;
+        }
+        String style = getStyle(view.getContext(), "smart-animation-window-exit", "fade");
+        if ("none".equals(style)) {
+            reset(view);
+            return;
+        }
+        android.view.ViewPropertyAnimator animator = view.animate()
+                .setDuration(Math.max(70L, duration(view.getContext()) * 3 / 4))
+                .setInterpolator(new AccelerateDecelerateInterpolator());
+        applyExitStyle(view, animator, style);
+        animator.setListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                view.animate().setListener(null);
+                reset(view);
+            }
+        }).start();
     }
 
     public static void animatePopupViewIn(View view) {
@@ -156,7 +238,8 @@ public final class SmartAnimationEngine {
                 .rotationY(0f)
                 .setDuration(duration(view.getContext()))
                 .setInterpolator(("spring".equals(style) || "elastic".equals(style)
-                        || "bounce".equals(style))
+                        || "bounce".equals(style) || "pop".equals(style)
+                        || "swing".equals(style))
                         ? new OvershootInterpolator(0.9f)
                         : new DecelerateInterpolator())
                 .start();
@@ -229,6 +312,36 @@ public final class SmartAnimationEngine {
                 view.setScaleX(1.12f);
                 view.setScaleY(0.72f);
                 view.setTranslationY(dp(view, 36));
+                break;
+            case "drop":
+                view.setAlpha(0f);
+                view.setTranslationY(-dp(view, 76));
+                view.setScaleX(0.96f);
+                view.setScaleY(0.96f);
+                break;
+            case "swing":
+                view.setAlpha(0f);
+                view.setTranslationX(dp(view, 34));
+                view.setRotation(13f);
+                view.setScaleX(0.92f);
+                view.setScaleY(0.92f);
+                break;
+            case "fold":
+                view.setAlpha(0f);
+                view.setScaleY(0.18f);
+                view.setRotationX(-22f);
+                break;
+            case "pop":
+                view.setAlpha(0f);
+                view.setScaleX(0.52f);
+                view.setScaleY(0.52f);
+                break;
+            case "cube":
+                view.setAlpha(0f);
+                view.setTranslationX(dp(view, 26));
+                view.setRotationY(72f);
+                view.setScaleX(0.84f);
+                view.setScaleY(0.94f);
                 break;
             case "scale":
             default:
@@ -312,6 +425,21 @@ public final class SmartAnimationEngine {
             case "bounce":
                 animator.alpha(0f).translationY(dp(view, 30)).scaleX(0.86f).scaleY(1.12f);
                 break;
+            case "drop":
+                animator.alpha(0f).translationY(dp(view, 78)).scaleX(0.94f).scaleY(0.94f);
+                break;
+            case "swing":
+                animator.alpha(0f).translationX(dp(view, 38)).rotation(-14f).scaleX(0.9f).scaleY(0.9f);
+                break;
+            case "fold":
+                animator.alpha(0f).scaleY(0.14f).rotationX(24f);
+                break;
+            case "collapse":
+                animator.alpha(0f).scaleX(0.20f).scaleY(0.20f);
+                break;
+            case "cube":
+                animator.alpha(0f).translationX(-dp(view, 28)).rotationY(-72f).scaleX(0.84f);
+                break;
             case "shrink":
             default:
                 animator.alpha(0f).scaleX(0.93f).scaleY(0.93f);
@@ -344,6 +472,19 @@ public final class SmartAnimationEngine {
                         .scaleX(0.92f).setDuration(duration / 2).start();
             } else if ("spring".equals(style)) {
                 outgoing.animate().alpha(0f).scaleX(0.86f).scaleY(1.08f).setDuration(duration / 2).start();
+            } else if ("parallax".equals(style)) {
+                outgoing.animate().alpha(0.25f).translationX(-dp(outgoing, 58)).scaleX(0.96f).scaleY(0.96f)
+                        .setDuration(duration / 2).start();
+            } else if ("swing".equals(style)) {
+                outgoing.animate().alpha(0f).translationX(-dp(outgoing, 24)).rotation(-10f)
+                        .setDuration(duration / 2).start();
+            } else if ("fold".equals(style)) {
+                outgoing.animate().alpha(0f).scaleY(0.18f).rotationX(18f).setDuration(duration / 2).start();
+            } else if ("cube".equals(style)) {
+                outgoing.animate().alpha(0f).rotationY(-68f).translationX(-dp(outgoing, 24))
+                        .setDuration(duration / 2).start();
+            } else if ("reveal".equals(style)) {
+                outgoing.animate().alpha(0f).scaleX(1.05f).scaleY(1.05f).setDuration(duration / 2).start();
             } else {
                 outgoing.animate().alpha(0f).setDuration(duration / 2).start();
             }
@@ -373,9 +514,28 @@ public final class SmartAnimationEngine {
         } else if ("spring".equals(style)) {
             incoming.setScaleX(0.76f);
             incoming.setScaleY(1.08f);
+        } else if ("parallax".equals(style)) {
+            incoming.setTranslationX(dp(incoming, 64));
+            incoming.setScaleX(1.03f);
+            incoming.setScaleY(1.03f);
+        } else if ("swing".equals(style)) {
+            incoming.setTranslationX(dp(incoming, 32));
+            incoming.setRotation(12f);
+            incoming.setScaleX(0.92f);
+            incoming.setScaleY(0.92f);
+        } else if ("fold".equals(style)) {
+            incoming.setScaleY(0.18f);
+            incoming.setRotationX(-22f);
+        } else if ("cube".equals(style)) {
+            incoming.setTranslationX(dp(incoming, 28));
+            incoming.setRotationY(72f);
+            incoming.setScaleX(0.86f);
+        } else if ("reveal".equals(style)) {
+            incoming.setScaleX(0.72f);
+            incoming.setScaleY(0.72f);
         }
-        incoming.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f)
-                .rotation(0f).rotationY(0f).setDuration(duration)
+        incoming.animate().alpha(1f).translationX(0f).translationY(0f).scaleX(1f).scaleY(1f)
+                .rotation(0f).rotationX(0f).rotationY(0f).setDuration(duration)
                 .setInterpolator("spring".equals(style)
                         ? new OvershootInterpolator(0.75f)
                         : new DecelerateInterpolator()).start();
@@ -425,6 +585,27 @@ public final class SmartAnimationEngine {
                     child.setScaleX(0.74f);
                     child.setScaleY(1.1f);
                     break;
+                case "parallax":
+                    child.setTranslationX(dp(child, delta >= 0 ? 54 : -54));
+                    child.setScaleX(0.96f);
+                    child.setScaleY(0.96f);
+                    break;
+                case "swing":
+                    child.setTranslationX(dp(child, delta >= 0 ? 30 : -30));
+                    child.setRotation(delta >= 0 ? 10f : -10f);
+                    break;
+                case "fold":
+                    child.setScaleY(0.22f);
+                    child.setRotationX(delta >= 0 ? -18f : 18f);
+                    break;
+                case "cube":
+                    child.setRotationY(delta >= 0 ? 64f : -64f);
+                    child.setScaleX(0.86f);
+                    break;
+                case "reveal":
+                    child.setScaleX(0.68f);
+                    child.setScaleY(0.68f);
+                    break;
                 case "crossfade":
                 default:
                     child.setScaleX(0.95f);
@@ -440,6 +621,7 @@ public final class SmartAnimationEngine {
                     .translationX(0f)
                     .translationY(0f)
                     .rotation(0f)
+                    .rotationX(0f)
                     .rotationY(0f)
                     .setDuration(duration)
                     .setInterpolator(("depth".equals(style) || "spring".equals(style))
@@ -463,6 +645,9 @@ public final class SmartAnimationEngine {
         reset(child);
         Context context = child.getContext();
         if (!isEnabled(context)) return;
+        // Never keep a long chain of staggered ViewPropertyAnimators alive for large result lists.
+        // Later/recycled rows render immediately and remain fully interactive.
+        if (index >= MAX_STAGGERED_CHILDREN) return;
 
         String style = getStyle(context, "smart-animation-scroll", "classic");
         if ("none".equals(style)) return;
@@ -523,6 +708,36 @@ public final class SmartAnimationEngine {
                 child.setScaleX(1.12f);
                 child.setScaleY(0.72f);
                 break;
+            case "parallax":
+                child.setTranslationX(dp(child, (index & 1) == 0 ? 68 : -68));
+                child.setTranslationY(dp(child, 18));
+                child.setScaleX(0.96f);
+                child.setScaleY(0.96f);
+                break;
+            case "swing":
+                child.setTranslationX(dp(child, (index & 1) == 0 ? 34 : -34));
+                child.setRotation((index & 1) == 0 ? 13f : -13f);
+                child.setScaleX(0.92f);
+                child.setScaleY(0.92f);
+                break;
+            case "accordion":
+                child.setScaleY(0.16f);
+                child.setTranslationY(dp(child, 28));
+                child.setRotationX((index & 1) == 0 ? -16f : 16f);
+                break;
+            case "spiral":
+                child.setTranslationX(dp(child, (index & 1) == 0 ? 54 : -54));
+                child.setTranslationY(dp(child, 34));
+                child.setRotation((index & 1) == 0 ? 22f : -22f);
+                child.setScaleX(0.72f);
+                child.setScaleY(0.72f);
+                break;
+            case "cube":
+                child.setTranslationX(dp(child, (index & 1) == 0 ? 40 : -40));
+                child.setRotationY((index & 1) == 0 ? 68f : -68f);
+                child.setScaleX(0.84f);
+                child.setScaleY(0.94f);
+                break;
             case "classic":
             default:
                 child.setTranslationY(dp(child, 34));
@@ -532,7 +747,7 @@ public final class SmartAnimationEngine {
         }
 
         long duration = Math.max(120L, duration(context));
-        long delay = Math.min(220L, Math.max(0, index) * ("cascade".equals(style) ? 38L : 24L));
+        long delay = Math.min(140L, Math.max(0, index) * ("cascade".equals(style) ? 28L : 18L));
         child.animate()
                 .alpha(1f)
                 .scaleX(1f)
@@ -545,7 +760,8 @@ public final class SmartAnimationEngine {
                 .setStartDelay(delay)
                 .setDuration(duration)
                 .setInterpolator(("depth".equals(style) || "stack".equals(style)
-                        || "bounce".equals(style))
+                        || "bounce".equals(style) || "swing".equals(style)
+                        || "accordion".equals(style))
                         ? new OvershootInterpolator(0.7f)
                         : new DecelerateInterpolator())
                 .start();
