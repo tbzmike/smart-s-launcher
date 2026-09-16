@@ -78,6 +78,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
 
         setPreferencesFromResource(R.xml.preferences, rootKey);
+        addPixelLauncherCleanupPreference(rootKey);
         addSearchKeyboardPreferences();
         try {
             addSemanticSearchPreferences(rootKey);
@@ -125,6 +126,28 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         }
 
         permissionManager = new Permission(getActivity());
+    }
+
+    private void addPixelLauncherCleanupPreference(@Nullable String rootKey) {
+        PreferenceGroup parent;
+        if ("ui-holder".equals(rootKey)) {
+            parent = getPreferenceScreen();
+        } else {
+            parent = findPreference("ui-holder");
+        }
+        if (parent == null || parent.findPreference("performance-background-category") != null) return;
+
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("performance-background-category");
+        category.setTitle("Performance & background");
+        parent.addPreference(category);
+
+        SwitchPreference killPixelLauncher = new SwitchPreference(requireContext());
+        killPixelLauncher.setKey(PixelLauncherScreenOffReceiver.PREFERENCE_KEY);
+        killPixelLauncher.setTitle("Force-stop Pixel Launcher when screen turns off");
+        killPixelLauncher.setSummary("Uses Smart S root access to stop com.google.android.apps.nexuslauncher on every screen-off event and release its background memory. No background service is kept running for this feature.");
+        killPixelLauncher.setDefaultValue(false);
+        category.addPreference(killPixelLauncher);
     }
 
     private void addSearchKeyboardPreferences() {
