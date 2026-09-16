@@ -362,22 +362,54 @@
             app:defaultValue="true"
             app:key="smart-list-resize-notification-icons"
             app:title="Resize notification / profile pictures"
-            app:summary="Apply the existing App icon size setting to WhatsApp and other notification/profile pictures." />
+            app:summary="Enable manual sizing for WhatsApp and other notification/profile pictures." />
+        <SeekBarPreference
+            app:defaultValue="110"
+            app:dependency="smart-list-resize-notification-icons"
+            app:key="smart-list-notification-icon-size-percent"
+            android:max="240"
+            app:min="50"
+            app:showSeekBarValue="true"
+            app:title="Notification / profile picture size (%)" />
         <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-shortcut-icons"
             app:title="Resize shortcut icons"
-            app:summary="Apply the existing App icon size setting to launcher shortcut icons." />
+            app:summary="Enable manual sizing for launcher shortcut icons." />
+        <SeekBarPreference
+            app:defaultValue="110"
+            app:dependency="smart-list-resize-shortcut-icons"
+            app:key="smart-list-shortcut-icon-size-percent"
+            android:max="240"
+            app:min="50"
+            app:showSeekBarValue="true"
+            app:title="Shortcut icon size (%)" />
         <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-feature-icons"
             app:title="Resize settings / feature icons"
-            app:summary="Apply the existing App icon size setting to Smart S settings and feature result icons." />
+            app:summary="Enable manual sizing for Smart S settings and feature icons." />
+        <SeekBarPreference
+            app:defaultValue="110"
+            app:dependency="smart-list-resize-feature-icons"
+            app:key="smart-list-feature-icon-size-percent"
+            android:max="240"
+            app:min="50"
+            app:showSeekBarValue="true"
+            app:title="Settings / feature icon size (%)" />
         <SwitchPreference
             app:defaultValue="true"
             app:key="smart-list-resize-contact-icons"
             app:title="Resize contact / avatar pictures"
-            app:summary="Apply the existing App icon size setting to contact and avatar pictures." />
+            app:summary="Enable manual sizing for contact and avatar pictures." />
+        <SeekBarPreference
+            app:defaultValue="110"
+            app:dependency="smart-list-resize-contact-icons"
+            app:key="smart-list-contact-icon-size-percent"
+            android:max="240"
+            app:min="50"
+            app:showSeekBarValue="true"
+            app:title="Contact / avatar picture size (%)" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="Privacy &amp; network">

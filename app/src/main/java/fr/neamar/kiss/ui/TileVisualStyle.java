@@ -76,16 +76,23 @@ public final class TileVisualStyle {
         if (SearchHandler.getInstance().getLastSearchType() != Searcher.Type.HISTORY) return;
 
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        int percent = safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
+        // Each history icon type has an independent size slider. If the new preference has
+        // never been saved, fall back to the existing App icon size so upgrading preserves the
+        // 3.30.106 behaviour until the user chooses a custom value.
+        int appIconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
+        int notificationPercent = safePercent(prefs, "smart-list-notification-icon-size-percent", appIconPercent, 50, 240);
+        int shortcutPercent = safePercent(prefs, "smart-list-shortcut-icon-size-percent", appIconPercent, 50, 240);
+        int featurePercent = safePercent(prefs, "smart-list-feature-icon-size-percent", appIconPercent, 50, 240);
+        int contactPercent = safePercent(prefs, "smart-list-contact-icon-size-percent", appIconPercent, 50, 240);
 
         applyConfiguredIconSize(row, prefs, R.id.item_notification_icon,
-                "smart-list-resize-notification-icons", percent);
+                "smart-list-resize-notification-icons", notificationPercent);
         applyConfiguredIconSize(row, prefs, R.id.item_shortcut_icon,
-                "smart-list-resize-shortcut-icons", percent);
+                "smart-list-resize-shortcut-icons", shortcutPercent);
         applyConfiguredIconSize(row, prefs, R.id.item_setting_icon,
-                "smart-list-resize-feature-icons", percent);
+                "smart-list-resize-feature-icons", featurePercent);
         applyConfiguredIconSize(row, prefs, R.id.item_contact_icon,
-                "smart-list-resize-contact-icons", percent);
+                "smart-list-resize-contact-icons", contactPercent);
     }
 
     private static void applyConfiguredIconSize(@NonNull View row, @NonNull SharedPreferences prefs,

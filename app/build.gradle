@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.106 - exposed history icon sizing for notification, shortcut and feature icons
-        versionCode 534
-        versionName "3.30.106"
+        // Smart S Launcher 3.30.108 - exact launch target search ranking for notification, shortcut and feature icons
+        versionCode 536
+        versionName "3.30.108"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

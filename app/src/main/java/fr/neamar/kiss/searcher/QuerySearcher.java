@@ -17,6 +17,8 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.SettingPojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.PojoWithTags;
 import fr.neamar.kiss.pojo.SearchPojo;
@@ -33,6 +35,12 @@ import fr.neamar.kiss.pojo.SearchPojoType;
  * fixed relevance constants used by generic web/app-store search actions.
  */
 public class QuerySearcher extends Searcher {
+    /**
+     * Exact app/shortcut/setting matches are intentionally the strongest local results.
+     * Searcher/RecordAdapter already place stronger relevance later in the result list, which
+     * keeps these exact launch targets at the bottom for one-handed reachability.
+     */
+    private static final int EXACT_REACHABILITY_RELEVANCE = 1_000_000;
     public static final String PREF_SEMANTIC_RERANK = "semantic-rerank-enabled";
     public static final String PREF_SEMANTIC_WEIGHT = "semantic-rerank-weight";
 
@@ -99,6 +107,13 @@ public class QuerySearcher extends Searcher {
             lexicalIds.add(pojo.id);
 
             int originalRelevance = pojo.relevance;
+            if (isExactReachabilityMatch(pojo)) {
+                // Exact launch-target matches must stay below weaker messages/emails/etc.
+                // History and semantic reranking must not pull them away from the bottom.
+                pojo.relevance = EXACT_REACHABILITY_RELEVANCE;
+                continue;
+            }
+
             Integer historyValue = knownIds == null ? null : knownIds.get(pojo.id);
 
             if (semanticEnabled && semanticRerank) {
@@ -257,6 +272,19 @@ public class QuerySearcher extends Searcher {
         int result = Math.round(combined * 10000f);
         if (pojo.isDisabled()) result -= 1200;
         return result;
+    }
+
+    private boolean isExactReachabilityMatch(Pojo pojo) {
+        if (pojo == null || pojo.isDisabled()) return false;
+        if (!(pojo instanceof AppPojo)
+                && !(pojo instanceof ShortcutPojo)
+                && !(pojo instanceof SettingPojo)) {
+            return false;
+        }
+
+        String normalizedQuery = normalize(query);
+        String normalizedName = normalize(pojo.getName());
+        return !normalizedQuery.isEmpty() && normalizedName.equals(normalizedQuery);
     }
 
     private float lexicalQuality(String rawQuery, Pojo pojo, boolean providerMatched) {
