@@ -42,6 +42,7 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.result.CommunicationResult;
 import fr.neamar.kiss.result.Result;
@@ -882,7 +883,46 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 updatedResults.add(Result.fromPojo(parent, pojo));
             }
         }
+
+        // Final presentation boundary: exact App/Shortcut/Setting matches belong at the bottom.
+        // Preserve the existing order of every other result; this does not change relevance scoring.
+        moveExactLaunchTargetsToBottom(updatedResults, query);
         updateResults(context, updatedResults, isRefresh, query);
+    }
+
+    private void moveExactLaunchTargetsToBottom(List<Result<?>> items, String query) {
+        if (items == null || items.size() < 2 || TextUtils.isEmpty(query)) return;
+
+        String normalizedQuery = normalizeSearchName(query);
+        if (normalizedQuery.isEmpty()) return;
+
+        List<Result<?>> normalResults = new ArrayList<>(items.size());
+        List<Result<?>> exactLaunchTargets = new ArrayList<>(3);
+        for (Result<?> result : items) {
+            if (result == null || !isExactLaunchTarget(result.getPojo(), normalizedQuery)) {
+                normalResults.add(result);
+            } else {
+                exactLaunchTargets.add(result);
+            }
+        }
+        if (exactLaunchTargets.isEmpty()) return;
+
+        items.clear();
+        items.addAll(normalResults);
+        items.addAll(exactLaunchTargets);
+    }
+
+    private boolean isExactLaunchTarget(Pojo pojo, String normalizedQuery) {
+        if (pojo == null || pojo.isDisabled()) return false;
+        if (!(pojo instanceof AppPojo)
+                && !(pojo instanceof ShortcutPojo)
+                && !(pojo instanceof SettingPojo)) return false;
+        return normalizedQuery.equals(normalizeSearchName(pojo.getName()));
+    }
+
+    private String normalizeSearchName(String value) {
+        if (value == null) return "";
+        return value.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", " ");
     }
 
     private String reuseKey(Pojo pojo) {

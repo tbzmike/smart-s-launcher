@@ -19,8 +19,8 @@ android {
             version = release(36)
         }
         // Smart S Launcher 3.30.109 - optional Pixel Launcher screen-off cleanup
-        versionCode 537
-        versionName "3.30.109"
+        versionCode 538
+        versionName "3.30.110"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
