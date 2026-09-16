@@ -57,7 +57,7 @@ jobs:
             smart-list-feature-icon-size-percent \
             smart-list-contact-icon-size-percent; do
             grep -q "$key" app/src/main/res/xml/preferences.xml
-            grep -q "$key" app/src/main/java/fr/neamar/kiss/utils/TileVisualStyle.java
+            grep -q "$key" app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
           done
 
           # Performance audit: no new persistent worker/service was added for the screen-off feature.
