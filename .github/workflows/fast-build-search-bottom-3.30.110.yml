@@ -10,12 +10,17 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 21
       - name: Apply patch
         run: python3 .github/scripts/fix_search_bottom_3_30_110.py
       - name: Verify source before build
@@ -30,9 +35,7 @@ jobs:
           grep -q 'moveExactLaunchTargetsToBottom(updatedResults, query)' app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
           grep -q 'class PixelLauncherScreenOffReceiver' app/src/main/java/fr/neamar/kiss/PixelLauncherScreenOffReceiver.java
       - name: Build APKs
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug assembleRelease --no-daemon
+        run: bash ./gradlew assembleDebug assembleRelease --stacktrace
       - name: Verify build outputs
         run: |
           set -euo pipefail
