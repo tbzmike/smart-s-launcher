@@ -33,8 +33,8 @@ query_searcher.write_text(text)
 
 gradle = Path('app/build.gradle')
 g = gradle.read_text()
-vm = re.search(r'versionName\\s+["\\']([^"\\']+)["\\']', g)
-cm = re.search(r'versionCode\\s+(\\d+)', g)
+vm = re.search(r"versionName\s+[\"']([^\"']+)[\"']", g)
+cm = re.search(r"versionCode\s+(\d+)", g)
 if not vm or not cm or vm.group(1) != '3.30.107' or cm.group(1) != '535':
     raise SystemExit('Expected verified 3.30.107/535 baseline after slider preparation; refusing to guess.')
 g = g[:vm.start(1)] + '3.30.108' + g[vm.end(1):]
