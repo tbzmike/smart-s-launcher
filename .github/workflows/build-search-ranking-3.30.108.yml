@@ -1,0 +1,89 @@
+name: Build Smart S Launcher 3.30.108
+
+on:
+  push:
+    branches:
+      - feature/search-ranking-3.30.108
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-verify-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: feature/search-ranking-3.30.108
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Apply verified 3.30.107 slider source
+        run: python3 .github/scripts/add_independent_history_icon_sliders.py
+
+      - name: Apply verified 3.30.108 search ranking
+        run: python3 .github/scripts/apply_search_ranking_3_30_108.py
+
+      - name: Verify source before build
+        shell: bash
+        run: |
+          set -e
+          grep -q 'versionName "3.30.108"' app/build.gradle
+          grep -q 'versionCode 536' app/build.gradle
+          grep -q 'EXACT_REACHABILITY_RELEVANCE = 1_000_000' app/src/main/java/fr/neamar/kiss/searcher/QuerySearcher.java
+          grep -q 'isExactReachabilityMatch' app/src/main/java/fr/neamar/kiss/searcher/QuerySearcher.java
+          grep -q 'smart-list-notification-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+          grep -q 'smart-list-shortcut-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+          grep -q 'smart-list-feature-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+          grep -q 'smart-list-contact-icon-size-percent' app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java
+          grep -q 'Notification / profile picture size (%)' app/src/main/res/xml/preferences.xml
+          grep -q 'Shortcut icon size (%)' app/src/main/res/xml/preferences.xml
+          grep -q 'Settings / feature icon size (%)' app/src/main/res/xml/preferences.xml
+          grep -q 'Contact / avatar picture size (%)' app/src/main/res/xml/preferences.xml
+          grep -q 'First stage: search the already-rendered history rows in memory' app/src/main/java/fr/neamar/kiss/searcher/QuerySearcher.java
+          grep -q 'publishHistoryPreview' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
+
+      - name: Lint
+        run: bash ./gradlew lint --stacktrace
+
+      - name: Unit tests
+        run: bash ./gradlew test --stacktrace
+
+      - name: Build debug and release APKs
+        run: bash ./gradlew assembleDebug assembleRelease --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: SmartSLauncher-3.30.108-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          archive: false
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: SmartSLauncher-3.30.108-release
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          archive: false
+
+      - name: Commit verified source and remove temporary build files
+        shell: bash
+        run: |
+          set -e
+          git show 234f086dec7691a470e10c98a7770d5940a8e14b:.github/workflows/ci.yml > .github/workflows/ci.yml
+          rm -f .github/scripts/add_independent_history_icon_sliders.py
+          rm -f .github/scripts/apply_search_ranking_3_30_108.py
+          rm -f .github/workflows/build-search-ranking-3.30.108.yml
+          rm -f .github/workflows/add-manual-history-icon-sliders.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/res/xml/preferences.xml app/src/main/res/xml/preferences_smart_features.xml app/src/main/java/fr/neamar/kiss/ui/TileVisualStyle.java app/src/main/java/fr/neamar/kiss/searcher/QuerySearcher.java app/build.gradle .github/workflows/ci.yml .github/scripts .github/workflows
+          git commit -m 'Update search ranking and version to 3.30.108'
+          git push origin HEAD:feature/search-ranking-3.30.108
