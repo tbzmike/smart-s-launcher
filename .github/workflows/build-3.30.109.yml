@@ -1,0 +1,126 @@
+name: Build Smart S Launcher 3.30.109
+
+on:
+  push:
+    branches:
+      - feature/pixel-launcher-kill-3.30.109
+
+permissions:
+  contents: write
+
+jobs:
+  build-verify-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/pixel-launcher-kill-3.30.109
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Apply 3.30.109 source patch
+        run: python3 .github/scripts/apply_3_30_109.py
+
+      - name: Verify intended wiring and preserve existing features
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode 537' app/build.gradle
+          grep -q 'versionName "3.30.109"' app/build.gradle
+          grep -q 'PixelLauncherScreenOffReceiver.register(this);' app/src/main/java/fr/neamar/kiss/KissApplication.java
+          grep -q 'PREFERENCE_KEY = "kill-pixel-launcher-on-screen-off"' app/src/main/java/fr/neamar/kiss/PixelLauncherScreenOffReceiver.java
+          grep -q 'com.google.android.apps.nexuslauncher' app/src/main/java/fr/neamar/kiss/PixelLauncherScreenOffReceiver.java
+          grep -q 'hibernateApp(PIXEL_LAUNCHER_PACKAGE)' app/src/main/java/fr/neamar/kiss/PixelLauncherScreenOffReceiver.java
+          grep -q 'goAsync()' app/src/main/java/fr/neamar/kiss/PixelLauncherScreenOffReceiver.java
+          grep -q 'Force-stop Pixel Launcher when screen turns off' app/src/main/java/fr/neamar/kiss/SettingsFragment.java
+          grep -q 'addPixelLauncherCleanupPreference(rootKey);' app/src/main/java/fr/neamar/kiss/SettingsFragment.java
+
+          # Previous 3.30.108 search-ranking behavior remains intact.
+          grep -q 'EXACT_REACHABILITY_RELEVANCE' app/src/main/java/fr/neamar/kiss/searcher/QuerySearcher.java
+          grep -q 'isExactReachabilityMatch' app/src/main/java/fr/neamar/kiss/searcher/QuerySearcher.java
+          grep -q 'First stage: search the already-rendered history rows in memory' app/src/main/java/fr/neamar/kiss/searcher/QuerySearcher.java
+          grep -q 'publishHistoryPreview' app/src/main/java/fr/neamar/kiss/searcher/SearchHandler.java
+
+          # Previous independent history-icon sizing remains intact.
+          for key in \
+            smart-list-notification-icon-size-percent \
+            smart-list-shortcut-icon-size-percent \
+            smart-list-feature-icon-size-percent \
+            smart-list-contact-icon-size-percent; do
+            grep -q "$key" app/src/main/res/xml/preferences.xml
+            grep -q "$key" app/src/main/java/fr/neamar/kiss/utils/TileVisualStyle.java
+          done
+
+          # Performance audit: no new persistent worker/service was added for the screen-off feature.
+          grep -q 'new Thread' app/src/main/java/fr/neamar/kiss/PixelLauncherScreenOffReceiver.java
+          ! grep -q 'ScheduledExecutorService\|scheduleAtFixedRate\|scheduleWithFixedDelay' app/src/main/java/fr/neamar/kiss/PixelLauncherScreenOffReceiver.java
+
+          # Existing long-running features are still explicitly lifecycle-controlled.
+          grep -q 'return START_NOT_STICKY' app/src/main/java/fr/neamar/kiss/social/SocialContactIndexService.java
+          grep -q 'stopSelf(startId)' app/src/main/java/fr/neamar/kiss/social/SocialContactIndexService.java
+          grep -q 'ACTION_STOP' app/src/main/java/fr/neamar/kiss/battery/BatteryMonitorService.java
+          grep -q 'stopSelf()' app/src/main/java/fr/neamar/kiss/battery/BatteryMonitorService.java
+
+          echo '--- changed files relative to 3.30.108 baseline ---'
+          git diff --name-only 68eb8d5d7bad9262a993bf9fd43c5690572f1d87..HEAD
+
+      - name: Run tests, lint, debug and release builds
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon test lint assembleDebug assembleRelease
+
+      - name: Verify APK output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+          file app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload final APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartSLauncher-3.30.109
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary build helpers and commit only intended source changes
+        shell: bash
+        env:
+          BASELINE: 68eb8d5d7bad9262a993bf9fd43c5690572f1d87
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/apply_3_30_109.py .github/workflows/build-3.30.109.yml
+
+          git add app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/KissApplication.java \
+            app/src/main/java/fr/neamar/kiss/PixelLauncherScreenOffReceiver.java \
+            app/src/main/java/fr/neamar/kiss/SettingsFragment.java
+          git add -u .github/scripts/apply_3_30_109.py .github/workflows/build-3.30.109.yml
+
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'Update Smart S Launcher to 3.30.109'
+            git push origin HEAD:feature/pixel-launcher-kill-3.30.109
+          fi
+
+          # Final source-scope verification: only the four intended source files differ from 3.30.108.
+          git fetch origin feature/pixel-launcher-kill-3.30.109
+          expected=$'app/build.gradle\napp/src/main/java/fr/neamar/kiss/KissApplication.java\napp/src/main/java/fr/neamar/kiss/PixelLauncherScreenOffReceiver.java\napp/src/main/java/fr/neamar/kiss/SettingsFragment.java'
+          actual="$(git diff --name-only "${BASELINE}..origin/feature/pixel-launcher-kill-3.30.109")"
+          test "$actual" = "$expected"
+          echo 'Final source-scope verification passed.'
