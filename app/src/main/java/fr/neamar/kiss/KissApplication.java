@@ -137,6 +137,7 @@ public class KissApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        PixelLauncherScreenOffReceiver.register(this);
         DBHelper.initDatabase(this);
         InterfaceTweaks.setDefaultNightMode(this);
         AppUsageTracker.repairPerformanceRegression(this);
