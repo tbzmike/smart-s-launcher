@@ -1,22 +1,24 @@
-Smart S Launcher is a fast, search-focused Android home screen built from the open-source KISS Launcher project and extended with additional launcher, history, notification, usage, battery, and appearance features.
+<p>Smart S Launcher is a fast, search-focused Android home screen built from the open-source KISS Launcher project and extended with additional launcher, history, notification, usage, battery, and appearance features.</p>
 
-Use the search field to quickly find and launch installed apps, shortcuts, contacts and other supported results. Smart S Launcher learns from local usage history so frequently used items can become easier to reach.
+<p>Use the search field to quickly find and launch installed apps, shortcuts, contacts and other supported results. Smart S Launcher learns from local usage history so frequently used items can become easier to reach.</p>
 
-Features include:
+<p>Features include:</p>
 
-* Fast search-first launcher interface
-* App, shortcut and supported contact search
-* Launch/open/click history and usage information
-* Notification history with content previews when Android makes that content available
-* Extensive text, appearance and wallpaper readability controls
-* Battery monitoring and battery widgets
-* Optional accessibility-based double-tap-to-lock support
-* Local launcher preferences and history
+<ul>
+<li>Fast search-first launcher interface</li>
+<li>App, shortcut and supported contact search</li>
+<li>Launch/open/click history and usage information</li>
+<li>Notification history with content previews when Android makes that content available</li>
+<li>Extensive text, appearance and wallpaper readability controls</li>
+<li>Battery monitoring and battery widgets</li>
+<li>Optional accessibility-based double-tap-to-lock support</li>
+<li>Local launcher preferences and history</li>
+</ul>
 
-Some optional features require Android permissions such as notification access, usage access, contacts, phone-related permissions, location, or Accessibility Service access. Features remain subject to the permissions and privacy controls provided by Android.
+<p>Some optional features require Android permissions such as notification access, usage access, contacts, phone-related permissions, location, or Accessibility Service access. Features remain subject to the permissions and privacy controls provided by Android.</p>
 
-Smart S Launcher is free and open-source software licensed under the GNU General Public License v3.0. Its source code is available at:
-https://github.com/tbzmike/smart-s-launcher
+<p>Smart S Launcher is free and open-source software licensed under the GNU General Public License v3.0. Its source code is available at:<br>
+<a href="https://github.com/tbzmike/smart-s-launcher">https://github.com/tbzmike/smart-s-launcher</a></p>
 
-Smart S Launcher is derived from the KISS Launcher open-source project. Original KISS Launcher source:
-https://github.com/Neamar/KISS
+<p>Smart S Launcher is derived from the KISS Launcher open-source project. Original KISS Launcher source:<br>
+<a href="https://github.com/Neamar/KISS">https://github.com/Neamar/KISS</a></p>
