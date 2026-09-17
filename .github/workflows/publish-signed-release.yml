@@ -18,11 +18,6 @@ on:
         required: true
         type: string
         default: '538'
-  push:
-    branches:
-      - master
-    paths:
-      - '.github/workflows/publish-signed-release.yml'
 
 permissions:
   contents: write
