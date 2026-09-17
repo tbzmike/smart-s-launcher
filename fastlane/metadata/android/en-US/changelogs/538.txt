@@ -1,0 +1,1 @@
+Fixed exact app, shortcut, and Settings matches remaining at the bottom of search results.
