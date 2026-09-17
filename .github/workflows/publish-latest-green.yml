@@ -37,13 +37,16 @@ jobs:
           path: run-artifacts
           merge-multiple: true
 
-      - name: Select verified debug APK
+      - name: Select verified APKs
         shell: bash
         run: |
           set -euo pipefail
-          APK="$(find run-artifacts -type f -name 'app-debug.apk' -print -quit)"
-          test -n "$APK"
-          cp "$APK" app-debug.apk
+          DEBUG_APK="$(find run-artifacts -type f -name 'app-debug.apk' -print -quit)"
+          RELEASE_APK="$(find run-artifacts -type f -name 'app-release-unsigned.apk' -print -quit)"
+          test -n "$DEBUG_APK"
+          test -n "$RELEASE_APK"
+          cp "$DEBUG_APK" app-debug.apk
+          cp "$RELEASE_APK" app-release-unsigned.apk
 
       - name: Prepare verified green manifest
         shell: bash
@@ -114,7 +117,45 @@ jobs:
 
           echo "publish=true" >> "$GITHUB_OUTPUT"
 
-      - name: Publish green APK as public Latest Release
+      - name: Sign production APK for F-Droid
+        if: ${{ steps.guard.outputs.publish == 'true' }}
+        shell: bash
+        env:
+          SMART_S_SIGNING_KEY_B64: ${{ secrets.SMART_S_SIGNING_KEY_B64 }}
+          SMART_S_SIGNING_STORE_PASSWORD: ${{ secrets.SMART_S_SIGNING_STORE_PASSWORD }}
+          SMART_S_SIGNING_KEY_ALIAS: ${{ secrets.SMART_S_SIGNING_KEY_ALIAS }}
+          SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 -c 'import json; print(json.load(open("latest-green.json"))["version"])')"
+          KEYSTORE="$RUNNER_TEMP/smart-s-launcher-release.p12"
+          SIGNED_APK="smart-s-launcher-${VERSION}.apk"
+          EXPECTED_CERT="9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+
+          "$SDKMANAGER" "build-tools;34.0.0" >/dev/null
+          printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE" \
+            --ks-type PKCS12 \
+            --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
+            --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
+            --key-pass env:SMART_S_SIGNING_KEY_PASSWORD \
+            --out "$SIGNED_APK" \
+            app-release-unsigned.apk
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED_APK"
+
+          ACTUAL_CERT="$("$BUILD_TOOLS/apksigner" verify --print-certs "$SIGNED_APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test "$ACTUAL_CERT" = "$EXPECTED_CERT"
+          BADGING="$("$BUILD_TOOLS/aapt" dump badging "$SIGNED_APK" | head -n 1)"
+          grep -F "name='com.tbzmike.smartslauncher'" <<<"$BADGING"
+          grep -F "versionName='${VERSION}'" <<<"$BADGING"
+          echo "SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
+          rm -f "$KEYSTORE"
+
+      - name: Publish signed production and updater APKs
         if: ${{ steps.guard.outputs.publish == 'true' }}
         shell: bash
         env:
@@ -129,9 +170,10 @@ jobs:
             --target "$SOURCE_SHA" \
             --latest \
             --title "Smart S Launcher v${VERSION}" \
-            --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully: lint passed, unit tests passed, and APK generation passed. This public release APK is also the APK used by manual and automatic in-app updates." \
+            --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully. The production APK is signed for F-Droid reproducible-build verification; app-debug.apk remains the in-app updater package." \
             latest-green.json \
-            app-debug.apk
+            app-debug.apk \
+            "$SIGNED_APK"
 
       - name: Mirror latest manifest for updater reachability
         if: ${{ steps.guard.outputs.publish == 'true' }}
