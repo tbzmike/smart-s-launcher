@@ -26,6 +26,17 @@ public final class AppLaunchUtils {
 
     private AppLaunchUtils() {}
 
+    public static boolean isPackageInstalled(Context context, String packageName) {
+        if (context == null || packageName == null || packageName.isEmpty()) return false;
+        try {
+            context.getPackageManager().getApplicationInfo(
+                    packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+            return true;
+        } catch (PackageManager.NameNotFoundException | RuntimeException e) {
+            return false;
+        }
+    }
+
     public static boolean isPackageEnabled(Context context, String packageName) {
         long now = SystemClock.elapsedRealtime();
         EnabledState cached = ENABLED_STATE_CACHE.get(packageName);
@@ -91,6 +102,7 @@ public final class AppLaunchUtils {
 
     /** Enable a frozen current-user package without launching it. */
     public static boolean ensurePackageEnabled(Context context, String packageName) {
+        if (!isPackageInstalled(context, packageName)) return false;
         if (isPackageEnabled(context, packageName)) return true;
         if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()
                 || !KissApplication.getApplication(context).getRootHandler().isRootAvailable()) return false;

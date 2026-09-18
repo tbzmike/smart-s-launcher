@@ -38,6 +38,11 @@
         <item>Helix</item>
         <item>Fan</item>
         <item>Bounce</item>
+        <item>Parallax</item>
+        <item>Swing</item>
+        <item>Accordion</item>
+        <item>Spiral</item>
+        <item>Cube</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_scroll_animation_values">
@@ -54,6 +59,11 @@
         <item>helix</item>
         <item>fan</item>
         <item>bounce</item>
+        <item>parallax</item>
+        <item>swing</item>
+        <item>accordion</item>
+        <item>spiral</item>
+        <item>cube</item>
         <item>none</item>
     </string-array>
 
@@ -72,6 +82,11 @@
         <item>Orbit</item>
         <item>Elastic</item>
         <item>Bounce</item>
+        <item>Drop</item>
+        <item>Swing</item>
+        <item>Fold</item>
+        <item>Pop</item>
+        <item>Cube</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_enter_animation_values">
@@ -89,6 +104,11 @@
         <item>orbit</item>
         <item>elastic</item>
         <item>bounce</item>
+        <item>drop</item>
+        <item>swing</item>
+        <item>fold</item>
+        <item>pop</item>
+        <item>cube</item>
         <item>none</item>
     </string-array>
 
@@ -106,6 +126,11 @@
         <item>Orbit</item>
         <item>Elastic</item>
         <item>Bounce</item>
+        <item>Drop away</item>
+        <item>Swing away</item>
+        <item>Fold</item>
+        <item>Collapse</item>
+        <item>Cube</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_exit_animation_values">
@@ -122,6 +147,11 @@
         <item>orbit</item>
         <item>elastic</item>
         <item>bounce</item>
+        <item>drop</item>
+        <item>swing</item>
+        <item>fold</item>
+        <item>collapse</item>
+        <item>cube</item>
         <item>none</item>
     </string-array>
 
@@ -140,6 +170,11 @@
         <item>Orbit</item>
         <item>Elastic</item>
         <item>Bounce</item>
+        <item>Drop</item>
+        <item>Swing</item>
+        <item>Fold</item>
+        <item>Pop</item>
+        <item>Cube</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_popup_animation_values">
@@ -157,6 +192,11 @@
         <item>orbit</item>
         <item>elastic</item>
         <item>bounce</item>
+        <item>drop</item>
+        <item>swing</item>
+        <item>fold</item>
+        <item>pop</item>
+        <item>cube</item>
         <item>none</item>
     </string-array>
 
@@ -169,6 +209,11 @@
         <item>Whirl</item>
         <item>Orbit</item>
         <item>Spring</item>
+        <item>Parallax</item>
+        <item>Swing</item>
+        <item>Fold</item>
+        <item>Cube</item>
+        <item>Reveal</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_switch_animation_values">
@@ -180,6 +225,11 @@
         <item>whirl</item>
         <item>orbit</item>
         <item>spring</item>
+        <item>parallax</item>
+        <item>swing</item>
+        <item>fold</item>
+        <item>cube</item>
+        <item>reveal</item>
         <item>none</item>
     </string-array>
 
@@ -189,6 +239,9 @@
         <item>Scale</item>
         <item>Spring</item>
         <item>Zoom</item>
+        <item>Pop</item>
+        <item>Swing</item>
+        <item>Drop</item>
         <item>None</item>
     </string-array>
     <string-array name="smart_toast_animation_values">
@@ -197,6 +250,9 @@
         <item>scale</item>
         <item>spring</item>
         <item>zoom</item>
+        <item>pop</item>
+        <item>swing</item>
+        <item>drop</item>
         <item>none</item>
     </string-array>
 

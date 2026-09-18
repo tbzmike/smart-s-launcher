@@ -16,6 +16,7 @@ import fr.neamar.kiss.BatteryMonitorActivity;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.activitylauncher.ActivityLauncherActivity;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
@@ -37,11 +38,7 @@ public class ForwarderManager extends Forwarder {
     private final VerticalCardGroupResizeController verticalCardGroupResizeController;
     private final VerticalCardNotificationHistoryForwarder verticalCardNotificationHistoryForwarder;
     private final VerticalCardUsageForwarder verticalCardUsageForwarder;
-    private final SquareUHostFullscreenController squareUHostFullscreenController;
-    private final SquareUStabilityController squareUStabilityController;
-    private final SquareUEdgeBoundsController squareUEdgeBoundsController;
     private final HistoryVisualEnhancer historyVisualEnhancer;
-    private final UNotificationHistoryLongPressForwarder uNotificationHistoryLongPressForwarder;
     private final CommunicationHistoryForwarder communicationHistoryForwarder;
     private final WidgetPeelController widgetPeelController;
     private boolean initialResumeComplete;
@@ -65,19 +62,20 @@ public class ForwarderManager extends Forwarder {
         this.verticalCardViewportController = new VerticalCardViewportController(mainActivity, smartCardListForwarder);
         this.verticalMapsCardForwarder = new VerticalMapsCardForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardGroupResizeController = new VerticalCardGroupResizeController(
-                mainActivity, smartCardListForwarder, this::rebuildVerticalCardsForExplicitUiChange);
+                mainActivity, smartCardListForwarder, this::rebuildVerticalCardsForExplicitUiChange,
+                this::applySharedHistoryWidth);
         this.verticalCardNotificationHistoryForwarder = new VerticalCardNotificationHistoryForwarder(mainActivity, smartCardListForwarder);
         this.verticalCardUsageForwarder = new VerticalCardUsageForwarder(
                 mainActivity, smartCardListForwarder, verticalCardViewportController);
-        this.squareUHostFullscreenController = new SquareUHostFullscreenController(mainActivity, historyDisplayForwarder);
-        this.squareUStabilityController = new SquareUStabilityController(mainActivity, historyDisplayForwarder);
-        this.squareUEdgeBoundsController = new SquareUEdgeBoundsController(mainActivity, historyDisplayForwarder);
         this.historyVisualEnhancer = new HistoryVisualEnhancer(mainActivity, historyDisplayForwarder);
-        this.uNotificationHistoryLongPressForwarder = new UNotificationHistoryLongPressForwarder(mainActivity, historyDisplayForwarder);
         this.communicationHistoryForwarder = new CommunicationHistoryForwarder(mainActivity);
         this.widgetPeelController = new WidgetPeelController(mainActivity);
         this.smartCardListForwarder.setDeferredHistoryRefreshCallback(
-                this::rebuildDeferredVerticalCards);
+                this::rebuildDeferredVerticalCardsFromManualBottom);
+        this.smartCardListForwarder.setUserScrollStartedCallback(
+                verticalCardViewportController::onUserScrollStarted);
+        this.verticalCardViewportController.setNavigateLatestCallback(
+                this::navigateToLatestVerticalCards);
     }
 
     public void onCreate() {
@@ -90,17 +88,13 @@ public class ForwarderManager extends Forwarder {
         experienceTweaks.onCreate();
         shortcutsForwarder.onCreate();
         tagsMenu.onCreate();
-        historyDisplayForwarder.onCreate();
-        squareUHostFullscreenController.onCreate();
         smartCardListForwarder.onCreate();
+        historyDisplayForwarder.onCreate();
         verticalCardViewportController.onCreate();
         verticalMapsCardForwarder.onCreate();
         verticalCardGroupResizeController.onCreate();
         verticalCardNotificationHistoryForwarder.onCreate();
         verticalCardUsageForwarder.onCreate();
-        squareUStabilityController.onCreate();
-        squareUEdgeBoundsController.onCreate();
-        uNotificationHistoryLongPressForwarder.onCreate();
         lockedHistoryGestureBridge.onCreate();
     }
 
@@ -109,10 +103,8 @@ public class ForwarderManager extends Forwarder {
     public void onResume() {
         UiEditLock.syncRuntimeState(mainActivity);
         boolean uiEditLocked = UiEditLock.isLocked(mainActivity);
-        boolean uiEditLockChanged = uiEditLocked != lastUiEditLocked;
         lastUiEditLocked = uiEditLocked;
         boolean verticalCards = isVerticalCardsMode();
-        boolean square = isSquareMode();
 
         if (verticalCards) {
             // Only the selected Vertical Cards renderer owns this persisted viewport state.
@@ -124,8 +116,11 @@ public class ForwarderManager extends Forwarder {
         notificationForwarder.onResume();
 
         if (initialResumeComplete) {
-            if (verticalCards && uiEditLockChanged) verticalCardGroupResizeController.onResume();
-            if (verticalCards) verticalCardUsageForwarder.onResume();
+            verticalCardGroupResizeController.onResume();
+            if (verticalCards) {
+                verticalCardNotificationHistoryForwarder.onResume();
+                verticalCardUsageForwarder.onResume();
+            }
             return;
         }
 
@@ -143,11 +138,6 @@ public class ForwarderManager extends Forwarder {
             verticalCardNotificationHistoryForwarder.onResume();
             verticalCardUsageForwarder.onResume();
             verticalCardViewportController.afterDataSetChanged();
-        } else if (square) {
-            squareUHostFullscreenController.onResume();
-            squareUStabilityController.onResume();
-            squareUEdgeBoundsController.onResume();
-            uNotificationHistoryLongPressForwarder.onResume();
         }
 
         // Vertical Cards already have dedicated usage/notification enrichment. Running the
@@ -161,6 +151,9 @@ public class ForwarderManager extends Forwarder {
         if (isVerticalCardsMode()) {
             // Capture only when Vertical Cards actually owns the visible history viewport.
             verticalCardViewportController.onLauncherPaused();
+            // Stop Vertical Cards UI mutation/attention work before Android's external transition.
+            verticalCardNotificationHistoryForwarder.onPause();
+            verticalCardUsageForwarder.onPause();
         }
         experienceTweaks.onPause();
         notificationForwarder.onPause();
@@ -170,6 +163,14 @@ public class ForwarderManager extends Forwarder {
 
     public boolean onOptionsItemSelected(MenuItem item) {
         int itemId = item.getItemId();
+        if (itemId == R.id.activity_launcher) {
+            if (UiEditLock.isLocked(mainActivity)) {
+                UiEditLock.allowEdit(mainActivity);
+                return true;
+            }
+            mainActivity.startActivity(new Intent(mainActivity, ActivityLauncherActivity.class));
+            return true;
+        }
         if (itemId == R.id.app_usage) {
             mainActivity.startActivity(new Intent(mainActivity, AppUsageActivity.class));
             return true;
@@ -196,17 +197,23 @@ public class ForwarderManager extends Forwarder {
         return widgetsForwarder.onOptionsItemSelected(item);
     }
 
-    public void onCreateContextMenu(ContextMenu menu) { if (!UiEditLock.isLocked(mainActivity)) widgetsForwarder.onCreateContextMenu(menu); }
+    public void onCreateContextMenu(ContextMenu menu) {
+        boolean unlocked = !UiEditLock.isLocked(mainActivity);
+        MenuItem activityLauncher = menu.findItem(R.id.activity_launcher);
+        if (activityLauncher != null) activityLauncher.setVisible(unlocked);
+        if (unlocked) widgetsForwarder.onCreateContextMenu(menu);
+    }
 
     public boolean onTouch(View view, MotionEvent event) { experienceTweaks.onTouch(event); return liveWallpaperForwarder.onTouch(view, event); }
 
-    public void onDataSetChanged() {
+    public boolean onDataSetChanged() {
         widgetsForwarder.onDataSetChanged();
         widgetPeelController.onDataSetChanged();
         historyDisplayForwarder.onDataSetChanged();
 
         boolean verticalCards = isVerticalCardsMode();
         boolean verticalCardTreeChanged = false;
+        boolean visibleResultTreeChanged = true;
         if (verticalCards) {
             boolean synchronousRebuild =
                     smartCardListForwarder.willRebuildSynchronouslyForDataSetChange();
@@ -215,19 +222,22 @@ public class ForwarderManager extends Forwarder {
             if (verticalCardTreeChanged) {
                 decorateVerticalCardsAfterRebuild();
                 verticalCardViewportController.afterDataSetChanged();
+            } else if (smartCardListForwarder.hasPendingDataSetRefresh()) {
+                if (verticalCardViewportController.isExplicitBottomPinned()) {
+                    verticalCardTreeChanged = rebuildPendingVerticalCards(false);
+                } else {
+                    verticalCardViewportController.onPassiveHistoryUpdatePending(false);
+                }
             }
-        } else if (isSquareMode()) {
-            squareUHostFullscreenController.onDataSetChanged();
-            squareUStabilityController.onDataSetChanged();
-            squareUEdgeBoundsController.onDataSetChanged();
-            uNotificationHistoryLongPressForwarder.onDataSetChanged();
+            visibleResultTreeChanged = verticalCardTreeChanged;
         }
 
-        // Native-list history enrichment is useful for native/square layouts, but Vertical Cards
+        // Native-list/wheel history enrichment is useful for the native renderer, but Vertical Cards
         // already own equivalent enrichment. Do not run both pipelines against the same history.
         if (isHistorySearch() && !verticalCards) historyVisualEnhancer.onDataSetChanged();
         // Recursive gesture attachment is needed only when the visible Vertical Cards tree changed.
         if (!verticalCards || verticalCardTreeChanged) lockedHistoryGestureBridge.onDataSetChanged();
+        return visibleResultTreeChanged;
     }
 
     private void decorateVerticalCardsAfterRebuild() {
@@ -238,16 +248,40 @@ public class ForwarderManager extends Forwarder {
         verticalCardUsageForwarder.onDataSetChanged();
     }
 
-    private void rebuildDeferredVerticalCards() {
-        if (!isVerticalCardsMode() || !smartCardListForwarder.hasPendingDataSetRefresh()) return;
-        if (smartCardListForwarder.consumeDeferredKeepBottom()) {
-            verticalCardViewportController.forceBottomForNextRebuild();
+    private void rebuildDeferredVerticalCardsFromManualBottom() {
+        if (rebuildPendingVerticalCards(true)) {
+            lockedHistoryGestureBridge.onDataSetChanged();
         }
+    }
+
+    private boolean rebuildPendingVerticalCards(boolean keepBottom) {
+        if (!isVerticalCardsMode() || !smartCardListForwarder.hasPendingDataSetRefresh()) return false;
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(
+                    () -> rebuildPendingVerticalCards(keepBottom));
+            return false;
+        }
+        if (keepBottom) verticalCardViewportController.forceBottomForNextRebuild();
         verticalCardViewportController.beforeDataSetChanged();
-        if (!smartCardListForwarder.rebuildPendingDataSetRefresh()) return;
+        if (!smartCardListForwarder.rebuildPendingDataSetRefresh()) return false;
         decorateVerticalCardsAfterRebuild();
         verticalCardViewportController.afterDataSetChanged();
-        lockedHistoryGestureBridge.onDataSetChanged();
+        verticalCardViewportController.onPendingHistoryApplied();
+        return true;
+    }
+
+    private void navigateToLatestVerticalCards() {
+        if (!isVerticalCardsMode()) return;
+        verticalCardViewportController.beginExplicitBottomNavigation();
+        if (rebuildPendingVerticalCards(false)) {
+            lockedHistoryGestureBridge.onDataSetChanged();
+        } else {
+            verticalCardViewportController.applyExplicitBottomNow();
+        }
+    }
+
+    private void applySharedHistoryWidth() {
+        historyDisplayForwarder.onSharedWidthChanged();
     }
 
     private void rebuildVerticalCardsForExplicitUiChange() {
@@ -276,11 +310,39 @@ public class ForwarderManager extends Forwarder {
         experienceTweaks.updateSearchRecords(query);
     }
 
+    /** Force QUERY -> default HISTORY after a verified successful external search launch. */
+    public void prepareDefaultHistoryAfterSearchLaunch() {
+        if (!isVerticalCardsMode()) return;
+        smartCardListForwarder.forceHistoryRebuildOnNextDataSetChange();
+        verticalCardViewportController.beginExplicitBottomNavigation();
+    }
+
     /** Route the exact Android HOME intent with verified foreground/background lifecycle state. */
     public void onNewIntent(@NonNull Intent intent, boolean launcherWasForeground) {
         if (isVerticalCardsMode() && isHomeIntent(intent)) {
             verticalCardViewportController.onHomeIntent(launcherWasForeground);
         }
+    }
+
+    public void onNotificationTimelineChanged(@Nullable String notificationId, boolean posted) {
+        if (!isVerticalCardsMode() || !posted || TextUtils.isEmpty(notificationId)) return;
+        if (!prefs.getBoolean("enable-notification-history", false)
+                || !isHistorySearch()
+                || !mainActivity.isViewingSearchResults()
+                || !TextUtils.isEmpty(mainActivity.searchEditText.getText())) {
+            return;
+        }
+        // Arrival is information, not navigation. Keep the viewport fixed and animate the existing
+        // jump-to-latest fingers so the user can choose when to visit the new card.
+        verticalCardViewportController.onPassiveHistoryUpdatePending(true);
+    }
+
+    public void onExternalResultLaunchStarting() {
+        if (isVerticalCardsMode()) verticalCardViewportController.onExternalLaunchStarting();
+    }
+
+    public void onExternalResultLaunchCancelled() {
+        if (isVerticalCardsMode()) verticalCardViewportController.onExternalLaunchCancelled();
     }
 
     public void onFavoriteChange() { favoritesForwarder.onFavoriteChange(); experienceTweaks.onFavoriteChange(); }
@@ -290,15 +352,13 @@ public class ForwarderManager extends Forwarder {
     public void onDestroy() {
         liveWallpaperForwarder.onDestroy();
         widgetPeelController.onDestroy();
+        historyVisualEnhancer.onDestroy();
+        historyDisplayForwarder.onDestroy();
         verticalCardViewportController.onDestroy();
         verticalCardUsageForwarder.onDestroy();
-        uNotificationHistoryLongPressForwarder.onDestroy();
         lockedHistoryGestureBridge.onDestroy();
         verticalCardNotificationHistoryForwarder.onDestroy();
         verticalCardGroupResizeController.onDestroy();
-        squareUEdgeBoundsController.onDestroy();
-        squareUStabilityController.onDestroy();
-        squareUHostFullscreenController.onDestroy();
         widgetsForwarder.onDestroy();
         smartCardListForwarder.onDestroy();
     }
@@ -307,32 +367,22 @@ public class ForwarderManager extends Forwarder {
         widgetPeelController.onConfigurationChanged();
         interfaceTweaks.onConfigurationChanged(newConfig);
         favoritesForwarder.onConfigurationChanged(newConfig);
+        verticalCardGroupResizeController.onConfigurationChanged();
         if (isVerticalCardsMode()) {
-            verticalCardGroupResizeController.onConfigurationChanged();
             verticalCardNotificationHistoryForwarder.onConfigurationChanged();
             verticalCardViewportController.onConfigurationChanged();
             verticalCardUsageForwarder.onConfigurationChanged();
-        } else if (isSquareMode()) {
-            squareUHostFullscreenController.onConfigurationChanged();
-            squareUStabilityController.onConfigurationChanged();
-            squareUEdgeBoundsController.onConfigurationChanged();
-            uNotificationHistoryLongPressForwarder.onConfigurationChanged();
         }
         lockedHistoryGestureBridge.onResume();
     }
 
     private String activeHistoryLayout() {
-        String layout = prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT,
-                HistoryDisplayForwarder.VERTICAL);
-        return layout == null ? HistoryDisplayForwarder.VERTICAL : layout;
+        return HistoryLayoutMode.normalize(prefs.getString(
+                HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL));
     }
 
     private boolean isVerticalCardsMode() {
         return HistoryDisplayForwarder.VERTICAL_CARDS.equals(activeHistoryLayout());
-    }
-
-    private boolean isSquareMode() {
-        return HistoryDisplayForwarder.SQUARE_U.equals(activeHistoryLayout());
     }
 
     private boolean isHistorySearch() {

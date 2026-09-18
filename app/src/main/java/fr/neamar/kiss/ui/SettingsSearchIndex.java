@@ -167,7 +167,7 @@ public final class SettingsSearchIndex {
         dynamic(out, "Default text style", "Global fallback normal, bold or italic appearance", 
                 "smart-default-text-style", "ui-holder", Destination.STANDARD, null);
 
-        dynamic(out, "App history layout", "Vertical list, cards, horizontal views and Square-U cards", 
+        dynamic(out, "App history layout", "Vertical list, Vertical Cards and 3D wheel",
                 "smart-history-layout", "history_category", Destination.STANDARD, null);
         dynamic(out, "History layout sizing", "Resize history cards, icons, names, rows and spacing", 
                 "smart-history-sizing-category", "history_category", Destination.STANDARD, null);

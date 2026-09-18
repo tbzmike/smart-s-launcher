@@ -17,6 +17,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.SectionIndexer;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.fragment.app.DialogFragment;
@@ -32,6 +33,7 @@ import java.util.WeakHashMap;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.UIColors;
+import fr.neamar.kiss.forwarder.HistoryEdgeWidthPolicy;
 import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -48,7 +50,10 @@ import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.ui.NotificationBellStyle;
+import fr.neamar.kiss.ui.TextOverflowMode;
 import fr.neamar.kiss.ui.TileVisualStyle;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
@@ -58,7 +63,6 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private static final String TAG = RecordAdapter.class.getSimpleName();
-
     private static final class TextStyleState {
         final float sizePx;
         final Typeface typeface;
@@ -75,16 +79,32 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private FuzzyScore fuzzyScore;
     private final List<Result<?>> results;
     private final HashMap<String, Integer> alphaIndexer = new HashMap<>();
-    private final HashMap<String, String> notificationPreviewCache = new HashMap<>();
     private final WeakHashMap<View, int[]> baseRowPadding = new WeakHashMap<>();
     private final WeakHashMap<View, Integer> baseRowMinimumHeight = new WeakHashMap<>();
+    private final WeakHashMap<View, Integer> baseRowLayoutWidths = new WeakHashMap<>();
     private final WeakHashMap<View, int[]> baseIconBounds = new WeakHashMap<>();
     private final WeakHashMap<TextView, TextStyleState> baseTextStyles = new WeakHashMap<>();
-    private final WeakHashMap<View, Boolean> overflowConfigured = new WeakHashMap<>();
+    private final WeakHashMap<View, String> overflowConfigured = new WeakHashMap<>();
     private final WeakHashMap<TextView, Boolean> marqueeObservers = new WeakHashMap<>();
     private final WeakHashMap<View, Integer> verticalStyleSignatures = new WeakHashMap<>();
     private String[] sections = new String[0];
     private String lastRenderedQuery = null;
+    private String cachedOverflowMode = TextOverflowMode.AUTO_SCROLL;
+    private String cachedHistoryLayout = "vertical";
+    private boolean cachedVerticalHistory;
+    private int cachedVerticalStyleSignature = Integer.MIN_VALUE;
+    private int cachedHistoryWidthPercent = 100;
+    private int cachedRowPercent = 100;
+    private int cachedIconPercent = 110;
+    private int cachedLabelSp = 18;
+    private int cachedBodySp = 14;
+    private Typeface cachedLabelTypeface = Typeface.DEFAULT_BOLD;
+    private Typeface cachedBodyTypeface = Typeface.DEFAULT;
+    private String cachedLabelColor = UIColors.colorToString(UIColors.COLOR_SYSTEM);
+    private String cachedBodyColor = UIColors.colorToString(UIColors.COLOR_SYSTEM);
+    private int cachedLabelContrast = 100;
+    private int cachedBodyContrast = 100;
+    private int cachedRowSpacing = 4;
 
     public RecordAdapter(QueryInterface parent, List<Result<?>> results) {
         this.parent = parent;
@@ -101,28 +121,33 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     @Override @NonNull
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
+        Context renderContext = parent.getContext();
+        refreshRenderConfigIfNeeded(renderContext);
         Result<?> result = getItem(position);
-        View view = result.display(parent.getContext(), convertView, parent, fuzzyScore);
+        View view = result.display(renderContext, convertView, parent, fuzzyScore);
+        NotificationBellStyle.applyToResult(view, result, parent instanceof AbsListView);
         if (result.getPojo() instanceof NotificationPojo) {
             configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
             applyBestNotificationPreview(view, (NotificationPojo) result.getPojo());
         }
-        if (!overflowConfigured.containsKey(view)) {
+        String overflowMode = cachedOverflowMode;
+        if (!TextUtils.equals(overflowConfigured.get(view), overflowMode)) {
             configureOverflowText(view);
-            overflowConfigured.put(view, Boolean.TRUE);
+            overflowConfigured.put(view, overflowMode);
         }
         if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
         if (parent instanceof AbsListView) {
-            Context context = parent.getContext();
+            Context context = renderContext;
             TileVisualStyle.apply(view, result, context);
-            if (isVerticalHistory(context)) {
-                int signature = verticalStyleSignature(context);
+            if (isVerticalHistory()) {
+                int signature = cachedVerticalStyleSignature;
                 Integer previous = verticalStyleSignatures.get(view);
                 if (previous == null || previous != signature) {
                     applyVerticalHistorySizing(view, context);
                     applyVerticalHistoryPolish(view, context);
                     verticalStyleSignatures.put(view, signature);
                 }
+                applyVerticalHistoryWidth(view, parent, context, cachedHistoryWidthPercent);
             } else {
                 restoreVerticalHistoryAppearance(view);
                 verticalStyleSignatures.remove(view);
@@ -162,23 +187,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         }
 
         String preview = notification.getPreview();
-        if (TextUtils.isEmpty(preview)
-                && notification.id.startsWith(NotificationListener.NOTIFICATION_SCHEME)
-                && NotificationListener.isNotificationActive(view.getContext(), notification.id)) {
-            if (notificationPreviewCache.containsKey(notification.id)) {
-                preview = notificationPreviewCache.get(notification.id);
-            } else {
-                String expanded = NotificationListener.getExpandedNotificationText(
-                        view.getContext(), notification.id);
-                preview = expanded == null ? "" : expanded.trim().replace('\n', ' ');
-                if (TextUtils.isEmpty(preview)) {
-                    View nativeContainer = view.findViewById(R.id.item_notification_native_container);
-                    preview = extractNativeNotificationPreview(nativeContainer, notification.appName);
-                }
-                notificationPreviewCache.put(notification.id, preview == null ? "" : preview);
-            }
-        }
-
         if (!TextUtils.isEmpty(preview)) {
             title.setText(preview);
             title.setVisibility(View.VISIBLE);
@@ -188,55 +196,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void collapseDuplicateNotificationContent(View view, TextView primaryPreview) {
-        if (!isVerticalHistory(view.getContext())) return;
+        if (!isVerticalHistory()) return;
         TextView secondary = view.findViewById(R.id.item_notification_text);
         if (secondary != null && secondary != primaryPreview) secondary.setVisibility(View.GONE);
         View nativeContainer = view.findViewById(R.id.item_notification_native_container);
         if (nativeContainer != null) nativeContainer.setVisibility(View.GONE);
-    }
-
-    private String extractNativeNotificationPreview(View root, String appName) {
-        if (root == null) return "";
-        ArrayList<String> texts = new ArrayList<>(4);
-        collectNativeText(root, appName == null ? "" : appName.trim(), texts);
-        if (texts.isEmpty()) return "";
-        StringBuilder preview = new StringBuilder();
-        int added = 0;
-        for (String text : texts) {
-            if (preview.length() > 0) preview.append(" · ");
-            preview.append(text);
-            added++;
-            if (preview.length() >= 180 || added >= 2) break;
-        }
-        return preview.toString();
-    }
-
-    private void collectNativeText(View view, String appName, List<String> out) {
-        if (view == null || out.size() >= 3) return;
-        if (view instanceof TextView && !(view instanceof Button)) {
-            CharSequence raw = ((TextView) view).getText();
-            String text = raw == null ? "" : raw.toString().trim().replace('\n', ' ');
-            if (!isUsefulNativePreviewText(text, appName, out)) return;
-            out.add(text);
-            return;
-        }
-        if (!(view instanceof ViewGroup)) return;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount() && out.size() < 3; i++) {
-            collectNativeText(group.getChildAt(i), appName, out);
-        }
-    }
-
-    private boolean isUsefulNativePreviewText(String text, String appName, List<String> existing) {
-        if (TextUtils.isEmpty(text) || isGenericNotificationCount(text)) return false;
-        if (!TextUtils.isEmpty(appName) && text.equalsIgnoreCase(appName)) return false;
-        String lower = text.toLowerCase(java.util.Locale.ROOT);
-        if (lower.equals("mark read") || lower.equals("mark as read")
-                || lower.equals("open notification") || lower.equals("reply")) return false;
-        for (String value : existing) {
-            if (value.equalsIgnoreCase(text) || value.contains(text) || text.contains(value)) return false;
-        }
-        return true;
     }
 
     private boolean isGenericNotificationCount(String text) {
@@ -245,19 +209,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureNotificationTileClick(View view, Result<?> result) {
+        if (!(result.getPojo() instanceof NotificationPojo)) return;
+        NotificationPojo notification = (NotificationPojo) result.getPojo();
+
         View.OnClickListener openExactTarget = v -> {
             SearchHandler.getInstance().cancelSearch();
             RecentLaunchTracker.remember(result.getPojo());
             promoteHistoryResult(result);
             result.launch(v.getContext(), v, parent);
         };
+        View.OnClickListener openApp = v -> openNotificationApp(result, notification, v);
         View.OnLongClickListener openRichNotification = v -> {
             int position = results.indexOf(result);
-            if (UiEditLock.isLocked(v.getContext())) {
-                recordExplicitSelection(v.getContext(), result.getPojo());
-                promoteHistoryResult(result);
-                return NotificationHistoryResolver.showForPojo(v.getContext(), result.getPojo());
-            }
             if (position >= 0) {
                 onLongClick(position, v);
                 return true;
@@ -265,17 +228,59 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             return false;
         };
 
+        // Row/message taps open the exact notification destination. The icon is deliberately
+        // excluded from this group and always performs a normal application launch instead.
         view.setOnClickListener(openExactTarget);
         view.setOnLongClickListener(openRichNotification);
-        int[] ids = new int[]{R.id.item_notification_native_container, R.id.item_notification_app,
-                R.id.item_notification_title, R.id.item_notification_text};
-        for (int id : ids) {
+        int[] messageIds = new int[]{R.id.item_notification_native_container,
+                R.id.item_notification_app, R.id.item_notification_title,
+                R.id.item_notification_text};
+        for (int id : messageIds) {
             View child = view.findViewById(id);
             if (child != null) {
                 child.setOnClickListener(openExactTarget);
                 child.setOnLongClickListener(openRichNotification);
             }
         }
+
+        View icon = view.findViewById(R.id.item_notification_icon);
+        if (icon != null) {
+            icon.setClickable(true);
+            icon.setOnClickListener(openApp);
+            // Long-pressing the icon still exposes the same notification popup as the message.
+            icon.setOnLongClickListener(openRichNotification);
+        }
+    }
+
+    /**
+     * Normal app launch used by notification icons in every renderer. This intentionally does
+     * not touch the exact saved notification destination, so an expired route cannot break an
+     * ordinary app-icon tap.
+     */
+    private void openNotificationApp(Result<?> result, NotificationPojo notification, View source) {
+        if (result == null || notification == null || source == null) return;
+        SearchHandler.getInstance().cancelSearch();
+        Context context = source.getContext();
+        parent.externalResultLaunchStarting();
+        boolean launched = AppLaunchUtils.launchPackage(context, notification.packageName);
+        if (launched) {
+            parent.externalResultLaunchOccurred();
+        } else {
+            parent.externalResultLaunchCancelled();
+            Toast.makeText(context, "Unable to open " + notification.appName + ".",
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Shared entry point for custom Home renderers so Search and Home use the same rule. */
+    public void openNotificationApp(final int pos, View source) {
+        if (pos < 0 || pos >= getCount() || source == null) return;
+        Result<?> result = getItem(pos);
+        if (!(result.getPojo() instanceof NotificationPojo)) {
+            onClick(pos, source);
+            return;
+        }
+        openNotificationApp(result, (NotificationPojo) result.getPojo(), source);
     }
 
     private void recordExplicitSelection(Context context, Pojo pojo) {
@@ -286,12 +291,17 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private void configureOverflowText(View view) {
         if (view instanceof TextView && !(view instanceof Button)) {
             TextView text = (TextView) view;
+            if (TextOverflowMode.AUTO_EXPAND.equals(cachedOverflowMode)) {
+                configureExpandedText(text);
+                return;
+            }
             if (text.getId() == R.id.item_communication_body) {
                 text.setSingleLine(false);
                 text.setMaxLines(Integer.MAX_VALUE);
                 text.setHorizontallyScrolling(false);
                 text.setEllipsize(null);
                 text.setHorizontalFadingEdgeEnabled(false);
+                text.setSelected(false);
                 return;
             }
             configureMarquee(text);
@@ -303,6 +313,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureMarquee(TextView text) {
+        if (TextOverflowMode.AUTO_EXPAND.equals(cachedOverflowMode)) {
+            configureExpandedText(text);
+            return;
+        }
         text.setSingleLine(true);
         text.setMaxLines(1);
         text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
@@ -314,6 +328,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         makeTextUseAvailableWidth(text);
         ensureMarqueeObserver(text);
         updateMarqueeActivation(text);
+    }
+
+    private void configureExpandedText(TextView text) {
+        text.setSelected(false);
+        text.setSingleLine(false);
+        text.setMaxLines(Integer.MAX_VALUE);
+        text.setHorizontallyScrolling(false);
+        text.setEllipsize(null);
+        text.setHorizontalFadingEdgeEnabled(false);
+        text.setFocusable(false);
+        text.setFocusableInTouchMode(false);
+        makeTextUseAvailableWidth(text);
     }
 
     private void ensureMarqueeObserver(TextView text) {
@@ -374,30 +400,14 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void applyVerticalHistorySizing(View row, Context context) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        int rowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
-        int iconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
         if (!baseRowMinimumHeight.containsKey(row)) {
             baseRowMinimumHeight.put(row, row.getMinimumHeight());
         }
-        row.setMinimumHeight(dp(context, 64) * rowPercent / 100);
-        applyPrimaryIconSize(row, iconPercent);
+        row.setMinimumHeight(dp(context, 64) * cachedRowPercent / 100);
+        applyPrimaryIconSize(row, cachedIconPercent);
     }
 
     private void applyVerticalHistoryPolish(View row, Context context) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-
-        int labelSp = safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
-        int bodySp = safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
-        Typeface labelTypeface = typefaceFor(prefs.getString("smart-list-label-font", "sans_bold"));
-        Typeface bodyTypeface = typefaceFor(prefs.getString("smart-list-body-font", "sans_normal"));
-        String labelColor = prefs.getString("smart-list-label-color",
-                UIColors.colorToString(UIColors.COLOR_SYSTEM));
-        String bodyColor = prefs.getString("smart-list-body-color",
-                UIColors.colorToString(UIColors.COLOR_SYSTEM));
-        int labelContrast = safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
-        int bodyContrast = safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
-
         int[] labelIds = new int[]{
                 R.id.item_app_name, R.id.item_contact_name, R.id.item_setting_name,
                 R.id.item_notification_app, R.id.item_communication_title, R.id.item_phone_text
@@ -407,11 +417,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 R.id.item_contact_nickname, R.id.item_notification_title, R.id.item_notification_text,
                 R.id.item_communication_meta, R.id.item_communication_body
         };
-        applyTextStyle(row, labelIds, labelSp, labelTypeface, labelColor, labelContrast);
-        applyTextStyle(row, bodyIds, bodySp, bodyTypeface, bodyColor, bodyContrast);
+        applyTextStyle(row, labelIds, cachedLabelSp, cachedLabelTypeface,
+                cachedLabelColor, cachedLabelContrast);
+        applyTextStyle(row, bodyIds, cachedBodySp, cachedBodyTypeface,
+                cachedBodyColor, cachedBodyContrast);
 
-        int spacing = safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
-        int bodyLines = spacing >= 56 ? 3 : spacing >= 24 ? 2 : 1;
+        int bodyLines = cachedRowSpacing >= 56 ? 3 : cachedRowSpacing >= 24 ? 2 : 1;
         configureVerticalHistoryBodyLines(row, bodyIds, bodyLines);
 
         int[] base = baseRowPadding.get(row);
@@ -419,10 +430,23 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             base = new int[]{row.getPaddingLeft(), row.getPaddingTop(), row.getPaddingRight(), row.getPaddingBottom()};
             baseRowPadding.put(row, base);
         }
-        row.setPadding(base[0], base[1], base[2], base[3] + dp(context, spacing));
+        int leftPadding = HistoryEdgeWidthPolicy.insetForPercent(
+                base[0], cachedHistoryWidthPercent);
+        int rightPadding = HistoryEdgeWidthPolicy.insetForPercent(
+                base[2], cachedHistoryWidthPercent);
+        row.setPadding(leftPadding, base[1], rightPadding,
+                base[3] + dp(context, cachedRowSpacing));
     }
 
     private void configureVerticalHistoryBodyLines(View row, int[] ids, int lines) {
+        if (TextOverflowMode.AUTO_EXPAND.equals(cachedOverflowMode)) {
+            for (int id : ids) {
+                View candidate = row.findViewById(id);
+                if (!(candidate instanceof TextView) || candidate.getVisibility() == View.GONE) continue;
+                configureExpandedText((TextView) candidate);
+            }
+            return;
+        }
         for (int id : ids) {
             View candidate = row.findViewById(id);
             if (!(candidate instanceof TextView) || candidate.getVisibility() == View.GONE) continue;
@@ -440,11 +464,51 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         }
     }
 
+    private void applyVerticalHistoryWidth(View row, ViewGroup parent, Context context, int widthPercent) {
+        int viewportWidth = parent == null ? 0 : parent.getWidth();
+        if (viewportWidth <= 0) {
+            viewportWidth = context.getResources().getDisplayMetrics().widthPixels;
+        }
+        if (viewportWidth <= 0) return;
+
+        ViewGroup.LayoutParams raw = row.getLayoutParams();
+        if (!baseRowLayoutWidths.containsKey(row)) {
+            baseRowLayoutWidths.put(row, raw == null
+                    ? ViewGroup.LayoutParams.MATCH_PARENT : raw.width);
+        }
+
+        int targetWidth = HistoryEdgeWidthPolicy.targetWidth(
+                viewportWidth, viewportWidth, widthPercent);
+        int height = raw == null ? ViewGroup.LayoutParams.WRAP_CONTENT : raw.height;
+        AbsListView.LayoutParams lp;
+        if (raw instanceof AbsListView.LayoutParams) {
+            lp = (AbsListView.LayoutParams) raw;
+        } else {
+            lp = new AbsListView.LayoutParams(targetWidth, height);
+        }
+        if (lp.width != targetWidth || row.getLayoutParams() != lp) {
+            lp.width = targetWidth;
+            row.setLayoutParams(lp);
+        }
+
+        float translationX = (viewportWidth - targetWidth) * 0.5f;
+        if (Math.abs(row.getTranslationX() - translationX) > 0.5f) {
+            row.setTranslationX(translationX);
+        }
+    }
+
     private void restoreVerticalHistoryAppearance(View row) {
         int[] padding = baseRowPadding.get(row);
         if (padding != null) row.setPadding(padding[0], padding[1], padding[2], padding[3]);
         Integer minimumHeight = baseRowMinimumHeight.get(row);
         if (minimumHeight != null) row.setMinimumHeight(minimumHeight);
+        Integer layoutWidth = baseRowLayoutWidths.get(row);
+        ViewGroup.LayoutParams rowParams = row.getLayoutParams();
+        if (layoutWidth != null && rowParams != null && rowParams.width != layoutWidth) {
+            rowParams.width = layoutWidth;
+            row.setLayoutParams(rowParams);
+        }
+        if (row.getTranslationX() != 0f) row.setTranslationX(0f);
         restorePrimaryIconSize(row);
 
         int[] ids = new int[]{
@@ -477,28 +541,62 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         }
     }
 
-    private int verticalStyleSignature(Context context) {
+    private void refreshRenderConfigIfNeeded(Context context) {
+        if (cachedVerticalStyleSignature != Integer.MIN_VALUE) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        cachedHistoryLayout = prefs.getString("smart-history-layout", "vertical");
+        if (cachedHistoryLayout == null) cachedHistoryLayout = "vertical";
+        if (!"vertical".equals(cachedHistoryLayout)
+                && !"vertical_cards".equals(cachedHistoryLayout)
+                && !"wheel_3d".equals(cachedHistoryLayout)) {
+            cachedHistoryLayout = "vertical";
+        }
+        cachedOverflowMode = TextOverflowMode.effectiveMode(context);
+        cachedHistoryWidthPercent = safePercent(
+                prefs, "smart-list-card-width-percent", 100, 48, 400);
+        cachedRowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
+        cachedIconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
+        cachedLabelSp = safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
+        cachedBodySp = safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
+        cachedLabelTypeface = typefaceFor(prefs.getString("smart-list-label-font", "sans_bold"));
+        cachedBodyTypeface = typefaceFor(prefs.getString("smart-list-body-font", "sans_normal"));
+        cachedLabelColor = prefs.getString("smart-list-label-color",
+                UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        cachedBodyColor = prefs.getString("smart-list-body-color",
+                UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        cachedLabelContrast = safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
+        cachedBodyContrast = safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
+        cachedRowSpacing = safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
+        cachedVerticalHistory = ("vertical".equals(cachedHistoryLayout)
+                || "wheel_3d".equals(cachedHistoryLayout))
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+        cachedVerticalStyleSignature = verticalStyleSignature();
+    }
+
+    private void invalidateRenderConfig() {
+        cachedVerticalStyleSignature = Integer.MIN_VALUE;
+    }
+
+    private int verticalStyleSignature() {
         int result = 17;
-        result = 31 * result + safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
-        result = 31 * result + safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
-        result = 31 * result + safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
-        result = 31 * result + safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
-        result = 31 * result + safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
-        result = 31 * result + safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
-        result = 31 * result + safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
-        result = 31 * result + String.valueOf(prefs.getString("smart-list-label-font", "sans_bold")).hashCode();
-        result = 31 * result + String.valueOf(prefs.getString("smart-list-body-font", "sans_normal")).hashCode();
-        result = 31 * result + String.valueOf(prefs.getString("smart-list-label-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();
-        result = 31 * result + String.valueOf(prefs.getString("smart-list-body-color", UIColors.colorToString(UIColors.COLOR_SYSTEM))).hashCode();
+        result = 31 * result + cachedRowPercent;
+        result = 31 * result + cachedHistoryWidthPercent;
+        result = 31 * result + cachedIconPercent;
+        result = 31 * result + cachedLabelSp;
+        result = 31 * result + cachedBodySp;
+        result = 31 * result + cachedLabelContrast;
+        result = 31 * result + cachedBodyContrast;
+        result = 31 * result + cachedRowSpacing;
+        result = 31 * result + cachedOverflowMode.hashCode();
+        result = 31 * result + cachedLabelTypeface.hashCode();
+        result = 31 * result + cachedBodyTypeface.hashCode();
+        result = 31 * result + String.valueOf(cachedLabelColor).hashCode();
+        result = 31 * result + String.valueOf(cachedBodyColor).hashCode();
         return result;
     }
 
-    private boolean isVerticalHistory(Context context) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        String layout = prefs.getString("smart-history-layout", "vertical");
-        return ("vertical".equals(layout) || "wheel_3d".equals(layout))
-                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+    private boolean isVerticalHistory() {
+        return cachedVerticalHistory;
     }
 
     private void applyTextStyle(View row, int[] ids, int sizeSp, Typeface typeface,
@@ -663,6 +761,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
+    /** Snapshot the already-loaded Result objects so Home can restore ready icons/state. */
+    @NonNull
+    public List<Result<?>> snapshotResults() {
+        return new ArrayList<>(results);
+    }
+
     /** Snapshot the already-loaded rows for a cheap history-first query stage. */
     @NonNull
     public List<Pojo> snapshotPojos() {
@@ -685,7 +789,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         recordExplicitSelection(context, result.getPojo());
         promoteHistoryResult(result);
         if (UiEditLock.isLocked(context)) {
-            showNotificationHistoryIfAvailable(pos, v);
+            NotificationHistoryResolver.showForPojo(context, result.getPojo());
             return;
         }
         ListPopup menu = result.getPopupMenu(context, this, v);
@@ -760,31 +864,48 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     public void updateWithPojos(@NonNull Context context, @NonNull List<Pojo> pojos, boolean isRefresh, String query) {
-        Map<Pojo, Result<?>> existingResults = new HashMap<>(Math.max(16, results.size() * 2));
-        for (Result<?> result : results) existingResults.put(result.getPojo(), result);
+        Map<String, Result<?>> existingResults = new HashMap<>(Math.max(16, results.size() * 2));
+        for (Result<?> result : results) {
+            if (result != null && result.getPojo() != null) {
+                existingResults.put(reuseKey(result.getPojo()), result);
+            }
+        }
         List<Result<?>> updatedResults = new ArrayList<>(pojos.size());
         for (Pojo pojo : pojos) {
             if (pojo == null) continue;
-            Result<?> existing = existingResults.get(pojo);
-            if (existing != null) updatedResults.add(existing);
-            else if (pojo instanceof CommunicationPojo) updatedResults.add(new CommunicationResult((CommunicationPojo) pojo));
-            else updatedResults.add(Result.fromPojo(parent, pojo));
+            Result<?> existing = existingResults.get(reuseKey(pojo));
+            if (existing != null && samePojoState(existing.getPojo(), pojo)) {
+                updatedResults.add(existing);
+            } else if (pojo instanceof CommunicationPojo) {
+                updatedResults.add(new CommunicationResult((CommunicationPojo) pojo));
+            } else {
+                updatedResults.add(Result.fromPojo(parent, pojo));
+            }
         }
         updateResults(context, updatedResults, isRefresh, query);
     }
 
+    private String reuseKey(Pojo pojo) {
+        if (pojo == null) return "<null>";
+        return pojo.getClass().getName() + '|' + pojo.id;
+    }
+
     public void updateResults(@NonNull Context context, List<Result<?>> updatedResults, boolean isRefresh, String query) {
         String normalizedQuery = query == null ? "" : query;
+        invalidateRenderConfig();
         if (sameVisibleState(updatedResults, normalizedQuery)) return;
 
         parent.beforeListChange();
         this.results.clear();
         this.results.addAll(updatedResults);
-        notificationPreviewCache.clear();
         lastRenderedQuery = normalizedQuery;
         StringNormalizer.Result queryNormalized = StringNormalizer.normalizeWithResult(normalizedQuery, false);
         fuzzyScore = FuzzyFactory.createFuzzyScore(context, queryNormalized.codePoints, true);
         notifyDataSetChanged();
+        if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                && (normalizedQuery.isEmpty() || "<history>".equals(normalizedQuery))) {
+            SearchHandler.getInstance().rememberHomeResults(snapshotResults());
+        }
         if (isRefresh) parent.temporarilyDisableTranscriptMode();
         parent.afterListChange();
     }
@@ -818,6 +939,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (oldPojo instanceof NotificationPojo && newPojo instanceof NotificationPojo) {
             NotificationPojo oldNotification = (NotificationPojo) oldPojo;
             NotificationPojo newNotification = (NotificationPojo) newPojo;
+            if (!TextUtils.equals(oldNotification.exactNotificationId,
+                    newNotification.exactNotificationId)) return false;
             if (oldNotification.notificationCount != newNotification.notificationCount) return false;
             if (oldNotification.postTime != newNotification.postTime) return false;
             if (!TextUtils.equals(oldNotification.latestTitle, newNotification.latestTitle)) return false;
@@ -843,7 +966,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public void clear() {
         parent.beforeListChange();
         this.results.clear();
-        notificationPreviewCache.clear();
         lastRenderedQuery = null;
         notifyDataSetChanged();
         parent.afterListChange();

@@ -12,6 +12,10 @@
         android:title="@string/menu_app_usage"
         app:showAsAction="never" />
     <item
+        android:id="@+id/activity_launcher"
+        android:title="Activity Launcher"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/notification_history"
         android:title="@string/menu_notification_history"
         app:showAsAction="never" />

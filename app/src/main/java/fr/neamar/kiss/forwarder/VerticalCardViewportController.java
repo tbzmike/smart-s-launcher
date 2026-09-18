@@ -65,6 +65,10 @@ final class VerticalCardViewportController extends Forwarder {
     private ImageButton rightLatestCardButton;
     private ViewportSnapshot pendingRebuildSnapshot;
     private ViewportSnapshot savedReturnSnapshot;
+    private Runnable navigateLatestCallback;
+    private boolean pendingVisualHistoryUpdate;
+    private boolean pendingNotificationAttention;
+    private int latestAttentionPulseGeneration;
     private boolean returnRestoreRequested;
     private boolean bottomPassScheduled;
     private boolean latestControlsUpdateScheduled;
@@ -119,16 +123,82 @@ final class VerticalCardViewportController extends Forwarder {
         }
     }
 
-    /** Preserve a bottom edge captured when the deferred data change first arrived. */
+    /** Preserve a bottom edge only when the user has actually navigated to the bottom. */
     void forceBottomForNextRebuild() {
         policy.requestBottomOnNextRebuild();
+    }
+
+    void setNavigateLatestCallback(Runnable callback) {
+        navigateLatestCallback = callback;
+    }
+
+    boolean isExplicitBottomPinned() {
+        return policy.isPersistentBottomPinned();
+    }
+
+    void onPassiveHistoryUpdatePending(boolean notificationPosted) {
+        pendingVisualHistoryUpdate = true;
+        pendingNotificationAttention |= notificationPosted;
+        scheduleLatestCardControlsUpdate();
+        if (notificationPosted && !policy.isPersistentBottomPinned()) startLatestAttentionPulse();
+    }
+
+    void onPendingHistoryApplied() {
+        pendingVisualHistoryUpdate = false;
+        pendingNotificationAttention = false;
+        stopLatestAttentionPulse();
+        scheduleLatestCardControlsUpdate();
+    }
+
+    void onUserScrollStarted() {
+        policy.onUserScrollStarted();
+        pendingNotificationAttention = false;
+        stopLatestAttentionPulse();
+        if (returnRestoreRequested) clearSavedReturnSnapshot();
+        generation++;
+        pendingRebuildSnapshot = null;
+        bottomPassScheduled = false;
+        scheduleLatestCardControlsUpdate();
+    }
+
+    void onExternalLaunchStarting() {
+        resolveViews();
+        if (!isRestorableHistoryViewport()) return;
+        savedReturnSnapshot = captureCurrentViewport();
+        returnRestoreRequested = false;
+        persistSavedReturnSnapshot(savedReturnSnapshot);
+    }
+
+    void onExternalLaunchCancelled() {
+        if (savedReturnSnapshot != null || prefs.getBoolean(PREF_RETURN_PENDING, false)) {
+            clearSavedReturnSnapshot();
+        }
+        resumed = true;
+        scheduleLatestCardControlsUpdate();
+    }
+
+    void beginExplicitBottomNavigation() {
+        setLatestCardControlsVisible(false);
+        stopLatestAttentionPulse();
+        clearSavedReturnSnapshot();
+        generation++;
+        pendingRebuildSnapshot = null;
+        policy.requestPersistentBottom();
+        resolveViews();
+    }
+
+    void applyExplicitBottomNow() {
+        scheduleBottomPass();
+        anchorNormalListToLatest();
     }
 
     /** Restore after the card rebuild and all synchronous decorators have been queued. */
     void afterDataSetChanged() {
         ViewportSnapshot snapshot = pendingRebuildSnapshot;
         pendingRebuildSnapshot = null;
-        if (snapshot != null && canControlViewport()) scheduleRestore(snapshot, generation);
+        if (snapshot != null && canControlViewport()) {
+            scheduleRestore(snapshot, generation);
+        }
         scheduleLatestCardControlsUpdate();
     }
 
@@ -170,12 +240,13 @@ final class VerticalCardViewportController extends Forwarder {
         }
         if (action == LauncherHomeNavigationPolicy.Action.KEEP_CURRENT_POSITION) return;
 
-        requestExplicitBottom();
+        requestNavigateLatest();
     }
 
     /** Capture the exact history viewport before another activity can replace this launcher. */
     void onLauncherPaused() {
         resumed = false;
+        stopLatestAttentionPulse();
         setLatestCardControlsVisible(false);
         resolveViews();
         if (!isRestorableHistoryViewport()) {
@@ -199,6 +270,7 @@ final class VerticalCardViewportController extends Forwarder {
         ensureSavedReturnSnapshotLoaded();
         requestSavedReturnRestore();
         scheduleLatestCardControlsUpdate();
+        if (pendingNotificationAttention) startLatestAttentionPulse();
     }
 
     /** Forward exact IME state into the layout-driven viewport policy. */
@@ -233,6 +305,10 @@ final class VerticalCardViewportController extends Forwarder {
         destroyed = true;
         generation++;
         pendingRebuildSnapshot = null;
+        navigateLatestCallback = null;
+        pendingVisualHistoryUpdate = false;
+        pendingNotificationAttention = false;
+        stopLatestAttentionPulse();
         returnRestoreRequested = false;
         bottomPassScheduled = false;
         latestControlsUpdateScheduled = false;
@@ -333,15 +409,14 @@ final class VerticalCardViewportController extends Forwarder {
         });
     }
 
-    private void requestExplicitBottom() {
-        setLatestCardControlsVisible(false);
-        clearSavedReturnSnapshot();
-        generation++;
-        pendingRebuildSnapshot = null;
-        policy.requestImmediateBottom();
-        resolveViews();
-        scheduleBottomPass();
-        anchorNormalListToLatest();
+    private void requestNavigateLatest() {
+        Runnable callback = navigateLatestCallback;
+        if (callback != null) {
+            callback.run();
+            return;
+        }
+        beginExplicitBottomNavigation();
+        applyExplicitBottomNow();
     }
 
     private void installLatestCardControls() {
@@ -363,7 +438,7 @@ final class VerticalCardViewportController extends Forwarder {
         button.setElevation(toPx(28));
         button.setContentDescription(mainActivity.getString(R.string.main_jump_to_latest));
         button.setVisibility(View.GONE);
-        button.setOnClickListener(view -> requestExplicitBottom());
+        button.setOnClickListener(view -> requestNavigateLatest());
 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 toPx(52), toPx(64), Gravity.CENTER_VERTICAL | horizontalGravity);
@@ -412,13 +487,18 @@ final class VerticalCardViewportController extends Forwarder {
         }
         int visibleViewportBottom = scroller == null ? 0
                 : scroller.getScrollY() + scroller.getHeight() - scroller.getPaddingBottom();
-        boolean show = LatestCardJumpPolicy.shouldShow(
-                eligibleHistory,
-                automaticBottomPending,
-                count,
-                latestCardBottom,
-                visibleViewportBottom,
-                0);
+        boolean show = eligibleHistory
+                && !automaticBottomPending
+                && pendingVisualHistoryUpdate;
+        if (!show) {
+            show = LatestCardJumpPolicy.shouldShow(
+                    eligibleHistory,
+                    automaticBottomPending,
+                    count,
+                    latestCardBottom,
+                    visibleViewportBottom,
+                    0);
+        }
         setLatestCardControlsVisible(show);
     }
 
@@ -432,6 +512,63 @@ final class VerticalCardViewportController extends Forwarder {
         if (control == null || control.getVisibility() == visibility) return;
         control.setVisibility(visibility);
         if (visibility == View.VISIBLE) control.bringToFront();
+    }
+
+    private void startLatestAttentionPulse() {
+        if (destroyed || !pendingNotificationAttention || policy.isPersistentBottomPinned()) return;
+        int token = ++latestAttentionPulseGeneration;
+        View target = host != null ? host : scroller;
+        if (target == null) return;
+        target.postOnAnimation(() -> runLatestAttentionPulse(token, 0));
+    }
+
+    private void runLatestAttentionPulse(int token, int step) {
+        if (token != latestAttentionPulseGeneration || destroyed || !resumed
+                || !pendingNotificationAttention || policy.isPersistentBottomPinned()) {
+            resetLatestControlTransforms();
+            return;
+        }
+        updateLatestCardControls();
+        boolean bright = (step & 1) == 0;
+        animateLatestControl(leftLatestCardButton, bright);
+        animateLatestControl(rightLatestCardButton, bright);
+        if (step >= 7) {
+            resetLatestControlTransforms();
+            return;
+        }
+        View target = host != null ? host : scroller;
+        if (target != null) {
+            target.postDelayed(() -> runLatestAttentionPulse(token, step + 1), 190L);
+        }
+    }
+
+    private void animateLatestControl(@Nullable View control, boolean bright) {
+        if (control == null || control.getVisibility() != View.VISIBLE) return;
+        control.animate().cancel();
+        control.animate()
+                .alpha(bright ? 1f : 0.72f)
+                .scaleX(bright ? 1.14f : 1f)
+                .scaleY(bright ? 1.14f : 1f)
+                .setDuration(170L)
+                .start();
+    }
+
+    private void stopLatestAttentionPulse() {
+        latestAttentionPulseGeneration++;
+        resetLatestControlTransforms();
+    }
+
+    private void resetLatestControlTransforms() {
+        resetLatestControlTransform(leftLatestCardButton);
+        resetLatestControlTransform(rightLatestCardButton);
+    }
+
+    private static void resetLatestControlTransform(@Nullable View control) {
+        if (control == null) return;
+        control.animate().cancel();
+        control.setAlpha(0.96f);
+        control.setScaleX(1f);
+        control.setScaleY(1f);
     }
 
     private ViewportSnapshot captureCurrentViewport() {

@@ -41,7 +41,6 @@ import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.ui.ListPopup;
-import fr.neamar.kiss.ui.NotificationPopupDialog;
 import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
@@ -161,8 +160,10 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             View.OnClickListener exactNotificationClick = v -> {
                 TileLaunchCounter.recordNotification(
                         context, latestActive.id, latestActive.postTime);
-                if (!NotificationListener.openLatestNotification(context, groupKey)) {
-                    NotificationPopupDialog.showGroup(context, groupKey);
+                if (!NotificationListener.openNotification(
+                        context, latestActive.id, latestActive.postTime)) {
+                    Toast.makeText(context, "No exact notification destination is available.",
+                            Toast.LENGTH_SHORT).show();
                 }
             };
             row.setOnClickListener(exactNotificationClick);
@@ -176,8 +177,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 }
             });
         } else {
-            if (latestSaved != null
-                    && SavedNotificationDestinationResolver.hasExactTarget(context, latestSaved)) {
+            if (latestSaved != null) {
                 View.OnClickListener exactSavedNotificationClick = v -> {
                     TileLaunchCounter.recordNotification(
                             context, latestSaved.notificationId, latestSaved.postTime);
@@ -317,6 +317,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         launchSucceeded = false;
         if (pojo.isOreoShortcut()) {
             doOreoLaunch(context, v);
+            if (launchSucceeded) rememberSuccessfulHistoryTarget(context);
         } else {
             try {
                 Intent intent = Intent.parseUri(pojo.intentUri, 0);
@@ -328,6 +329,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 setSourceBounds(intent, v);
                 context.startActivity(intent);
                 launchSucceeded = true;
+                rememberSuccessfulHistoryTarget(context);
             } catch (Exception e) {
                 Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
             }
@@ -408,6 +410,36 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         return false;
     }
 
+    /**
+     * Keep an accepted shortcut launch reconstructable even if LauncherApps stops exposing the
+     * dynamic shortcut immediately afterward. This mirrors DataHandler.addToHistory's freeze and
+     * exclusion gates, so it never overrides an explicit history privacy choice.
+     */
+    private void rememberSuccessfulHistoryTarget(@NonNull Context context) {
+        String historyId = pojo.getHistoryId();
+        DataHandler dataHandler = KissApplication.getApplication(context).getDataHandler();
+        if (TextUtils.isEmpty(historyId)
+                || PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean("freeze-history", false)
+                || dataHandler.getExcludedFromHistory().contains(historyId)) {
+            return;
+        }
+
+        fr.neamar.kiss.utils.RecentLaunchTracker.remember(pojo);
+
+        // Non-Oreo shortcuts are already database-backed by definition. Persist every successfully
+        // opened Oreo shortcut independently of the separate disabled-app indexing preference so
+        // History can recover WhatsApp groups, conversations and other dynamic shortcuts later.
+        if (pojo.isOreoShortcut()) {
+            fr.neamar.kiss.db.ShortcutRecord record = new fr.neamar.kiss.db.ShortcutRecord();
+            record.name = pojo.getName();
+            record.packageName = pojo.packageName;
+            record.targetPackage = pojo.targetPackage;
+            record.intentUri = pojo.intentUri;
+            fr.neamar.kiss.db.DBHelper.insertShortcut(context, record);
+        }
+    }
+
     private void notifyExactShortcutUnavailable(Context context) {
         launchSucceeded = false;
         Toast.makeText(context, "Unable to open this exact shortcut.", Toast.LENGTH_LONG).show();
@@ -420,6 +452,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     @Nullable
     private ShortcutInfo getShortCut(Context context) {
+        if (!pojo.isOreoShortcut()) return null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             return ShortcutUtil.getShortCut(context, pojo.getUserHandle().getRealHandle(),
                     pojo.packageName, pojo.getOreoId());

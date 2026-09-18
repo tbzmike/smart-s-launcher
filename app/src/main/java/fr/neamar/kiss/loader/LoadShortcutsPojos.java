@@ -20,6 +20,7 @@ import java.util.Set;
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.TagsHandler;
+import fr.neamar.kiss.activitylauncher.ActivityLauncherStore;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.pojo.ShortcutPojo;
@@ -139,7 +140,15 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
 
         for (ShortcutRecord shortcutRecord : records) {
             if (isCancelled()) break;
-            ShortcutPojo pojo = createPojo(null, shortcutRecord, tagsHandler, null, true, false, false);
+            ShortcutPojo pojo;
+            if (ActivityLauncherStore.isManaged(shortcutRecord)) {
+                pojo = new ShortcutPojo(UserHandle.OWNER, shortcutRecord, null,
+                        true, false, false, ActivityLauncherStore.stablePojoId(shortcutRecord));
+                pojo.setName(ActivityLauncherStore.displayLabel(context, shortcutRecord));
+                pojo.setTags(tagsHandler.getTags(pojo.id));
+            } else {
+                pojo = createPojo(null, shortcutRecord, tagsHandler, null, true, false, false);
+            }
             if (!pojo.isOreoShortcut()) pojos.add(pojo);
         }
         return pojos;
