@@ -1,0 +1,1 @@
+Fixed independent history icon/avatar sizing at the rendering layer. High percentage values now resize the visible WhatsApp/profile/contact/notification/shortcut/feature artwork itself instead of only enlarging the ImageView container. Each existing slider remains independent and its disabled state restores native sizing/scale behavior.
