@@ -48,6 +48,7 @@ import fr.neamar.kiss.preference.SelectCustomSearchProvidersPreference;
 import fr.neamar.kiss.searcher.QuerySearcher;
 import fr.neamar.kiss.searcher.SemanticEmbeddingScorer;
 import fr.neamar.kiss.ui.SearchEditText;
+import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.Permission;
@@ -79,6 +80,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
 
         setPreferencesFromResource(R.xml.preferences, rootKey);
         addPixelLauncherCleanupPreference(rootKey);
+        addAppUpdatePreferences(rootKey);
         addSearchKeyboardPreferences();
         try {
             addSemanticSearchPreferences(rootKey);
@@ -148,6 +150,59 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         killPixelLauncher.setSummary("Uses Smart S root access to stop com.google.android.apps.nexuslauncher on every screen-off event and release its background memory. No background service is kept running for this feature.");
         killPixelLauncher.setDefaultValue(false);
         category.addPreference(killPixelLauncher);
+    }
+
+    private void addAppUpdatePreferences(@Nullable String rootKey) {
+        PreferenceGroup parent;
+        if ("advanced".equals(rootKey)) {
+            parent = getPreferenceScreen();
+        } else {
+            parent = findPreference("advanced");
+        }
+        if (parent == null || parent.findPreference("smart-app-update-category") != null) return;
+
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("smart-app-update-category");
+        category.setTitle("App updates");
+        parent.addPreference(category);
+
+        Preference check = new Preference(requireContext());
+        check.setKey("smart-check-for-update");
+        check.setTitle("Check for Smart S Launcher update");
+        check.setSummary(AppUpdater.currentStatus(requireContext()));
+        check.setOnPreferenceClickListener(preference -> {
+            preference.setSummary("Checking the latest verified GitHub release…");
+            AppUpdater.checkForUpdates(requireActivity(), true);
+            return true;
+        });
+        category.addPreference(check);
+
+        SwitchPreference automatic = new SwitchPreference(requireContext());
+        automatic.setKey(AppUpdater.PREF_AUTO_UPDATE);
+        automatic.setTitle("Automatic update checks");
+        automatic.setSummary("Check GitHub once per day and download only a newer verified, signed production release.");
+        automatic.setDefaultValue(false);
+        category.addPreference(automatic);
+
+        Preference install = new Preference(requireContext());
+        install.setKey("smart-install-downloaded-update");
+        install.setTitle("Install downloaded update");
+        install.setSummary("Re-verifies the APK package, signing certificate and version before opening Android's installer.");
+        install.setOnPreferenceClickListener(preference -> {
+            AppUpdater.installReadyUpdate(requireContext());
+            return true;
+        });
+        category.addPreference(install);
+
+        Preference cancel = new Preference(requireContext());
+        cancel.setKey("smart-cancel-update-download");
+        cancel.setTitle("Cancel update download");
+        cancel.setSummary("Stops the updater and removes its partial APK.");
+        cancel.setOnPreferenceClickListener(preference -> {
+            AppUpdater.cancelDownload(requireContext());
+            return true;
+        });
+        category.addPreference(cancel);
     }
 
     private void addSearchKeyboardPreferences() {
