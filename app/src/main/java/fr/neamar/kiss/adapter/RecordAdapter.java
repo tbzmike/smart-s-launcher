@@ -10,6 +10,7 @@ import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.widget.AbsListView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
@@ -52,6 +53,7 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.ui.AnimatedListView;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationBellStyle;
@@ -188,14 +190,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         TextView text = view.findViewById(R.id.item_notification_text);
         View nativeContainer = view.findViewById(R.id.item_notification_native_container);
 
-        if (app != null) app.setText(presentation.headline);
+        if (app != null) setTextIfChanged(app, presentation.headline);
         if (title != null) {
-            title.setText(presentation.preview);
-            title.setVisibility(TextUtils.isEmpty(presentation.preview) ? View.GONE : View.VISIBLE);
-            configureMarquee(title);
+            setTextIfChanged(title, presentation.preview);
+            int visibility = TextUtils.isEmpty(presentation.preview) ? View.GONE : View.VISIBLE;
+            if (title.getVisibility() != visibility) title.setVisibility(visibility);
+            // Overflow/marquee behavior is installed once per recycled row by configureOverflowText.
+            // Reconfiguring it on every bind was restarting text animation during list flings.
         }
-        if (text != null) text.setVisibility(View.GONE);
-        if (nativeContainer != null) nativeContainer.setVisibility(View.GONE);
+        if (text != null && text.getVisibility() != View.GONE) text.setVisibility(View.GONE);
+        if (nativeContainer != null && nativeContainer.getVisibility() != View.GONE) {
+            nativeContainer.setVisibility(View.GONE);
+        }
     }
 
     private void applyBestNotificationPreview(View view, NotificationPojo notification) {
@@ -211,9 +217,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
         String preview = notification.getPreview();
         if (!TextUtils.isEmpty(preview)) {
-            title.setText(preview);
-            title.setVisibility(View.VISIBLE);
-            configureMarquee(title);
+            setTextIfChanged(title, preview);
+            if (title.getVisibility() != View.VISIBLE) title.setVisibility(View.VISIBLE);
+            // The TextWatcher installed by configureOverflowText reacts to changed text. Do not
+            // restart marquee configuration here while the ListView is recycling rows.
             collapseDuplicateNotificationContent(view, title);
         }
     }
@@ -381,11 +388,37 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void updateMarqueeActivation(TextView text) {
+        // Rows entering the viewport are rebound while a fling is already in progress. The older
+        // code paused the currently visible marquees, but a newly recycled WhatsApp/notification
+        // row immediately called setSelected(true) again through its TextWatcher. That restarted
+        // frame-by-frame marquee invalidation throughout the fling and was a major Vertical List
+        // jank source. Keep newly bound rows paused until AnimatedListView reports idle.
+        if (isInsideScrollingNativeList(text)) {
+            if (text.isSelected()) text.setSelected(false);
+            return;
+        }
+
         CharSequence value = text.getText();
         int available = text.getWidth() - text.getCompoundPaddingLeft() - text.getCompoundPaddingRight();
         boolean overflow = available > 0 && !TextUtils.isEmpty(value)
                 && text.getPaint().measureText(value.toString()) > available;
         if (text.isSelected() != overflow) text.setSelected(overflow);
+    }
+
+    private boolean isInsideScrollingNativeList(View view) {
+        ViewParent ancestor = view.getParent();
+        while (ancestor instanceof View) {
+            if (ancestor instanceof AnimatedListView) {
+                return ((AnimatedListView) ancestor).isScrollInProgress();
+            }
+            ancestor = ancestor.getParent();
+        }
+        return false;
+    }
+
+    private void setTextIfChanged(TextView view, CharSequence value) {
+        CharSequence safe = value == null ? "" : value;
+        if (!TextUtils.equals(view.getText(), safe)) view.setText(safe);
     }
 
     private void makeTextUseAvailableWidth(TextView text) {
