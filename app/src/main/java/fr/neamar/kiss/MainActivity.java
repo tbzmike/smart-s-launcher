@@ -68,6 +68,7 @@ import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.AnimatedListView;
+import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.ui.KeyboardScrollHider;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.SearchEditText;
@@ -501,6 +502,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
         launcherUiResumed = true;
         AppProvider.setLauncherUiVisible(true);
+        // Resume a system-paused update only when the launcher is visibly foreground.
+        AppUpdater.resumePendingDownload(this);
         // Settings may have changed while the launcher was paused. Synchronize input mode
         // before any later focus request can give Android IME a chance to appear.
         if (searchEditText != null) searchEditText.syncKeyboardMode();
