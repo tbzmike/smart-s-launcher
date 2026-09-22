@@ -429,18 +429,22 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private int iconPercentForRow(View row) {
         ImageView icon = findPrimaryIcon(row);
         if (icon == null) return cachedIconPercent;
-        switch (icon.getId()) {
-            case R.id.item_notification_icon:
-                return cachedResizeNotificationIcons ? cachedNotificationIconPercent : 100;
-            case R.id.item_shortcut_icon:
-                return cachedResizeShortcutIcons ? cachedShortcutIconPercent : 100;
-            case R.id.item_setting_icon:
-                return cachedResizeFeatureIcons ? cachedFeatureIconPercent : 100;
-            case R.id.item_contact_icon:
-                return cachedResizeContactIcons ? cachedContactIconPercent : 100;
-            default:
-                return cachedIconPercent;
+        int id = icon.getId();
+        // Resource IDs are non-final with the current Android Gradle Plugin, so use comparisons
+        // rather than a Java switch (which requires compile-time constants).
+        if (id == R.id.item_notification_icon) {
+            return cachedResizeNotificationIcons ? cachedNotificationIconPercent : 100;
         }
+        if (id == R.id.item_shortcut_icon) {
+            return cachedResizeShortcutIcons ? cachedShortcutIconPercent : 100;
+        }
+        if (id == R.id.item_setting_icon) {
+            return cachedResizeFeatureIcons ? cachedFeatureIconPercent : 100;
+        }
+        if (id == R.id.item_contact_icon) {
+            return cachedResizeContactIcons ? cachedContactIconPercent : 100;
+        }
+        return cachedIconPercent;
     }
 
     private void applyVerticalHistoryPolish(View row, Context context) {
