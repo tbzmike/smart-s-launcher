@@ -546,7 +546,38 @@ public final class AppUpdater {
         }
     }
 
-    private static String normalizeVersion(String version) {
+    static int compareVersions(String left, String right) {
+        int[] a = numericVersion(left);
+        int[] b = numericVersion(right);
+        int length = Math.max(a.length, b.length);
+        for (int i = 0; i < length; i++) {
+            int av = i < a.length ? a[i] : 0;
+            int bv = i < b.length ? b[i] : 0;
+            if (av != bv) return Integer.compare(av, bv);
+        }
+        return 0;
+    }
+
+    private static int[] numericVersion(String version) {
+        String normalized = normalizeVersion(version);
+        String[] parts = normalized.split("\\.");
+        int[] result = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            String digits = parts[i].replaceFirst("[^0-9].*$", "");
+            if (digits.isEmpty()) {
+                result[i] = 0;
+            } else {
+                try {
+                    result[i] = Integer.parseInt(digits);
+                } catch (NumberFormatException ignored) {
+                    result[i] = Integer.MAX_VALUE;
+                }
+            }
+        }
+        return result;
+    }
+
+    static String normalizeVersion(String version) {
         String value = version == null ? "" : version.trim();
         while (value.startsWith("v") || value.startsWith("V")) value = value.substring(1);
         return value;
