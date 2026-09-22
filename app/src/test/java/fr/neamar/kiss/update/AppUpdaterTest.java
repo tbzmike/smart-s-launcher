@@ -31,6 +31,14 @@ class AppUpdaterTest {
     }
 
     @Test
+    void selectsReleaseAssetThatMatchesBuildSigningChannel() {
+        assertEquals("app-debug.apk",
+                AppUpdater.expectedReleaseAssetName("3.30.113", true));
+        assertEquals("smart-s-launcher-3.30.113.apk",
+                AppUpdater.expectedReleaseAssetName("v3.30.113", false));
+    }
+
+    @Test
     void computesDeterministicSha256(@TempDir Path tempDir) throws Exception {
         Path file = tempDir.resolve("release.apk");
         Files.write(file, "Smart S Launcher".getBytes(StandardCharsets.UTF_8));
