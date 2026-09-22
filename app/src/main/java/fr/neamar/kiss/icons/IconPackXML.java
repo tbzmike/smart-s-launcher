@@ -444,13 +444,15 @@ public class IconPackXML implements IconPack {
     }
 
     private ComponentName parseComponentName(String str) {
-        if (str == null) {
-            return null;
+        if (str == null) return null;
+        String value = str.trim();
+        if (value.startsWith("ComponentInfo{") && value.endsWith("}")) {
+            value = value.substring(14, value.length() - 1).trim();
         }
-        if (str.startsWith("ComponentInfo{") && str.endsWith("}")) {
-            return ComponentName.unflattenFromString(str.substring(14, str.length() - 1));
-        }
-        return null;
+        // Most packs use ComponentInfo{package/activity}; some older generators write the
+        // flattened package/activity directly. ComponentName handles both full and ".Activity"
+        // class forms, so accept either representation.
+        return ComponentName.unflattenFromString(value);
     }
 
     private XmlPullParser findAppFilterXml() throws XmlPullParserException, IOException {
