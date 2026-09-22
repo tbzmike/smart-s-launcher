@@ -155,6 +155,53 @@ jobs:
           echo "SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
           rm -f "$KEYSTORE"
 
+      - name: Finalize MarkVault-style updater manifest
+        if: ${{ steps.guard.outputs.publish == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          manifest_path = Path("latest-green.json")
+          data = json.loads(manifest_path.read_text(encoding="utf-8"))
+          version = data["version"]
+          debug_path = Path("app-debug.apk")
+          release_path = Path(os.environ["SIGNED_APK"])
+
+          def sha256(path):
+              digest = hashlib.sha256()
+              with path.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          debug_name = "app-debug.apk"
+          release_name = f"smart-s-launcher-{version}.apk"
+          base = f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}"
+
+          data.update({
+              "publishedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+              "debugApkName": debug_name,
+              "debugApkUrl": f"{base}/{debug_name}",
+              "debugApkSize": debug_path.stat().st_size,
+              "debugApkSha256": sha256(debug_path),
+              "releaseApkName": release_name,
+              "releaseApkUrl": f"{base}/{release_name}",
+              "releaseApkSize": release_path.stat().st_size,
+              "releaseApkSha256": sha256(release_path),
+          })
+
+          manifest_path.write_text(
+              json.dumps(data, separators=(",", ":")) + "\n",
+              encoding="utf-8"
+          )
+          PY
+
       - name: Publish signed production and updater APKs
         if: ${{ steps.guard.outputs.publish == 'true' }}
         shell: bash
@@ -170,7 +217,7 @@ jobs:
             --target "$SOURCE_SHA" \
             --latest \
             --title "Smart S Launcher v${VERSION}" \
-            --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully. The production APK is signed for F-Droid reproducible-build verification and is the verified in-app updater package; app-debug.apk is retained only for diagnostics." \
+            --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully. The updater manifest contains SHA-256 and size metadata for both signing channels: app-debug.apk updates GitHub Actions/debug installs, while the signed production APK updates production/F-Droid installs." \
             latest-green.json \
             app-debug.apk \
             "$SIGNED_APK"
