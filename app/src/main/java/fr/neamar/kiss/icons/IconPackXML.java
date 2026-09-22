@@ -33,6 +33,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -46,6 +47,13 @@ import fr.neamar.kiss.utils.Utilities;
 public class IconPackXML implements IconPack {
     protected static final String TAG = IconPackXML.class.getSimpleName();
     private final Map<ComponentName, Set<DrawableInfo>> drawablesByComponent = new HashMap<>(0);
+    /**
+     * Compatibility index for icon packs whose appfilter.xml names an older/different launcher
+     * activity than the one currently exposed by the installed app. Many mature icon packs keep
+     * one visual per package but list several historical activity aliases. Exact component
+     * matching stays first; package fallback is used only when that exact component is absent.
+     */
+    private final Map<String, LinkedHashSet<DrawableInfo>> drawablesByPackage = new HashMap<>(0);
     // instance of a resource object of an icon pack
     private Resources packResources;
     // package name of the icons pack
@@ -137,15 +145,37 @@ public class IconPackXML implements IconPack {
         }
 
         Set<DrawableInfo> drawables = drawablesByComponent.get(componentName);
-        if (drawables != null) {
-            for (DrawableInfo info : drawables) {
-                Drawable drawable = getDrawable(info);
-                if (drawable != null) {
-                    return drawable;
-                }
-            }
+        Drawable exact = firstDrawable(drawables);
+        if (exact != null) return exact;
+
+        // Full icon-pack compatibility: an installed application's launcher activity can change
+        // between versions while the icon pack still targets an older alias. Launchers such as
+        // Ice Box resolve these package aliases. Smart S now does the same, but only after an exact
+        // component lookup fails so activity-specific icons keep their intended priority.
+        LinkedHashSet<DrawableInfo> packageDrawables =
+                drawablesByPackage.get(componentName.getPackageName());
+        return firstDrawable(packageDrawables);
+    }
+
+    @Nullable
+    private Drawable firstDrawable(@Nullable Iterable<DrawableInfo> infos) {
+        if (infos == null) return null;
+        for (DrawableInfo info : infos) {
+            Drawable drawable = getDrawable(info);
+            if (drawable != null) return drawable;
         }
         return null;
+    }
+
+    private void indexPackageDrawable(@NonNull ComponentName componentName,
+                                      @NonNull DrawableInfo drawableInfo) {
+        LinkedHashSet<DrawableInfo> packageSet =
+                drawablesByPackage.get(componentName.getPackageName());
+        if (packageSet == null) {
+            packageSet = new LinkedHashSet<>();
+            drawablesByPackage.put(componentName.getPackageName(), packageSet);
+        }
+        packageSet.add(drawableInfo);
     }
 
     @Override
@@ -365,7 +395,9 @@ public class IconPackXML implements IconPack {
                                 Set<DrawableInfo> infoSet = drawablesByComponent.get(componentName);
                                 if (infoSet == null)
                                     drawablesByComponent.put(componentName, infoSet = new HashSet<>(1));
-                                infoSet.add(drawables.get(drawableName));
+                                DrawableInfo drawableInfo = drawables.get(drawableName);
+                                infoSet.add(drawableInfo);
+                                indexPackageDrawable(componentName, drawableInfo);
                             } else {
                                 Log.w(TAG, "Drawable `" + drawableName + "` for component `null` not found");
                             }
@@ -396,6 +428,7 @@ public class IconPackXML implements IconPack {
                                 if (infoSet == null)
                                     drawablesByComponent.put(componentName, infoSet = new HashSet<>(1));
                                 infoSet.add(drawableInfo);
+                                indexPackageDrawable(componentName, drawableInfo);
                             }
                         }
                     }
@@ -420,23 +453,36 @@ public class IconPackXML implements IconPack {
         return null;
     }
 
-    private XmlPullParser findAppFilterXml() throws XmlPullParserException {
-        // search appfilter.xml in icon pack's apk resource folder for xml files
+    private XmlPullParser findAppFilterXml() throws XmlPullParserException, IOException {
+        // Standard icon-pack location: res/xml/appfilter.xml
         int appFilterIdXml = getIdentifier("appfilter", "xml");
         if (appFilterIdXml != 0) {
             return packResources.getXml(appFilterIdXml);
         }
 
-        // search appfilter.xml in icon pack's apk resource folder for raw files (supporting icon pack studio)
+        // Some icon-pack builders publish appfilter.xml under res/raw.
         int appFilterIdRaw = getIdentifier("appfilter", "raw");
         if (appFilterIdRaw != 0) {
-            InputStream input = packResources.openRawResource(appFilterIdRaw);
-            XmlPullParserFactory xppf = XmlPullParserFactory.newInstance();
-            XmlPullParser xpp = xppf.newPullParser();
-            xpp.setInput(input, "UTF-8");
-            return xpp;
+            return parserFor(packResources.openRawResource(appFilterIdRaw));
         }
-        return null;
+
+        // Widely used legacy/third-party layout: assets/appfilter.xml. Supporting this is
+        // important for older packs that work in other launchers but previously exposed only
+        // generated/system fallbacks in Smart S.
+        try {
+            return parserFor(packResources.getAssets().open("appfilter.xml"));
+        } catch (IOException missingAsset) {
+            Log.w(TAG, "No appfilter.xml resource or asset found in " + iconPackPackageName);
+            return null;
+        }
+    }
+
+    private XmlPullParser parserFor(@NonNull InputStream input)
+            throws XmlPullParserException {
+        XmlPullParserFactory xppf = XmlPullParserFactory.newInstance();
+        XmlPullParser xpp = xppf.newPullParser();
+        xpp.setInput(input, "UTF-8");
+        return xpp;
     }
 
     @NonNull
