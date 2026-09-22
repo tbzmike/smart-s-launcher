@@ -1,0 +1,1 @@
+Icon packs now apply consistently to app-backed search, shortcut, notification, and notification-history icons. Rebuilt the in-app updater around verified signed GitHub Release APKs with resumable downloads, integrity/signature checks, install controls, and progress notifications.
