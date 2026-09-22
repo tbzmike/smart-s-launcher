@@ -5,6 +5,8 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -72,7 +74,18 @@ public final class NotificationBellStyle {
         boolean show = isNotificationItem(root.getContext(), result, root);
         boolean flash = NotificationBellPolicy.shouldFlash(
                 show, isUnreadNotification(root.getContext(), result), verticalList);
-        apply(primary, show, flash);
+        apply(primary, show, flash, verticalList && isInsideScrollingNativeList(root));
+    }
+
+    private static boolean isInsideScrollingNativeList(@NonNull View view) {
+        ViewParent parent = view.getParent();
+        while (parent instanceof View) {
+            if (parent instanceof AnimatedListView) {
+                return ((AnimatedListView) parent).isScrollInProgress();
+            }
+            parent = parent.getParent();
+        }
+        return false;
     }
 
     @Nullable
@@ -89,10 +102,15 @@ public final class NotificationBellStyle {
     }
 
     public static void apply(@NonNull TextView textView, boolean visible) {
-        apply(textView, visible, false);
+        apply(textView, visible, false, false);
     }
 
     public static void apply(@NonNull TextView textView, boolean visible, boolean flashUnread) {
+        apply(textView, visible, flashUnread, false);
+    }
+
+    private static void apply(@NonNull TextView textView, boolean visible,
+                              boolean flashUnread, boolean animationSuppressed) {
         int color = flashUnread ? Color.YELLOW : textView.getCurrentTextColor();
         BellState previous = STATES.get(textView);
         if (previous != null && previous.matches(visible, flashUnread, color)) {
@@ -100,6 +118,10 @@ public final class NotificationBellStyle {
             Drawable[] current = textView.getCompoundDrawablesRelative();
             Drawable bell = current.length >= 3 ? current[2] : null;
             if (bell != null) {
+                if (animationSuppressed) {
+                    stopFlashing(textView);
+                    return;
+                }
                 if (!flashUnread || FLASHERS.containsKey(textView)) return;
                 // Detaching a row stops its animator. Rebinding the same unchanged row should only
                 // restart that animator, not recreate/re-tint the bell drawable itself.
@@ -128,7 +150,40 @@ public final class NotificationBellStyle {
         textView.setCompoundDrawablesRelative(null, null, bell, null);
         STATES.put(textView, new BellState(true, flashUnread, color));
 
-        if (flashUnread) startFlashing(textView, bell);
+        if (flashUnread && !animationSuppressed) startFlashing(textView, bell);
+    }
+
+    /** Stop only the expensive frame-by-frame bell animators while a native list is moving. */
+    public static void pauseFlashingInTree(@NonNull View root) {
+        visitTextViews(root, text -> {
+            BellState state = STATES.get(text);
+            if (state != null && state.flashing) stopFlashing(text);
+        });
+    }
+
+    /** Restore unread-bell animation once scrolling is idle. */
+    public static void resumeFlashingInTree(@NonNull View root) {
+        visitTextViews(root, text -> {
+            BellState state = STATES.get(text);
+            if (state == null || !state.visible || !state.flashing
+                    || FLASHERS.containsKey(text)) return;
+            Drawable[] current = text.getCompoundDrawablesRelative();
+            Drawable bell = current.length >= 3 ? current[2] : null;
+            if (bell != null) startFlashing(text, bell);
+        });
+    }
+
+    private interface TextVisitor {
+        void visit(TextView textView);
+    }
+
+    private static void visitTextViews(@NonNull View view, @NonNull TextVisitor visitor) {
+        if (view instanceof TextView) visitor.visit((TextView) view);
+        if (!(view instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            visitTextViews(group.getChildAt(i), visitor);
+        }
     }
 
     private static void startFlashing(@NonNull TextView textView, @NonNull Drawable bell) {
