@@ -153,7 +153,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 int signature = cachedVerticalStyleSignature;
                 Integer previous = verticalStyleSignatures.get(view);
                 if (previous == null || previous != signature) {
-                    applyVerticalHistorySizing(view, context);
+                    applyVerticalHistorySizing(view, context, result);
                     applyVerticalHistoryPolish(view, context);
                     verticalStyleSignatures.put(view, signature);
                 }
@@ -418,15 +418,33 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         return true;
     }
 
-    private void applyVerticalHistorySizing(View row, Context context) {
+    private void applyVerticalHistorySizing(View row, Context context, Result<?> result) {
         if (!baseRowMinimumHeight.containsKey(row)) {
             baseRowMinimumHeight.put(row, row.getMinimumHeight());
         }
         row.setMinimumHeight(dp(context, 64) * cachedRowPercent / 100);
-        applyPrimaryIconSize(row, iconPercentForRow(row));
+        applyPrimaryIconSize(row, iconPercentForRow(row, result));
     }
 
-    private int iconPercentForRow(View row) {
+    private int iconPercentForRow(View row, Result<?> result) {
+        Pojo pojo = result == null ? null : result.getPojo();
+
+        // Person-specific communication rows use item_search_icon in their layout, so checking
+        // only the ImageView id accidentally routed WhatsApp/email/contact avatars through the
+        // generic app-icon size. Give semantic result type priority over the physical view id.
+        if (pojo instanceof CommunicationPojo || result instanceof CommunicationResult) {
+            return cachedResizeContactIcons ? cachedContactIconPercent : 100;
+        }
+        if (pojo instanceof NotificationPojo) {
+            return cachedResizeNotificationIcons ? cachedNotificationIconPercent : 100;
+        }
+        if (pojo instanceof ShortcutPojo) {
+            return cachedResizeShortcutIcons ? cachedShortcutIconPercent : 100;
+        }
+        if (pojo instanceof SettingPojo) {
+            return cachedResizeFeatureIcons ? cachedFeatureIconPercent : 100;
+        }
+
         ImageView icon = findPrimaryIcon(row);
         if (icon == null) return cachedIconPercent;
         int id = icon.getId();
