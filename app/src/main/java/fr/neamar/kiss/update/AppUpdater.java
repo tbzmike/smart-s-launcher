@@ -467,7 +467,7 @@ public final class AppUpdater {
 
             String version = normalizeVersion(root.optString("tag_name", ""));
             if (version.isEmpty()) throw new IOException("Latest release has no version tag");
-            String expectedAssetName = "smart-s-launcher-" + version + ".apk";
+            String expectedAssetName = expectedReleaseAssetName(version, BuildConfig.DEBUG);
 
             JSONArray assets = root.optJSONArray("assets");
             if (assets == null) throw new IOException("Release has no APK assets");
@@ -544,6 +544,11 @@ public final class AppUpdater {
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IOException("SHA-256 is unavailable", e);
         }
+    }
+
+    static String expectedReleaseAssetName(String version, boolean debugBuild) {
+        String normalized = normalizeVersion(version);
+        return debugBuild ? "app-debug.apk" : "smart-s-launcher-" + normalized + ".apk";
     }
 
     static int compareVersions(String left, String right) {
