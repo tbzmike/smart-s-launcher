@@ -445,8 +445,12 @@ public class IconsHandler {
             return getDrawableIconForPackage(componentName, userHandle);
         }
 
-        // Some package-backed records have no launcher Activity. Keep them visually consistent
-        // by applying the selected pack's mask/shape to the application drawable fallback.
+        // A notification/history source can belong to a package whose launcher Activity is hidden,
+        // disabled or absent. IconPackXML now has a package alias index, so give the selected pack
+        // one last package-only lookup before falling back to Android's application drawable.
+        Drawable packed = getIconPackPackageFallback(trimmed, userHandle);
+        if (packed != null) return packed;
+
         Drawable drawable = PackageManagerUtils.getApplicationIcon(ctx, trimmed);
         return drawable == null ? null : applyIconMask(ctx, drawable);
     }
@@ -467,8 +471,24 @@ public class IconsHandler {
                     componentName, userHandle, mIconPack != null);
         }
 
+        Drawable packed = getIconPackPackageFallback(trimmed, userHandle);
+        if (packed != null) return packed;
+
         Drawable drawable = PackageManagerUtils.getApplicationIcon(ctx, trimmed);
         return drawable == null ? null : applyIconMask(ctx, drawable);
+    }
+
+    @Nullable
+    private Drawable getIconPackPackageFallback(@NonNull String packageName,
+                                                @NonNull UserHandle userHandle) {
+        if (mIconPack == null || !mIconPack.isLoaded()) return null;
+        // The class name is intentionally synthetic. IconPackXML first tries exact component
+        // mapping and then falls back to its package index, which is the behavior wanted here.
+        ComponentName packageOnly = new ComponentName(packageName, packageName);
+        Drawable drawable = mIconPack.getComponentDrawable(ctx, packageOnly, userHandle);
+        if (drawable == null) return null;
+        drawable = applyIconMask(ctx, drawable, true);
+        return applyBadge(drawable, userHandle);
     }
 
     /** Preserve explicit per-result custom icon choices above automatic package mapping. */
