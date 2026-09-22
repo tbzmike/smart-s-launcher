@@ -172,7 +172,10 @@ public class IconsHandler {
         // Android's raw shortcut drawable.
         if (mIconPack != null && pojo instanceof ShortcutPojo) {
             ShortcutPojo shortcut = (ShortcutPojo) pojo;
-            ComponentName componentName = shortcutInfo == null ? null : shortcutInfo.getActivity();
+            ComponentName componentName = null;
+            if (shortcutInfo != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+                componentName = shortcutInfo.getActivity();
+            }
             String packageName = shortcut.targetPackage == null || shortcut.targetPackage.trim().isEmpty()
                     ? shortcut.packageName : shortcut.targetPackage;
             if (componentName == null && packageName != null && !packageName.trim().isEmpty()) {
@@ -438,6 +441,25 @@ public class IconsHandler {
 
         // Some package-backed records have no launcher Activity. Keep them visually consistent
         // by applying the selected pack's mask/shape to the application drawable fallback.
+        Drawable drawable = PackageManagerUtils.getApplicationIcon(ctx, trimmed);
+        return drawable == null ? null : applyIconMask(ctx, drawable);
+    }
+
+    /**
+     * UI-safe package resolver that deliberately skips the disk icon cache. Notification surfaces
+     * are rendered on the main thread, so they must not reach Bitmap.compress through cache writes.
+     */
+    @Nullable
+    public Drawable getDrawableIconForPackageNameUncached(@NonNull String packageName,
+                                                           @NonNull UserHandle userHandle) {
+        String trimmed = packageName.trim();
+        if (trimmed.isEmpty()) return null;
+
+        ComponentName componentName = PackageManagerUtils.getLaunchingComponent(ctx, trimmed, userHandle);
+        if (componentName != null) {
+            return getDrawableIconForPackage(componentName, userHandle, false, mIconPack != null);
+        }
+
         Drawable drawable = PackageManagerUtils.getApplicationIcon(ctx, trimmed);
         return drawable == null ? null : applyIconMask(ctx, drawable);
     }
