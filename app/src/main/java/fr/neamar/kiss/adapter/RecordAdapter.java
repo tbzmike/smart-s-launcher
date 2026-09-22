@@ -79,6 +79,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private final QueryInterface parent;
     private FuzzyScore fuzzyScore;
     private final List<Result<?>> results;
+    private final HashMap<String, SocialMessagePresentation> socialPresentationCache = new HashMap<>();
     private final HashMap<String, Integer> alphaIndexer = new HashMap<>();
     private final WeakHashMap<View, int[]> baseRowPadding = new WeakHashMap<>();
     private final WeakHashMap<View, Integer> baseRowMinimumHeight = new WeakHashMap<>();
@@ -97,6 +98,14 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private int cachedHistoryWidthPercent = 100;
     private int cachedRowPercent = 100;
     private int cachedIconPercent = 110;
+    private int cachedNotificationIconPercent = 110;
+    private int cachedShortcutIconPercent = 110;
+    private int cachedFeatureIconPercent = 110;
+    private int cachedContactIconPercent = 110;
+    private boolean cachedResizeNotificationIcons = true;
+    private boolean cachedResizeShortcutIcons = true;
+    private boolean cachedResizeFeatureIcons = true;
+    private boolean cachedResizeContactIcons = true;
     private int cachedLabelSp = 18;
     private int cachedBodySp = 14;
     private Typeface cachedLabelTypeface = Typeface.DEFAULT_BOLD;
@@ -158,7 +167,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureSocialMessageCard(View view, NotificationPojo notification) {
-        SocialMessagePresentation presentation = SocialMessagePresentation.resolve(view.getContext(), notification);
+        String presentationKey = notification.exactNotificationId + '|'
+                + notification.postTime + '|'
+                + notification.notificationCount + '|'
+                + String.valueOf(notification.latestTitle) + '|'
+                + String.valueOf(notification.latestText);
+        SocialMessagePresentation presentation = socialPresentationCache.get(presentationKey);
+        if (presentation == null) {
+            presentation = SocialMessagePresentation.resolve(view.getContext(), notification);
+            socialPresentationCache.put(presentationKey, presentation);
+        }
         if (!presentation.message) return;
 
         TextView app = view.findViewById(R.id.item_notification_app);
@@ -405,7 +423,24 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             baseRowMinimumHeight.put(row, row.getMinimumHeight());
         }
         row.setMinimumHeight(dp(context, 64) * cachedRowPercent / 100);
-        applyPrimaryIconSize(row, cachedIconPercent);
+        applyPrimaryIconSize(row, iconPercentForRow(row));
+    }
+
+    private int iconPercentForRow(View row) {
+        ImageView icon = findPrimaryIcon(row);
+        if (icon == null) return cachedIconPercent;
+        switch (icon.getId()) {
+            case R.id.item_notification_icon:
+                return cachedResizeNotificationIcons ? cachedNotificationIconPercent : 100;
+            case R.id.item_shortcut_icon:
+                return cachedResizeShortcutIcons ? cachedShortcutIconPercent : 100;
+            case R.id.item_setting_icon:
+                return cachedResizeFeatureIcons ? cachedFeatureIconPercent : 100;
+            case R.id.item_contact_icon:
+                return cachedResizeContactIcons ? cachedContactIconPercent : 100;
+            default:
+                return cachedIconPercent;
+        }
     }
 
     private void applyVerticalHistoryPolish(View row, Context context) {
@@ -557,6 +592,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 prefs, "smart-list-card-width-percent", 100, 48, 400);
         cachedRowPercent = safePercent(prefs, "smart-list-row-size-percent", 100, 70, 220);
         cachedIconPercent = safePercent(prefs, "smart-list-icon-size-percent", 110, 50, 240);
+        cachedNotificationIconPercent = safePercent(
+                prefs, "smart-list-notification-icon-size-percent", cachedIconPercent, 50, 240);
+        cachedShortcutIconPercent = safePercent(
+                prefs, "smart-list-shortcut-icon-size-percent", cachedIconPercent, 50, 240);
+        cachedFeatureIconPercent = safePercent(
+                prefs, "smart-list-feature-icon-size-percent", cachedIconPercent, 50, 240);
+        cachedContactIconPercent = safePercent(
+                prefs, "smart-list-contact-icon-size-percent", cachedIconPercent, 50, 240);
+        cachedResizeNotificationIcons = prefs.getBoolean("smart-list-resize-notification-icons", true);
+        cachedResizeShortcutIcons = prefs.getBoolean("smart-list-resize-shortcut-icons", true);
+        cachedResizeFeatureIcons = prefs.getBoolean("smart-list-resize-feature-icons", true);
+        cachedResizeContactIcons = prefs.getBoolean("smart-list-resize-contact-icons", true);
         cachedLabelSp = safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
         cachedBodySp = safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
         cachedLabelTypeface = typefaceFor(prefs.getString("smart-list-label-font", "sans_bold"));
@@ -583,6 +630,14 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         result = 31 * result + cachedRowPercent;
         result = 31 * result + cachedHistoryWidthPercent;
         result = 31 * result + cachedIconPercent;
+        result = 31 * result + cachedNotificationIconPercent;
+        result = 31 * result + cachedShortcutIconPercent;
+        result = 31 * result + cachedFeatureIconPercent;
+        result = 31 * result + cachedContactIconPercent;
+        result = 31 * result + (cachedResizeNotificationIcons ? 1 : 0);
+        result = 31 * result + (cachedResizeShortcutIcons ? 1 : 0);
+        result = 31 * result + (cachedResizeFeatureIcons ? 1 : 0);
+        result = 31 * result + (cachedResizeContactIcons ? 1 : 0);
         result = 31 * result + cachedLabelSp;
         result = 31 * result + cachedBodySp;
         result = 31 * result + cachedLabelContrast;
@@ -936,6 +991,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (sameVisibleState(updatedResults, normalizedQuery)) return;
 
         parent.beforeListChange();
+        socialPresentationCache.clear();
         this.results.clear();
         this.results.addAll(updatedResults);
         lastRenderedQuery = normalizedQuery;
@@ -1005,6 +1061,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     public void clear() {
         parent.beforeListChange();
+        socialPresentationCache.clear();
         this.results.clear();
         lastRenderedQuery = null;
         notifyDataSetChanged();
