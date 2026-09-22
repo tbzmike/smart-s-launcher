@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.113 - icon-pack coverage, smooth Vertical List, updater channel matching
-        versionCode 541
-        versionName "3.30.113"
+        // Smart S Launcher 3.30.114 - MarkVault-style updater discovery with resilient GitHub fallbacks
+        versionCode 542
+        versionName "3.30.114"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
