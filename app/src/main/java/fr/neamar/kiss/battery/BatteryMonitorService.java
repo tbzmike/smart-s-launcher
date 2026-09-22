@@ -12,9 +12,10 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
-import android.os.Looper;
 import android.os.PowerManager;
+import android.os.Process;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -45,7 +46,8 @@ public final class BatteryMonitorService extends Service {
     private static final long EVENT_DEBOUNCE_MS = 1_000L;
     private static final long MIN_HISTORY_WRITE_MS = 2L * 60_000L;
 
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    private HandlerThread workerThread;
+    private Handler handler;
     private BatteryHistoryStore store;
     private long lastWidgetRefreshMs;
     private int lastWidgetPercent = -1;
@@ -88,6 +90,13 @@ public final class BatteryMonitorService extends Service {
         super.onCreate();
         store = new BatteryHistoryStore(this);
         createChannels();
+        // Sampling, rate calculations, history writes and widget refreshes do not belong on the
+        // launcher's UI looper. Keep the monitor feature intact but isolate all recurring work on
+        // a background-priority thread so it cannot steal frame time from Vertical List scrolling.
+        workerThread = new HandlerThread(
+                "smart-s-battery-monitor", Process.THREAD_PRIORITY_BACKGROUND);
+        workerThread.start();
+        handler = new Handler(workerThread.getLooper());
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -114,7 +123,8 @@ public final class BatteryMonitorService extends Service {
     }
 
     @Override public void onDestroy() {
-        handler.removeCallbacksAndMessages(null);
+        Handler localHandler = handler;
+        if (localHandler != null) localHandler.removeCallbacksAndMessages(null);
         if (receiverRegistered) {
             try {
                 unregisterReceiver(stateReceiver);
@@ -124,6 +134,10 @@ public final class BatteryMonitorService extends Service {
             receiverRegistered = false;
         }
         if (store != null) store.close();
+        HandlerThread localThread = workerThread;
+        workerThread = null;
+        handler = null;
+        if (localThread != null) localThread.quitSafely();
         super.onDestroy();
     }
 
