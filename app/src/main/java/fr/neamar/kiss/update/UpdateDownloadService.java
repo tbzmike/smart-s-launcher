@@ -16,6 +16,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -301,10 +302,14 @@ public final class UpdateDownloadService extends Service {
 
     private HttpURLConnection openDownloadConnection(String rawUrl, long resumeFrom)
             throws IOException {
-        HttpURLConnection connection = UpdateNetwork.open(
-                this, rawUrl, CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS);
+        // Keep the download transport aligned with MarkVault's proven updater: ordinary HTTPS
+        // through HttpURLConnection, with explicit timeouts and resumable Range support.
+        HttpURLConnection connection = (HttpURLConnection) new URL(rawUrl).openConnection();
+        connection.setInstanceFollowRedirects(true);
+        connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        connection.setReadTimeout(READ_TIMEOUT_MS);
         connection.setRequestMethod("GET");
-        connection.setRequestProperty("User-Agent", "Smart-S-Launcher updater");
+        connection.setRequestProperty("User-Agent", "Smart-S-Launcher-Android updater");
         connection.setRequestProperty("Accept",
                 "application/vnd.android.package-archive, application/octet-stream");
         if (resumeFrom > 0L) connection.setRequestProperty("Range", "bytes=" + resumeFrom + "-");
