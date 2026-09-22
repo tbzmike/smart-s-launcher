@@ -128,8 +128,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         this.fuzzyScore = null;
     }
 
-    @Override public int getViewTypeCount() { return 8; }
-    @Override public int getItemViewType(int position) { Result<?> result = getItem(position); return result instanceof CommunicationResult ? 7 : Result.getItemViewType(result); }
+    // Keep communication and notification timelines in their own recycling pools. NotificationPojo
+    // is a SettingPojo subclass but renders a completely different, much heavier layout; sharing
+    // type 3 with ordinary settings forced ListView to hand the wrong convertView back repeatedly.
+    @Override public int getViewTypeCount() { return 9; }
+
+    @Override
+    public int getItemViewType(int position) {
+        Result<?> result = getItem(position);
+        if (result instanceof CommunicationResult) return 7;
+        if (result != null && result.getPojo() instanceof NotificationPojo) return 8;
+        return Result.getItemViewType(result);
+    }
     @Override public boolean hasStableIds() { return true; }
     @Override public int getCount() { return results.size(); }
     @Override public Result<?> getItem(int position) { return results.get(position); }
