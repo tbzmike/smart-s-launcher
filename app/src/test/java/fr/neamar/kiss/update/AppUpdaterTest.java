@@ -31,7 +31,7 @@ class AppUpdaterTest {
     }
 
     @Test
-    void markVaultStyleDiscoveryDoesNotUseGitHubApiAsPrimary() {
+    void releasePageManifestIsPrimaryAndApiIsFallback() {
         assertTrue(AppUpdater.PRIMARY_MANIFEST_URL.startsWith("https://github.com/"));
         assertTrue(AppUpdater.MIRROR_MANIFEST_URL.startsWith("https://raw.githubusercontent.com/"));
         assertTrue(AppUpdater.RELEASE_API.startsWith("https://api.github.com/"));
