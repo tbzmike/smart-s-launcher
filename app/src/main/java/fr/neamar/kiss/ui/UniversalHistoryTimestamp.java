@@ -55,9 +55,14 @@ public final class UniversalHistoryTimestamp {
         if (timestampView == null) return;
 
         LaunchStatsProvider.LaunchStats stats = resolveStats(pojo);
-        timestampView.setVisibility(View.VISIBLE);
+        if (timestampView.getVisibility() != View.VISIBLE) {
+            timestampView.setVisibility(View.VISIBLE);
+        }
         long resolvedTimestamp = resolveTimestamp(pojo, stats);
-        timestampView.setText(formatTimestampCached(context, pojo, resolvedTimestamp, stats));
+        CharSequence formatted = formatTimestampCached(context, pojo, resolvedTimestamp, stats);
+        if (!TextUtils.equals(timestampView.getText(), formatted)) {
+            timestampView.setText(formatted);
+        }
         if (!STYLED_VIEWS.containsKey(timestampView)) {
             SmartTextAppearance.applyHistoryMetadata(timestampView);
             STYLED_VIEWS.put(timestampView, Boolean.TRUE);
@@ -77,8 +82,8 @@ public final class UniversalHistoryTimestamp {
         // List rows are recycled across History and QUERY. Hiding the metadata view alone leaves
         // its previous enriched text attached to that recycled row; an asynchronous History
         // enrichment finishing after search starts can then append the same suffix again and again.
-        existing.setText(null);
-        existing.setVisibility(View.GONE);
+        if (!TextUtils.isEmpty(existing.getText())) existing.setText(null);
+        if (existing.getVisibility() != View.GONE) existing.setVisibility(View.GONE);
     }
 
     private static LaunchStatsProvider.LaunchStats resolveStats(Pojo pojo) {
