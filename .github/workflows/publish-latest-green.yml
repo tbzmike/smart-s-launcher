@@ -75,8 +75,8 @@ jobs:
               "runNumber": int(os.environ["SOURCE_RUN_NUMBER"]),
               "sha": os.environ["SOURCE_SHA"],
               "variant": "release",
-              "apkName": f"smart-s-launcher-{version}.apk",
-              "apkUrl": f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}/smart-s-launcher-{version}.apk"
+              "apkName": "SmartSLauncher.apk",
+              "apkUrl": "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest/SmartSLauncher.apk"
           }
           Path("latest-green.json").write_text(
               json.dumps(data, separators=(",", ":")) + "\n",
@@ -187,7 +187,7 @@ jobs:
 
           debug_name = "SmartSLauncher-debug.apk"
           release_name = "SmartSLauncher.apk"
-          base = f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}"
+          base = "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest"
 
           data.update({
               "publishedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -228,6 +228,41 @@ jobs:
             "$SIGNED_APK" \
             SmartSLauncher-debug.apk \
             SmartSLauncher.apk
+
+      - name: Refresh fixed updater-latest release channel
+        if: ${{ steps.guard.outputs.publish == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          TAG="updater-latest"
+          NOTES="Stable Smart S Launcher updater channel from fully passed App testing run #${SOURCE_RUN_NUMBER}. The app uses the fixed assets on this release; normal human/F-Droid releases remain versioned."
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            git tag -f "$TAG" "$SOURCE_SHA"
+            git push --force origin "refs/tags/$TAG"
+            gh release upload "$TAG" \
+              latest-green.json \
+              SmartSLauncher-debug.apk \
+              SmartSLauncher.apk \
+              --clobber
+            gh release edit "$TAG" \
+              --title "Smart S Launcher — updater latest" \
+              --notes "$NOTES" \
+              --prerelease
+          else
+            gh release create "$TAG" \
+              --target "$SOURCE_SHA" \
+              --title "Smart S Launcher — updater latest" \
+              --notes "$NOTES" \
+              --prerelease \
+              latest-green.json \
+              SmartSLauncher-debug.apk \
+              SmartSLauncher.apk
+          fi
 
       - name: Mirror latest manifest for updater reachability
         if: ${{ steps.guard.outputs.publish == 'true' }}
