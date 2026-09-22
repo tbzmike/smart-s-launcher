@@ -166,13 +166,15 @@ public class SettingsResult extends Result<SettingPojo> {
 
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;
-            return icons.getDrawableIconForPackageName(notification.packageName, UserHandle.OWNER);
+            Drawable identity = NotificationIdentityIcon.resolve(
+                    context, notification.exactNotificationId, notification.packageName);
+            if (identity != null) return identity;
         }
         if (pojo instanceof NotificationHistorySearchPojo) {
             NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;
-            Drawable sourceIcon = icons.getDrawableIconForPackageName(
-                    history.sourcePackageName, UserHandle.OWNER);
-            if (sourceIcon != null) return sourceIcon;
+            Drawable identity = NotificationIdentityIcon.resolve(
+                    context, history.sourceNotificationId, history.sourcePackageName);
+            if (identity != null) return identity;
         }
         if (pojo instanceof DisabledAppPojo) {
             DisabledAppPojo disabled = (DisabledAppPojo) pojo;
