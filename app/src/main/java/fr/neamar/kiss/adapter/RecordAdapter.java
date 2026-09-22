@@ -88,6 +88,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private final WeakHashMap<View, Integer> baseRowMinimumHeight = new WeakHashMap<>();
     private final WeakHashMap<View, Integer> baseRowLayoutWidths = new WeakHashMap<>();
     private final WeakHashMap<View, int[]> baseIconBounds = new WeakHashMap<>();
+    private final WeakHashMap<ImageView, ImageView.ScaleType> baseIconScaleTypes = new WeakHashMap<>();
     private final WeakHashMap<TextView, TextStyleState> baseTextStyles = new WeakHashMap<>();
     private final WeakHashMap<View, String> overflowConfigured = new WeakHashMap<>();
     private final WeakHashMap<TextView, Boolean> marqueeObservers = new WeakHashMap<>();
@@ -775,13 +776,28 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             base = new int[]{lp.width, lp.height};
             baseIconBounds.put(target, base);
         }
+        if (!baseIconScaleTypes.containsKey(icon)) {
+            baseIconScaleTypes.put(icon, icon.getScaleType());
+        }
+
         lp.width = Math.max(1, Math.round(base[0] * percent / 100f));
         lp.height = Math.max(1, Math.round(base[1] * percent / 100f));
         target.setLayoutParams(lp);
         icon.setScaleX(1f);
         icon.setScaleY(1f);
-        if (icon.getId() == R.id.item_setting_icon) icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        else if (icon.getScaleType() == ImageView.ScaleType.FIT_XY) icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+
+        /*
+         * CENTER_INSIDE never scales a drawable above its intrinsic bitmap size. That made a
+         * 216%/224% avatar slider enlarge only the ImageView box while a 48px WhatsApp/profile
+         * bitmap stayed visually tiny in the middle. FIT_CENTER preserves aspect ratio but also
+         * allows up-scaling, so every manual icon/profile slider now changes the visible artwork.
+         */
+        ImageView.ScaleType baseScale = baseIconScaleTypes.get(icon);
+        if (percent == 100 && baseScale != null) {
+            icon.setScaleType(baseScale);
+        } else {
+            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        }
     }
 
     private void restorePrimaryIconSize(View row) {
@@ -796,6 +812,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         target.setLayoutParams(lp);
         icon.setScaleX(1f);
         icon.setScaleY(1f);
+        ImageView.ScaleType baseScale = baseIconScaleTypes.get(icon);
+        if (baseScale != null) icon.setScaleType(baseScale);
     }
 
     private View findIconResizeTarget(ImageView icon) {
