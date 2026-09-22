@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.117 - avatar sizing wiring and exact MarkVault-style release updater
-        versionCode 545
-        versionName "3.30.117"
+        // Smart S Launcher 3.30.118 - make independent icon/avatar sliders resize visible artwork
+        versionCode 546
+        versionName "3.30.118"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
