@@ -13,42 +13,31 @@ import org.junit.jupiter.api.io.TempDir;
 class AppUpdaterTest {
     @Test
     void comparesThreePartVersions() {
-        assertTrue(AppUpdater.compareVersions("3.30.111", "3.30.110") > 0);
+        assertTrue(AppUpdater.compareVersions("3.30.117", "3.30.116") > 0);
         assertTrue(AppUpdater.compareVersions("3.31.0", "3.30.999") > 0);
         assertTrue(AppUpdater.compareVersions("4.0.0", "3.99.99") > 0);
     }
 
     @Test
     void acceptsVPrefixAndMissingTrailingParts() {
-        assertEquals(0, AppUpdater.compareVersions("v3.30.111", "3.30.111"));
+        assertEquals(0, AppUpdater.compareVersions("v3.30.117", "3.30.117"));
         assertEquals(0, AppUpdater.compareVersions("3.30", "3.30.0"));
-        assertEquals("3.30.111", AppUpdater.normalizeVersion("V3.30.111"));
+        assertEquals("3.30.117", AppUpdater.normalizeVersion("V3.30.117"));
     }
 
     @Test
-    void olderBuildIsNotAnUpdate() {
-        assertTrue(AppUpdater.compareVersions("3.30.110", "3.30.111") < 0);
+    void usesTheSameLatestReleaseApiPatternAsMarkVault() {
+        assertEquals(
+                "https://api.github.com/repos/tbzmike/smart-s-launcher/releases/latest",
+                AppUpdater.RELEASE_API);
     }
 
     @Test
-    void releasePageManifestIsPrimaryAndApiIsFallback() {
-        assertTrue(AppUpdater.PRIMARY_MANIFEST_URL.startsWith("https://github.com/"));
-        assertTrue(AppUpdater.MIRROR_MANIFEST_URL.startsWith("https://raw.githubusercontent.com/"));
-        assertTrue(AppUpdater.RELEASE_API.startsWith("https://api.github.com/"));
-    }
-
-    @Test
-    void selectsReleaseAssetThatMatchesBuildSigningChannel() {
+    void selectsFixedReleaseAssetForInstalledSigningChannel() {
         assertEquals("SmartSLauncher-debug.apk",
-                AppUpdater.expectedReleaseAssetName("3.30.115", true));
+                AppUpdater.expectedReleaseAssetName(true));
         assertEquals("SmartSLauncher.apk",
-                AppUpdater.expectedReleaseAssetName("v3.30.115", false));
-        assertEquals(
-                "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest/SmartSLauncher-debug.apk",
-                AppUpdater.latestStableAssetUrl(true));
-        assertEquals(
-                "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest/SmartSLauncher.apk",
-                AppUpdater.latestStableAssetUrl(false));
+                AppUpdater.expectedReleaseAssetName(false));
     }
 
     @Test
