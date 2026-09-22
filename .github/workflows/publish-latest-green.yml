@@ -160,6 +160,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Keep fixed asset names on every newest versioned release. This mirrors MarkVault's
+          # stable MarkVault.apk channel while preserving Smart S Launcher versioned releases.
+          cp app-debug.apk SmartSLauncher-debug.apk
+          cp "$SIGNED_APK" SmartSLauncher.apk
+
           python3 - <<'PY'
           import hashlib
           import json
@@ -170,8 +175,8 @@ jobs:
           manifest_path = Path("latest-green.json")
           data = json.loads(manifest_path.read_text(encoding="utf-8"))
           version = data["version"]
-          debug_path = Path("app-debug.apk")
-          release_path = Path(os.environ["SIGNED_APK"])
+          debug_path = Path("SmartSLauncher-debug.apk")
+          release_path = Path("SmartSLauncher.apk")
 
           def sha256(path):
               digest = hashlib.sha256()
@@ -180,8 +185,8 @@ jobs:
                       digest.update(chunk)
               return digest.hexdigest()
 
-          debug_name = "app-debug.apk"
-          release_name = f"smart-s-launcher-{version}.apk"
+          debug_name = "SmartSLauncher-debug.apk"
+          release_name = "SmartSLauncher.apk"
           base = f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}"
 
           data.update({
@@ -217,10 +222,12 @@ jobs:
             --target "$SOURCE_SHA" \
             --latest \
             --title "Smart S Launcher v${VERSION}" \
-            --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully. The updater manifest contains SHA-256 and size metadata for both signing channels: app-debug.apk updates GitHub Actions/debug installs, while the signed production APK updates production/F-Droid installs." \
+            --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully. SmartSLauncher-debug.apk and SmartSLauncher.apk are fixed updater assets on every latest versioned release; the manifest carries SHA-256 and size metadata for both signing channels." \
             latest-green.json \
             app-debug.apk \
-            "$SIGNED_APK"
+            "$SIGNED_APK" \
+            SmartSLauncher-debug.apk \
+            SmartSLauncher.apk
 
       - name: Mirror latest manifest for updater reachability
         if: ${{ steps.guard.outputs.publish == 'true' }}
