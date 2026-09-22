@@ -6,7 +6,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
@@ -24,6 +23,7 @@ import androidx.preference.PreferenceManager;
 import java.util.HashSet;
 import java.util.Set;
 
+import fr.neamar.kiss.IconsHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.NotificationHistoryActivity;
@@ -31,7 +31,7 @@ import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
-import fr.neamar.kiss.notification.NotificationAvatarSupport;
+import fr.neamar.kiss.notification.NotificationIdentityIcon;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
@@ -42,6 +42,7 @@ import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
+import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public class SettingsResult extends Result<SettingPojo> {
@@ -117,10 +118,10 @@ public class SettingsResult extends Result<SettingPojo> {
         text.setText(preview);
         text.setVisibility(View.VISIBLE);
 
-        String avatarNotificationId = exactNotificationId;
-        Drawable avatar = NotificationAvatarSupport.avatar(context, avatarNotificationId);
         if (!isHideIcons(context)) {
-            if (avatar != null) icon.setImageDrawable(avatar);
+            Drawable identityIcon = NotificationIdentityIcon.resolve(
+                    context, exactNotificationId, notification.packageName);
+            if (identityIcon != null) icon.setImageDrawable(identityIcon);
             else setAsyncDrawable(icon);
         } else icon.setImageDrawable(null);
 
@@ -157,23 +158,34 @@ public class SettingsResult extends Result<SettingPojo> {
 
     @Override
     public Drawable getDrawable(Context context) {
+        IconsHandler icons = KissApplication.getApplication(context).getIconsHandler();
+
+        // Explicit per-result custom icons remain the highest-priority user choice.
+        Drawable custom = icons.getCustomDrawableForPojo(pojo);
+        if (custom != null) return custom;
+
         if (pojo instanceof NotificationPojo) {
-            try {
-                return context.getPackageManager().getApplicationIcon(((NotificationPojo) pojo).packageName);
-            } catch (PackageManager.NameNotFoundException e) {
-                return null;
-            }
+            NotificationPojo notification = (NotificationPojo) pojo;
+            return icons.getDrawableIconForPackageName(notification.packageName, UserHandle.OWNER);
+        }
+        if (pojo instanceof NotificationHistorySearchPojo) {
+            NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;
+            Drawable sourceIcon = icons.getDrawableIconForPackageName(
+                    history.sourcePackageName, UserHandle.OWNER);
+            if (sourceIcon != null) return sourceIcon;
         }
         if (pojo instanceof DisabledAppPojo) {
             DisabledAppPojo disabled = (DisabledAppPojo) pojo;
-            try {
-                ApplicationInfo info = context.getPackageManager().getApplicationInfo(disabled.targetPackage, PackageManager.GET_DISABLED_COMPONENTS);
-                Drawable icon = info.loadIcon(context.getPackageManager());
-                if (icon != null) icon.setAlpha(140);
-                return icon;
-            } catch (PackageManager.NameNotFoundException e) {
-                return null;
-            }
+            Drawable icon = icons.getDrawableIconForPackageName(disabled.targetPackage, UserHandle.OWNER);
+            if (icon != null) icon.setAlpha(140);
+            return icon;
+        }
+
+        // Package-backed Settings/features also inherit the selected pack. Pure Android settings
+        // without an owning package keep their dedicated built-in glyph.
+        if (icons.isCustomIconPackActive() && pojo.packageName != null && !pojo.packageName.trim().isEmpty()) {
+            Drawable packageIcon = icons.getDrawableIconForPackageName(pojo.packageName, UserHandle.OWNER);
+            if (packageIcon != null) return packageIcon;
         }
         if (pojo.icon != -1) return getThemedDrawable(context, pojo, pojo.icon);
         return null;
