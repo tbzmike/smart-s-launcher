@@ -45,11 +45,11 @@ public final class AppUpdater {
 
     // MarkVault-style discovery: normal GitHub release metadata is primary. api.github.com is
     // deliberately only the final fallback so a DNS failure for the API host cannot break updates.
-    private static final String PRIMARY_MANIFEST_URL =
+    static final String PRIMARY_MANIFEST_URL =
             "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/latest-green.json";
-    private static final String MIRROR_MANIFEST_URL =
+    static final String MIRROR_MANIFEST_URL =
             "https://raw.githubusercontent.com/tbzmike/smart-s-launcher/updater-channel/latest-green.json";
-    private static final String RELEASE_API =
+    static final String RELEASE_API =
             "https://api.github.com/repos/tbzmike/smart-s-launcher/releases/latest";
     private static final String EXPECTED_DOWNLOAD_HOST = "github.com";
     private static final String EXPECTED_DOWNLOAD_PATH_PREFIX =
