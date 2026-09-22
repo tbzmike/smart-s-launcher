@@ -19,13 +19,13 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import fr.neamar.kiss.notification.NotificationIdentityIcon;
 
 import java.util.Date;
 import java.util.List;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
-import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
@@ -417,19 +417,9 @@ public final class RichNotificationHistoryDialog {
         }
 
         private void setHeaderIdentity(NotificationHistoryRecord record) {
-            android.graphics.drawable.Drawable avatar = record == null ? null
-                    : NotificationAvatarSupport.avatar(context, record.notificationId);
-            if (avatar != null) {
-                headerIcon.setImageDrawable(avatar);
-                return;
-            }
-            try {
-                PackageManager pm = context.getPackageManager();
-                ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
-                headerIcon.setImageDrawable(info.loadIcon(pm));
-            } catch (PackageManager.NameNotFoundException ignored) {
-                headerIcon.setImageDrawable(null);
-            }
+            android.graphics.drawable.Drawable identity = NotificationIdentityIcon.resolve(
+                    context, record == null ? null : record.notificationId, packageName);
+            headerIcon.setImageDrawable(identity);
         }
 
         private String safeAppName(NotificationHistoryRecord record) {
