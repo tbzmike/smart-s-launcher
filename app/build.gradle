@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.109 - optional Pixel Launcher screen-off cleanup
-        versionCode 538
-        versionName "3.30.110"
+        // Smart S Launcher 3.30.111 - global icon-pack coverage and verified release updater
+        versionCode 539
+        versionName "3.30.111"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
