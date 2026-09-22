@@ -42,8 +42,9 @@ public final class AppUpdater {
     private static final String PREF_LAST_CHECK_MS = "smart-update-last-check-ms";
     private static final long AUTO_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L;
 
-    // MarkVault-style discovery: normal GitHub release metadata is primary. api.github.com is
-    // deliberately only the final fallback so a DNS failure for the API host cannot break updates.
+    // MarkVault's working updater relies on a stable APK asset attached to the newest GitHub
+    // Release. Smart S keeps its versioned release pages, but each newest release now also carries
+    // fixed updater asset names plus this manifest. The GitHub API remains only a metadata fallback.
     static final String PRIMARY_MANIFEST_URL =
             "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/latest-green.json";
     static final String MIRROR_MANIFEST_URL =
