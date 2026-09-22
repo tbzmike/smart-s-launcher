@@ -449,8 +449,7 @@ public final class UpdateDownloadService extends Service {
                     new Intent(this, UpdateInstallReceiver.class)
                             .setAction(UpdateInstallReceiver.ACTION_INSTALL),
                     pendingFlags(PendingIntent.FLAG_UPDATE_CURRENT));
-            builder.addAction(new Notification.Action.Builder(
-                    null, "Install", install).build());
+            builder.addAction(0, "Install", install);
             builder.setContentIntent(install);
         }
 
@@ -459,8 +458,7 @@ public final class UpdateDownloadService extends Service {
                     this, 1,
                     new Intent(this, UpdateDownloadService.class).setAction(ACTION_CANCEL),
                     pendingFlags(PendingIntent.FLAG_UPDATE_CURRENT));
-            builder.addAction(new Notification.Action.Builder(
-                    null, "Cancel", cancel).build());
+            builder.addAction(0, "Cancel", cancel);
         }
         return builder.build();
     }
