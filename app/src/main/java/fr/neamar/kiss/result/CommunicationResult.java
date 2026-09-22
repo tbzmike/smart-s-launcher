@@ -5,7 +5,6 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
@@ -32,6 +31,7 @@ import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
+import fr.neamar.kiss.notification.NotificationIdentityIcon;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.utils.AppLaunchUtils;
@@ -142,10 +142,13 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
         if (icon != null) return icon;
         synchronized (this) {
             if (icon != null) return icon;
-            if (!pojo.packageName.isEmpty()) {
-                // Communication history is still an app-backed launcher surface. Resolve the
-                // source package through the same selected icon-pack pipeline as Favorites and
-                // normal app results instead of bypassing the pack with ApplicationInfo.loadIcon().
+            if (!pojo.notificationId.isEmpty() || !pojo.packageName.isEmpty()) {
+                // Exact sender/conversation artwork wins. The selected icon pack is only the
+                // application-level fallback when no avatar/profile image is available.
+                icon = NotificationIdentityIcon.resolve(
+                        context, pojo.notificationId, pojo.packageName);
+            }
+            if (icon == null && !pojo.packageName.isEmpty()) {
                 icon = KissApplication.getApplication(context).getIconsHandler()
                         .getDrawableIconForPackageName(pojo.packageName, UserHandle.OWNER);
             }
