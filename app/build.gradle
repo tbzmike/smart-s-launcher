@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.118 - make independent icon/avatar sliders resize visible artwork
-        versionCode 546
-        versionName "3.30.118"
+        // Smart S Launcher 3.30.119 - eliminate Vertical List scroll jank without removing sizing/icon fixes
+        versionCode 547
+        versionName "3.30.119"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
