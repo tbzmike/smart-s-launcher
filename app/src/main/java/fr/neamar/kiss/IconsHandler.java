@@ -38,6 +38,7 @@ import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.icons.SystemIconPack;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.AppResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.result.TagDummyResult;
@@ -164,6 +165,23 @@ public class IconsHandler {
         Drawable icon = getCustomIcon(pojo);
         if (icon != null) {
             return icon;
+        }
+
+        // A selected icon pack is a launcher-wide visual choice. Shortcuts therefore inherit
+        // the packed icon of the app/activity they launch instead of bypassing the pack with
+        // Android's raw shortcut drawable.
+        if (mIconPack != null && pojo instanceof ShortcutPojo) {
+            ShortcutPojo shortcut = (ShortcutPojo) pojo;
+            ComponentName componentName = shortcutInfo == null ? null : shortcutInfo.getActivity();
+            String packageName = shortcut.targetPackage == null || shortcut.targetPackage.trim().isEmpty()
+                    ? shortcut.packageName : shortcut.targetPackage;
+            if (componentName == null && packageName != null && !packageName.trim().isEmpty()) {
+                componentName = PackageManagerUtils.getLaunchingComponent(ctx, packageName, shortcut.getUserHandle());
+            }
+            if (componentName != null) {
+                icon = getDrawableIconForPackage(componentName, shortcut.getUserHandle());
+                if (icon != null) return icon;
+            }
         }
 
         if (shortcutInfo != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
@@ -395,6 +413,39 @@ public class IconsHandler {
 
     public Map<String, String> getIconsPacks() {
         return iconsPacks;
+    }
+
+    /** Whether a non-system icon pack is currently selected. */
+    public boolean isCustomIconPackActive() {
+        return mIconPack != null;
+    }
+
+    /**
+     * Resolve a package through the exact same icon-pack pipeline used by normal AppResult rows.
+     * This is used by notifications, history and other package-backed launcher surfaces that do
+     * not naturally carry an AppPojo/launcher component.
+     */
+    @Nullable
+    public Drawable getDrawableIconForPackageName(@NonNull String packageName,
+                                                   @NonNull UserHandle userHandle) {
+        String trimmed = packageName.trim();
+        if (trimmed.isEmpty()) return null;
+
+        ComponentName componentName = PackageManagerUtils.getLaunchingComponent(ctx, trimmed, userHandle);
+        if (componentName != null) {
+            return getDrawableIconForPackage(componentName, userHandle);
+        }
+
+        // Some package-backed records have no launcher Activity. Keep them visually consistent
+        // by applying the selected pack's mask/shape to the application drawable fallback.
+        Drawable drawable = PackageManagerUtils.getApplicationIcon(ctx, trimmed);
+        return drawable == null ? null : applyIconMask(ctx, drawable);
+    }
+
+    /** Preserve explicit per-result custom icon choices above automatic package mapping. */
+    @Nullable
+    public Drawable getCustomDrawableForPojo(@NonNull Pojo pojo) {
+        return getCustomIcon(pojo);
     }
 
     @NonNull
