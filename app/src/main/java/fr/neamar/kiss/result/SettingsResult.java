@@ -12,6 +12,7 @@ import android.graphics.drawable.Drawable;
 import android.os.Process;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AbsListView;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -38,6 +39,7 @@ import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
+import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
@@ -51,6 +53,7 @@ public class SettingsResult extends Result<SettingPojo> {
     private static final String FEATURE_SCHEME = "feature://";
     private static final String HIDDEN_TARGETS = "hidden-launch-targets";
     private boolean launchSucceeded;
+    private volatile Drawable cachedIcon;
 
     SettingsResult(@NonNull SettingPojo pojo) {
         super(pojo);
@@ -60,7 +63,7 @@ public class SettingsResult extends Result<SettingPojo> {
     @Override
     public View display(Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
         if (pojo instanceof NotificationPojo) {
-            return displayNotificationGroup(context, parent, (NotificationPojo) pojo);
+            return displayNotificationGroup(context, view, parent, (NotificationPojo) pojo);
         }
 
         if (view == null || view.findViewById(R.id.item_setting_name) == null) {
@@ -81,8 +84,14 @@ public class SettingsResult extends Result<SettingPojo> {
         return view;
     }
 
-    private View displayNotificationGroup(Context context, ViewGroup parent, NotificationPojo notification) {
-        View view = inflateFromId(context, R.layout.item_notification_timeline, parent);
+    private View displayNotificationGroup(Context context, View view, ViewGroup parent,
+                                          NotificationPojo notification) {
+        // Notification rows used to inflate a brand-new hierarchy on every ListView bind, ignoring
+        // convertView completely. A notification-heavy history therefore paid XML inflation,
+        // listener creation and child measurement continuously while flinging.
+        if (view == null || view.findViewById(R.id.item_notification_app) == null) {
+            view = inflateFromId(context, R.layout.item_notification_timeline, parent);
+        }
         TextView appName = view.findViewById(R.id.item_notification_app);
         TextView title = view.findViewById(R.id.item_notification_title);
         TextView text = view.findViewById(R.id.item_notification_text);
@@ -102,11 +111,16 @@ public class SettingsResult extends Result<SettingPojo> {
         nativeContainer.setInterceptChildTouches(true);
         nativeContainer.setOnClickListener(openExact);
 
-        View nativeView = exactActive
+        // The native Vertical History renderer immediately collapses this RemoteViews preview
+        // in RecordAdapter, so constructing the RemoteViews during every recycled-row bind was
+        // pure work on the UI thread. Keep it for non-history/search surfaces where it is visible.
+        boolean nativeHistoryList = parent instanceof AbsListView
+                && UniversalHistoryTimestamp.isHistorySurface(context);
+        nativeContainer.removeAllViews();
+        View nativeView = !nativeHistoryList && exactActive
                 ? NotificationListener.createNativeNotificationView(
                 context, exactNotificationId, nativeContainer, false) : null;
         if (nativeView != null) {
-            nativeContainer.removeAllViews();
             nativeContainer.addView(nativeView);
             nativeContainer.setVisibility(View.VISIBLE);
         } else {
@@ -119,11 +133,12 @@ public class SettingsResult extends Result<SettingPojo> {
         text.setVisibility(View.VISIBLE);
 
         if (!isHideIcons(context)) {
-            Drawable identityIcon = NotificationIdentityIcon.resolve(
-                    context, exactNotificationId, notification.packageName);
-            if (identityIcon != null) icon.setImageDrawable(identityIcon);
-            else setAsyncDrawable(icon);
-        } else icon.setImageDrawable(null);
+            // Avatar/icon-pack resolution can decode profile artwork and inspect package resources.
+            // Keep it off the ListView UI thread and cache it on the Result just like app icons.
+            setAsyncDrawable(icon);
+        } else {
+            icon.setImageDrawable(null);
+        }
 
         // Every clickable part resolves the same exact child notification. No app-level or group
         // popup is reachable from a normal tap; popups are reserved for the long-press path.
@@ -157,7 +172,19 @@ public class SettingsResult extends Result<SettingPojo> {
     }
 
     @Override
+    boolean isDrawableCached() {
+        return cachedIcon != null;
+    }
+
+    @Override
+    void setDrawableCache(Drawable drawable) {
+        cachedIcon = drawable;
+    }
+
+    @Override
     public Drawable getDrawable(Context context) {
+        Drawable cached = cachedIcon;
+        if (cached != null) return cached;
         IconsHandler icons = KissApplication.getApplication(context).getIconsHandler();
 
         // Explicit per-result custom icons remain the highest-priority user choice.
