@@ -42,11 +42,12 @@ public final class AppUpdater {
     private static final String PREF_LAST_CHECK_MS = "smart-update-last-check-ms";
     private static final long AUTO_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L;
 
-    // MarkVault's working updater relies on a stable APK asset attached to the newest GitHub
-    // Release. Smart S keeps its versioned release pages, but each newest release now also carries
-    // fixed updater asset names plus this manifest. The GitHub API remains only a metadata fallback.
+    // MarkVault's working updater uses one stable release tag and one fixed APK asset. Smart S
+    // keeps its human/F-Droid versioned releases, and additionally maintains an updater-latest
+    // release tag with fixed debug/production assets plus this manifest. The GitHub API remains
+    // only a metadata fallback.
     static final String PRIMARY_MANIFEST_URL =
-            "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/latest-green.json";
+            "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest/latest-green.json";
     static final String MIRROR_MANIFEST_URL =
             "https://raw.githubusercontent.com/tbzmike/smart-s-launcher/updater-channel/latest-green.json";
     static final String RELEASE_API =
@@ -54,7 +55,7 @@ public final class AppUpdater {
     static final String STABLE_DEBUG_ASSET = "SmartSLauncher-debug.apk";
     static final String STABLE_RELEASE_ASSET = "SmartSLauncher.apk";
     private static final String LATEST_RELEASE_DOWNLOAD_PREFIX =
-            "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/";
+            "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest/";
     private static final String EXPECTED_DOWNLOAD_HOST = "github.com";
     private static final String EXPECTED_DOWNLOAD_PATH_PREFIX =
             "/tbzmike/smart-s-launcher/releases/download/";
