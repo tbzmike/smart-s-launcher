@@ -27,7 +27,7 @@ public final class NotificationIdentityIcon {
         IconsHandler icons = KissApplication.getApplication(context).getIconsHandler();
 
         if (icons.isCustomIconPackActive() && !TextUtils.isEmpty(packageName)) {
-            Drawable packed = icons.getDrawableIconForPackageName(packageName, UserHandle.OWNER);
+            Drawable packed = icons.getDrawableIconForPackageNameUncached(packageName, UserHandle.OWNER);
             if (packed != null) return packed;
         }
 
@@ -37,7 +37,7 @@ public final class NotificationIdentityIcon {
         }
 
         if (!TextUtils.isEmpty(packageName)) {
-            return icons.getDrawableIconForPackageName(packageName, UserHandle.OWNER);
+            return icons.getDrawableIconForPackageNameUncached(packageName, UserHandle.OWNER);
         }
         return null;
     }
