@@ -18,10 +18,10 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import fr.neamar.kiss.notification.NotificationIdentityIcon;
 
 import java.util.List;
 
-import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 
 /**
@@ -245,16 +245,7 @@ public final class NotificationPopupDialog {
     }
 
     private static android.graphics.drawable.Drawable identityDrawable(Context context, String notificationId, String packageName) {
-        android.graphics.drawable.Drawable avatar = NotificationAvatarSupport.avatar(context, notificationId);
-        if (avatar != null) return avatar;
-        if (packageName == null) return null;
-        try {
-            PackageManager pm = context.getPackageManager();
-            ApplicationInfo info = pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
-            return info.loadIcon(pm);
-        } catch (PackageManager.NameNotFoundException ignored) {
-            return null;
-        }
+        return NotificationIdentityIcon.resolve(context, notificationId, packageName);
     }
 
     private static Button sendIfPresent(View view) {
