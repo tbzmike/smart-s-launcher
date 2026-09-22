@@ -800,20 +800,14 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
         /*
          * CENTER_INSIDE never scales a drawable above its intrinsic bitmap size. FIT_CENTER keeps
-         * the 3.30.118 visible-avatar fix. Cache scaled avatar/icon drawing in a hardware layer so
-         * scrolling composites the texture instead of repeatedly rasterizing the enlarged image.
+         * the 3.30.118 visible-avatar fix. Do not force a per-row hardware layer here: ListView rows
+         * are recycled and Android's normal hardware-accelerated rendering avoids extra layer
+         * allocation/upload churn while the drawable changes from one history item to another.
          */
         ImageView.ScaleType baseScale = baseIconScaleTypes.get(icon);
         ImageView.ScaleType wantedScale = percent == 100 && baseScale != null
                 ? baseScale : ImageView.ScaleType.FIT_CENTER;
         if (icon.getScaleType() != wantedScale) icon.setScaleType(wantedScale);
-        if (percent != 100 && icon.isHardwareAccelerated()) {
-            if (icon.getLayerType() != View.LAYER_TYPE_HARDWARE) {
-                icon.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-            }
-        } else if (icon.getLayerType() != View.LAYER_TYPE_NONE) {
-            icon.setLayerType(View.LAYER_TYPE_NONE, null);
-        }
     }
 
     private void restorePrimaryIconSize(View row) {
@@ -832,9 +826,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         icon.setScaleY(1f);
         ImageView.ScaleType baseScale = baseIconScaleTypes.get(icon);
         if (baseScale != null && icon.getScaleType() != baseScale) icon.setScaleType(baseScale);
-        if (icon.getLayerType() != View.LAYER_TYPE_NONE) {
-            icon.setLayerType(View.LAYER_TYPE_NONE, null);
-        }
     }
 
     private View findIconResizeTarget(ImageView icon) {
