@@ -1,0 +1,1 @@
+Expanded icon-pack compatibility with package/activity aliases and asset-based appfilter.xml packs. App-backed communication history now uses the selected icon pack. Optimized the native Vertical List by removing per-bind posted sizing work, caching social-notification presentation, and suspending marquee/bell animations while scrolling.
