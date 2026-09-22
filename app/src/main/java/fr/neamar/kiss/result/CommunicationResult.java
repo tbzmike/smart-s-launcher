@@ -28,6 +28,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Set;
 
+import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
@@ -35,6 +36,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
+import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
 public final class CommunicationResult extends Result<CommunicationPojo> {
@@ -141,11 +143,11 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
         synchronized (this) {
             if (icon != null) return icon;
             if (!pojo.packageName.isEmpty()) {
-                try {
-                    PackageManager pm = context.getPackageManager();
-                    ApplicationInfo info = pm.getApplicationInfo(pojo.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
-                    icon = info.loadIcon(pm);
-                } catch (PackageManager.NameNotFoundException ignored) { }
+                // Communication history is still an app-backed launcher surface. Resolve the
+                // source package through the same selected icon-pack pipeline as Favorites and
+                // normal app results instead of bypassing the pack with ApplicationInfo.loadIcon().
+                icon = KissApplication.getApplication(context).getIconsHandler()
+                        .getDrawableIconForPackageName(pojo.packageName, UserHandle.OWNER);
             }
             if (icon == null) icon = context.getDrawable(android.R.drawable.sym_action_call);
             return icon;
