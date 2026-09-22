@@ -105,7 +105,8 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                 break;
         }
 
-        title.setSelected(true);
+        // RecordAdapter owns marquee activation for native history rows. Forcing selected=true
+        // here restarted marquee animation on every recycled WhatsApp/SMS row during a fling.
         return view;
     }
 
