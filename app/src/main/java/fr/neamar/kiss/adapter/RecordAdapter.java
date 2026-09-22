@@ -154,7 +154,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             Context context = renderContext;
             TileVisualStyle.apply(view, result, context);
             if (isVerticalHistory()) {
-                int signature = cachedVerticalStyleSignature;
+                // Include the effective row icon size. Recycled ListView rows can represent
+                // different semantic result classes even while global preferences are unchanged.
+                int signature = 31 * cachedVerticalStyleSignature + iconPercentForRow(view, result);
                 Integer previous = verticalStyleSignatures.get(view);
                 if (previous == null || previous != signature) {
                     applyVerticalHistorySizing(view, context, result);
@@ -780,23 +782,37 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             baseIconScaleTypes.put(icon, icon.getScaleType());
         }
 
-        lp.width = Math.max(1, Math.round(base[0] * percent / 100f));
-        lp.height = Math.max(1, Math.round(base[1] * percent / 100f));
-        target.setLayoutParams(lp);
+        int wantedWidth = Math.max(1, Math.round(base[0] * percent / 100f));
+        int wantedHeight = Math.max(1, Math.round(base[1] * percent / 100f));
+
+        /*
+         * setLayoutParams() calls requestLayout(). Doing it again when a recycled row already has
+         * the requested dimensions forces an unnecessary measure/layout traversal in the ListView
+         * hot path and was the main source of the 3.30.118 scroll regression.
+         */
+        if (lp.width != wantedWidth || lp.height != wantedHeight) {
+            lp.width = wantedWidth;
+            lp.height = wantedHeight;
+            target.setLayoutParams(lp);
+        }
         icon.setScaleX(1f);
         icon.setScaleY(1f);
 
         /*
-         * CENTER_INSIDE never scales a drawable above its intrinsic bitmap size. That made a
-         * 216%/224% avatar slider enlarge only the ImageView box while a 48px WhatsApp/profile
-         * bitmap stayed visually tiny in the middle. FIT_CENTER preserves aspect ratio but also
-         * allows up-scaling, so every manual icon/profile slider now changes the visible artwork.
+         * CENTER_INSIDE never scales a drawable above its intrinsic bitmap size. FIT_CENTER keeps
+         * the 3.30.118 visible-avatar fix. Cache scaled avatar/icon drawing in a hardware layer so
+         * scrolling composites the texture instead of repeatedly rasterizing the enlarged image.
          */
         ImageView.ScaleType baseScale = baseIconScaleTypes.get(icon);
-        if (percent == 100 && baseScale != null) {
-            icon.setScaleType(baseScale);
-        } else {
-            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        ImageView.ScaleType wantedScale = percent == 100 && baseScale != null
+                ? baseScale : ImageView.ScaleType.FIT_CENTER;
+        if (icon.getScaleType() != wantedScale) icon.setScaleType(wantedScale);
+        if (percent != 100 && icon.isHardwareAccelerated()) {
+            if (icon.getLayerType() != View.LAYER_TYPE_HARDWARE) {
+                icon.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+            }
+        } else if (icon.getLayerType() != View.LAYER_TYPE_NONE) {
+            icon.setLayerType(View.LAYER_TYPE_NONE, null);
         }
     }
 
@@ -807,13 +823,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         int[] base = baseIconBounds.get(target);
         ViewGroup.LayoutParams lp = target.getLayoutParams();
         if (base == null || lp == null) return;
-        lp.width = base[0];
-        lp.height = base[1];
-        target.setLayoutParams(lp);
+        if (lp.width != base[0] || lp.height != base[1]) {
+            lp.width = base[0];
+            lp.height = base[1];
+            target.setLayoutParams(lp);
+        }
         icon.setScaleX(1f);
         icon.setScaleY(1f);
         ImageView.ScaleType baseScale = baseIconScaleTypes.get(icon);
-        if (baseScale != null) icon.setScaleType(baseScale);
+        if (baseScale != null && icon.getScaleType() != baseScale) icon.setScaleType(baseScale);
+        if (icon.getLayerType() != View.LAYER_TYPE_NONE) {
+            icon.setLayerType(View.LAYER_TYPE_NONE, null);
+        }
     }
 
     private View findIconResizeTarget(ImageView icon) {
