@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.116 - preserve avatars/profile photos while theming app fallbacks
-        versionCode 544
-        versionName "3.30.116"
+        // Smart S Launcher 3.30.117 - avatar sizing wiring and exact MarkVault-style release updater
+        versionCode 545
+        versionName "3.30.117"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
