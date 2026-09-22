@@ -21,7 +21,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -51,6 +50,10 @@ public final class AppUpdater {
             "https://raw.githubusercontent.com/tbzmike/smart-s-launcher/updater-channel/latest-green.json";
     static final String RELEASE_API =
             "https://api.github.com/repos/tbzmike/smart-s-launcher/releases/latest";
+    static final String STABLE_DEBUG_ASSET = "SmartSLauncher-debug.apk";
+    static final String STABLE_RELEASE_ASSET = "SmartSLauncher.apk";
+    private static final String LATEST_RELEASE_DOWNLOAD_PREFIX =
+            "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/";
     private static final String EXPECTED_DOWNLOAD_HOST = "github.com";
     private static final String EXPECTED_DOWNLOAD_PATH_PREFIX =
             "/tbzmike/smart-s-launcher/releases/download/";
@@ -189,7 +192,7 @@ public final class AppUpdater {
 
         EXECUTOR.execute(() -> {
             try {
-                ReleaseAsset release = fetchLatestRelease();
+                ReleaseAsset release = fetchLatestRelease(app);
                 long installedCode = installedVersionCode(app);
                 boolean manifestHasCode = release.versionCode > 0L;
                 boolean notNewer = manifestHasCode
@@ -268,12 +271,47 @@ public final class AppUpdater {
                         .getBoolean(PREF_AUTO_UPDATE, false)) {
                     startDownload(app);
                 }
-            } catch (Throwable t) {
-                String reason = safeMessage(t);
-                setState(app, new UpdateState(
-                        Phase.ERROR, "Update check failed: " + reason,
-                        0L, 0L, 0L, "", "", "", "", "", 0L));
-                if (userInitiated) postToast(app, "Update check failed: " + reason);
+            } catch (Throwable directFailure) {
+                // Smart S Launcher is a long-lived HOME process. If its own DNS/socket path is
+                // stale or blocked after a network handover, retry through Android's system
+                // DownloadManager against a fixed asset on the same GitHub Release page.
+                try {
+                    SystemReleaseFallback.Result fallback =
+                            SystemReleaseFallback.checkLatest(app);
+                    if (fallback.upToDate) {
+                        clearDownloadedFiles(app);
+                        setState(app, new UpdateState(
+                                Phase.UP_TO_DATE,
+                                "Smart S Launcher " + BuildConfig.VERSION_NAME
+                                        + " is already the latest successful release.",
+                                fallback.size, fallback.size, 0L, "",
+                                fallback.assetUrl, fallback.sha256, fallback.assetName,
+                                "", 0L));
+                        if (userInitiated) {
+                            postToast(app, "Smart S Launcher "
+                                    + BuildConfig.VERSION_NAME + " is up to date");
+                        }
+                    } else {
+                        setState(app, new UpdateState(
+                                Phase.READY_TO_INSTALL,
+                                "Smart S Launcher " + fallback.versionName
+                                        + " was downloaded by Android, verified, and is ready to install.",
+                                fallback.size, fallback.size, 0L, "",
+                                fallback.assetUrl, fallback.sha256, fallback.assetName,
+                                fallback.versionName, fallback.versionCode));
+                        if (userInitiated) {
+                            mainHandler().post(() -> installReadyUpdate(context));
+                        }
+                    }
+                } catch (Throwable fallbackFailure) {
+                    String reason = "Direct GitHub: " + safeMessage(directFailure)
+                            + "; Android system fallback: " + safeMessage(fallbackFailure)
+                            + "; " + UpdateNetwork.describe(app);
+                    setState(app, new UpdateState(
+                            Phase.ERROR, "Update check failed: " + reason,
+                            0L, 0L, 0L, "", "", "", "", "", 0L));
+                    if (userInitiated) postToast(app, "Update check failed: " + reason);
+                }
             }
         });
     }
@@ -309,6 +347,7 @@ public final class AppUpdater {
 
     public static void cancelDownload(Context context) {
         Context app = context.getApplicationContext();
+        SystemReleaseFallback.cancel(app);
         Intent intent = new Intent(app, UpdateDownloadService.class)
                 .setAction(UpdateDownloadService.ACTION_CANCEL);
         try {
@@ -460,7 +499,7 @@ public final class AppUpdater {
                 state.expectedSha256, state.assetName, "", 0L));
     }
 
-    private static long installedVersionCode(Context context) {
+    static long installedVersionCode(Context context) {
         try {
             android.content.pm.PackageInfo info = context.getPackageManager()
                     .getPackageInfo(context.getPackageName(), 0);
@@ -472,23 +511,23 @@ public final class AppUpdater {
         }
     }
 
-    private static ReleaseAsset fetchLatestRelease() throws Exception {
+    private static ReleaseAsset fetchLatestRelease(Context context) throws Exception {
         Exception primaryFailure = null;
         try {
-            return fetchReleaseManifest(PRIMARY_MANIFEST_URL);
+            return fetchReleaseManifest(context, PRIMARY_MANIFEST_URL);
         } catch (Exception e) {
             primaryFailure = e;
         }
 
         Exception mirrorFailure = null;
         try {
-            return fetchReleaseManifest(MIRROR_MANIFEST_URL);
+            return fetchReleaseManifest(context, MIRROR_MANIFEST_URL);
         } catch (Exception e) {
             mirrorFailure = e;
         }
 
         try {
-            return fetchLatestReleaseFromApi();
+            return fetchLatestReleaseFromApi(context);
         } catch (Exception apiFailure) {
             IOException combined = new IOException(
                     "Unable to reach verified Smart S Launcher update metadata. "
@@ -500,8 +539,8 @@ public final class AppUpdater {
         }
     }
 
-    private static ReleaseAsset fetchReleaseManifest(String manifestUrl) throws Exception {
-        HttpURLConnection connection = openMetadataConnection(manifestUrl, "application/json");
+    private static ReleaseAsset fetchReleaseManifest(Context context, String manifestUrl) throws Exception {
+        HttpURLConnection connection = openMetadataConnection(context, manifestUrl, "application/json");
         try {
             int code = connection.getResponseCode();
             if (code < 200 || code >= 300) {
@@ -540,10 +579,10 @@ public final class AppUpdater {
         }
     }
 
-    private static ReleaseAsset fetchLatestReleaseFromApi() throws Exception {
+    private static ReleaseAsset fetchLatestReleaseFromApi(Context context) throws Exception {
         HttpURLConnection connection = openMetadataConnection(
-                RELEASE_API, "application/vnd.github+json");
-        connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
+                context, RELEASE_API, "application/vnd.github+json");
+        connection.setRequestProperty("X-GitHub-Api-Version", "2026-03-10");
         try {
             int code = connection.getResponseCode();
             if (code < 200 || code >= 300) throw new IOException("GitHub API returned HTTP " + code);
@@ -594,16 +633,15 @@ public final class AppUpdater {
         }
     }
 
-    private static HttpURLConnection openMetadataConnection(String rawUrl, String accept)
-            throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(rawUrl).openConnection();
-        connection.setInstanceFollowRedirects(true);
-        connection.setConnectTimeout(20_000);
-        connection.setReadTimeout(20_000);
+    private static HttpURLConnection openMetadataConnection(
+            Context context, String rawUrl, String accept) throws IOException {
+        HttpURLConnection connection = UpdateNetwork.open(
+                context.getApplicationContext(), rawUrl, 20_000, 20_000);
         connection.setRequestMethod("GET");
         connection.setRequestProperty("Accept", accept);
         connection.setRequestProperty("Cache-Control", "no-cache");
         connection.setRequestProperty("User-Agent", "Smart-S-Launcher/" + BuildConfig.VERSION_NAME);
+        connection.connect();
         return connection;
     }
 
@@ -647,8 +685,12 @@ public final class AppUpdater {
     }
 
     static String expectedReleaseAssetName(String version, boolean debugBuild) {
-        String normalized = normalizeVersion(version);
-        return debugBuild ? "app-debug.apk" : "smart-s-launcher-" + normalized + ".apk";
+        return debugBuild ? STABLE_DEBUG_ASSET : STABLE_RELEASE_ASSET;
+    }
+
+    static String latestStableAssetUrl(boolean debugBuild) {
+        return LATEST_RELEASE_DOWNLOAD_PREFIX
+                + (debugBuild ? STABLE_DEBUG_ASSET : STABLE_RELEASE_ASSET);
     }
 
     static int compareVersions(String left, String right) {
