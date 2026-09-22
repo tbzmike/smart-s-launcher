@@ -38,6 +38,9 @@ import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.CommunicationPojo;
+import fr.neamar.kiss.pojo.PhonePojo;
+import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
+import fr.neamar.kiss.pojo.ContactsPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
@@ -432,10 +435,13 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         // Person-specific communication rows use item_search_icon in their layout, so checking
         // only the ImageView id accidentally routed WhatsApp/email/contact avatars through the
         // generic app-icon size. Give semantic result type priority over the physical view id.
-        if (pojo instanceof CommunicationPojo || result instanceof CommunicationResult) {
+        if (pojo instanceof CommunicationPojo
+                || pojo instanceof ContactsPojo
+                || pojo instanceof PhonePojo
+                || result instanceof CommunicationResult) {
             return cachedResizeContactIcons ? cachedContactIconPercent : 100;
         }
-        if (pojo instanceof NotificationPojo) {
+        if (pojo instanceof NotificationPojo || pojo instanceof NotificationHistorySearchPojo) {
             return cachedResizeNotificationIcons ? cachedNotificationIconPercent : 100;
         }
         if (pojo instanceof ShortcutPojo) {
