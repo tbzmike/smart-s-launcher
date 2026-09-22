@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.115 - release-page updater with active-network and system downloader fallback
-        versionCode 543
-        versionName "3.30.115"
+        // Smart S Launcher 3.30.116 - preserve avatars/profile photos while theming app fallbacks
+        versionCode 544
+        versionName "3.30.116"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
