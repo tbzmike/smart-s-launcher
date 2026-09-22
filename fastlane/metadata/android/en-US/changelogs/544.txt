@@ -1,0 +1,1 @@
+Restored person-specific artwork priority. Sender avatars, chat/profile photos, conversation shortcut images, saved notification avatars and contact photos now remain visible even when an icon pack is active. Icon packs still theme the app-level fallback when no person-specific image exists.
