@@ -39,10 +39,16 @@ class AppUpdaterTest {
 
     @Test
     void selectsReleaseAssetThatMatchesBuildSigningChannel() {
-        assertEquals("app-debug.apk",
-                AppUpdater.expectedReleaseAssetName("3.30.113", true));
-        assertEquals("smart-s-launcher-3.30.113.apk",
-                AppUpdater.expectedReleaseAssetName("v3.30.113", false));
+        assertEquals("SmartSLauncher-debug.apk",
+                AppUpdater.expectedReleaseAssetName("3.30.115", true));
+        assertEquals("SmartSLauncher.apk",
+                AppUpdater.expectedReleaseAssetName("v3.30.115", false));
+        assertEquals(
+                "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/SmartSLauncher-debug.apk",
+                AppUpdater.latestStableAssetUrl(true));
+        assertEquals(
+                "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/SmartSLauncher.apk",
+                AppUpdater.latestStableAssetUrl(false));
     }
 
     @Test
