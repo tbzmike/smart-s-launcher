@@ -44,10 +44,10 @@ class AppUpdaterTest {
         assertEquals("SmartSLauncher.apk",
                 AppUpdater.expectedReleaseAssetName("v3.30.115", false));
         assertEquals(
-                "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/SmartSLauncher-debug.apk",
+                "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest/SmartSLauncher-debug.apk",
                 AppUpdater.latestStableAssetUrl(true));
         assertEquals(
-                "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/SmartSLauncher.apk",
+                "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest/SmartSLauncher.apk",
                 AppUpdater.latestStableAssetUrl(false));
     }
 
