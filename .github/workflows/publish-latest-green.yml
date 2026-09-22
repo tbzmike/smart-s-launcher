@@ -74,9 +74,9 @@ jobs:
               "runId": int(os.environ["SOURCE_RUN_ID"]),
               "runNumber": int(os.environ["SOURCE_RUN_NUMBER"]),
               "sha": os.environ["SOURCE_SHA"],
-              "variant": "debug",
-              "apkName": "app-debug.apk",
-              "apkUrl": f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}/app-debug.apk"
+              "variant": "release",
+              "apkName": f"smart-s-launcher-{version}.apk",
+              "apkUrl": f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}/smart-s-launcher-{version}.apk"
           }
           Path("latest-green.json").write_text(
               json.dumps(data, separators=(",", ":")) + "\n",
@@ -170,7 +170,7 @@ jobs:
             --target "$SOURCE_SHA" \
             --latest \
             --title "Smart S Launcher v${VERSION}" \
-            --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully. The production APK is signed for F-Droid reproducible-build verification; app-debug.apk remains the in-app updater package." \
+            --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully. The production APK is signed for F-Droid reproducible-build verification and is the verified in-app updater package; app-debug.apk is retained only for diagnostics." \
             latest-green.json \
             app-debug.apk \
             "$SIGNED_APK"
