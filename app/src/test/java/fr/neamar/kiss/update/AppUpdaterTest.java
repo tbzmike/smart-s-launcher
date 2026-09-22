@@ -31,6 +31,13 @@ class AppUpdaterTest {
     }
 
     @Test
+    void markVaultStyleDiscoveryDoesNotUseGitHubApiAsPrimary() {
+        assertTrue(AppUpdater.PRIMARY_MANIFEST_URL.startsWith("https://github.com/"));
+        assertTrue(AppUpdater.MIRROR_MANIFEST_URL.startsWith("https://raw.githubusercontent.com/"));
+        assertTrue(AppUpdater.RELEASE_API.startsWith("https://api.github.com/"));
+    }
+
+    @Test
     void selectsReleaseAssetThatMatchesBuildSigningChannel() {
         assertEquals("app-debug.apk",
                 AppUpdater.expectedReleaseAssetName("3.30.113", true));
