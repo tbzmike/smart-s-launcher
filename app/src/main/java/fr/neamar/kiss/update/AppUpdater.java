@@ -43,6 +43,12 @@ public final class AppUpdater {
     private static final String PREF_LAST_CHECK_MS = "smart-update-last-check-ms";
     private static final long AUTO_CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L;
 
+    // MarkVault-style discovery: normal GitHub release metadata is primary. api.github.com is
+    // deliberately only the final fallback so a DNS failure for the API host cannot break updates.
+    private static final String PRIMARY_MANIFEST_URL =
+            "https://github.com/tbzmike/smart-s-launcher/releases/latest/download/latest-green.json";
+    private static final String MIRROR_MANIFEST_URL =
+            "https://raw.githubusercontent.com/tbzmike/smart-s-launcher/updater-channel/latest-green.json";
     private static final String RELEASE_API =
             "https://api.github.com/repos/tbzmike/smart-s-launcher/releases/latest";
     private static final String EXPECTED_DOWNLOAD_HOST = "github.com";
@@ -133,15 +139,17 @@ public final class AppUpdater {
 
     private static final class ReleaseAsset {
         final String version;
+        final long versionCode;
         final String name;
         final String downloadUrl;
         final long size;
         final String sha256;
         final String updatedAt;
 
-        ReleaseAsset(String version, String name, String downloadUrl, long size,
+        ReleaseAsset(String version, long versionCode, String name, String downloadUrl, long size,
                      String sha256, String updatedAt) {
             this.version = version;
+            this.versionCode = Math.max(0L, versionCode);
             this.name = name;
             this.downloadUrl = downloadUrl;
             this.size = size;
@@ -182,6 +190,24 @@ public final class AppUpdater {
         EXECUTOR.execute(() -> {
             try {
                 ReleaseAsset release = fetchLatestRelease();
+                long installedCode = installedVersionCode(app);
+                boolean manifestHasCode = release.versionCode > 0L;
+                boolean notNewer = manifestHasCode
+                        ? release.versionCode <= installedCode
+                        : compareVersions(release.version, BuildConfig.VERSION_NAME) <= 0;
+                if (notNewer) {
+                    clearDownloadedFiles(app);
+                    setState(app, new UpdateState(
+                            Phase.UP_TO_DATE,
+                            "Smart S Launcher " + BuildConfig.VERSION_NAME
+                                    + " is already the latest successful release.",
+                            release.size, release.size, 0L, release.updatedAt,
+                            release.downloadUrl, release.sha256, release.name, "", 0L));
+                    if (userInitiated) postToast(app,
+                            "Smart S Launcher " + BuildConfig.VERSION_NAME + " is up to date");
+                    return;
+                }
+
                 UpdateState previous = current(app);
                 if (!previous.expectedSha256.isEmpty()
                         && !previous.expectedSha256.equalsIgnoreCase(release.sha256)) {
@@ -447,20 +473,82 @@ public final class AppUpdater {
     }
 
     private static ReleaseAsset fetchLatestRelease() throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(RELEASE_API).openConnection();
-        connection.setInstanceFollowRedirects(true);
-        connection.setConnectTimeout(20_000);
-        connection.setReadTimeout(20_000);
-        connection.setRequestMethod("GET");
-        connection.setRequestProperty("Accept", "application/vnd.github+json");
-        connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
-        connection.setRequestProperty("User-Agent", "Smart-S-Launcher/" + BuildConfig.VERSION_NAME);
+        Exception primaryFailure = null;
+        try {
+            return fetchReleaseManifest(PRIMARY_MANIFEST_URL);
+        } catch (Exception e) {
+            primaryFailure = e;
+        }
+
+        Exception mirrorFailure = null;
+        try {
+            return fetchReleaseManifest(MIRROR_MANIFEST_URL);
+        } catch (Exception e) {
+            mirrorFailure = e;
+        }
+
+        try {
+            return fetchLatestReleaseFromApi();
+        } catch (Exception apiFailure) {
+            IOException combined = new IOException(
+                    "Unable to reach verified Smart S Launcher update metadata. "
+                            + "Primary GitHub release: " + safeMessage(primaryFailure)
+                            + "; mirror: " + safeMessage(mirrorFailure)
+                            + "; API fallback: " + safeMessage(apiFailure));
+            combined.addSuppressed(apiFailure);
+            throw combined;
+        }
+    }
+
+    private static ReleaseAsset fetchReleaseManifest(String manifestUrl) throws Exception {
+        HttpURLConnection connection = openMetadataConnection(manifestUrl, "application/json");
         try {
             int code = connection.getResponseCode();
-            if (code < 200 || code >= 300) throw new IOException("GitHub returned HTTP " + code);
+            if (code < 200 || code >= 300) {
+                throw new IOException("GitHub manifest returned HTTP " + code);
+            }
 
-            String body = readAll(connection);
-            JSONObject root = new JSONObject(body);
+            JSONObject root = new JSONObject(readAll(connection));
+            String version = normalizeVersion(root.optString("version", ""));
+            long versionCode = root.optLong("versionCode", 0L);
+            if (version.isEmpty() || versionCode <= 0L) {
+                throw new IOException("Update manifest has no valid version/versionCode");
+            }
+
+            String prefix = BuildConfig.DEBUG ? "debug" : "release";
+            String expectedAssetName = expectedReleaseAssetName(version, BuildConfig.DEBUG);
+            String name = root.optString(prefix + "ApkName", "");
+            String downloadUrl = root.optString(prefix + "ApkUrl", "");
+            String sha = root.optString(prefix + "ApkSha256", "")
+                    .toLowerCase(Locale.ROOT);
+            long size = root.optLong(prefix + "ApkSize", -1L);
+
+            if (!expectedAssetName.equals(name)) {
+                throw new IOException("Update manifest selected an unexpected APK asset");
+            }
+            if (size <= 0L) throw new IOException("Update manifest APK size is invalid");
+            if (!sha.matches("[0-9a-f]{64}")) {
+                throw new IOException("Update manifest has no valid APK SHA-256");
+            }
+            validateDownloadUrl(downloadUrl, expectedAssetName);
+
+            return new ReleaseAsset(
+                    version, versionCode, name, downloadUrl, size, sha,
+                    root.optString("publishedAt", root.optString("sha", "")));
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private static ReleaseAsset fetchLatestReleaseFromApi() throws Exception {
+        HttpURLConnection connection = openMetadataConnection(
+                RELEASE_API, "application/vnd.github+json");
+        connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28");
+        try {
+            int code = connection.getResponseCode();
+            if (code < 200 || code >= 300) throw new IOException("GitHub API returned HTTP " + code);
+
+            JSONObject root = new JSONObject(readAll(connection));
             if (root.optBoolean("draft", false) || root.optBoolean("prerelease", false)) {
                 throw new IOException("Latest release is not a published stable release");
             }
@@ -482,8 +570,7 @@ public final class AppUpdater {
                 }
             }
             if (selected == null) {
-                throw new IOException("Latest release does not contain verified production asset "
-                        + expectedAssetName);
+                throw new IOException("Latest release does not contain " + expectedAssetName);
             }
 
             long size = selected.optLong("size", -1L);
@@ -500,11 +587,24 @@ public final class AppUpdater {
 
             String downloadUrl = selected.optString("browser_download_url", "");
             validateDownloadUrl(downloadUrl, expectedAssetName);
-            return new ReleaseAsset(version, expectedAssetName, downloadUrl, size, sha,
+            return new ReleaseAsset(version, 0L, expectedAssetName, downloadUrl, size, sha,
                     selected.optString("updated_at", ""));
         } finally {
             connection.disconnect();
         }
+    }
+
+    private static HttpURLConnection openMetadataConnection(String rawUrl, String accept)
+            throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(rawUrl).openConnection();
+        connection.setInstanceFollowRedirects(true);
+        connection.setConnectTimeout(20_000);
+        connection.setReadTimeout(20_000);
+        connection.setRequestMethod("GET");
+        connection.setRequestProperty("Accept", accept);
+        connection.setRequestProperty("Cache-Control", "no-cache");
+        connection.setRequestProperty("User-Agent", "Smart-S-Launcher/" + BuildConfig.VERSION_NAME);
+        return connection;
     }
 
     private static String readAll(HttpURLConnection connection) throws IOException {
