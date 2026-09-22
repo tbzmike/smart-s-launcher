@@ -121,6 +121,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private int cachedLabelContrast = 100;
     private int cachedBodyContrast = 100;
     private int cachedRowSpacing = 4;
+    private boolean bindingWhileNativeScroll;
 
     public RecordAdapter(QueryInterface parent, List<Result<?>> results) {
         this.parent = parent;
@@ -147,39 +148,46 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     @Override @NonNull
     public View getView(int position, View convertView, @NonNull ViewGroup parent) {
-        Context renderContext = parent.getContext();
-        refreshRenderConfigIfNeeded(renderContext);
-        Result<?> result = getItem(position);
-        View view = result.display(renderContext, convertView, parent, fuzzyScore);
-        NotificationBellStyle.applyToResult(view, result, parent instanceof AbsListView);
-        if (result.getPojo() instanceof NotificationPojo) {
-            configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
-            applyBestNotificationPreview(view, (NotificationPojo) result.getPojo());
-        }
-        String overflowMode = cachedOverflowMode;
-        if (!TextUtils.equals(overflowConfigured.get(view), overflowMode)) {
-            configureOverflowText(view);
-            overflowConfigured.put(view, overflowMode);
-        }
-        if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
-        if (parent instanceof AbsListView) {
-            Context context = renderContext;
-            TileVisualStyle.apply(view, result, context);
-            if (isVerticalHistory()) {
-                int signature = cachedVerticalStyleSignature;
-                Integer previous = verticalStyleSignatures.get(view);
-                if (previous == null || previous != signature) {
-                    applyVerticalHistorySizing(view, context, result);
-                    applyVerticalHistoryPolish(view, context);
-                    verticalStyleSignatures.put(view, signature);
-                }
-                applyVerticalHistoryWidth(view, parent, context, cachedHistoryWidthPercent);
-            } else {
-                restoreVerticalHistoryAppearance(view);
-                verticalStyleSignatures.remove(view);
+        boolean previousBindingScroll = bindingWhileNativeScroll;
+        bindingWhileNativeScroll = parent instanceof AnimatedListView
+                && ((AnimatedListView) parent).isScrollInProgress();
+        try {
+            Context renderContext = parent.getContext();
+            refreshRenderConfigIfNeeded(renderContext);
+            Result<?> result = getItem(position);
+            View view = result.display(renderContext, convertView, parent, fuzzyScore);
+            NotificationBellStyle.applyToResult(view, result, parent instanceof AbsListView);
+            if (result.getPojo() instanceof NotificationPojo) {
+                configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
+                applyBestNotificationPreview(view, (NotificationPojo) result.getPojo());
             }
+            String overflowMode = cachedOverflowMode;
+            if (!TextUtils.equals(overflowConfigured.get(view), overflowMode)) {
+                configureOverflowText(view);
+                overflowConfigured.put(view, overflowMode);
+            }
+            if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
+            if (parent instanceof AbsListView) {
+                Context context = renderContext;
+                TileVisualStyle.apply(view, result, context);
+                if (isVerticalHistory()) {
+                    int signature = cachedVerticalStyleSignature;
+                    Integer previous = verticalStyleSignatures.get(view);
+                    if (previous == null || previous != signature) {
+                        applyVerticalHistorySizing(view, context, result);
+                        applyVerticalHistoryPolish(view, context);
+                        verticalStyleSignatures.put(view, signature);
+                    }
+                    applyVerticalHistoryWidth(view, parent, context, cachedHistoryWidthPercent);
+                } else {
+                    restoreVerticalHistoryAppearance(view);
+                    verticalStyleSignatures.remove(view);
+                }
+            }
+            return view;
+        } finally {
+            bindingWhileNativeScroll = previousBindingScroll;
         }
-        return view;
     }
 
     private void configureSocialMessageCard(View view, NotificationPojo notification) {
@@ -403,7 +411,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         // row immediately called setSelected(true) again through its TextWatcher. That restarted
         // frame-by-frame marquee invalidation throughout the fling and was a major Vertical List
         // jank source. Keep newly bound rows paused until AnimatedListView reports idle.
-        if (isInsideScrollingNativeList(text)) {
+        if (bindingWhileNativeScroll || isInsideScrollingNativeList(text)) {
             if (text.isSelected()) text.setSelected(false);
             return;
         }
