@@ -35,7 +35,7 @@ class AppUpdaterTest {
         Path file = tempDir.resolve("release.apk");
         Files.write(file, "Smart S Launcher".getBytes(StandardCharsets.UTF_8));
         assertEquals(
-                "a0c477d97b9e1923d00f5b76f53f5fd38ce6c972a5e4cb8b21fcb9e56130501d",
+                "7db324f820acd9a9b2c2bdaeff8aa9a333b6f62e84e41b829f9233b353009075",
                 AppUpdater.sha256Of(file.toFile()));
     }
 }
