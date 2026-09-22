@@ -1,10 +1,13 @@
 package fr.neamar.kiss.ui;
 
 import android.content.Context;
+import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
+import android.widget.TextView;
 
 import java.util.HashMap;
 
@@ -14,6 +17,7 @@ public class AnimatedListView extends BlockableListView {
     private ScrollIdleGate scrollIdleGate;
     private ViewTreeObserver pendingAnimationObserver;
     private ViewTreeObserver.OnPreDrawListener pendingAnimationListener;
+    private final Runnable restoreVisibleMarquees = () -> setVisibleMarqueesPaused(false);
 
     public AnimatedListView(Context context) {
         super(context);
@@ -32,6 +36,10 @@ public class AnimatedListView extends BlockableListView {
 
     private void initScrollIdleGate() {
         scrollIdleGate = new ScrollIdleGate(this);
+        // Vertical Cards do not continuously restart TextView marquees while moving. Give the
+        // native Vertical List the same property: pause visible marquees once when scrolling starts,
+        // then restore them once the viewport is idle. No child traversal happens per scroll frame.
+        scrollIdleGate.addScrollStartedListener(() -> setVisibleMarqueesPaused(true));
     }
 
     @Override
@@ -43,7 +51,10 @@ public class AnimatedListView extends BlockableListView {
     @Override
     protected void onScrollChanged(int l, int t, int oldl, int oldt) {
         super.onScrollChanged(l, t, oldl, oldt);
-        if (scrollIdleGate != null) scrollIdleGate.onScrollChanged();
+        if (scrollIdleGate != null) {
+            scrollIdleGate.onScrollChanged();
+            scrollIdleGate.runWhenIdle(restoreVisibleMarquees);
+        }
     }
 
     public boolean isScrollInProgress() {
@@ -61,6 +72,35 @@ public class AnimatedListView extends BlockableListView {
 
     public void removeScrollStartedListener(Runnable listener) {
         if (scrollIdleGate != null) scrollIdleGate.removeScrollStartedListener(listener);
+    }
+
+    private void setVisibleMarqueesPaused(boolean paused) {
+        for (int i = 0; i < getChildCount(); i++) {
+            updateMarqueeTree(getChildAt(i), paused);
+        }
+    }
+
+    private void updateMarqueeTree(View view, boolean paused) {
+        if (view instanceof TextView) {
+            TextView text = (TextView) view;
+            if (text.getEllipsize() == TextUtils.TruncateAt.MARQUEE) {
+                if (paused) {
+                    if (text.isSelected()) text.setSelected(false);
+                } else {
+                    CharSequence value = text.getText();
+                    int available = text.getWidth()
+                            - text.getCompoundPaddingLeft() - text.getCompoundPaddingRight();
+                    boolean overflow = available > 0 && !TextUtils.isEmpty(value)
+                            && text.getPaint().measureText(value.toString()) > available;
+                    if (text.isSelected() != overflow) text.setSelected(overflow);
+                }
+            }
+        }
+        if (!(view instanceof ViewGroup)) return;
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            updateMarqueeTree(group.getChildAt(i), paused);
+        }
     }
 
     public void prepareChangeAnim() {
@@ -136,7 +176,10 @@ public class AnimatedListView extends BlockableListView {
     @Override
     protected void onDetachedFromWindow() {
         cancelPendingChangeAnimation();
-        if (scrollIdleGate != null) scrollIdleGate.destroy();
+        if (scrollIdleGate != null) {
+            scrollIdleGate.cancel(restoreVisibleMarquees);
+            scrollIdleGate.destroy();
+        }
         super.onDetachedFromWindow();
     }
 
