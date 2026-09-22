@@ -155,7 +155,7 @@ jobs:
           echo "SIGNED_APK=$SIGNED_APK" >> "$GITHUB_ENV"
           rm -f "$KEYSTORE"
 
-      - name: Finalize MarkVault-style updater manifest
+      - name: Finalize updater manifest with fixed release assets
         if: ${{ steps.guard.outputs.publish == 'true' }}
         shell: bash
         run: |
