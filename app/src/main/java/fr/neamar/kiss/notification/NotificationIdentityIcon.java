@@ -11,11 +11,11 @@ import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.utils.UserHandle;
 
 /**
- * Central app-identity icon resolver for notification surfaces.
+ * Central identity-artwork resolver for notification/person surfaces.
  *
- * When a custom icon pack is selected, notification rows must use the same packed app identity
- * as normal launcher results. Without a custom pack we preserve notification avatars when Android
- * supplied one, then fall back through the normal launcher icon pipeline.
+ * Person-specific artwork (sender avatar, profile photo, conversation shortcut icon) is content,
+ * not an app launcher icon. It must therefore stay above icon-pack substitution. Icon packs only
+ * replace the generic app-identity fallback when Android did not expose person-specific artwork.
  */
 public final class NotificationIdentityIcon {
     private NotificationIdentityIcon() {
@@ -26,16 +26,14 @@ public final class NotificationIdentityIcon {
                                    @Nullable String packageName) {
         IconsHandler icons = KissApplication.getApplication(context).getIconsHandler();
 
-        if (icons.isCustomIconPackActive() && !TextUtils.isEmpty(packageName)) {
-            Drawable packed = icons.getDrawableIconForPackageNameUncached(packageName, UserHandle.OWNER);
-            if (packed != null) return packed;
-        }
-
+        // A sender/contact/profile image is the identity of the conversation/person. Never replace
+        // it with the application's themed launcher icon merely because an icon pack is active.
         if (!TextUtils.isEmpty(notificationId)) {
             Drawable avatar = NotificationAvatarSupport.avatar(context, notificationId);
             if (avatar != null) return avatar;
         }
 
+        // Only the generic application fallback is themed by the selected icon pack.
         if (!TextUtils.isEmpty(packageName)) {
             return icons.getDrawableIconForPackageNameUncached(packageName, UserHandle.OWNER);
         }
