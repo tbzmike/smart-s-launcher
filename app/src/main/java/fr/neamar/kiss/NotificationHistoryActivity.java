@@ -47,7 +47,7 @@ import java.util.Set;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
-import fr.neamar.kiss.notification.NotificationAvatarSupport;
+import fr.neamar.kiss.notification.NotificationIdentityIcon;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.AppLaunchUtils;
@@ -294,17 +294,9 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         ImageView identity = new ImageView(this);
         identity.setScaleType(ImageView.ScaleType.CENTER_CROP);
         int identitySize = dp(48);
-        android.graphics.drawable.Drawable avatar =
-                NotificationAvatarSupport.avatar(this, record.notificationId);
-        if (avatar != null) identity.setImageDrawable(avatar);
-        else {
-            try {
-                PackageManager pm = getPackageManager();
-                ApplicationInfo info = pm.getApplicationInfo(record.packageName,
-                        PackageManager.MATCH_DISABLED_COMPONENTS);
-                identity.setImageDrawable(info.loadIcon(pm));
-            } catch (PackageManager.NameNotFoundException ignored) { }
-        }
+        android.graphics.drawable.Drawable identityDrawable =
+                NotificationIdentityIcon.resolve(this, record.notificationId, record.packageName);
+        if (identityDrawable != null) identity.setImageDrawable(identityDrawable);
         identityHeader.addView(identity, new LinearLayout.LayoutParams(identitySize, identitySize));
         TextView app = new TextView(this);
         app.setText(highlightLiteral(safe(record.appName), query));
@@ -407,18 +399,13 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             ImageView icon = new ImageView(NotificationHistoryActivity.this);
             int size = dp(42);
             icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            android.graphics.drawable.Drawable avatar =
-                    NotificationAvatarSupport.avatar(NotificationHistoryActivity.this, record.notificationId);
-            if (avatar != null) {
-                icon.setImageDrawable(avatar);
-            } else {
-                try {
-                    PackageManager pm = getPackageManager();
-                    ApplicationInfo info = pm.getApplicationInfo(record.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
-                    icon.setImageDrawable(info.loadIcon(pm));
-                    if (!AppLaunchUtils.isPackageEnabled(NotificationHistoryActivity.this, record.packageName)
-                            && icon.getDrawable() != null) icon.getDrawable().setAlpha(140);
-                } catch (PackageManager.NameNotFoundException ignored) {}
+            android.graphics.drawable.Drawable identityDrawable =
+                    NotificationIdentityIcon.resolve(
+                            NotificationHistoryActivity.this, record.notificationId, record.packageName);
+            if (identityDrawable != null) {
+                icon.setImageDrawable(identityDrawable);
+                if (!AppLaunchUtils.isPackageEnabled(NotificationHistoryActivity.this, record.packageName)
+                        && icon.getDrawable() != null) icon.getDrawable().setAlpha(140);
             }
             icon.setClickable(true);
             icon.setOnClickListener(v -> openApp(record));
