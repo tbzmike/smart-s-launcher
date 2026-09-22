@@ -19,6 +19,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import fr.neamar.kiss.notification.NotificationIdentityIcon;
 
 import java.util.Date;
 import java.util.List;
@@ -84,14 +85,9 @@ public final class LockedNotificationHistoryDialog {
 
             ImageView appIcon = new ImageView(context);
             int iconSize = dp(44);
-            try {
-                PackageManager pm = context.getPackageManager();
-                ApplicationInfo info = pm.getApplicationInfo(packageName,
-                        PackageManager.MATCH_DISABLED_COMPONENTS);
-                appIcon.setImageDrawable(info.loadIcon(pm));
-            } catch (PackageManager.NameNotFoundException ignored) {
-                // The stored notification history is still readable without an app icon.
-            }
+            android.graphics.drawable.Drawable packedIcon =
+                    NotificationIdentityIcon.resolve(context, null, packageName);
+            if (packedIcon != null) appIcon.setImageDrawable(packedIcon);
             header.addView(appIcon, new LinearLayout.LayoutParams(iconSize, iconSize));
 
             LinearLayout headingText = new LinearLayout(context);
