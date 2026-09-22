@@ -23,6 +23,7 @@ public final class NotificationUnreadStore {
     private static final String UNREAD_IDS = "unread_ids";
     private static final String READ_IDS = "read_ids";
     private static final Object LOCK = new Object();
+    private static volatile Set<String> unreadSnapshot;
 
     private NotificationUnreadStore() {}
 
@@ -82,7 +83,19 @@ public final class NotificationUnreadStore {
 
     public static boolean isUnread(@NonNull Context context, @NonNull String notificationId) {
         if (notificationId.isEmpty()) return false;
-        return prefs(context).getStringSet(UNREAD_IDS, Collections.emptySet()).contains(notificationId);
+        Set<String> snapshot = unreadSnapshot;
+        if (snapshot == null) {
+            synchronized (LOCK) {
+                snapshot = unreadSnapshot;
+                if (snapshot == null) {
+                    snapshot = Collections.unmodifiableSet(
+                            new HashSet<>(prefs(context).getStringSet(
+                                    UNREAD_IDS, Collections.emptySet())));
+                    unreadSnapshot = snapshot;
+                }
+            }
+        }
+        return snapshot.contains(notificationId);
     }
 
     private static SharedPreferences prefs(Context context) {
@@ -94,7 +107,9 @@ public final class NotificationUnreadStore {
     }
 
     private static void write(SharedPreferences prefs, Set<String> unread, Set<String> read) {
-        prefs.edit().putStringSet(UNREAD_IDS, new HashSet<>(unread))
+        Set<String> unreadCopy = new HashSet<>(unread);
+        unreadSnapshot = Collections.unmodifiableSet(unreadCopy);
+        prefs.edit().putStringSet(UNREAD_IDS, unreadCopy)
                 .putStringSet(READ_IDS, new HashSet<>(read)).apply();
     }
 }
