@@ -227,7 +227,6 @@ public class IconsHandler {
             useCache = false;
         }
 
-        // Search in cache
         if (useCache) {
             Drawable cacheIcon = cacheGetDrawable(cacheKey);
             if (cacheIcon != null) {
@@ -235,13 +234,32 @@ public class IconsHandler {
             }
         }
 
+        Drawable drawable = resolveDrawableIconForPackageWithoutDiskCache(
+                componentName, userHandle, useCustomIcons);
+        if (drawable == null) return null;
+
+        if (useCache) {
+            storeDrawable(cacheGetFileName(cacheKey), drawable);
+        }
+        return drawable;
+    }
+
+    /**
+     * Resolve an app/activity icon without touching the persistent PNG cache.
+     * Keep this path separate so notification/history UI rendering can never reach Bitmap.compress.
+     */
+    @Nullable
+    private Drawable resolveDrawableIconForPackageWithoutDiskCache(
+            @NonNull ComponentName componentName,
+            @NonNull UserHandle userHandle,
+            boolean useCustomIcons) {
+        final String cacheKey = AppPojo.getComponentName(
+                componentName.getPackageName(), componentName.getClassName(), userHandle);
         Drawable drawable = null;
 
-        // search for custom icon
         if (useCustomIcons) {
             Map<String, Long> customIconIds = getCustomIconIds();
-            if (customIconIds == null)
-                return null;
+            if (customIconIds == null) return null;
 
             Long customIconId = customIconIds.get(cacheKey);
             if (customIconId != null) {
@@ -249,12 +267,8 @@ public class IconsHandler {
             }
         }
 
-        // check the icon pack for a resource
         if (drawable == null && mIconPack != null) {
-            // just checking will make this thread wait for the icon pack to load
-            if (!mIconPack.isLoaded()) {
-                return null;
-            }
+            if (!mIconPack.isLoaded()) return null;
             drawable = mIconPack.getComponentDrawable(ctx, componentName, userHandle);
             if (drawable != null) {
                 drawable = applyIconMask(ctx, drawable, true);
@@ -262,20 +276,12 @@ public class IconsHandler {
         }
 
         if (drawable == null) {
-            // if icon pack doesn't have the drawable, use system drawable
             drawable = mSystemPack.getComponentDrawable(ctx, componentName, userHandle);
             if (drawable != null) {
                 drawable = applyIconMask(ctx, drawable, false);
             }
         }
-        if (drawable == null)
-            return null;
-
-        drawable = applyBadge(drawable, userHandle);
-        if (useCache) {
-            storeDrawable(cacheGetFileName(cacheKey), drawable);
-        }
-        return drawable;
+        return drawable == null ? null : applyBadge(drawable, userHandle);
     }
 
     public Drawable getBackgroundDrawable(@ColorInt int backgroundColor) {
@@ -457,7 +463,8 @@ public class IconsHandler {
 
         ComponentName componentName = PackageManagerUtils.getLaunchingComponent(ctx, trimmed, userHandle);
         if (componentName != null) {
-            return getDrawableIconForPackage(componentName, userHandle, false, mIconPack != null);
+            return resolveDrawableIconForPackageWithoutDiskCache(
+                    componentName, userHandle, mIconPack != null);
         }
 
         Drawable drawable = PackageManagerUtils.getApplicationIcon(ctx, trimmed);
