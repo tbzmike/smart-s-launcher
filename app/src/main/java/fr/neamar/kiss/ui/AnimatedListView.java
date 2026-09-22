@@ -17,7 +17,10 @@ public class AnimatedListView extends BlockableListView {
     private ScrollIdleGate scrollIdleGate;
     private ViewTreeObserver pendingAnimationObserver;
     private ViewTreeObserver.OnPreDrawListener pendingAnimationListener;
-    private final Runnable restoreVisibleMarquees = () -> setVisibleMarqueesPaused(false);
+    private final Runnable restoreScrollAnimations = () -> {
+        setVisibleMarqueesPaused(false);
+        NotificationBellStyle.resumeFlashingInTree(this);
+    };
 
     public AnimatedListView(Context context) {
         super(context);
@@ -39,7 +42,10 @@ public class AnimatedListView extends BlockableListView {
         // Vertical Cards do not continuously restart TextView marquees while moving. Give the
         // native Vertical List the same property: pause visible marquees once when scrolling starts,
         // then restore them once the viewport is idle. No child traversal happens per scroll frame.
-        scrollIdleGate.addScrollStartedListener(() -> setVisibleMarqueesPaused(true));
+        scrollIdleGate.addScrollStartedListener(() -> {
+            setVisibleMarqueesPaused(true);
+            NotificationBellStyle.pauseFlashingInTree(this);
+        });
     }
 
     @Override
@@ -53,7 +59,7 @@ public class AnimatedListView extends BlockableListView {
         super.onScrollChanged(l, t, oldl, oldt);
         if (scrollIdleGate != null) {
             scrollIdleGate.onScrollChanged();
-            scrollIdleGate.runWhenIdle(restoreVisibleMarquees);
+            scrollIdleGate.runWhenIdle(restoreScrollAnimations);
         }
     }
 
@@ -177,7 +183,7 @@ public class AnimatedListView extends BlockableListView {
     protected void onDetachedFromWindow() {
         cancelPendingChangeAnimation();
         if (scrollIdleGate != null) {
-            scrollIdleGate.cancel(restoreVisibleMarquees);
+            scrollIdleGate.cancel(restoreScrollAnimations);
             scrollIdleGate.destroy();
         }
         super.onDetachedFromWindow();
