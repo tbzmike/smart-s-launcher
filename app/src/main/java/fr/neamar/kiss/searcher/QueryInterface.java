@@ -15,8 +15,14 @@ public interface QueryInterface {
 
     void launchOccurred();
 
-    /** A verified app/shortcut target was started and may cover the launcher without onStop(). */
+    /** An external target is about to start; freeze launcher-only background UI mutation first. */
+    void externalResultLaunchStarting();
+
+    /** A verified external target was started and may cover the launcher without onStop(). */
     void externalResultLaunchOccurred();
+
+    /** The attempted external target did not start; launcher UI may accept background refreshes again. */
+    void externalResultLaunchCancelled();
 
     void registerPopup(ListPopup popup);
 

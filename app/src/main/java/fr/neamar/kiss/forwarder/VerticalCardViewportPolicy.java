@@ -1,12 +1,12 @@
 package fr.neamar.kiss.forwarder;
 
 /**
- * State-only policy for deciding when Vertical Cards must be pinned to the bottom.
+ * State-only policy for deciding when Vertical Cards may control the viewport.
  *
- * Keeping this separate from Android views makes the navigation/search invariants executable in
- * unit tests. A search remains bottom-pinned across every result or geometry change. Query changes
- * also force the first rebuilt result set to the bottom, while a second Home press is an immediate
- * one-shot jump.
+ * Passive history/provider changes never arm viewport movement. Search/IME transitions retain their
+ * existing bottom behavior. A deliberate second Home press or jump-to-latest tap creates a
+ * persistent bottom pin that survives later geometry/data changes until the user starts a real
+ * scroll gesture.
  */
 final class VerticalCardViewportPolicy {
     private boolean searchActive;
@@ -14,18 +14,38 @@ final class VerticalCardViewportPolicy {
     private boolean immediateBottomPending;
     private boolean forceBottomOnNextRebuild = true;
     private boolean rebuildBottomPending;
+    private boolean explicitBottomPinned;
 
     void onSearchQueryChanged(boolean active, boolean changed) {
         searchActive = active;
-        if (changed) forceBottomOnNextRebuild = true;
+        if (changed) {
+            forceBottomOnNextRebuild = true;
+            explicitBottomPinned = false;
+        }
     }
 
     void requestImmediateBottom() {
         immediateBottomPending = true;
     }
 
+    void requestPersistentBottom() {
+        explicitBottomPinned = true;
+        immediateBottomPending = true;
+    }
+
     void requestBottomOnNextRebuild() {
         forceBottomOnNextRebuild = true;
+    }
+
+    void onUserScrollStarted() {
+        explicitBottomPinned = false;
+        immediateBottomPending = false;
+        rebuildBottomPending = false;
+        forceBottomOnNextRebuild = false;
+    }
+
+    boolean isPersistentBottomPinned() {
+        return explicitBottomPinned;
     }
 
     void setKeyboardVisible(boolean visible) {
@@ -36,6 +56,7 @@ final class VerticalCardViewportPolicy {
         return searchActive
                 || keyboardVisible
                 || immediateBottomPending
+                || explicitBottomPinned
                 || forceBottomOnNextRebuild;
     }
 
@@ -47,12 +68,13 @@ final class VerticalCardViewportPolicy {
         return searchActive
                 || keyboardVisible
                 || immediateBottomPending
+                || explicitBottomPinned
                 || rebuildBottomPending;
     }
 
-    /** Search, IME and an explicit second Home press always outrank a saved history position. */
+    /** Search, IME and explicit latest navigation outrank a saved history position. */
     boolean preventsPositionRestore() {
-        return searchActive || keyboardVisible || immediateBottomPending;
+        return searchActive || keyboardVisible || immediateBottomPending || explicitBottomPinned;
     }
 
     void onBottomApplied() {
@@ -63,7 +85,7 @@ final class VerticalCardViewportPolicy {
         }
     }
 
-    /** A successful history-position restore settles any passive initial/rebuild bottom request. */
+    /** A successful history-position restore settles only passive initial/rebuild bottom requests. */
     void onPositionRestoreApplied() {
         if (preventsPositionRestore()) return;
         rebuildBottomPending = false;
@@ -74,5 +96,6 @@ final class VerticalCardViewportPolicy {
         immediateBottomPending = false;
         rebuildBottomPending = false;
         forceBottomOnNextRebuild = true;
+        // explicitBottomPinned deliberately survives configuration/geometry changes.
     }
 }

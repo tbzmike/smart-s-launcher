@@ -72,9 +72,13 @@ public class SaveAllOreoShortcutsAsync extends AsyncTask<Void, Integer, Boolean>
                 if (record != null) {
                     shortcutsUpdated |= DBHelper.insertShortcut(context, record);
                 }
-            } else if (shortcutInfo.isPinned() || !shortcutInfo.isEnabled()) {
-                // Preserve the original KISS behaviour when permanent disabled/frozen indexing is
-                // explicitly turned off in Settings.
+            } else if (shortcutInfo.isPinned() && shortcutInfo.isEnabled()) {
+                // When disabled-app indexing is explicitly off, keep normal search behaviour by
+                // loading only Android's currently visible shortcuts. Do not delete a remembered
+                // shortcut merely because Android now reports it disabled/unavailable: History may
+                // still contain the exact shortcut id and needs the persisted record to reconstruct
+                // that previously successful launch. Explicit unpin/remove actions still delete the
+                // catalog record through DataHandler.unpinShortcut()/removeShortcut().
                 shortcutsUpdated |= dataHandler.updateShortcut(shortcutInfo, !shortcutInfo.isPinned());
             }
         }

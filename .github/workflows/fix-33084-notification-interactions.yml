@@ -1,0 +1,123 @@
+name: Fix Smart S 3.30.84 Notification Interactions
+
+on:
+  push:
+    branches:
+      - fix/3.30.84-notification-interactions
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-33084-notification-interactions
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify exact 3.30.83 baseline
+        run: |
+          set -euxo pipefail
+          ADAPTER=app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          HOME=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java
+          grep -q 'versionCode 511' app/build.gradle
+          grep -q 'versionName "3.30.83"' app/build.gradle
+          grep -q 'R.id.item_notification_icon, R.id.item_notification_native_container' "$ADAPTER"
+          grep -q 'child.setOnClickListener(openExactTarget);' "$ADAPTER"
+          grep -q 'NotificationHistoryResolver.showForPojo(context, result.getPojo())' "$ADAPTER"
+          grep -q 'applyEasyIconTap(wrapper, result, stableId);' "$HOME"
+          ! grep -q 'view.getId() == fr.neamar.kiss.R.id.item_notification_icon' "$HOME"
+
+      - name: Apply guarded interaction repair
+        run: python3 .github/scripts/fix_33084_notification_interactions.py
+
+      - name: Verify Search and Home use distinct consistent actions
+        run: |
+          set -euxo pipefail
+          ADAPTER=app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java
+          HOME=app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java
+
+          grep -q 'versionCode 512' app/build.gradle
+          grep -q 'versionName "3.30.84"' app/build.gradle
+
+          # Search/default adapter: message opens exact route, icon launches package.
+          grep -q 'View.OnClickListener openExactTarget' "$ADAPTER"
+          grep -q 'View.OnClickListener openApp = v -> openNotificationApp(result, notification, v);' "$ADAPTER"
+          grep -q 'AppLaunchUtils.launchPackage(context, notification.packageName)' "$ADAPTER"
+          grep -q 'int\[\] messageIds = new int\[\]{R.id.item_notification_native_container' "$ADAPTER"
+          grep -q 'View icon = view.findViewById(R.id.item_notification_icon);' "$ADAPTER"
+          grep -q 'icon.setOnClickListener(openApp);' "$ADAPTER"
+
+          # Long press remains the rich notification popup/history path in Search.
+          grep -q 'NotificationHistoryResolver.showForPojo(context, result.getPojo())' "$ADAPTER"
+
+          # Home/Vertical Cards delegates icon taps to the same adapter method.
+          grep -q 'pojo instanceof NotificationPojo' "$HOME"
+          grep -q 'mainActivity.adapter.openNotificationApp(currentPosition, icon);' "$HOME"
+          grep -q 'view.getId() == fr.neamar.kiss.R.id.item_notification_icon' "$HOME"
+          grep -q 'applyLongPressRecursively(wrapper, historyFirstLongPress);' "$HOME"
+          grep -q 'mainActivity.adapter.onLongClick(currentPosition, v);' "$HOME"
+
+          # Message click path is still exact-notification routing and read-state handling.
+          grep -q 'NotificationTimelineState.markRead' "$HOME"
+          grep -q 'mainActivity.adapter.onClick(currentPosition, v);' "$HOME"
+
+          git diff --check
+
+      - name: Full clean verification
+        run: ./gradlew clean lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+
+      - name: Verify APK manifest versions
+        run: |
+          set -euxo pipefail
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          DEBUG_APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)
+          RELEASE_APK=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
+          "$AAPT" dump badging "$DEBUG_APK" | tee /tmp/debug-badging.txt
+          "$AAPT" dump badging "$RELEASE_APK" | tee /tmp/release-badging.txt
+          grep -q "versionCode='512'" /tmp/debug-badging.txt
+          grep -q "versionName='3.30.84'" /tmp/debug-badging.txt
+          grep -q "versionCode='512'" /tmp/release-badging.txt
+          grep -q "versionName='3.30.84'" /tmp/release-badging.txt
+
+      - name: Upload verified debug APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Smart-S-Launcher-3.30.84-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload verified release APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: Smart-S-Launcher-3.30.84-release-unsigned.apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Commit verified source changes
+        run: |
+          set -euxo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            app/build.gradle \
+            app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java \
+            app/src/main/java/fr/neamar/kiss/forwarder/VerticalCardNotificationHistoryForwarder.java
+          git diff --cached --check
+          git commit -m 'Separate notification icon and message actions in 3.30.84'
+          git push origin HEAD:fix/3.30.84-notification-interactions

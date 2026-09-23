@@ -10,12 +10,14 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
 import androidx.preference.PreferenceManager;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.preference.UiEditLock;
 
 /**
@@ -35,27 +37,31 @@ final class VerticalCardGroupResizeController {
     private static final String PREF_SPACING = "smart-list-card-spacing-dp";
 
     private static final int MIN_WIDTH = 48;
-    private static final int MAX_WIDTH = 200;
+    private static final int MAX_WIDTH = 400;
     private static final int MIN_HEIGHT = 55;
     private static final int MAX_HEIGHT = 150;
 
     private final MainActivity activity;
     private final SmartCardListForwarder cardForwarder;
     private final Runnable rebuildCardsCallback;
+    private final Runnable sharedWidthChangedCallback;
     private final SharedPreferences prefs;
 
     private FrameLayout host;
     private LinearLayout column;
     private TextView resizeButton;
     private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
+    private View.OnLayoutChangeListener pendingHostLayoutListener;
     private AlertDialog dialog;
 
     VerticalCardGroupResizeController(MainActivity activity,
                                       SmartCardListForwarder cardForwarder,
-                                      Runnable rebuildCardsCallback) {
+                                      Runnable rebuildCardsCallback,
+                                      Runnable sharedWidthChangedCallback) {
         this.activity = activity;
         this.cardForwarder = cardForwarder;
         this.rebuildCardsCallback = rebuildCardsCallback;
+        this.sharedWidthChangedCallback = sharedWidthChangedCallback;
         this.prefs = PreferenceManager.getDefaultSharedPreferences(activity);
     }
 
@@ -82,6 +88,7 @@ final class VerticalCardGroupResizeController {
     void onConfigurationChanged() {
         dismissDialog();
         detachObserver();
+        cancelPendingHostWidthApply();
         host = null;
         column = null;
         resolveViews();
@@ -97,6 +104,7 @@ final class VerticalCardGroupResizeController {
     void onDestroy() {
         dismissDialog();
         detachObserver();
+        cancelPendingHostWidthApply();
         if (resizeButton != null && resizeButton.getParent() instanceof ViewGroup) {
             ((ViewGroup) resizeButton.getParent()).removeView(resizeButton);
         }
@@ -105,20 +113,29 @@ final class VerticalCardGroupResizeController {
         column = null;
     }
 
-    private boolean isEnabled() {
+    private boolean isVerticalCards() {
         return VERTICAL_CARDS.equals(prefs.getString(
                 HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL));
+    }
+
+    private boolean isEnabled() {
+        String layout = prefs.getString(
+                HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL);
+        return HistoryLayoutMode.isSupported(layout);
     }
 
     private void resolveViews() {
         FrameLayout nextHost = activity.listContainer instanceof FrameLayout
                 ? (FrameLayout) activity.listContainer : null;
+        if (nextHost != host) {
+            cancelPendingHostWidthApply();
+            host = nextHost;
+        }
         LinearLayout nextColumn = cardForwarder.getColumn();
         if (nextColumn != column) {
             detachObserver();
             column = nextColumn;
         }
-        host = nextHost;
     }
 
     private void installButton() {
@@ -129,11 +146,11 @@ final class VerticalCardGroupResizeController {
         }
 
         resizeButton = new TextView(activity);
-        resizeButton.setText("↔↕");
+        resizeButton.setText("↔");
         resizeButton.setTextColor(Color.WHITE);
         resizeButton.setTextSize(20f);
         resizeButton.setGravity(Gravity.CENTER);
-        resizeButton.setContentDescription("Resize all Vertical Cards");
+        resizeButton.setContentDescription("Resize history width");
         resizeButton.setElevation(dp(28));
         resizeButton.setBackground(makeButtonBackground());
         resizeButton.setOnClickListener(v -> showResizeDialog());
@@ -170,6 +187,9 @@ final class VerticalCardGroupResizeController {
     private void sync() {
         boolean editable = isEnabled() && !UiEditLock.isLocked(activity);
         if (resizeButton != null) {
+            resizeButton.setText(isVerticalCards() ? "↔↕" : "↔");
+            resizeButton.setContentDescription(isVerticalCards()
+                    ? "Resize Vertical Cards" : "Resize history width");
             resizeButton.setVisibility(editable ? View.VISIBLE : View.GONE);
             if (editable) resizeButton.bringToFront();
         }
@@ -181,29 +201,122 @@ final class VerticalCardGroupResizeController {
     }
 
     private void applyWidthSoon() {
-        if (column != null) column.post(this::applyWidthToAllCards);
+        if (host == null || !isEnabled()) return;
+        int widthPercent = prefInt(PREF_WIDTH, 100, MIN_WIDTH, MAX_WIDTH);
+        cancelPendingHostWidthApply();
+
+        Runnable rendererApply = isVerticalCards()
+                ? this::applyWidthToAllCards : sharedWidthChangedCallback;
+        boolean hostChanged = applyOuterResultMargins(widthPercent);
+        if (rendererApply == null) return;
+        if (!hostChanged) {
+            host.post(rendererApply);
+            return;
+        }
+
+        // resultLayout itself can be narrower than the display. Wait for its exact new bounds so
+        // renderer children are measured against the physical-edge viewport, not the old 40dp clip.
+        pendingHostLayoutListener = new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                       int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                v.removeOnLayoutChangeListener(this);
+                pendingHostLayoutListener = null;
+                rendererApply.run();
+            }
+        };
+        host.addOnLayoutChangeListener(pendingHostLayoutListener);
+        host.requestLayout();
+    }
+
+    private boolean applyOuterResultMargins(int widthPercent) {
+        if (host == null) return false;
+        ViewGroup.LayoutParams raw = host.getLayoutParams();
+        if (!(raw instanceof ViewGroup.MarginLayoutParams)) return false;
+        ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) raw;
+
+        // InterfaceTweaks applies a separate 40dp margin to the ancestor resultLayout when the
+        // large-results-margin preference is enabled. Release that outer clip from 100% to 200%;
+        // 200-400% keeps it at zero so the physical display edge is the only visible boundary.
+        int baseMargin = prefs.getBoolean("large-result-list-margins", false)
+                ? activity.getResources().getDimensionPixelSize(R.dimen.list_margin_horizontal_large)
+                : 0;
+        int desiredMargin = HistoryEdgeWidthPolicy.insetForPercent(baseMargin, widthPercent);
+        if (lp.leftMargin == desiredMargin && lp.rightMargin == desiredMargin
+                && lp.getMarginStart() == desiredMargin && lp.getMarginEnd() == desiredMargin) {
+            return false;
+        }
+
+        int topMargin = lp.topMargin;
+        int bottomMargin = lp.bottomMargin;
+        lp.setMargins(desiredMargin, topMargin, desiredMargin, bottomMargin);
+        lp.setMarginStart(desiredMargin);
+        lp.setMarginEnd(desiredMargin);
+        host.setLayoutParams(lp);
+        return true;
+    }
+
+    private void cancelPendingHostWidthApply() {
+        if (host != null && pendingHostLayoutListener != null) {
+            host.removeOnLayoutChangeListener(pendingHostLayoutListener);
+        }
+        pendingHostLayoutListener = null;
     }
 
     private void applyWidthToAllCards() {
-        if (!isEnabled() || column == null || column.getWidth() <= 0) return;
+        if (!isVerticalCards() || column == null) return;
         int widthPercent = prefInt(PREF_WIDTH, 100, MIN_WIDTH, MAX_WIDTH);
+
+        // 100-200% progressively consumes the renderer's own horizontal gutters. 200% is the
+        // exact physical viewport width. 201-400% intentionally creates a centered child wider
+        // than the viewport; the screen clips only the off-screen portion.
+        ScrollView scroller = cardForwarder.getScroller();
+        int scrollerInset = VerticalCardWidthPolicy.insetForPercent(dp(8), widthPercent);
+        if (scroller != null
+                && (scroller.getPaddingLeft() != scrollerInset
+                || scroller.getPaddingRight() != scrollerInset)) {
+            scroller.setPadding(scrollerInset, scroller.getPaddingTop(),
+                    scrollerInset, scroller.getPaddingBottom());
+        }
+
+        if (column.getWidth() <= 0) return;
         int available = Math.max(dp(120), column.getWidth() - column.getPaddingLeft()
                 - column.getPaddingRight());
-        int targetWidth = Math.round(available * widthPercent / 100f);
+        int targetWidth = VerticalCardWidthPolicy.targetWidth(available, widthPercent);
+        int wrapperInset = VerticalCardWidthPolicy.insetForPercent(dp(4), widthPercent);
+        int cardInset = VerticalCardWidthPolicy.insetForPercent(dp(4), widthPercent);
 
         for (int i = 0; i < column.getChildCount(); i++) {
             View child = column.getChildAt(i);
             ViewGroup.LayoutParams raw = child.getLayoutParams();
             if (!(raw instanceof LinearLayout.LayoutParams)) continue;
             LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) raw;
-            // Keep 100% as the exact historical full-width behaviour. Values above 100% are
-            // deliberate oversized card widths rather than being collapsed back to MATCH_PARENT.
-            int desired = widthPercent == 100
-                    ? ViewGroup.LayoutParams.MATCH_PARENT : targetWidth;
-            if (lp.width == desired && lp.gravity == Gravity.CENTER_HORIZONTAL) continue;
-            lp.width = desired;
-            lp.gravity = Gravity.CENTER_HORIZONTAL;
-            child.setLayoutParams(lp);
+            int desired;
+            if (widthPercent < 100) desired = targetWidth;
+            else if (widthPercent <= 200) desired = ViewGroup.LayoutParams.MATCH_PARENT;
+            else desired = targetWidth;
+            boolean wrapperChanged = lp.width != desired
+                    || lp.gravity != Gravity.CENTER_HORIZONTAL
+                    || lp.leftMargin != wrapperInset
+                    || lp.rightMargin != wrapperInset;
+            if (wrapperChanged) {
+                lp.width = desired;
+                lp.gravity = Gravity.CENTER_HORIZONTAL;
+                lp.leftMargin = wrapperInset;
+                lp.rightMargin = wrapperInset;
+                child.setLayoutParams(lp);
+            }
+
+            if (!(child instanceof ViewGroup) || ((ViewGroup) child).getChildCount() == 0) continue;
+            View card = ((ViewGroup) child).getChildAt(0);
+            ViewGroup.LayoutParams cardRaw = card.getLayoutParams();
+            if (!(cardRaw instanceof LinearLayout.LayoutParams)) continue;
+            LinearLayout.LayoutParams cardLp = (LinearLayout.LayoutParams) cardRaw;
+            if (cardLp.leftMargin != cardInset || cardLp.rightMargin != cardInset) {
+                cardLp.leftMargin = cardInset;
+                cardLp.rightMargin = cardInset;
+                card.setLayoutParams(cardLp);
+            }
         }
     }
 
@@ -211,6 +324,7 @@ final class VerticalCardGroupResizeController {
         if (!isEnabled() || UiEditLock.isLocked(activity)) return;
         dismissDialog();
 
+        boolean verticalCards = isVerticalCards();
         int width = prefInt(PREF_WIDTH, 100, MIN_WIDTH, MAX_WIDTH);
         int height = prefInt(PREF_HEIGHT, 100, MIN_HEIGHT, MAX_HEIGHT);
 
@@ -219,7 +333,9 @@ final class VerticalCardGroupResizeController {
         panel.setPadding(dp(24), dp(12), dp(24), dp(10));
 
         TextView explanation = new TextView(activity);
-        explanation.setText("Resize every Vertical Card together");
+        explanation.setText(verticalCards
+                ? "Resize every Vertical Card together · 200% = screen edges · 400% = beyond screen"
+                : "Resize this history style · 200% = screen edges · 400% = beyond screen");
         explanation.setTextSize(15f);
         explanation.setPadding(0, 0, 0, dp(10));
         panel.addView(explanation);
@@ -234,21 +350,6 @@ final class VerticalCardGroupResizeController {
         widthBar.setProgress(width - MIN_WIDTH);
         panel.addView(widthBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        TextView heightLabel = new TextView(activity);
-        heightLabel.setText("Height · " + height + "%");
-        heightLabel.setTextSize(16f);
-        LinearLayout.LayoutParams heightLabelLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        heightLabelLp.topMargin = dp(14);
-        panel.addView(heightLabel, heightLabelLp);
-
-        SeekBar heightBar = new SeekBar(activity);
-        heightBar.setMax(MAX_HEIGHT - MIN_HEIGHT);
-        heightBar.setProgress(height - MIN_HEIGHT);
-        panel.addView(heightBar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
         widthBar.setOnSeekBarChangeListener(new SimpleSeekListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -261,36 +362,52 @@ final class VerticalCardGroupResizeController {
             }
         });
 
-        heightBar.setOnSeekBarChangeListener(new SimpleSeekListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int value = MIN_HEIGHT + progress;
-                heightLabel.setText("Height · " + value + "%");
-            }
+        if (verticalCards) {
+            TextView heightLabel = new TextView(activity);
+            heightLabel.setText("Height · " + height + "%");
+            heightLabel.setTextSize(16f);
+            LinearLayout.LayoutParams heightLabelLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            heightLabelLp.topMargin = dp(14);
+            panel.addView(heightLabel, heightLabelLp);
 
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                int value = MIN_HEIGHT + seekBar.getProgress();
-                applyHeightGroup(value);
-            }
-        });
+            SeekBar heightBar = new SeekBar(activity);
+            heightBar.setMax(MAX_HEIGHT - MIN_HEIGHT);
+            heightBar.setProgress(height - MIN_HEIGHT);
+            panel.addView(heightBar, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            heightBar.setOnSeekBarChangeListener(new SimpleSeekListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    int value = MIN_HEIGHT + progress;
+                    heightLabel.setText("Height · " + value + "%");
+                }
 
-        dialog = new AlertDialog.Builder(activity)
-                .setTitle("Vertical Cards size")
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {
+                    int value = MIN_HEIGHT + seekBar.getProgress();
+                    applyHeightGroup(value);
+                }
+            });
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity)
+                .setTitle(verticalCards ? "Vertical Cards size" : "History width")
                 .setView(panel)
                 .setPositiveButton("Done", null)
                 .setNeutralButton("Reset", (d, which) -> {
-                    prefs.edit()
-                            .putInt(PREF_WIDTH, 100)
-                            .putInt(PREF_HEIGHT, 100)
-                            .putInt(PREF_ICON, 100)
-                            .putInt(PREF_NAME, 100)
-                            .putInt(PREF_SPACING, 12)
-                            .apply();
-                    rebuildCards();
+                    SharedPreferences.Editor editor = prefs.edit().putInt(PREF_WIDTH, 100);
+                    if (verticalCards) {
+                        editor.putInt(PREF_HEIGHT, 100)
+                                .putInt(PREF_ICON, 100)
+                                .putInt(PREF_NAME, 100)
+                                .putInt(PREF_SPACING, 12);
+                    }
+                    editor.apply();
+                    if (verticalCards) rebuildCards();
                     applyWidthSoon();
-                })
-                .create();
+                });
+        dialog = builder.create();
         dialog.setOnDismissListener(d -> dialog = null);
         dialog.show();
     }

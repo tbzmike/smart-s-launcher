@@ -51,6 +51,7 @@ import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 import fr.neamar.kiss.utils.SemanticHints;
 
@@ -272,6 +273,11 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     }
 
     private void openApp(NotificationHistoryRecord record) {
+        if (!AppLaunchUtils.isPackageInstalled(this, record.packageName)) {
+            AppReinstallSupport.showUninstalledDialog(
+                    this, record.packageName, record.appName);
+            return;
+        }
         if (!AppLaunchUtils.launchPackage(this, record.packageName)) {
             Toast.makeText(this, "Unable to open " + record.appName, Toast.LENGTH_SHORT).show();
         }
@@ -327,16 +333,19 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setGravity(Gravity.END);
 
-        boolean exactTarget = SavedNotificationDestinationResolver.hasExactTarget(this, record);
         Button open = new Button(this);
-        open.setText(exactTarget ? "Open notification" : "Open app");
+        open.setText("Open notification");
         open.setOnClickListener(v -> {
-            if (exactTarget) {
-                if (!SavedNotificationDestinationResolver.openExact(this, record)) {
-                    Toast.makeText(this, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();
-                }
-            } else {
-                openApp(record);
+            SavedNotificationDestinationResolver.OpenResult result =
+                    SavedNotificationDestinationResolver.openExactResult(this, record);
+            if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
+                AppReinstallSupport.showUninstalledDialog(
+                        this, record.packageName, record.appName);
+            } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_DISABLED_CANNOT_ENABLE) {
+                Toast.makeText(this, "The app could not be re-enabled.", Toast.LENGTH_SHORT).show();
+            } else if (!result.accepted()) {
+                Toast.makeText(this, "Direct notification/message link is unavailable.",
+                        Toast.LENGTH_SHORT).show();
             }
         });
         buttons.addView(open);

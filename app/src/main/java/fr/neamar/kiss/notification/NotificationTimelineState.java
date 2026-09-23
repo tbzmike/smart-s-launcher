@@ -14,6 +14,7 @@ public final class NotificationTimelineState {
     private static final String PREFS = "notification-timeline-state";
     private static final String POST_PREFIX = "post|";
     private static final String READ_PREFIX = "read|";
+    private static final String HIDDEN_HISTORY_PREFIX = "hidden-history|";
     private static final String LAST_SCAN = "_last_persisted_scan";
 
     private NotificationTimelineState() { }
@@ -55,6 +56,18 @@ public final class NotificationTimelineState {
         long post = p.getLong(POST_PREFIX + notificationId, 0L);
         if (post <= 0L) return true;
         return p.getLong(READ_PREFIX + notificationId, Long.MIN_VALUE) < post;
+    }
+
+    /** Hide only this exact notification post from launcher History; do not dismiss Android's notification. */
+    public static void hideFromHistory(Context context, String notificationId, long postTime) {
+        if (notificationId == null || notificationId.isEmpty() || postTime <= 0L) return;
+        prefs(context).edit().putLong(HIDDEN_HISTORY_PREFIX + notificationId, postTime).apply();
+    }
+
+    /** A newer/reposted notification with the same Android key is a new History item and is not hidden. */
+    public static boolean isHiddenFromHistory(Context context, String notificationId, long postTime) {
+        if (notificationId == null || notificationId.isEmpty() || postTime <= 0L) return false;
+        return prefs(context).getLong(HIDDEN_HISTORY_PREFIX + notificationId, Long.MIN_VALUE) == postTime;
     }
 
     public static long getLastPersistedScan(Context context) {

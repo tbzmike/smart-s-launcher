@@ -29,7 +29,11 @@ import fr.neamar.kiss.utils.Log;
  */
 public final class MediaHistoryCoordinator implements Application.ActivityLifecycleCallbacks {
     private static final String TAG = MediaHistoryCoordinator.class.getSimpleName();
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "smart-s-media-history");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
     private static final AtomicBoolean REFRESH_RUNNING = new AtomicBoolean(false);
     private static final ConcurrentHashMap<String, Long> CAPTURE_FINGERPRINTS =
             new ConcurrentHashMap<>();

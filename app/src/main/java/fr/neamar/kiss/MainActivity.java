@@ -71,6 +71,7 @@ import fr.neamar.kiss.ui.AnimatedListView;
 import fr.neamar.kiss.ui.KeyboardScrollHider;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.SearchEditText;
+import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.Permission;
@@ -81,6 +82,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     public static final String START_LOAD = "fr.neamar.summon.START_LOAD";
     public static final String LOAD_OVER = "fr.neamar.summon.LOAD_OVER";
+    public static final String EXTRA_NOTIFICATION_TIMELINE_ID =
+            "fr.neamar.summon.extra.NOTIFICATION_TIMELINE_ID";
+    public static final String EXTRA_NOTIFICATION_POSTED =
+            "fr.neamar.summon.extra.NOTIFICATION_POSTED";
     public static final String REFRESH_FAVORITES = "fr.neamar.summon.REFRESH_FAVORITES";
 
     protected static final String TAG = MainActivity.class.getSimpleName();
@@ -183,6 +188,12 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     private OnBackPressedCallback onBackPressedCallback;
     private final LauncherHomeLifecycleState homeLifecycleState =
             new LauncherHomeLifecycleState();
+    private final SearchLaunchReturnState searchLaunchReturnState =
+            new SearchLaunchReturnState();
+    private boolean launcherUiResumed;
+    private boolean pendingBackgroundRefresh;
+    private boolean pendingBackgroundFavoriteRefresh;
+    @Nullable private String pendingNotificationTargetId;
 
     /**
      * Called when the activity is first created.
@@ -239,16 +250,41 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                         updateSearchRecords();
                     }
                 } else if (LOAD_OVER.equalsIgnoreCase(intent.getAction())) {
+                    String notificationId = intent.getStringExtra(EXTRA_NOTIFICATION_TIMELINE_ID);
+                    boolean notificationEvent = !TextUtils.isEmpty(notificationId);
+                    boolean notificationPosted = notificationEvent
+                            && intent.getBooleanExtra(EXTRA_NOTIFICATION_POSTED, false);
+
+                    // Do not rebuild/redecorate launcher results while Android is starting an app,
+                    // shortcut or notification target. Persisted provider state remains authoritative;
+                    // one coalesced refresh is applied when Home owns the foreground again.
+                    if (!launcherUiResumed) {
+                        pendingBackgroundRefresh = true;
+                        if (!notificationEvent) pendingBackgroundFavoriteRefresh = true;
+                        if (notificationPosted) {
+                            pendingNotificationTargetId = notificationId;
+                        } else if (notificationEvent
+                                && TextUtils.equals(pendingNotificationTargetId, notificationId)) {
+                            pendingNotificationTargetId = null;
+                        }
+                        return;
+                    }
+
+                    if (notificationEvent) {
+                        forwarderManager.onNotificationTimelineChanged(
+                                notificationId, notificationPosted);
+                        updateSearchRecords();
+                        return;
+                    }
+
                     updateSearchRecords();
                     if (!KissApplication.getApplication(context).getDataHandler().isAllProvidersLoaded()) {
                         displayLoader(true);
                     } else {
                         Log.v(TAG, "All providers are done loading.");
-
                         displayLoader(false);
-
                     }
-                    // New provider might mean new favorites
+                    // Provider changes can affect favorites; notification timeline changes cannot.
                     onFavoriteChange();
                 } else if (START_LOAD.equalsIgnoreCase(intent.getAction())) {
                     displayLoader(true);
@@ -337,8 +373,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                     emptyListView.setVisibility(View.GONE);
                 }
 
-                forwarderManager.onDataSetChanged();
-                applyGlobalTextScale(findViewById(android.R.id.content));
+                boolean visibleResultTreeChanged = forwarderManager.onDataSetChanged();
+                if (visibleResultTreeChanged) {
+                    applyGlobalTextScale(findViewById(android.R.id.content));
+                }
 
             }
         });
@@ -461,6 +499,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return;
         }
 
+        launcherUiResumed = true;
         AppProvider.setLauncherUiVisible(true);
         // Settings may have changed while the launcher was paused. Synchronize input mode
         // before any later focus request can give Android IME a chance to appear.
@@ -471,14 +510,46 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             displayLoader(false);
         }
 
+        boolean resetDefaultHistoryAfterSearchLaunch =
+                searchLaunchReturnState.consumeDefaultHistoryReset();
+        boolean refreshDeferredBackground = pendingBackgroundRefresh;
+        boolean refreshDeferredFavorites = pendingBackgroundFavoriteRefresh;
+        String deferredNotificationTargetId = pendingNotificationTargetId;
+        pendingBackgroundRefresh = false;
+        pendingBackgroundFavoriteRefresh = false;
+        pendingNotificationTargetId = null;
+        if (!TextUtils.isEmpty(deferredNotificationTargetId)) {
+            forwarderManager.onNotificationTimelineChanged(deferredNotificationTargetId, true);
+        }
+
         // Persistent notification details are only a rendering cache. Reconcile them against
         // Android's panel without delaying the first Home frame; a changed active set requests a
         // normal refresh when the background verification completes.
-        NotificationListener.reconcileActiveNotificationsAsync();
+        NotificationListener.reconcileActiveNotificationsAsync(this);
 
-        // We need to update the history in case an external event created new items
-        // (for instance, installed a new app, got a phone call or simply clicked on a favorite)
-        updateSearchRecords(false, searchEditText.getText().toString());
+        // A successful launch from a query must return to the real default History tree, not a
+        // visually frozen copy of the old query results. Arm the Vertical Cards renderer before
+        // publishing the empty query so the QUERY -> HISTORY result set is rebuilt and bottom-pinned.
+        if (resetDefaultHistoryAfterSearchLaunch) {
+            forwarderManager.prepareDefaultHistoryAfterSearchLaunch();
+            if (!TextUtils.isEmpty(searchEditText.getText())) {
+                clearSearchText();
+            }
+            // A cancelled provider query can still be unwinding on the serialized search worker.
+            // Do not leave its QUERY adapter visible while the authoritative History search waits
+            // for that worker. Restore a safe cached/recent History snapshot immediately, refresh
+            // that snapshot on the independent history-seed worker, then let the full History
+            // search run on the normal serialized lane.
+            SearchHandler.getInstance().restoreHomeHistory(this);
+            displayClearOnInput();
+            hideKeyboard();
+        } else if (refreshDeferredBackground
+                && SearchHandler.getInstance().getLastSearchType() != null) {
+            updateSearchRecords(true, searchEditText.getText().toString());
+        } else {
+            updateSearchRecords(false, searchEditText.getText().toString());
+        }
+        if (refreshDeferredFavorites) onFavoriteChange();
 
         if (isViewingAllApps()) {
             displayKissBar(false);
@@ -503,11 +574,16 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
         super.onResume();
         homeLifecycleState.onResumeCompleted();
+        // Window animation is launcher-owned and starts only after Home has resumed.
+        SmartAnimationEngine.animateWindowEnter(findViewById(android.R.id.content));
     }
 
 
     @Override
     protected void onPause() {
+        // Do not delay external launches: animate our own decor while Android transfers focus.
+        SmartAnimationEngine.animateWindowExit(findViewById(android.R.id.content));
+        launcherUiResumed = false;
         forwarderManager.onPause();
         super.onPause();
     }
@@ -535,6 +611,17 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // fullscreen activity passes through onStop(); a second Home redelivery does not.
         boolean launcherWasForeground =
                 homeLifecycleState.launcherWasForegroundBeforeHomeIntent();
+
+        // Capture search-result state before HOME clears the EditText. A completed external
+        // launch may already have blanked the field while SearchHandler still owns QUERY results.
+        boolean homeIntent = Intent.ACTION_MAIN.equals(intent.getAction())
+                && intent.hasCategory(Intent.CATEGORY_HOME);
+        if (homeIntent) {
+            Searcher.Type lastSearchType = SearchHandler.getInstance().getLastSearchType();
+            boolean searchResultsActive = !TextUtils.isEmpty(searchEditText.getText())
+                    || lastSearchType == Searcher.Type.QUERY;
+            searchLaunchReturnState.onHomeIntent(searchResultsActive);
+        }
 
         //Set the intent so KISS can tell when it was launched as an assistant
         setIntent(intent);
@@ -719,7 +806,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 basePx = textView.getTextSize();
                 textView.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx);
             }
-            textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, basePx * scale);
+            float targetPx = basePx * scale;
+            if (Math.abs(textView.getTextSize() - targetPx) > 0.5f) {
+                textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, targetPx);
+            }
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
@@ -1064,8 +1154,28 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     @Override
+    public void externalResultLaunchStarting() {
+        // Record whether this verified external transition started from a real query before the
+        // delayed launch cleanup can clear the EditText while Smart S is in the background.
+        searchLaunchReturnState.onExternalLaunchStarting(
+                searchEditText != null && !TextUtils.isEmpty(searchEditText.getText()));
+        // Capture the currently visible Vertical Cards viewport before Android begins the external
+        // transition. A later history recency update must not relocate the tile the user tapped.
+        forwarderManager.onExternalResultLaunchStarting();
+        launcherUiResumed = false;
+    }
+
+    @Override
     public void externalResultLaunchOccurred() {
+        searchLaunchReturnState.onExternalLaunchSucceeded();
         homeLifecycleState.onExternalResultLaunched();
+    }
+
+    @Override
+    public void externalResultLaunchCancelled() {
+        searchLaunchReturnState.onExternalLaunchCancelled();
+        launcherUiResumed = true;
+        forwarderManager.onExternalResultLaunchCancelled();
     }
 
     public void registerPopup(ListPopup popup) {

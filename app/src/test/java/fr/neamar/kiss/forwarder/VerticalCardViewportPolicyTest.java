@@ -30,15 +30,34 @@ class VerticalCardViewportPolicyTest {
     }
 
     @Test
-    void homeIsImmediateAndDoesNotArmAnUnrelatedFutureRefresh() {
+    void explicitLatestNavigationStaysPinnedAcrossLaterGeometryAndRebuilds() {
         VerticalCardViewportPolicy policy = settledPolicy();
 
-        policy.requestImmediateBottom();
+        policy.requestPersistentBottom();
+        assertThat(policy.isPersistentBottomPinned(), is(true));
+        assertThat(policy.shouldBottomRebuild(), is(true));
         assertThat(policy.shouldPinGeometry(), is(true));
+        policy.onBottomRebuildStarted();
         policy.onBottomApplied();
 
-        assertThat(policy.shouldPinGeometry(), is(false));
+        assertThat(policy.isPersistentBottomPinned(), is(true));
+        assertThat(policy.shouldBottomRebuild(), is(true));
+        assertThat(policy.shouldPinGeometry(), is(true));
+        assertThat(policy.preventsPositionRestore(), is(true));
+    }
+
+    @Test
+    void firstRealUserScrollCancelsPersistentHomeBottomPin() {
+        VerticalCardViewportPolicy policy = settledPolicy();
+        policy.requestPersistentBottom();
+        policy.onBottomApplied();
+
+        policy.onUserScrollStarted();
+
+        assertThat(policy.isPersistentBottomPinned(), is(false));
         assertThat(policy.shouldBottomRebuild(), is(false));
+        assertThat(policy.shouldPinGeometry(), is(false));
+        assertThat(policy.preventsPositionRestore(), is(false));
     }
 
     @Test
@@ -50,10 +69,12 @@ class VerticalCardViewportPolicyTest {
     }
 
     @Test
-    void eachQueryTransitionForcesItsFirstResultSetToBottom() {
+    void eachQueryTransitionForcesItsFirstResultSetToBottomAndCancelsHomePin() {
         VerticalCardViewportPolicy policy = settledPolicy();
+        policy.requestPersistentBottom();
 
         policy.onSearchQueryChanged(true, true);
+        assertThat(policy.isPersistentBottomPinned(), is(false));
         applyBottomRebuild(policy);
         policy.onSearchQueryChanged(false, true);
 
@@ -75,17 +96,17 @@ class VerticalCardViewportPolicyTest {
     }
 
     @Test
-    void savedPositionRestoreSettlesOnlyPassiveBottomRequests() {
+    void savedPositionRestoreCannotOverrideExplicitLatestPin() {
         VerticalCardViewportPolicy startup = new VerticalCardViewportPolicy();
         assertThat(startup.shouldBottomRebuild(), is(true));
         startup.onPositionRestoreApplied();
         assertThat(startup.shouldBottomRebuild(), is(false));
 
-        VerticalCardViewportPolicy search = settledPolicy();
-        search.onSearchQueryChanged(true, true);
-        search.onPositionRestoreApplied();
-        assertThat(search.shouldBottomRebuild(), is(true));
-        assertThat(search.shouldPinGeometry(), is(true));
+        VerticalCardViewportPolicy explicit = settledPolicy();
+        explicit.requestPersistentBottom();
+        explicit.onPositionRestoreApplied();
+        assertThat(explicit.shouldBottomRebuild(), is(true));
+        assertThat(explicit.shouldPinGeometry(), is(true));
     }
 
     private static VerticalCardViewportPolicy settledPolicy() {

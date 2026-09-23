@@ -17,6 +17,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -25,10 +26,16 @@ import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.CommunicationPojo;
+import fr.neamar.kiss.pojo.NotificationPojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.AppResult;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
+import fr.neamar.kiss.ui.AutoScrollPreviewTextView;
+import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
+import fr.neamar.kiss.ui.ScrollIdleGate;
+import fr.neamar.kiss.ui.TextOverflowMode;
 
 /**
  * Vertical Smart Card renderer. The visible card has its own deliberate layout, while the real
@@ -40,8 +47,9 @@ final class SmartCardListForwarder extends Forwarder {
     private static final String LEGACY_PREF_ENABLED = "smart-card-list-enabled";
     private static final int ACCENT_SAMPLE_SIZE = 10;
     private static final int MAX_ACCENT_CACHE_SIZE = 256;
-    private static final long ACTIVE_QUERY_REBUILD_DEBOUNCE_MS = 64L;
+    private static final long ACTIVE_QUERY_REBUILD_DEBOUNCE_MS = 120L;
 
+    private final Map<String, String> activeQueryCardSignatures = new HashMap<>();
     private final Map<Long, Integer> accentCache =
             new LinkedHashMap<Long, Integer>(MAX_ACCENT_CACHE_SIZE, 0.75f, true) {
                 @Override
@@ -54,23 +62,29 @@ final class SmartCardListForwarder extends Forwarder {
     private LinearLayout column;
     private View edgeEffect;
     private boolean pendingDataSetRefresh;
+    private boolean forceNextHistoryRebuild;
     private boolean renderedActiveQuery;
     private Runnable deferredHistoryRefreshCallback;
-    private boolean deferredRefreshIdleProbeScheduled;
-    private final VerticalCardRefreshIdlePolicy deferredRefreshIdlePolicy =
-            new VerticalCardRefreshIdlePolicy();
-    private final Runnable activeQueryRebuildRunnable = () -> {
-        if (isEnabled() && isActiveQuery()) rebuild();
+    private Runnable userScrollStartedCallback;
+    private boolean deferredRefreshIdleScheduled;
+    private boolean rebuildQueued;
+    private boolean rebuildQueuedAllowActiveQueryReuse;
+    private final Runnable rebuildAfterIdle = () -> {
+        rebuildQueued = false;
+        boolean allowReuse = rebuildQueuedAllowActiveQueryReuse;
+        rebuildQueuedAllowActiveQueryReuse = false;
+        if (isEnabled()) rebuild(allowReuse);
     };
-    private final Runnable deferredRefreshIdleProbe = () -> {
-        deferredRefreshIdleProbeScheduled = false;
+    private final Runnable deferredRefreshAfterIdle = () -> {
+        deferredRefreshIdleScheduled = false;
         if (scroller == null || !pendingDataSetRefresh || isActiveQuery()) return;
-        if (deferredRefreshIdlePolicy.onAnimationFrame(scroller.getScrollY())) {
+        if (isAtBottom()) {
             Runnable callback = deferredHistoryRefreshCallback;
             if (callback != null) callback.run();
-            return;
         }
-        scheduleDeferredRefreshIdleProbe();
+    };
+    private final Runnable activeQueryRebuildRunnable = () -> {
+        if (isEnabled() && isActiveQuery()) rebuild(true);
     };
 
     SmartCardListForwarder(MainActivity mainActivity) {
@@ -130,25 +144,35 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         cancelPendingActiveQueryRebuild();
+        // Keep the currently rendered history tree frozen. The adapter may re-rank an app/shortcut
+        // after a launch or append a notification, but that background fact must not move what the
+        // user is looking at. The pending tree is materialized only by explicit latest navigation
+        // or after the user manually reaches the visible bottom.
         pendingDataSetRefresh = true;
-        deferredRefreshIdlePolicy.request(
-                scroller == null ? 0 : scroller.getScrollY(), isAtBottom());
-        scheduleDeferredRefreshIdleProbe();
+        cancelDeferredRefreshIdleProbe();
         return false;
     }
 
     void onDestroy() {
         cancelPendingActiveQueryRebuild();
         cancelDeferredRefreshIdleProbe();
-        deferredRefreshIdlePolicy.clear();
+        if (scroller instanceof StableCardScrollView) {
+            ((StableCardScrollView) scroller).scrollIdleGate.cancel(rebuildAfterIdle);
+            ((StableCardScrollView) scroller).scrollIdleGate.destroy();
+        }
         deferredHistoryRefreshCallback = null;
+        userScrollStartedCallback = null;
+        activeQueryCardSignatures.clear();
         accentCache.clear();
         container = null;
         scroller = null;
         column = null;
         edgeEffect = null;
         pendingDataSetRefresh = false;
+        forceNextHistoryRebuild = false;
         renderedActiveQuery = false;
+        rebuildQueued = false;
+        rebuildQueuedAllowActiveQueryReuse = false;
     }
 
     ScrollView getScroller() {
@@ -163,25 +187,37 @@ final class SmartCardListForwarder extends Forwarder {
         deferredHistoryRefreshCallback = callback;
     }
 
+    void setUserScrollStartedCallback(Runnable callback) {
+        userScrollStartedCallback = callback;
+    }
+
     boolean willRebuildSynchronouslyForDataSetChange() {
         if (!isEnabled()) return false;
         boolean activeQuery = isActiveQuery();
-        return column == null || column.getChildCount() == 0
-                || (!activeQuery && renderedActiveQuery);
+        return !isScrollInProgress() && (column == null || column.getChildCount() == 0
+                || (!activeQuery && (renderedActiveQuery || forceNextHistoryRebuild)));
     }
 
     boolean hasPendingDataSetRefresh() {
         return pendingDataSetRefresh;
     }
 
+    void forceHistoryRebuildOnNextDataSetChange() {
+        forceNextHistoryRebuild = true;
+    }
+
     boolean rebuildPendingDataSetRefresh() {
         if (!pendingDataSetRefresh || !isEnabled() || isActiveQuery()) return false;
+        if (isScrollInProgress()) {
+            scheduleDeferredRefreshIdleProbe();
+            return false;
+        }
         rebuild();
         return true;
     }
 
     boolean consumeDeferredKeepBottom() {
-        return deferredRefreshIdlePolicy.consumeKeepBottom();
+        return false;
     }
 
     private boolean isAtBottom() {
@@ -195,7 +231,7 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     void rebuildImmediately() {
-        if (isEnabled()) rebuild();
+        if (isEnabled() && !isScrollInProgress()) rebuild();
     }
 
     private void migrateLegacySelection() {
@@ -237,15 +273,37 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void scheduleDeferredRefreshIdleProbe() {
-        if (scroller == null || deferredRefreshIdleProbeScheduled || isActiveQuery()
-                || !deferredRefreshIdlePolicy.shouldProbe()) return;
-        deferredRefreshIdleProbeScheduled = true;
-        scroller.postOnAnimation(deferredRefreshIdleProbe);
+        if (scroller == null || deferredRefreshIdleScheduled || isActiveQuery()) return;
+        deferredRefreshIdleScheduled = true;
+        runWhenScrollIdle(deferredRefreshAfterIdle);
     }
 
     private void cancelDeferredRefreshIdleProbe() {
-        if (scroller != null) scroller.removeCallbacks(deferredRefreshIdleProbe);
-        deferredRefreshIdleProbeScheduled = false;
+        if (scroller != null) scrollIdleGate().cancel(deferredRefreshAfterIdle);
+        deferredRefreshIdleScheduled = false;
+    }
+
+    boolean isScrollInProgress() {
+        return scroller instanceof StableCardScrollView
+                && ((StableCardScrollView) scroller).scrollIdleGate.isScrolling();
+    }
+
+    void runWhenScrollIdle(Runnable work) {
+        if (scroller instanceof StableCardScrollView) {
+            ((StableCardScrollView) scroller).scrollIdleGate.runWhenIdle(work);
+        } else {
+            work.run();
+        }
+    }
+
+    void addScrollStartedListener(Runnable listener) {
+        if (scroller instanceof StableCardScrollView) {
+            ((StableCardScrollView) scroller).scrollIdleGate.addScrollStartedListener(listener);
+        }
+    }
+
+    private ScrollIdleGate scrollIdleGate() {
+        return ((StableCardScrollView) scroller).scrollIdleGate;
     }
 
     private void applySearchFocusIsolation(boolean activeQuery) {
@@ -279,29 +337,52 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void rebuild() {
+        rebuild(false);
+    }
+
+    private void rebuild(boolean allowActiveQueryReuse) {
         if (column == null || mainActivity.adapter == null) return;
+        if (isScrollInProgress()) {
+            pendingDataSetRefresh = true;
+            rebuildQueuedAllowActiveQueryReuse |= allowActiveQueryReuse;
+            if (!rebuildQueued) {
+                rebuildQueued = true;
+                runWhenScrollIdle(rebuildAfterIdle);
+            }
+            return;
+        }
         cancelPendingActiveQueryRebuild();
         cancelDeferredRefreshIdleProbe();
-        deferredRefreshIdlePolicy.clear();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
+        boolean previouslyRenderedActiveQuery = renderedActiveQuery;
+        if (!activeQuery) forceNextHistoryRebuild = false;
         renderedActiveQuery = activeQuery;
         boolean preserveSearchFocus = activeQuery
                 && mainActivity.searchEditText != null
                 && mainActivity.searchEditText.hasFocus();
         applySearchFocusIsolation(activeQuery);
-        Map<String, NotificationHistoryRecord> latestNotifications =
-                !activeQuery && prefs.getBoolean("enable-notification-history", false)
-                        ? SmartStateStore.queryLatestNotificationsByPackage(mainActivity)
-                        : Collections.emptyMap();
-        column.removeAllViews();
 
-        int count = mainActivity.adapter.getCount();
-        for (int position = 0; position < count; position++) {
-            Result<?> result = mainActivity.adapter.getItem(position);
-            View source = mainActivity.adapter.getView(position, null, column);
-            View item = createCardItem(source, result, position, latestNotifications);
-            column.addView(item);
+        if (activeQuery && allowActiveQueryReuse && previouslyRenderedActiveQuery) {
+            reconcileActiveQueryCards();
+        } else {
+            Map<String, NotificationHistoryRecord> latestNotifications =
+                    !activeQuery && prefs.getBoolean("enable-notification-history", false)
+                            ? SmartStateStore.queryLatestNotificationsByPackage(mainActivity)
+                            : Collections.emptyMap();
+            activeQueryCardSignatures.clear();
+            column.removeAllViews();
+                int count = mainActivity.adapter.getCount();
+                for (int position = 0; position < count; position++) {
+                    Result<?> result = mainActivity.adapter.getItem(position);
+                    View source = mainActivity.adapter.getView(position, null, column);
+                    View item = createCardItem(source, result, position, latestNotifications);
+                    column.addView(item);
+                    if (activeQuery) {
+                        activeQueryCardSignatures.put(
+                                result.getPojoId(), activeQueryCardSignature(result));
+                    }
+                }
         }
 
         if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
@@ -311,37 +392,113 @@ final class SmartCardListForwarder extends Forwarder {
             mainActivity.showKeyboard();
         }
 
-        if (!activeQuery) {
-            scroller.post(() -> {
-                int childCount = column.getChildCount();
-                int first = Math.max(0, childCount - 16);
-                int visualIndex = 0;
-                for (int i = first; i < childCount; i++) {
-                    View child = column.getChildAt(i);
-                    animateIn(child, visualIndex++);
-                }
-            });
+    }
+
+    /**
+     * Active search used to destroy and recreate the complete Vertical Cards hierarchy after every
+     * debounce. Reconcile by stable POJO identity instead: unchanged cards keep their Views, click
+     * listeners and drawables; only inserted/changed results are materialized from the adapter.
+     */
+    private void reconcileActiveQueryCards() {
+        if (column == null || mainActivity.adapter == null) return;
+
+        Map<String, View> existingById = new HashMap<>();
+        for (int i = 0; i < column.getChildCount(); i++) {
+            View child = column.getChildAt(i);
+            Object tag = child.getTag();
+            if (tag instanceof String && !existingById.containsKey((String) tag)) {
+                existingById.put((String) tag, child);
+            }
         }
+
+        Map<String, String> nextSignatures = new HashMap<>();
+        int targetCount = mainActivity.adapter.getCount();
+        for (int position = 0; position < targetCount; position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
+            String id = result.getPojoId();
+            String signature = activeQueryCardSignature(result);
+            nextSignatures.put(id, signature);
+
+            View desired = existingById.remove(id);
+            if (desired != null
+                    && !TextUtils.equals(activeQueryCardSignatures.get(id), signature)) {
+                if (desired.getParent() == column) column.removeView(desired);
+                desired = null;
+            }
+            if (desired == null) {
+                View source = mainActivity.adapter.getView(position, null, column);
+                desired = createCardItem(
+                        source, result, position, Collections.emptyMap());
+            }
+            placeActiveQueryChild(desired, position);
+        }
+
+        // Entries left in the map disappeared from the new query result set. Remove those exact
+        // stale Views rather than trimming arbitrary children from the end after reordering.
+        for (View stale : existingById.values()) {
+            if (stale.getParent() == column) column.removeView(stale);
+        }
+        while (column.getChildCount() > targetCount) {
+            column.removeViewAt(column.getChildCount() - 1);
+        }
+        activeQueryCardSignatures.clear();
+        activeQueryCardSignatures.putAll(nextSignatures);
+        column.requestLayout();
+        column.invalidate();
+    }
+
+    private void placeActiveQueryChild(View child, int targetPosition) {
+        if (child.getParent() == column) {
+            int currentPosition = column.indexOfChild(child);
+            if (currentPosition == targetPosition) return;
+            if (currentPosition >= 0) column.removeViewAt(currentPosition);
+        } else if (child.getParent() instanceof ViewGroup) {
+            ((ViewGroup) child.getParent()).removeView(child);
+        }
+        column.addView(child, Math.min(targetPosition, column.getChildCount()));
+    }
+
+    private String activeQueryCardSignature(Result<?> result) {
+        return result.getClass().getName() + "|" + result.getPojoId() + "|" + result.toString();
     }
 
     private final class StableCardScrollView extends ScrollView {
+        private final VerticalCardUserScrollGesturePolicy userScrollGesturePolicy =
+                new VerticalCardUserScrollGesturePolicy();
+        final ScrollIdleGate scrollIdleGate;
+
         StableCardScrollView() {
             super(mainActivity);
+            scrollIdleGate = new ScrollIdleGate(this);
         }
 
         @Override
         public boolean dispatchTouchEvent(MotionEvent event) {
             int action = event.getActionMasked();
+            scrollIdleGate.onTouchEvent(event);
             if (action == MotionEvent.ACTION_DOWN) {
-                deferredRefreshIdlePolicy.onTouchDown();
                 cancelDeferredRefreshIdleProbe();
+                userScrollGesturePolicy.onTouchDown(getScrollY());
             }
             boolean handled = super.dispatchTouchEvent(event);
+            if (action == MotionEvent.ACTION_MOVE
+                    && userScrollGesturePolicy.onTouchMove(getScrollY())) {
+                Runnable callback = userScrollStartedCallback;
+                if (callback != null) callback.run();
+            }
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                deferredRefreshIdlePolicy.onTouchReleased(getScrollY());
-                scheduleDeferredRefreshIdleProbe();
+                userScrollGesturePolicy.onTouchEnd();
+                if (pendingDataSetRefresh) {
+                    scheduleDeferredRefreshIdleProbe();
+                }
             }
             return handled;
+        }
+
+        @Override
+        protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+            super.onScrollChanged(l, t, oldl, oldt);
+            scrollIdleGate.onScrollChanged();
         }
     }
 
@@ -391,8 +548,11 @@ final class SmartCardListForwarder extends Forwarder {
 
         ImageView liveIcon = findIconView(source);
         Drawable iconDrawable = liveIcon == null ? null : liveIcon.getDrawable();
-        if (iconDrawable == null) iconDrawable = result.getDrawable(mainActivity);
-        int accent = accentFor(result, iconDrawable);
+        // Match Horizontal Icons' smooth-scroll rule: never turn a cold asynchronous icon into a
+        // synchronous drawable load on the UI thread just to style the card. A neutral provisional
+        // accent is deliberately not cached; bindDrawable() below supplies the real icon/accent.
+        int accent = iconDrawable == null
+                ? Color.rgb(64, 84, 118) : accentFor(result, iconDrawable);
         styleCard(card, radiusDp, accent);
 
         View notificationRow = source.findViewById(R.id.item_notification_row);
@@ -432,6 +592,14 @@ final class SmartCardListForwarder extends Forwarder {
         LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
         iconLp.rightMargin = dp(14);
         mainRow.addView(iconView, iconLp);
+        if (iconView instanceof ImageView) {
+            ImageView renderedIcon = (ImageView) iconView;
+            result.bindDrawable(renderedIcon, drawable -> {
+                if (drawable == null || renderedIcon.getParent() == null) return;
+                int resolvedAccent = accentFor(result, drawable);
+                styleCard(card, radiusDp, resolvedAccent);
+            });
+        }
 
         LinearLayout center = new LinearLayout(mainActivity);
         center.setOrientation(LinearLayout.VERTICAL);
@@ -445,8 +613,10 @@ final class SmartCardListForwarder extends Forwarder {
         cardTitle.setTextSize(16f * namePercent / 100f);
         cardTitle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         cardTitle.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
+        NotificationBellStyle.apply(cardTitle,
+                NotificationBellStyle.isNotificationItem(mainActivity, result, source));
         center.addView(cardTitle, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
+                ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(31) * Math.max(90, namePercent) / 100)));
 
         if (!TextUtils.isEmpty(subtitle)) {
             AutoMarqueeTextView meta = new AutoMarqueeTextView(mainActivity);
@@ -456,7 +626,7 @@ final class SmartCardListForwarder extends Forwarder {
             meta.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             meta.setShadowLayer(dp(1), 0f, dp(1), Color.argb(160, 0, 0, 0));
             center.addView(meta, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(27)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(27))));
         }
 
         TextView messageView = null;
@@ -485,7 +655,7 @@ final class SmartCardListForwarder extends Forwarder {
             }
             notificationRow.setVisibility(View.GONE);
         } else if (hasMessage) {
-            AutoMarqueeTextView lastMessage = new AutoMarqueeTextView(mainActivity);
+            AutoScrollPreviewTextView lastMessage = new AutoScrollPreviewTextView(mainActivity);
             lastMessage.setText(latestMessage);
             lastMessage.setTextColor(Color.WHITE);
             lastMessage.setTextSize(13f);
@@ -493,7 +663,7 @@ final class SmartCardListForwarder extends Forwarder {
             lastMessage.setPadding(0, dp(2), 0, dp(2));
             lastMessage.setShadowLayer(dp(1), 0f, dp(1), Color.argb(150, 0, 0, 0));
             center.addView(lastMessage, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(31))));
             messageView = lastMessage;
         } else if (TextUtils.isEmpty(subtitle)) {
             AutoMarqueeTextView context = new AutoMarqueeTextView(mainActivity);
@@ -502,7 +672,7 @@ final class SmartCardListForwarder extends Forwarder {
             context.setTextSize(12f);
             context.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             center.addView(context, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(25)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(25))));
         }
 
         if (call != null && call.kind == CommunicationPojo.Kind.CALL
@@ -516,7 +686,7 @@ final class SmartCardListForwarder extends Forwarder {
             callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
             callerName.setContentDescription("Caller: " + call.displayName);
             center.addView(callerName, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(31) * Math.max(90, namePercent) / 100));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(31) * Math.max(90, namePercent) / 100)));
         }
 
         prepareSourceForDetails(source);
@@ -546,29 +716,49 @@ final class SmartCardListForwarder extends Forwarder {
             card.addView(details, detailsLp);
             final String expectedPojoId = result.getPojoId();
             details.setOnClickListener(v -> toggleDetails(
-                    detailsPanel, details, adapterPosition, expectedPojoId));
+                    detailsPanel, details, expectedPojoId));
         }
 
         final TextView expandableMessage = messageView;
         final boolean[] messageExpanded = {false};
+        final boolean directNotification = result.getPojo() instanceof NotificationPojo;
+        final boolean directShortcut = result.getPojo() instanceof ShortcutPojo;
         View.OnClickListener launchOrExpand = v -> {
-            if (expandableMessage != null && !messageExpanded[0] && messageNeedsExpansion(expandableMessage)) {
+            boolean needsExpansion = expandableMessage != null
+                    && messageNeedsExpansion(expandableMessage);
+            if (shouldExpandMessageBeforeLaunch(
+                    directNotification, directShortcut, expandableMessage != null,
+                    messageExpanded[0], needsExpansion)) {
                 pressAnimation(card);
                 expandMessage(expandableMessage);
                 messageExpanded[0] = true;
                 return;
             }
             pressAnimation(card);
-            mainActivity.adapter.onClick(adapterPosition, card);
+            int currentPosition = resolveAdapterPosition(result.getPojoId());
+            if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, card);
         };
         View.OnLongClickListener longPress = v -> {
-            mainActivity.adapter.onLongClick(adapterPosition, card);
+            int currentPosition = resolveAdapterPosition(result.getPojoId());
+            if (currentPosition < 0) return false;
+            mainActivity.adapter.onLongClick(currentPosition, card);
             return true;
         };
         card.setOnClickListener(launchOrExpand);
         cardTitle.setOnClickListener(launchOrExpand);
         card.setOnLongClickListener(longPress);
         cardTitle.setOnLongClickListener(longPress);
+        if (directShortcut && expandableMessage != null) {
+            // Shortcut notification previews are informational content inside the shortcut card.
+            // The source adapter TextView can carry an exact-notification click listener; overwrite
+            // it after re-parenting so tapping any shortcut-body text follows the same launch path
+            // as the icon/title and cannot produce an unrelated notification-destination error.
+            expandableMessage.setOnClickListener(launchOrExpand);
+            expandableMessage.setOnLongClickListener(longPress);
+            expandableMessage.setClickable(true);
+            expandableMessage.setFocusable(false);
+            expandableMessage.setFocusableInTouchMode(false);
+        }
         card.setClickable(true);
         cardTitle.setClickable(true);
         card.setFocusable(false);
@@ -576,6 +766,15 @@ final class SmartCardListForwarder extends Forwarder {
         cardTitle.setFocusable(false);
         cardTitle.setFocusableInTouchMode(false);
         return wrapper;
+    }
+
+    static boolean shouldExpandMessageBeforeLaunch(boolean directNotification,
+                                                   boolean directShortcut,
+                                                   boolean hasMessage,
+                                                   boolean alreadyExpanded,
+                                                   boolean needsExpansion) {
+        return !directNotification && !directShortcut && hasMessage
+                && !alreadyExpanded && needsExpansion;
     }
 
     private CharSequence callSummary(CommunicationPojo call) {
@@ -623,13 +822,27 @@ final class SmartCardListForwarder extends Forwarder {
         return text == null ? "" : text.toString().trim();
     }
 
+    private int textRowHeight(int scrollingHeight) {
+        return TextOverflowMode.isAutoExpandForHistory(mainActivity)
+                ? ViewGroup.LayoutParams.WRAP_CONTENT : scrollingHeight;
+    }
+
     private void configureCollapsedMessage(TextView text) {
-        text.setSingleLine(true);
-        text.setMaxLines(1);
-        text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-        text.setMarqueeRepeatLimit(-1);
-        text.setHorizontallyScrolling(true);
-        text.setSelected(true);
+        if (TextOverflowMode.isAutoExpandForHistory(mainActivity)) {
+            text.setSelected(false);
+            text.setHorizontallyScrolling(false);
+            text.setSingleLine(false);
+            text.setMaxLines(Integer.MAX_VALUE);
+            text.setEllipsize(null);
+            text.setHorizontalFadingEdgeEnabled(false);
+        } else {
+            text.setSingleLine(true);
+            text.setMaxLines(1);
+            text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+            text.setMarqueeRepeatLimit(-1);
+            text.setHorizontallyScrolling(true);
+            text.setSelected(true);
+        }
         text.setTextColor(Color.WHITE);
         text.setTextSize(13f);
         text.setGravity(Gravity.START);
@@ -637,6 +850,7 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private boolean messageNeedsExpansion(TextView text) {
+        if (TextOverflowMode.isAutoExpandForHistory(mainActivity)) return false;
         CharSequence value = text.getText();
         if (TextUtils.isEmpty(value)) return false;
         int available = text.getWidth() - text.getPaddingLeft() - text.getPaddingRight();
@@ -700,11 +914,11 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private void toggleDetails(FrameLayout detailsPanel, TextView control,
-                               int adapterPosition, String expectedPojoId) {
+                               String expectedPojoId) {
         boolean opening = detailsPanel.getVisibility() != View.VISIBLE;
         detailsPanel.animate().cancel();
         if (opening) {
-            if (!populateDetails(detailsPanel, adapterPosition, expectedPojoId)) return;
+            if (!populateDetails(detailsPanel, expectedPojoId)) return;
             detailsPanel.setAlpha(0f);
             detailsPanel.setVisibility(View.VISIBLE);
             control.setText("⌃");
@@ -729,21 +943,13 @@ final class SmartCardListForwarder extends Forwarder {
         }
     }
 
-    private boolean populateDetails(FrameLayout detailsPanel, int adapterPosition,
-                                    String expectedPojoId) {
+    private boolean populateDetails(FrameLayout detailsPanel, String expectedPojoId) {
         if (detailsPanel.getChildCount() > 0) return true;
-        if (mainActivity.adapter == null
-                || adapterPosition < 0
-                || adapterPosition >= mainActivity.adapter.getCount()) {
-            return false;
-        }
+        int adapterPosition = resolveAdapterPosition(expectedPojoId);
+        if (adapterPosition < 0) return false;
 
         Result<?> current = mainActivity.adapter.getItem(adapterPosition);
-        if (current == null || !TextUtils.equals(expectedPojoId, current.getPojoId())) {
-            // History can be re-ranked after a launch/notification. Never bind a stale position to
-            // a different card merely to populate optional details.
-            return false;
-        }
+        if (current == null || !TextUtils.equals(expectedPojoId, current.getPojoId())) return false;
 
         View detailSource = mainActivity.adapter.getView(adapterPosition, null, detailsPanel);
         prepareSourceForDetails(detailSource);
@@ -754,6 +960,17 @@ final class SmartCardListForwarder extends Forwarder {
         detailsPanel.addView(detailSource, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return true;
+    }
+
+    private int resolveAdapterPosition(String expectedPojoId) {
+        if (mainActivity.adapter == null || TextUtils.isEmpty(expectedPojoId)) return -1;
+        for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
+            Result<?> current = mainActivity.adapter.getItem(position);
+            if (current != null && TextUtils.equals(expectedPojoId, current.getPojoId())) {
+                return position;
+            }
+        }
+        return -1;
     }
 
     private void clearDetailsPanel(FrameLayout detailsPanel) {
@@ -920,10 +1137,6 @@ final class SmartCardListForwarder extends Forwarder {
         bg.setStroke(dp(2), tone(accent, 1.62f, 215));
         card.setBackground(bg);
         card.setClipToOutline(true);
-    }
-
-    private void animateIn(View view, int index) {
-        SmartAnimationEngine.animateTileListItem(view, index);
     }
 
     private int accentFor(Result<?> result, Drawable drawable) {

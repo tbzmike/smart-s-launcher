@@ -30,6 +30,13 @@
             app:title="App history layout"
             app:useSimpleSummaryProvider="true" />
         <ListPreference
+            app:defaultValue="auto_scroll"
+            app:entries="@array/smartTextOverflowEntries"
+            app:entryValues="@array/smartTextOverflowValues"
+            app:key="smart-text-overflow-mode"
+            app:title="Long text display (Vertical list &amp; cards)"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
             app:defaultValue="recency"
             app:entries="@array/historyModeEntries"
             app:entryValues="@array/historyModeValues"
@@ -268,7 +275,34 @@
                 app:key="large-result-list-margins"
                 app:title="@string/large_result_list_margins" />
         </PreferenceCategory>
-    </PreferenceScreen>
+    
+        <PreferenceCategory app:title="History icon sizing">
+            <Preference
+                app:title="Use App icon size for history icons"
+                app:summary="These switches control which history icon types follow the existing App icon size setting."
+                app:selectable="false" />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:key="smart-list-resize-notification-icons"
+                app:title="Resize notification / profile pictures"
+                app:summary="WhatsApp and other notification/profile pictures follow App icon size." />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:key="smart-list-resize-shortcut-icons"
+                app:title="Resize shortcut icons"
+                app:summary="Launcher shortcut icons follow App icon size." />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:key="smart-list-resize-feature-icons"
+                app:title="Resize settings / feature icons"
+                app:summary="Smart S settings and feature icons follow App icon size." />
+            <SwitchPreference
+                app:defaultValue="true"
+                app:key="smart-list-resize-contact-icons"
+                app:title="Resize contact / avatar pictures"
+                app:summary="Contact and avatar pictures follow App icon size." />
+        </PreferenceCategory>
+</PreferenceScreen>
     <PreferenceScreen
         app:key="ux-holder"
         app:summary="@string/user_experience_summary"

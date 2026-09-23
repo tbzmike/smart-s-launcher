@@ -52,6 +52,7 @@ import fr.neamar.kiss.adapter.RecordAdapter;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.normalizer.StringNormalizer;
+import fr.neamar.kiss.notification.NotificationTimelineState;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.ContactsPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
@@ -62,6 +63,7 @@ import fr.neamar.kiss.pojo.SearchPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.pojo.TagDummyPojo;
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
@@ -88,6 +90,19 @@ public abstract class Result<T extends Pojo> {
 
     protected Result(@NonNull T pojo) {
         this.pojo = pojo;
+    }
+
+    /**
+     * Targets that leave Launcher Home must use the same launch-return protection. SettingPojo
+     * includes installed deep features, so feature clicks cannot bypass the History restoration
+     * path merely because they are rendered by SettingsResult rather than AppResult.
+     */
+    static boolean isExternalLaunchTarget(@NonNull Pojo pojo) {
+        return pojo instanceof AppPojo
+                || pojo instanceof ShortcutPojo
+                || pojo instanceof DisabledAppPojo
+                || pojo instanceof NotificationPojo
+                || pojo instanceof SettingPojo;
     }
 
     public static Result<?> fromPojo(QueryInterface parent, @NonNull Pojo pojo) {
@@ -334,6 +349,9 @@ public abstract class Result<T extends Pojo> {
      */
     public ListPopup getPopupMenu(final Context context, final RecordAdapter parent, final View parentView) {
         ArrayAdapter<ListPopup.Item> popupMenuAdapter = new ArrayAdapter<>(context, R.layout.popup_list_item);
+        if (supportsUnlockedRemovalMenu() && !UiEditLock.isLocked(context)) {
+            popupMenuAdapter.add(new ListPopup.Item(context, R.string.menu_remove));
+        }
         buildPopupMenu(context, popupMenuAdapter);
         ListPopup menu = inflatePopupMenu(popupMenuAdapter, context);
 
@@ -354,9 +372,6 @@ public abstract class Result<T extends Pojo> {
      * Default popup menu implementation, can be overridden by children class to display a more specific menu
      */
     protected void buildPopupMenu(Context context, ArrayAdapter<ListPopup.Item> adapter) {
-        if (canRemoveFromHistory(context) && isShowingHistory()) {
-            adapter.add(new ListPopup.Item(context, R.string.menu_remove));
-        }
         if (isAllowedAsFavorite()) {
             // If app already pinned, do not display the "add to favorite" option
             // otherwise don't show the "remove favorite button"
@@ -377,8 +392,9 @@ public abstract class Result<T extends Pojo> {
         }
     }
 
-    private boolean isShowingHistory() {
-        return SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+    private boolean supportsUnlockedRemovalMenu() {
+        Searcher.Type type = SearchHandler.getInstance().getLastSearchType();
+        return type == Searcher.Type.HISTORY || type == Searcher.Type.QUERY;
     }
 
     private ListPopup inflatePopupMenu(ArrayAdapter<ListPopup.Item> adapter, Context context) {
@@ -400,6 +416,7 @@ public abstract class Result<T extends Pojo> {
      */
     boolean popupMenuClickHandler(Context context, RecordAdapter parent, @StringRes int stringId, View parentView) {
         if (stringId == R.string.menu_remove) {
+            if (UiEditLock.isLocked(context)) return true;
             removeFromResultsAndHistory(context, parent);
             return true;
         } else if (stringId == R.string.menu_favorites_add) {
@@ -454,20 +471,24 @@ public abstract class Result<T extends Pojo> {
     public final void launch(Context context, View v, @Nullable QueryInterface queryInterface) {
         Log.i(this.getClass().getSimpleName(), "Launching " + pojo.id);
 
-        // Launch
+        boolean externalTarget = queryInterface != null && isExternalLaunchTarget(pojo);
+        if (externalTarget) queryInterface.externalResultLaunchStarting();
+
+        // Start the target only after the launcher has stopped accepting background card mutation.
         doLaunch(context, v);
 
-        // LauncherApps can start a translucent target that pauses but does not stop MainActivity.
-        // Report only a verified successful app/shortcut launch so first-Home restoration does not
-        // depend solely on whether Android happened to call onStop().
-        if (queryInterface != null && canAddToHistory()
-                && (pojo instanceof AppPojo
-                || pojo instanceof ShortcutPojo
-                || pojo instanceof DisabledAppPojo)) {
-            queryInterface.externalResultLaunchOccurred();
-        }
-
+        // Persist the exact clicked target before the launch-return lifecycle is armed. Dynamic
+        // shortcuts and installed features can disappear from providers while their external
+        // activity is taking focus; History must already contain and remember the clicked identity
+        // before MainActivity can receive a resume/HOME callback.
         recordLaunch(context, queryInterface);
+
+        // LauncherApps/PendingIntent/Setting targets can be translucent and may pause without
+        // stopping MainActivity. Keep the protection only for a verified successful external launch.
+        if (externalTarget) {
+            if (didLaunchExternalActivity()) queryInterface.externalResultLaunchOccurred();
+            else queryInterface.externalResultLaunchCancelled();
+        }
     }
 
     protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {
@@ -481,6 +502,7 @@ public abstract class Result<T extends Pojo> {
         // Save successful normal launches in history.
         if (canAddToHistory()) {
             KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());
+            SearchHandler.getInstance().rememberLaunchedResult(this);
             UniversalHistoryTimestamp.invalidateStats();
         }
         // Record the launch after some period,
@@ -502,6 +524,11 @@ public abstract class Result<T extends Pojo> {
      */
     protected boolean canAddToHistory() {
         return !pojo.isDisabled();
+    }
+
+    /** Whether doLaunch() actually transferred control to an external target. */
+    protected boolean didLaunchExternalActivity() {
+        return canAddToHistory();
     }
 
     /**
@@ -639,6 +666,11 @@ public abstract class Result<T extends Pojo> {
     }
 
     void removeFromHistory(Context context) {
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            NotificationTimelineState.hideFromHistory(
+                    context, notification.exactNotificationId, notification.postTime);
+        }
         DBHelper.removeFromHistory(context, pojo.getHistoryId());
     }
 

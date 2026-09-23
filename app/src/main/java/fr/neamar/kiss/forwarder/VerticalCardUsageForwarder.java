@@ -65,6 +65,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
     private Map<String, String> loadedShortcutTargets = Collections.emptyMap();
     private Map<String, String> pendingShortcutTargets = Collections.emptyMap();
     private boolean refreshRequested;
+    private boolean paused;
     private volatile boolean destroyed;
     private boolean pendingApplyFromDataSet;
     private boolean pendingApplyNeedsViewportProtection;
@@ -79,13 +80,22 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     void onCreate() {
+        paused = false;
         resolveColumn();
         refreshSnapshotAsync();
     }
 
     void onResume() {
+        paused = false;
         resolveColumn();
         refreshSnapshotAsync();
+    }
+
+    void onPause() {
+        paused = true;
+        if (column != null) column.removeCallbacks(applySnapshotRunnable);
+        pendingApplyFromDataSet = false;
+        pendingApplyNeedsViewportProtection = false;
     }
 
     void onDataSetChanged() {
@@ -109,6 +119,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
 
     void onDestroy() {
         destroyed = true;
+        paused = true;
         usageExecutor.shutdownNow();
         if (column != null) column.removeCallbacks(applySnapshotRunnable);
         column = null;
@@ -132,6 +143,10 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void refreshSnapshotAsync(Map<String, String> shortcutTargets) {
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(() -> refreshSnapshotAsync(shortcutTargets));
+            return;
+        }
         if (destroyed || !isEnabled()) {
             snapshot = null;
             shortcutSnapshot = null;
@@ -180,6 +195,10 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void refreshLaunchStatsAsync() {
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(this::refreshLaunchStatsAsync);
+            return;
+        }
         if (destroyed || !isEnabled() || !statsRefreshInFlight.compareAndSet(false, true)) return;
         final android.content.Context appContext = mainActivity.getApplicationContext();
         usageExecutor.execute(() -> {
@@ -231,7 +250,12 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void postApplySnapshot(boolean protectViewport, boolean fromDataSet) {
-        if (destroyed || column == null || snapshot == null || !isEnabled()) return;
+        if (destroyed || paused || column == null || snapshot == null || !isEnabled()) return;
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(
+                    () -> postApplySnapshot(protectViewport, fromDataSet));
+            return;
+        }
         pendingApplyNeedsViewportProtection |= protectViewport;
         pendingApplyFromDataSet |= fromDataSet;
         column.removeCallbacks(applySnapshotRunnable);
@@ -239,6 +263,10 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void applySnapshot() {
+        if (smartCardListForwarder.isScrollInProgress()) {
+            smartCardListForwarder.runWhenScrollIdle(this::applySnapshot);
+            return;
+        }
         AppUsageTodayStore.Snapshot currentSnapshot = snapshot;
         HistoryItemUsageTodayStore.Snapshot currentShortcutSnapshot = shortcutSnapshot;
         Map<String, LaunchStatsProvider.LaunchStats> currentLaunchStats = launchStats;
@@ -247,7 +275,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
         pendingApplyFromDataSet = false;
         pendingApplyNeedsViewportProtection = false;
 
-        if (destroyed || !isEnabled() || column == null || currentSnapshot == null
+        if (destroyed || paused || !isEnabled() || column == null || currentSnapshot == null
                 || mainActivity.adapter == null) return;
 
         VerticalCardViewportController.ViewportSnapshot viewport = protectViewport
