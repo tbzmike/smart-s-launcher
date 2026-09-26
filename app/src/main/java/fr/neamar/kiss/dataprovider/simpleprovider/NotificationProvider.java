@@ -20,6 +20,7 @@ import java.util.Set;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.notification.NotificationDisplayDeduplicator;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
@@ -122,7 +123,27 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
             if (pojo != null) result.add(pojo);
         }
         result.sort(Comparator.comparingLong((NotificationPojo p) -> p.postTime).reversed());
-        return result;
+
+        // Android can expose both a summary slot and a child slot for one visible notification
+        // event. Their StatusBarNotification keys must remain separate for routing, but rendering
+        // both wastes history space and binding work. Keep the newest visible copy only when the
+        // package, group, title/body and near-simultaneous post time all agree.
+        List<NotificationPojo> visible = new ArrayList<>(result.size());
+        for (NotificationPojo candidate : result) {
+            boolean duplicate = false;
+            for (NotificationPojo kept : visible) {
+                if (NotificationDisplayDeduplicator.isNearDuplicate(
+                        candidate.packageName, candidate.groupKey,
+                        candidate.latestTitle, candidate.latestText, candidate.postTime,
+                        kept.packageName, kept.groupKey,
+                        kept.latestTitle, kept.latestText, kept.postTime)) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) visible.add(candidate);
+        }
+        return visible;
     }
 
     private SharedPreferences details() {
