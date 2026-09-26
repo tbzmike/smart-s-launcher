@@ -13,6 +13,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.PojoWithTags;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 
 /** Lightweight matcher for the history-first search stage. */
 final class HistoryPreviewMatcher {
@@ -22,6 +23,7 @@ final class HistoryPreviewMatcher {
     static List<Pojo> match(MainActivity activity, SharedPreferences prefs, String query,
                             List<Pojo> historySeed) {
         List<Pojo> matches = new ArrayList<>();
+        List<Pojo> launchTargets = new ArrayList<>();
         String normalizedQuery = normalize(query);
         if (activity == null || prefs == null || normalizedQuery.isEmpty()
                 || historySeed == null || historySeed.isEmpty()) {
@@ -50,8 +52,17 @@ final class HistoryPreviewMatcher {
             if (!obvious && normalizedQuery.length() >= 2) {
                 obvious = candidate.contains(normalizedQuery);
             }
-            if (obvious) matches.add(pojo);
+            if (obvious) {
+                if (pojo instanceof AppPojo || pojo instanceof ShortcutPojo) {
+                    launchTargets.add(pojo);
+                } else {
+                    matches.add(pojo);
+                }
+            }
         }
+        // Stable partition: preserve recency inside each group while keeping launchable app and
+        // shortcut matches at the physical bottom from the very first history-preview frame.
+        matches.addAll(launchTargets);
         return matches;
     }
 
