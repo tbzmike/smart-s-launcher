@@ -36,10 +36,11 @@ import fr.neamar.kiss.pojo.SearchPojoType;
  */
 public class QuerySearcher extends Searcher {
     /**
-     * Exact app/shortcut/setting matches are intentionally the strongest local results.
-     * Searcher/RecordAdapter already place stronger relevance later in the result list, which
-     * keeps these exact launch targets at the bottom for one-handed reachability.
+     * Searcher/RecordAdapter emit stronger relevance later in the list. Keep every matching app
+     * and shortcut in a dedicated high-relevance band so launch targets stay at the physical bottom
+     * of search results for one-handed reachability, not only when the name is an exact match.
      */
+    private static final int LAUNCH_TARGET_BOTTOM_BASE = 900_000;
     private static final int EXACT_REACHABILITY_RELEVANCE = 1_000_000;
     public static final String PREF_SEMANTIC_RERANK = "semantic-rerank-enabled";
     public static final String PREF_SEMANTIC_WEIGHT = "semantic-rerank-weight";
@@ -97,6 +98,7 @@ public class QuerySearcher extends Searcher {
                     pojo.relevance = Math.max(pojo.relevance, 120 + Math.round(score * 280f));
                     if (pojo.isDisabled()) pojo.relevance -= 200;
                 }
+                promoteLaunchTarget(pojo);
                 semanticMatches.add(pojo);
             }
             return super.addResults(semanticMatches);
@@ -139,6 +141,7 @@ public class QuerySearcher extends Searcher {
                 }
                 if (pojo.isDisabled()) pojo.relevance -= 200;
             }
+            promoteLaunchTarget(pojo);
         }
         return super.addResults(pojos);
     }
@@ -207,7 +210,11 @@ public class QuerySearcher extends Searcher {
             if (obvious) historyMatches.add(pojo);
         }
 
-        if (!historyMatches.isEmpty() && !isCancelled()) publishPreviewResults(historyMatches);
+        if (!historyMatches.isEmpty() && !isCancelled()) {
+            historyMatches.sort((left, right) ->
+                    Boolean.compare(isLaunchTarget(left), isLaunchTarget(right)));
+            publishPreviewResults(historyMatches);
+        }
     }
 
     /** Keep history-only matches in the final set without duplicating provider matches. */
@@ -220,6 +227,7 @@ public class QuerySearcher extends Searcher {
             if (pojo == null || lexicalIds.contains(pojo.id)) continue;
             pojo.relevance = 180 + Math.round(80f * (i + 1) / Math.max(1, count));
             if (pojo.isDisabled()) pojo.relevance -= 200;
+            promoteLaunchTarget(pojo);
             lexicalIds.add(pojo.id);
             missing.add(pojo);
         }
@@ -275,16 +283,24 @@ public class QuerySearcher extends Searcher {
     }
 
     private boolean isExactReachabilityMatch(Pojo pojo) {
-        if (pojo == null || pojo.isDisabled()) return false;
-        if (!(pojo instanceof AppPojo)
-                && !(pojo instanceof ShortcutPojo)
-                && !(pojo instanceof SettingPojo)) {
-            return false;
-        }
+        if (pojo == null || pojo.isDisabled() || !isLaunchTarget(pojo)) return false;
 
         String normalizedQuery = normalize(query);
         String normalizedName = normalize(pojo.getName());
         return !normalizedQuery.isEmpty() && normalizedName.equals(normalizedQuery);
+    }
+
+    private boolean isLaunchTarget(Pojo pojo) {
+        return pojo instanceof AppPojo || pojo instanceof ShortcutPojo;
+    }
+
+    private void promoteLaunchTarget(Pojo pojo) {
+        if (!isLaunchTarget(pojo) || pojo.relevance >= EXACT_REACHABILITY_RELEVANCE) return;
+
+        // Preserve ordering inside the app/shortcut band without allowing provider-specific fuzzy
+        // score ranges to escape it. All other result classes remain above this band in the list.
+        int localOrder = Math.max(-50_000, Math.min(50_000, pojo.relevance));
+        pojo.relevance = LAUNCH_TARGET_BOTTOM_BASE + localOrder;
     }
 
     private float lexicalQuality(String rawQuery, Pojo pojo, boolean providerMatched) {
