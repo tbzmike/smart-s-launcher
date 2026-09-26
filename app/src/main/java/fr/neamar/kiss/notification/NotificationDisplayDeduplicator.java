@@ -17,7 +17,7 @@ public final class NotificationDisplayDeduplicator {
                                           String titleA, String bodyA, long postTimeA,
                                           String packageB, String groupB,
                                           String titleB, String bodyB, long postTimeB) {
-        if (!same(packageA, packageB) || !same(groupA, groupB)) return false;
+        if (!same(packageA, packageB) || !compatibleGroup(packageA, groupA, groupB)) return false;
         if (postTimeA <= 0L || postTimeB <= 0L) return false;
         if (Math.abs(postTimeA - postTimeB) > DUPLICATE_WINDOW_MS) return false;
 
@@ -32,6 +32,17 @@ public final class NotificationDisplayDeduplicator {
 
         return normalizedTitleA.equals(normalizedTitleB)
                 && normalizedBodyA.equals(normalizedBodyB);
+    }
+
+    private static boolean compatibleGroup(String packageName, String groupA, String groupB) {
+        String pkg = normalize(packageName);
+        String left = normalize(groupA);
+        String right = normalize(groupB);
+        return left.equals(right)
+                || left.isEmpty()
+                || right.isEmpty()
+                || left.equals(pkg)
+                || right.equals(pkg);
     }
 
     private static boolean same(String left, String right) {
