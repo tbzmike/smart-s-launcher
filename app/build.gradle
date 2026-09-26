@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.119 - eliminate vertical-list icon relayout jank
-        versionCode 547
-        versionName "3.30.119"
+        // Smart S Launcher 3.30.120 - deduplicate notification tiles and keep launch targets at search bottom
+        versionCode 548
+        versionName "3.30.120"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
