@@ -21,6 +21,7 @@ import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
+import fr.neamar.kiss.notification.NotificationDisplayDeduplicator;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.notification.NotificationTimelineState;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -86,6 +87,7 @@ public class HistorySearcher extends Searcher {
         pinActiveNotificationTimeline(activity, pojos, excludedPojoById, excludedPackages);
         pinMostRecentPersistedLaunch(activity, dataHandler, pojos, excludedPojoById);
         pojos.removeIf(pojo -> belongsToExcludedApp(pojo, excludedPojoById, excludedPackages));
+        collapseDuplicateNotifications(activity, pojos);
 
         this.addResults(pojos);
         return null;
@@ -349,6 +351,48 @@ public class HistorySearcher extends Searcher {
 
             existing.relevance = base + 1 + order++;
         }
+    }
+
+    /**
+     * Remove duplicate notification tiles after the live timeline and persisted history have been
+     * merged. Different Android notification keys are intentionally preserved in storage/routing;
+     * only the redundant visible row is dropped. Prefer a currently-active route, then the newest
+     * post, then the row already ranked closest to the bottom.
+     */
+    private void collapseDuplicateNotifications(MainActivity activity, List<Pojo> pojos) {
+        for (int i = 0; i < pojos.size(); i++) {
+            if (!(pojos.get(i) instanceof NotificationPojo)) continue;
+            NotificationPojo incumbent = (NotificationPojo) pojos.get(i);
+
+            for (int j = pojos.size() - 1; j > i; j--) {
+                if (!(pojos.get(j) instanceof NotificationPojo)) continue;
+                NotificationPojo candidate = (NotificationPojo) pojos.get(j);
+                if (!NotificationDisplayDeduplicator.isNearDuplicate(
+                        incumbent.packageName, incumbent.groupKey,
+                        incumbent.latestTitle, incumbent.latestText, incumbent.postTime,
+                        candidate.packageName, candidate.groupKey,
+                        candidate.latestTitle, candidate.latestText, candidate.postTime)) {
+                    continue;
+                }
+
+                if (preferNotification(activity, candidate, incumbent)) {
+                    pojos.set(i, candidate);
+                    incumbent = candidate;
+                }
+                pojos.remove(j);
+            }
+        }
+    }
+
+    private boolean preferNotification(MainActivity activity, NotificationPojo candidate,
+                                       NotificationPojo incumbent) {
+        boolean candidateActive = NotificationListener.isNotificationActive(
+                activity, candidate.exactNotificationId);
+        boolean incumbentActive = NotificationListener.isNotificationActive(
+                activity, incumbent.exactNotificationId);
+        if (candidateActive != incumbentActive) return candidateActive;
+        if (candidate.postTime != incumbent.postTime) return candidate.postTime > incumbent.postTime;
+        return candidate.relevance > incumbent.relevance;
     }
 
     private boolean belongsToExcludedApp(Pojo pojo, Set<String> excludedPojoById,
