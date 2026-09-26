@@ -27,6 +27,13 @@ class NotificationDisplayDeduplicatorTest {
                 is(false));
     }
 
+    @Test void persistedPackageFallbackCanMatchLiveConversationGroup() {
+        assertThat(NotificationDisplayDeduplicator.isNearDuplicate(
+                "com.whatsapp", "com.whatsapp", "Andronicah", "Bread and chips", 1_000_000L,
+                "com.whatsapp", "conversation-42", "Andronicah", "Bread and chips", 1_010_000L),
+                is(true));
+    }
+
     @Test void emptyPresentationIsNeverCollapsed() {
         assertThat(NotificationDisplayDeduplicator.isNearDuplicate(
                 "android", "system", "", "", 1_000_000L,
