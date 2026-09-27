@@ -51,6 +51,7 @@ public class SettingsResult extends Result<SettingPojo> {
     private static final String FEATURE_SCHEME = "feature://";
     private static final String HIDDEN_TARGETS = "hidden-launch-targets";
     private boolean launchSucceeded;
+    private volatile Drawable icon;
 
     SettingsResult(@NonNull SettingPojo pojo) {
         super(pojo);
@@ -206,40 +207,75 @@ public class SettingsResult extends Result<SettingPojo> {
     }
 
     @Override
+    boolean isDrawableCached() {
+        return icon != null;
+    }
+
+    @Override
+    void setDrawableCache(Drawable drawable) {
+        icon = drawable;
+    }
+
+    @Override
     public Drawable getDrawable(Context context) {
-        IconsHandler icons = KissApplication.getApplication(context).getIconsHandler();
+        Drawable cached = icon;
+        if (cached != null) return cached;
 
-        // Explicit per-result custom icons remain the highest-priority user choice.
-        Drawable custom = icons.getCustomDrawableForPojo(pojo);
-        if (custom != null) return custom;
+        synchronized (this) {
+            cached = icon;
+            if (cached != null) return cached;
 
-        if (pojo instanceof NotificationPojo) {
-            NotificationPojo notification = (NotificationPojo) pojo;
-            Drawable identity = NotificationIdentityIcon.resolve(
-                    context, notification.exactNotificationId, notification.packageName);
-            if (identity != null) return identity;
-        }
-        if (pojo instanceof NotificationHistorySearchPojo) {
-            NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;
-            Drawable identity = NotificationIdentityIcon.resolve(
-                    context, history.sourceNotificationId, history.sourcePackageName);
-            if (identity != null) return identity;
-        }
-        if (pojo instanceof DisabledAppPojo) {
-            DisabledAppPojo disabled = (DisabledAppPojo) pojo;
-            Drawable icon = icons.getDrawableIconForPackageName(disabled.targetPackage, UserHandle.OWNER);
-            if (icon != null) icon.setAlpha(140);
-            return icon;
-        }
+            IconsHandler icons = KissApplication.getApplication(context).getIconsHandler();
 
-        // Package-backed Settings/features also inherit the selected pack. Pure Android settings
-        // without an owning package keep their dedicated built-in glyph.
-        if (icons.isCustomIconPackActive() && pojo.packageName != null && !pojo.packageName.trim().isEmpty()) {
-            Drawable packageIcon = icons.getDrawableIconForPackageName(pojo.packageName, UserHandle.OWNER);
-            if (packageIcon != null) return packageIcon;
+            // Explicit per-result custom icons remain the highest-priority user choice.
+            Drawable custom = icons.getCustomDrawableForPojo(pojo);
+            if (custom != null) {
+                icon = custom;
+                return custom;
+            }
+
+            if (pojo instanceof NotificationPojo) {
+                NotificationPojo notification = (NotificationPojo) pojo;
+                Drawable identity = NotificationIdentityIcon.resolve(
+                        context, notification.exactNotificationId, notification.packageName);
+                if (identity != null) {
+                    icon = identity;
+                    return identity;
+                }
+            }
+            if (pojo instanceof NotificationHistorySearchPojo) {
+                NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;
+                Drawable identity = NotificationIdentityIcon.resolve(
+                        context, history.sourceNotificationId, history.sourcePackageName);
+                if (identity != null) {
+                    icon = identity;
+                    return identity;
+                }
+            }
+            if (pojo instanceof DisabledAppPojo) {
+                DisabledAppPojo disabled = (DisabledAppPojo) pojo;
+                Drawable disabledIcon = icons.getDrawableIconForPackageName(
+                        disabled.targetPackage, UserHandle.OWNER);
+                if (disabledIcon != null) disabledIcon.setAlpha(140);
+                icon = disabledIcon;
+                return disabledIcon;
+            }
+
+            // Package-backed Settings/features also inherit the selected pack. Pure Android
+            // settings without an owning package keep their dedicated built-in glyph.
+            if (icons.isCustomIconPackActive() && pojo.packageName != null
+                    && !pojo.packageName.trim().isEmpty()) {
+                Drawable packageIcon = icons.getDrawableIconForPackageName(
+                        pojo.packageName, UserHandle.OWNER);
+                if (packageIcon != null) {
+                    icon = packageIcon;
+                    return packageIcon;
+                }
+            }
+            Drawable resolved = pojo.icon != -1 ? getThemedDrawable(context, pojo, pojo.icon) : null;
+            icon = resolved;
+            return resolved;
         }
-        if (pojo.icon != -1) return getThemedDrawable(context, pojo, pojo.icon);
-        return null;
     }
 
     @Override
