@@ -45,9 +45,15 @@ public class ForwarderManager extends Forwarder {
     private boolean initialResumeComplete;
     private boolean lastUiEditLocked;
     private String lastSearchQuery;
+    private final Runnable historyScrollIdle = () -> {
+        AppProvider.setLauncherScrolling(false);
+        SearchHandler.getInstance().onHistoryScrollIdle(mainActivity);
+    };
+
     private final Runnable providerScrollStarted = () -> {
         AppProvider.setLauncherScrolling(true);
-        runWhenHistoryScrollIdle(() -> AppProvider.setLauncherScrolling(false));
+        SearchHandler.getInstance().onHistoryScrollStarted(mainActivity);
+        runWhenHistoryScrollIdle(historyScrollIdle);
     };
 
     public ForwarderManager(MainActivity mainActivity) {
