@@ -18,7 +18,7 @@
         tools:layout_height="@dimen/result_icon_size"
         tools:layout_width="@dimen/result_icon_size" />
 
-    <ImageView
+    <android.widget.ImageView
         android:id="@+id/item_app_icon"
         android:layout_width="?attr/resultSubIconSize"
         android:layout_height="?attr/resultSubIconSize"
@@ -104,7 +104,7 @@
         android:textSize="12sp"
         android:visibility="gone" />
 
-    <ImageButton
+    <android.widget.ImageButton
         android:id="@+id/item_contact_action_message"
         android:layout_width="48dp"
         android:layout_height="?attr/resultButtonHeight"
@@ -118,7 +118,7 @@
         app:tint="?attr/colorPrimary"
         tools:layout_height="48dp" />
 
-    <ImageButton
+    <android.widget.ImageButton
         android:id="@+id/item_contact_action_phone"
         android:layout_width="48dp"
         android:layout_height="?attr/resultButtonHeight"
