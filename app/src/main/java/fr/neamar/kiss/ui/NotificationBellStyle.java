@@ -6,7 +6,6 @@ import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewParent;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -72,20 +71,12 @@ public final class NotificationBellStyle {
         TextView primary = primaryName(root);
         if (primary == null) return;
         boolean show = isNotificationItem(root.getContext(), result, root);
-        boolean flash = NotificationBellPolicy.shouldFlash(
-                show, isUnreadNotification(root.getContext(), result), verticalList);
-        apply(primary, show, flash, verticalList && isInsideScrollingNativeList(root));
-    }
-
-    private static boolean isInsideScrollingNativeList(@NonNull View view) {
-        ViewParent parent = view.getParent();
-        while (parent instanceof View) {
-            if (parent instanceof AnimatedListView) {
-                return ((AnimatedListView) parent).isScrollInProgress();
-            }
-            parent = parent.getParent();
-        }
-        return false;
+        // Native List scrolling is now strictly render-only. Keep the notification bell visible
+        // but static; the previous infinite alpha animator continuously invalidated TextViews and
+        // then restarted when scrolling stopped.
+        boolean flash = !verticalList && NotificationBellPolicy.shouldFlash(
+                show, isUnreadNotification(root.getContext(), result), false);
+        apply(primary, show, flash, false);
     }
 
     @Nullable
