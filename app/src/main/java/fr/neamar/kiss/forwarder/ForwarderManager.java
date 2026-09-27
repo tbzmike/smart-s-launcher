@@ -52,7 +52,9 @@ public class ForwarderManager extends Forwarder {
 
     private final Runnable providerScrollStarted = () -> {
         AppProvider.setLauncherScrolling(true);
-        SearchHandler.getInstance().onHistoryScrollStarted(mainActivity);
+        if (isHistorySearch()) {
+            SearchHandler.getInstance().onHistoryScrollStarted(mainActivity);
+        }
         runWhenHistoryScrollIdle(historyScrollIdle);
     };
 
