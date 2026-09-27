@@ -43,6 +43,7 @@ public class AppProvider extends Provider<AppPojo>
     private static final String PREF_PACKAGE_MONITORING = "smart-package-change-monitoring";
     private static final String PREF_RECONCILE_INTERVAL = "smart-frozen-refresh-interval";
     private static volatile boolean launcherUiVisible;
+    private static volatile boolean launcherScrolling;
     private static volatile AppProvider activeInstance;
 
     private final Handler stateHandler = new Handler(Looper.getMainLooper());
@@ -98,6 +99,11 @@ public class AppProvider extends Provider<AppPojo>
 
     private final Runnable reconcileFrozenState = () -> {
         if (!launcherUiVisible || !isFrozenDetectionEnabled()) return;
+        if (launcherScrolling) {
+            long delay = getFrozenReconcileDelayMs();
+            if (delay >= 0L) scheduleNextReconcile(Math.min(1500L, delay));
+            return;
+        }
         long reconcileDelayMs = getFrozenReconcileDelayMs();
         if (reconcileDelayMs < 0L) return;
         if (!isLoaded()) {
@@ -193,8 +199,21 @@ public class AppProvider extends Provider<AppPojo>
     public static void setLauncherUiVisible(boolean visible) {
         boolean changed = launcherUiVisible != visible;
         launcherUiVisible = visible;
+        if (!visible) launcherScrolling = false;
         AppProvider provider = activeInstance;
         if (changed && provider != null) provider.updateFrozenReconcileSchedule(visible);
+    }
+
+    public static void setLauncherScrolling(boolean scrolling) {
+        launcherScrolling = scrolling;
+        AppProvider provider = activeInstance;
+        if (provider == null || !launcherUiVisible || !provider.isFrozenDetectionEnabled()) return;
+        if (scrolling) {
+            provider.stateHandler.removeCallbacks(provider.reconcileFrozenState);
+        } else {
+            long delay = provider.getFrozenReconcileDelayMs();
+            if (delay >= 0L) provider.scheduleNextReconcile(Math.min(1500L, delay));
+        }
     }
 
     @Override
