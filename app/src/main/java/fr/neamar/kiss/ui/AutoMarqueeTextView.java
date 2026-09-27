@@ -5,7 +5,7 @@ import android.graphics.Rect;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 
-import androidx.appcompat.widget.AppCompatTextView;
+import android.widget.TextView;
 
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.searcher.SearchHandler;
@@ -16,7 +16,7 @@ import fr.neamar.kiss.searcher.Searcher;
  * Auto-scroll preserves the compact one-line marquee. Auto-expand disables marquee work and lets
  * the text wrap to unlimited lines so its parent tile can grow until the complete text is visible.
  */
-public class AutoMarqueeTextView extends AppCompatTextView {
+public class AutoMarqueeTextView extends TextView {
     private boolean behaviorLocked;
     private final Rect visibleRect = new Rect();
     private final Runnable deferredLayoutRequest = () -> {
@@ -164,7 +164,7 @@ public class AutoMarqueeTextView extends AppCompatTextView {
     private boolean isActuallyVisibleOnScreen() {
         if (!isShown() || !isAttachedToWindow() || !hasWindowFocus()) return false;
         visibleRect.setEmpty();
-        return getGlobalVisibleRect(visibleRect)
+        return getLocalVisibleRect(visibleRect)
                 && visibleRect.width() > 0
                 && visibleRect.height() > 0;
     }
