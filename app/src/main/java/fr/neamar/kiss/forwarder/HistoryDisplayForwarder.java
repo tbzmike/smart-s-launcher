@@ -156,7 +156,17 @@ final class HistoryDisplayForwarder extends Forwarder {
         mainActivity.list.setVisibility(vertical ? View.VISIBLE : View.GONE);
         if (edgeEffect != null) edgeEffect.setVisibility(vertical ? View.VISIBLE : View.GONE);
         if (wheelScroller != null) wheelScroller.setVisibility(wheel ? View.VISIBLE : View.GONE);
-        if (!wheel) resetWheelTransforms();
+        if (!wheel) clearHiddenWheelTree();
+    }
+
+    private void clearHiddenWheelTree() {
+        if (wheelColumn == null) return;
+        resetWheelTransforms();
+        if (wheelColumn.getChildCount() > 0) wheelColumn.removeAllViews();
+        wheelViewTypes.clear();
+        wheelHasBeenEntered = false;
+        lastWheelQuery = "";
+        lastWheelPriorityId = Long.MIN_VALUE;
     }
 
     private boolean visibilityMatches(String mode) {
