@@ -87,7 +87,12 @@ public class AppResult extends ResultWithTags<AppPojo> {
         if (isNativeListScrolling(parent)) {
             // Notification lookups are not required to keep the row scrollable. Do not ask the
             // notification listener, read expanded text, create click listeners, or mutate the
-            // notification sub-tree during a fling.
+            // notification sub-tree during a fling. Reset recycled notification chrome to a cheap
+            // neutral state so an app can never inherit another app's message/dot.
+            View notificationRow = view.findViewById(R.id.item_notification_row);
+            if (notificationRow != null) notificationRow.setVisibility(View.GONE);
+            ImageView notificationDot = view.findViewById(R.id.item_notification_dot);
+            if (notificationDot != null) notificationDot.setVisibility(View.GONE);
             return view;
         }
 
