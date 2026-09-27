@@ -301,7 +301,12 @@ public class SearchHandler {
     }
 
     private void stopHistoryAuxWorkers() {
-        stopHistoryAuxWorkers();
+        historySeedExecutor.getQueue().clear();
+        historyPreviewExecutor.getQueue().clear();
+        Thread seedWorker = historySeedWorker;
+        if (seedWorker != null) seedWorker.interrupt();
+        Thread previewWorker = historyPreviewWorker;
+        if (previewWorker != null) previewWorker.interrupt();
     }
 
     /**
