@@ -59,6 +59,10 @@ public class AnimatedListView extends BlockableListView {
         else scrollIdleGate.runWhenIdle(work);
     }
 
+    public void cancelWhenScrollIdle(Runnable work) {
+        if (scrollIdleGate != null) scrollIdleGate.cancel(work);
+    }
+
     public void addScrollStartedListener(Runnable listener) {
         if (scrollIdleGate != null) scrollIdleGate.addScrollStartedListener(listener);
     }
