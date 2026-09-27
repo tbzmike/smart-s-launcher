@@ -1,6 +1,7 @@
 package fr.neamar.kiss.searcher;
 
 import android.content.SharedPreferences;
+import android.os.CancellationSignal;
 import android.os.UserManager;
 
 import androidx.core.content.ContextCompat;
@@ -35,6 +36,7 @@ import fr.neamar.kiss.utils.UserHandle;
 /** Retrieve pojos from history. */
 public class HistorySearcher extends Searcher {
     private final SharedPreferences prefs;
+    private final CancellationSignal databaseCancellation = new CancellationSignal();
     private NotificationProvider notificationProvider;
     private List<ShortcutRecord> shortcutRecords;
 
@@ -92,8 +94,8 @@ public class HistorySearcher extends Searcher {
 
         // One authoritative history read per pass. The previous implementation read the same
         // history window three times and then retried every unresolved entry immediately.
-        List<ValuedHistoryRecord> historyRecords = DBHelper.getHistory(
-                activity, max + excludedPojoById.size(), HistoryRecencyOrder.MODE);
+        List<ValuedHistoryRecord> historyRecords = DBHelper.getHistoryByRecency(
+                activity, max + excludedPojoById.size(), databaseCancellation);
         if (shouldAbort()) return null;
 
         List<Pojo> pojos = getStrictRecencyHistory(
@@ -118,6 +120,10 @@ public class HistorySearcher extends Searcher {
 
         this.addResults(pojos);
         return null;
+    }
+
+    public void cancelDatabaseWork() {
+        databaseCancellation.cancel();
     }
 
     private boolean shouldAbort() {
@@ -243,7 +249,7 @@ public class HistorySearcher extends Searcher {
 
         if (shortcutRecords == null) {
             if (shouldAbort()) return null;
-            shortcutRecords = DBHelper.getShortcuts(activity);
+            shortcutRecords = DBHelper.getShortcuts(activity, databaseCancellation);
             if (shouldAbort()) return null;
         }
 
