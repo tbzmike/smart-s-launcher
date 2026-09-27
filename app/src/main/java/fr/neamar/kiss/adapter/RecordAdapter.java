@@ -350,9 +350,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureMarquee(TextView text) {
-        // These views already own their text-change, visibility and scroll/marquee lifecycle.
-        // Adding RecordAdapter's TextWatcher + layout listener on top duplicated width measurement
-        // and selected-state invalidation on every recycled bind.
+        // These views already own their text-change, visibility and overflow lifecycle.
         if (text instanceof AutoMarqueeTextView || text instanceof AutoScrollPreviewTextView) {
             text.setFocusable(false);
             text.setFocusableInTouchMode(false);
@@ -363,6 +361,24 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             configureExpandedText(text);
             return;
         }
+
+        // The native Vertical List must be render-only while moving. A marquee TextWatcher/layout
+        // observer changes selected state as recycled rows change width/text, which both invalidates
+        // during the fling and visibly shifts the text after motion stops.
+        if (isNativeVerticalHistory()) {
+            text.setSingleLine(true);
+            text.setMaxLines(1);
+            text.setEllipsize(TextUtils.TruncateAt.END);
+            text.setMarqueeRepeatLimit(0);
+            text.setHorizontallyScrolling(false);
+            text.setHorizontalFadingEdgeEnabled(false);
+            text.setSelected(false);
+            text.setFocusable(false);
+            text.setFocusableInTouchMode(false);
+            makeTextUseAvailableWidth(text);
+            return;
+        }
+
         text.setSingleLine(true);
         text.setMaxLines(1);
         text.setEllipsize(TextUtils.TruncateAt.MARQUEE);
@@ -711,6 +727,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     private boolean isVerticalHistory() {
         return cachedVerticalHistory;
+    }
+
+    private boolean isNativeVerticalHistory() {
+        return "vertical".equals(cachedHistoryLayout)
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
     }
 
     private void applyTextStyle(View row, int[] ids, int sizeSp, Typeface typeface,
