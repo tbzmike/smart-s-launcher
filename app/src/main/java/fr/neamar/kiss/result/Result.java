@@ -67,6 +67,7 @@ import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.ui.AnimatedListView;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
@@ -607,43 +608,75 @@ public abstract class Result<T extends Pojo> {
                                   @NonNull Function<Context, Drawable> drawableGetter,
                                   @NonNull Consumer<Drawable> cachedDrawableSetter,
                                   @Nullable Consumer<Drawable> onDrawableBound) {
+        final String bindToken = getPojoId();
+        imageView.setTag(R.id.smart_s_icon_bind_token, bindToken);
+
         Utilities.AsyncRun<Drawable> taskToCancel = getTask(imageView);
         if (taskToCancel != null) {
-            if (!taskToCancel.isCancelled()) {
-                taskToCancel.cancel();
-            }
+            if (!taskToCancel.isCancelled()) taskToCancel.cancel();
             imageView.setTag(TAG_RUNNING_TASK, null);
         }
 
         if (isCachedSupplier.get()) {
             Drawable drawable = drawableGetter.apply(imageView.getContext());
-            imageView.setImageDrawable(drawable);
-            imageView.setTag(TAG_RUNNING_TASK, null);
-            if (drawable != null && onDrawableBound != null) onDrawableBound.accept(drawable);
-        } else {
-            if (defaultResId != 0) {
-                imageView.setImageResource(defaultResId);
+            if (TextUtils.equals(bindToken,
+                    (CharSequence) imageView.getTag(R.id.smart_s_icon_bind_token))) {
+                imageView.setImageDrawable(drawable);
+                imageView.setTag(TAG_RUNNING_TASK, null);
+                if (drawable != null && onDrawableBound != null) onDrawableBound.accept(drawable);
             }
-            Utilities.AsyncRun<Drawable> newTask = Utilities.runAsync((task) -> {
-                if (task.isCancelled()) {
-                    return null;
-                }
-                return drawableGetter.apply(imageView.getContext());
-            }, (task, drawable) -> {
-                if (task.isCancelled() || drawable == null) {
-                    Log.w(TAG, "Cannot set drawable for " + getPojoId());
-                } else {
-                    imageView.setTag(TAG_RUNNING_TASK, null);
-                    cachedDrawableSetter.accept(drawable);
-                    imageView.setImageDrawable(drawable);
-                    if (invalidateDrawable) {
-                        imageView.invalidateDrawable(drawable);
-                    }
-                    if (onDrawableBound != null) onDrawableBound.accept(drawable);
-                }
-            });
-            imageView.setTag(TAG_RUNNING_TASK, newTask);
+            return;
         }
+
+        // Fast scrolling used to start/cancel an icon decode task for nearly every recycled row.
+        // That produced disk/bitmap churn, GC pressure and many main-thread callbacks. Keep the row
+        // cheap while the native history list is moving, then bind only the rows that remain visible.
+        AnimatedListView scrollingList = findAnimatedListAncestor(imageView);
+        if (scrollingList != null && scrollingList.isScrollInProgress()) {
+            if (defaultResId != 0) imageView.setImageResource(defaultResId);
+            else imageView.setImageDrawable(null);
+            scrollingList.runWhenScrollIdle(() -> {
+                Object current = imageView.getTag(R.id.smart_s_icon_bind_token);
+                if (!imageView.isAttachedToWindow()
+                        || !TextUtils.equals(bindToken, current instanceof CharSequence
+                        ? (CharSequence) current : null)) return;
+                setAsyncDrawable(imageView, defaultResId, invalidateDrawable, isCachedSupplier,
+                        drawableGetter, cachedDrawableSetter, onDrawableBound);
+            });
+            return;
+        }
+
+        if (defaultResId != 0) imageView.setImageResource(defaultResId);
+
+        Utilities.AsyncRun<Drawable> newTask = Utilities.runAsync((task) -> {
+            if (task.isCancelled()) return null;
+            return drawableGetter.apply(imageView.getContext());
+        }, (task, drawable) -> {
+            Object current = imageView.getTag(R.id.smart_s_icon_bind_token);
+            boolean stillBound = TextUtils.equals(bindToken, current instanceof CharSequence
+                    ? (CharSequence) current : null);
+            if (task.isCancelled() || !stillBound) return;
+            imageView.setTag(TAG_RUNNING_TASK, null);
+            if (drawable == null) {
+                Log.w(TAG, "Cannot set drawable for " + getPojoId());
+                return;
+            }
+            cachedDrawableSetter.accept(drawable);
+            imageView.setImageDrawable(drawable);
+            if (invalidateDrawable) imageView.invalidateDrawable(drawable);
+            if (onDrawableBound != null) onDrawableBound.accept(drawable);
+        });
+        imageView.setTag(TAG_RUNNING_TASK, newTask);
+    }
+
+    @Nullable
+    private AnimatedListView findAnimatedListAncestor(@NonNull View view) {
+        android.view.ViewParent parent = view.getParent();
+        while (parent instanceof View) {
+            if (parent instanceof AnimatedListView) return (AnimatedListView) parent;
+            parent = parent.getParent();
+        }
+        return null;
     }
 
     @SuppressWarnings("unchecked")
