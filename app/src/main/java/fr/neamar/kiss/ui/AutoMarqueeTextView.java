@@ -21,6 +21,7 @@ import fr.neamar.kiss.searcher.Searcher;
 public class AutoMarqueeTextView extends TextView {
     private boolean behaviorLocked;
     private boolean autoExpand;
+    private int appliedBehaviorMode = -1;
     private final Rect visibleRect = new Rect();
     private final Runnable deferredLayoutRequest = () -> {
         if (isAttachedToWindow()) requestLayout();
@@ -58,7 +59,11 @@ public class AutoMarqueeTextView extends TextView {
     }
 
     private void refreshOverflowMode() {
-        autoExpand = TextOverflowMode.isAutoExpandForHistory(getContext());
+        boolean next = TextOverflowMode.isAutoExpandForHistory(getContext());
+        if (next != autoExpand) {
+            autoExpand = next;
+            appliedBehaviorMode = -1;
+        }
     }
 
     @Override
@@ -147,6 +152,9 @@ public class AutoMarqueeTextView extends TextView {
 
     private void applyConfiguredBehavior() {
         if (!behaviorLocked) return;
+        int mode = isNativeVerticalListRow() ? 0 : (isAutoExpand() ? 1 : 2);
+        if (appliedBehaviorMode == mode) return;
+        appliedBehaviorMode = mode;
 
         // Native Vertical List rows are recycled during a fling. Keep their text geometry and
         // horizontal position completely static: no marquee, no selected-state restart, no
