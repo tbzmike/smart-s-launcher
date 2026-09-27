@@ -28,6 +28,7 @@ public class AutoScrollPreviewTextView extends TextView {
     private boolean attached;
     private boolean behaviorLocked;
     private boolean autoExpand;
+    private int appliedBehaviorMode = -1;
     private boolean expanded;
     private boolean expandable;
     private boolean arrowGesture;
@@ -86,7 +87,11 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private void refreshOverflowMode() {
-        autoExpand = TextOverflowMode.isAutoExpandForHistory(getContext());
+        boolean next = TextOverflowMode.isAutoExpandForHistory(getContext());
+        if (next != autoExpand) {
+            autoExpand = next;
+            appliedBehaviorMode = -1;
+        }
     }
 
     @Override
@@ -293,6 +298,9 @@ public class AutoScrollPreviewTextView extends TextView {
 
     private void applyConfiguredBehavior() {
         if (!behaviorLocked) return;
+        int mode = isNativeVerticalListRow() ? 0 : (isAutoExpand() ? 1 : 2);
+        if (appliedBehaviorMode == mode) return;
+        appliedBehaviorMode = mode;
         super.setSingleLine(false);
         super.setHorizontallyScrolling(false);
         setHorizontalFadingEdgeEnabled(false);
