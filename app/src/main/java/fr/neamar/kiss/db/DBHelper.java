@@ -509,7 +509,7 @@ public class DBHelper {
      * Retrieve a list of all shortcuts, without icons.
      */
     public static List<ShortcutRecord> getShortcuts(Context context) {
-        return getShortcuts(context, null);
+        return getShortcuts(context, (CancellationSignal) null);
     }
 
     public static List<ShortcutRecord> getShortcuts(
