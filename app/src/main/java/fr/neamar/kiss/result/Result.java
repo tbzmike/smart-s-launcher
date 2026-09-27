@@ -95,6 +95,65 @@ public abstract class Result<T extends Pojo> {
     });
 
     /**
+     * One reusable idle request per recycled ImageView. A long fling can rebind the same row many
+     * times; older code queued a new lambda for every bind, so hundreds of stale callbacks/objects
+     * survived until scroll idle and then fired together.
+     */
+    private static final class PendingDrawableBind implements Runnable {
+        private Result<?> owner;
+        private ImageView imageView;
+        private int defaultResId;
+        private boolean invalidateDrawable;
+        private Supplier<Boolean> isCachedSupplier;
+        private Function<Context, Drawable> drawableGetter;
+        private Consumer<Drawable> cachedDrawableSetter;
+        private Consumer<Drawable> onDrawableBound;
+
+        void update(Result<?> owner, ImageView imageView, int defaultResId,
+                    boolean invalidateDrawable, Supplier<Boolean> isCachedSupplier,
+                    Function<Context, Drawable> drawableGetter,
+                    Consumer<Drawable> cachedDrawableSetter,
+                    Consumer<Drawable> onDrawableBound) {
+            this.owner = owner;
+            this.imageView = imageView;
+            this.defaultResId = defaultResId;
+            this.invalidateDrawable = invalidateDrawable;
+            this.isCachedSupplier = isCachedSupplier;
+            this.drawableGetter = drawableGetter;
+            this.cachedDrawableSetter = cachedDrawableSetter;
+            this.onDrawableBound = onDrawableBound;
+        }
+
+        void clear() {
+            owner = null;
+            imageView = null;
+            isCachedSupplier = null;
+            drawableGetter = null;
+            cachedDrawableSetter = null;
+            onDrawableBound = null;
+        }
+
+        @Override
+        public void run() {
+            Result<?> target = owner;
+            ImageView targetView = imageView;
+            int fallback = defaultResId;
+            boolean invalidate = invalidateDrawable;
+            Supplier<Boolean> cached = isCachedSupplier;
+            Function<Context, Drawable> getter = drawableGetter;
+            Consumer<Drawable> setter = cachedDrawableSetter;
+            Consumer<Drawable> bound = onDrawableBound;
+            clear();
+            if (target == null || targetView == null || !targetView.isAttachedToWindow()
+                    || cached == null || getter == null || setter == null) {
+                return;
+            }
+            target.setAsyncDrawable(
+                    targetView, fallback, invalidate, cached, getter, setter, bound);
+        }
+    }
+
+    /**
      * Current information pojo
      */
     @NonNull
@@ -630,6 +689,10 @@ public abstract class Result<T extends Pojo> {
         final String bindToken = getPojoId();
         imageView.setTag(R.id.smart_s_icon_bind_token, bindToken);
 
+        Object pendingTag = imageView.getTag(R.id.smart_s_icon_idle_loader);
+        PendingDrawableBind pendingIdle = pendingTag instanceof PendingDrawableBind
+                ? (PendingDrawableBind) pendingTag : null;
+
         Utilities.AsyncRun<Drawable> taskToCancel = getTask(imageView);
         if (taskToCancel != null) {
             if (!taskToCancel.isCancelled()) taskToCancel.cancel();
@@ -647,23 +710,26 @@ public abstract class Result<T extends Pojo> {
             return;
         }
 
-        // Fast scrolling used to start/cancel an icon decode task for nearly every recycled row.
-        // That produced disk/bitmap churn, GC pressure and many main-thread callbacks. Keep the row
-        // cheap while the native history list is moving, then bind only the rows that remain visible.
+        // While scrolling, do not decode icons and do not enqueue one callback per recycled bind.
+        // Reuse one pending object per ImageView so only the newest binding survives to idle.
         AnimatedListView scrollingList = findAnimatedListAncestor(imageView);
         if (scrollingList != null && scrollingList.isScrollInProgress()) {
             if (defaultResId != 0) imageView.setImageResource(defaultResId);
             else imageView.setImageDrawable(null);
-            scrollingList.runWhenScrollIdle(() -> {
-                Object current = imageView.getTag(R.id.smart_s_icon_bind_token);
-                if (!imageView.isAttachedToWindow()
-                        || !TextUtils.equals(bindToken, current instanceof CharSequence
-                        ? (CharSequence) current : null)) return;
-                setAsyncDrawable(imageView, defaultResId, invalidateDrawable, isCachedSupplier,
-                        drawableGetter, cachedDrawableSetter, onDrawableBound);
-            });
+
+            if (pendingIdle == null) {
+                pendingIdle = new PendingDrawableBind();
+                imageView.setTag(R.id.smart_s_icon_idle_loader, pendingIdle);
+            }
+            pendingIdle.update(this, imageView, defaultResId, invalidateDrawable,
+                    isCachedSupplier, drawableGetter, cachedDrawableSetter, onDrawableBound);
+            scrollingList.runWhenScrollIdle(pendingIdle);
             return;
         }
+
+        // Any old idle request for this recycled view is now obsolete; if ScrollIdleGate still owns
+        // the reusable object it will simply run as a no-op.
+        if (pendingIdle != null) pendingIdle.clear();
 
         if (defaultResId != 0) imageView.setImageResource(defaultResId);
 
