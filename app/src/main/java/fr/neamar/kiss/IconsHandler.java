@@ -77,9 +77,11 @@ public class IconsHandler {
         this.pm = ctx.getPackageManager();
         this.mSystemPack = new SystemIconPack(ctx);
         clearOldCache();
-        loadAvailableIconsPacks();
+        // Do not enumerate icon packs or wipe the persistent icon cache on every process start.
+        // The old constructor did both before the first Home frame, which made an update/cold start
+        // look like a black screen while every icon was regenerated.
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
-        loadIconsPack(prefs);
+        loadIconsPack(prefs, false);
     }
 
     /**
@@ -93,7 +95,7 @@ public class IconsHandler {
                 key.equalsIgnoreCase("contact-pack-mask") ||
                 key.equalsIgnoreCase("contacts-shape") ||
                 key.equalsIgnoreCase(DrawableUtils.KEY_THEMED_ICONS)) {
-            loadIconsPack(prefs);
+            loadIconsPack(prefs, true);
             getDataHandler().refreshFavorites();
         }
     }
@@ -115,8 +117,11 @@ public class IconsHandler {
     /**
      * Parse icons pack metadata
      */
-    private void loadIconsPack(SharedPreferences prefs) {
-        cacheClear();
+    private void loadIconsPack(SharedPreferences prefs, boolean invalidateVisualCache) {
+        if (invalidateVisualCache) {
+            cacheClear();
+            fr.neamar.kiss.utils.AppIconMemoryCache.clear();
+        }
         mSystemPack.setAdaptiveShape(getAdaptiveShape(prefs, "adaptive-shape"));
         mForceAdaptive = prefs.getBoolean("force-adaptive", true);
         mForceShape = prefs.getBoolean("force-shape", true);
@@ -126,15 +131,14 @@ public class IconsHandler {
 
         // system icons, nothing to do
         if (packageName == null || packageName.equalsIgnoreCase("default")) {
-            cacheClear();
             mIconPack = null;
             return;
         }
 
         // don't reload the icon pack
         if (mIconPack == null || !mIconPack.getPackPackageName().equals(packageName)) {
-            cacheClear();
-            // set the current icon pack
+            // set the current icon pack. Cache invalidation is handled only for an actual
+            // preference change; startup deliberately keeps last session's on-disk icons.
             mIconPack = KissApplication.iconPackCache(ctx).getIconPack(ctx, packageName);
         }
     }
@@ -421,6 +425,7 @@ public class IconsHandler {
     }
 
     public Map<String, String> getIconsPacks() {
+        if (iconsPacks.isEmpty()) loadAvailableIconsPacks();
         return iconsPacks;
     }
 
