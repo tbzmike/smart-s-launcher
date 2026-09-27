@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.125 - hard scroll freeze and immediate search results
-        versionCode 553
-        versionName "3.30.125"
+        // Smart S Launcher 3.30.126 - deeper scroll quiescence
+        versionCode 554
+        versionName "3.30.126"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
