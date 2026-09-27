@@ -82,6 +82,16 @@ public class SearchHandler {
     private Searcher runningSearch;
 
     /**
+     * History scrolling is a render-critical section. While true, Smart S Launcher must not start
+     * History DB scans, seed rebuilds or preview work. One refresh is remembered and resumed after
+     * the active renderer has been idle.
+     */
+    private volatile boolean historyScrollActive;
+    private boolean pendingHistoryAfterScroll;
+    private boolean pendingHistoryRefreshAfterScroll;
+    private WeakReference<MainActivity> pendingHistoryActivity = new WeakReference<>(null);
+
+    /**
      * Up to 400 already-resolved saved history targets, oldest-to-newest. Only Pojo references are
      * retained; these are provider-owned records, not Result/View/Drawable objects.
      */
@@ -102,6 +112,13 @@ public class SearchHandler {
         final long generation = searchGeneration.incrementAndGet();
         cancelPendingQuery();
         cancelRunningSearch();
+
+        if (type == Searcher.Type.HISTORY && historyScrollActive) {
+            lastSearchType = Searcher.Type.HISTORY;
+            lastSearchQuery = query;
+            rememberHistoryAfterScroll(activity, isRefresh);
+            return;
+        }
 
         if (type == Searcher.Type.HISTORY) {
             refreshHistorySeed(activity);
@@ -161,6 +178,10 @@ public class SearchHandler {
     private void startSearch(@NonNull Searcher.Type type, @NonNull MainActivity activity,
                              String query, boolean isRefresh, long generation) {
         if (generation != searchGeneration.get()) return;
+        if (type == Searcher.Type.HISTORY && historyScrollActive) {
+            rememberHistoryAfterScroll(activity, isRefresh);
+            return;
+        }
 
         // SmartMatcher caches only immutable preparation for this one search generation. Starting
         // a new operation invalidates it so repeated identical text still observes changed prefs.
@@ -171,7 +192,7 @@ public class SearchHandler {
         runningSearch.setSearchDoneCallback((searcher, isCancelled) -> {
             if (!isCancelled) {
                 completedSearchGeneration.set(generation);
-                if (startedType == Searcher.Type.HISTORY) {
+                if (startedType == Searcher.Type.HISTORY && !historyScrollActive) {
                     MainActivity currentActivity = activityRef.get();
                     if (currentActivity != null) refreshHistorySeed(currentActivity);
                 }
@@ -189,12 +210,13 @@ public class SearchHandler {
      * history preloading has not completed yet, this worker builds the seed once before matching.
      */
     private void publishHistoryPreview(@NonNull MainActivity activity, String query, long generation) {
+        if (historyScrollActive) return;
         final WeakReference<MainActivity> activityRef = new WeakReference<>(activity);
         final String previewQuery = query == null ? "" : query;
         final List<Pojo> seedSnapshot = historyQuerySeed;
 
         historyPreviewExecutor.execute(() -> {
-            if (generation != searchGeneration.get()) return;
+            if (historyScrollActive || generation != searchGeneration.get()) return;
             MainActivity currentActivity = activityRef.get();
             if (currentActivity == null) return;
 
@@ -203,12 +225,12 @@ public class SearchHandler {
                 seed = loadHistorySeed(currentActivity);
                 if (!seed.isEmpty()) historyQuerySeed = seed;
             }
-            if (seed.isEmpty() || generation != searchGeneration.get()) return;
+            if (historyScrollActive || seed.isEmpty() || generation != searchGeneration.get()) return;
 
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(currentActivity);
             List<Pojo> matches = HistoryPreviewMatcher.match(
                     currentActivity, prefs, previewQuery, seed);
-            if (matches.isEmpty() || generation != searchGeneration.get()) return;
+            if (historyScrollActive || matches.isEmpty() || generation != searchGeneration.get()) return;
 
             int maxResults = getConfiguredSearchResultCount(prefs);
             if (maxResults <= 0) return;
@@ -229,10 +251,12 @@ public class SearchHandler {
 
     /** Preload the saved-history search set without delaying the visible History search. */
     private void refreshHistorySeed(@NonNull MainActivity activity) {
+        if (historyScrollActive) return;
         final WeakReference<MainActivity> activityRef = new WeakReference<>(activity);
         historySeedExecutor.execute(() -> {
+            if (historyScrollActive) return;
             MainActivity currentActivity = activityRef.get();
-            if (currentActivity == null) return;
+            if (currentActivity == null || historyScrollActive) return;
             List<Pojo> seed = loadHistorySeed(currentActivity);
             if (!seed.isEmpty()) {
                 historyQuerySeed = seed;
@@ -244,14 +268,18 @@ public class SearchHandler {
 
     /** Refresh the lightweight History seed independently and publish it only while still current. */
     private void refreshHistorySeedAndPublish(@NonNull MainActivity activity, long generation) {
+        if (historyScrollActive) {
+            rememberHistoryAfterScroll(activity, false);
+            return;
+        }
         final WeakReference<MainActivity> activityRef = new WeakReference<>(activity);
         historySeedExecutor.execute(() -> {
-            if (generation != searchGeneration.get()) return;
+            if (historyScrollActive || generation != searchGeneration.get()) return;
             MainActivity currentActivity = activityRef.get();
             if (currentActivity == null) return;
 
             List<Pojo> seed = loadHistorySeed(currentActivity);
-            if (generation != searchGeneration.get()) return;
+            if (historyScrollActive || generation != searchGeneration.get()) return;
             historyQuerySeed = seed.isEmpty() ? Collections.emptyList() : seed;
 
             mainHandler.post(() -> {
@@ -387,6 +415,7 @@ public class SearchHandler {
      */
     @NonNull
     private List<Pojo> loadHistorySeed(@NonNull MainActivity activity) {
+        if (historyScrollActive) return Collections.emptyList();
         DataHandler dataHandler = fr.neamar.kiss.KissApplication.getApplication(activity).getDataHandler();
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
         Set<String> excluded = new HashSet<>(dataHandler.getExcludedFromHistory());
@@ -397,11 +426,14 @@ public class SearchHandler {
         }
 
         int requested = HISTORY_PREVIEW_SEED_LIMIT + excluded.size();
+        if (historyScrollActive) return Collections.emptyList();
         List<ValuedHistoryRecord> records = DBHelper.getHistory(activity, requested, HistoryMode.RECENCY);
+        if (historyScrollActive) return Collections.emptyList();
         List<Pojo> seed = new ArrayList<>(Math.min(HISTORY_PREVIEW_SEED_LIMIT, records.size()));
         Set<String> seen = new HashSet<>();
 
         for (ValuedHistoryRecord record : records) {
+            if (historyScrollActive) return Collections.emptyList();
             if (record == null || record.record == null || excluded.contains(record.record)) continue;
             Pojo pojo = dataHandler.getItemById(record.record);
             if (pojo == null) pojo = RecentLaunchTracker.resolve(record.record);
@@ -434,6 +466,62 @@ public class SearchHandler {
         } catch (NumberFormatException | ClassCastException e) {
             return Searcher.DEFAULT_MAX_RESULTS;
         }
+    }
+
+    public void onHistoryScrollStarted(@NonNull MainActivity activity) {
+        if (historyScrollActive) return;
+        historyScrollActive = true;
+
+        if (lastSearchType == Searcher.Type.HISTORY) {
+            rememberHistoryAfterScroll(activity, true);
+        }
+
+        // Nothing History-owned should keep queuing work behind the user's finger.
+        historySeedExecutor.getQueue().clear();
+        historyPreviewExecutor.getQueue().clear();
+
+        if (runningSearch instanceof HistorySearcher) {
+            searchGeneration.incrementAndGet();
+            runningSearch.cancel(true);
+            Searcher.purgeCancelledSearches();
+            resetRunningSearch();
+        }
+    }
+
+    public void onHistoryScrollIdle(@NonNull MainActivity activity) {
+        if (!historyScrollActive) return;
+        historyScrollActive = false;
+
+        if (!pendingHistoryAfterScroll || lastSearchType != Searcher.Type.HISTORY) {
+            clearPendingHistoryAfterScroll();
+            return;
+        }
+
+        MainActivity target = pendingHistoryActivity.get();
+        if (target == null || target.isFinishing()) target = activity;
+        boolean refresh = pendingHistoryRefreshAfterScroll;
+        clearPendingHistoryAfterScroll();
+
+        final long generation = searchGeneration.incrementAndGet();
+        cancelPendingQuery();
+        cancelRunningSearch();
+        startSearch(Searcher.Type.HISTORY, target, null, refresh, generation);
+    }
+
+    public boolean isHistoryScrollActive() {
+        return historyScrollActive;
+    }
+
+    private void rememberHistoryAfterScroll(@NonNull MainActivity activity, boolean isRefresh) {
+        pendingHistoryAfterScroll = true;
+        pendingHistoryRefreshAfterScroll |= isRefresh;
+        pendingHistoryActivity = new WeakReference<>(activity);
+    }
+
+    private void clearPendingHistoryAfterScroll() {
+        pendingHistoryAfterScroll = false;
+        pendingHistoryRefreshAfterScroll = false;
+        pendingHistoryActivity = new WeakReference<>(null);
     }
 
     /** Cancel last search if still running. */
