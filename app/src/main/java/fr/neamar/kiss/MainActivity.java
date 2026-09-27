@@ -195,6 +195,17 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     private boolean pendingBackgroundRefresh;
     private boolean pendingBackgroundFavoriteRefresh;
     @Nullable private String pendingNotificationTargetId;
+    private boolean pendingHistoryRefreshAfterScroll;
+    private boolean listChangeAnimationPrepared;
+    private final Runnable flushPendingHistoryRefresh = () -> {
+        if (!pendingHistoryRefreshAfterScroll) return;
+        pendingHistoryRefreshAfterScroll = false;
+        if (!launcherUiResumed || searchEditText == null
+                || !TextUtils.isEmpty(searchEditText.getText())) {
+            return;
+        }
+        updateSearchRecords(true, searchEditText.getText().toString());
+    };
 
     /**
      * Called when the activity is first created.
@@ -1070,23 +1081,53 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
      * @param query     the query on which to search
      */
     protected void updateSearchRecords(boolean isRefresh, String query) {
+        String normalizedQuery = query == null ? "" : query;
+
+        // History updates can arrive from notifications, provider reloads and other background
+        // events while the user's finger is moving the list. Coalesce those requests and run one
+        // refresh after the active renderer has been motionless, instead of rebuilding underneath
+        // the scroll gesture.
+        if (isRefresh && shouldDeferHistoryAdapterUpdate(normalizedQuery)) {
+            pendingHistoryRefreshAfterScroll = true;
+            forwarderManager.runWhenHistoryScrollIdle(flushPendingHistoryRefresh);
+            return;
+        }
+        pendingHistoryRefreshAfterScroll = false;
+
         cancelSearch();
         dismissPopup();
 
         if (isRefresh) {
             // Refreshing (for instance app installed or uninstalled in the background, profile unlocked, ...)
-            search(Searcher.Type.APPLICATION, query, true);
+            search(Searcher.Type.APPLICATION, normalizedQuery, true);
             return;
         }
 
-        forwarderManager.updateSearchRecords(query);
+        forwarderManager.updateSearchRecords(normalizedQuery);
 
-        if (TextUtils.isEmpty(query)) {
+        if (TextUtils.isEmpty(normalizedQuery)) {
             systemUiVisibilityHelper.resetScroll();
             displayClearOnInput();
         } else {
-            search(Searcher.Type.QUERY, query, false);
+            search(Searcher.Type.QUERY, normalizedQuery, false);
         }
+    }
+
+    public boolean shouldDeferHistoryAdapterUpdate(String query) {
+        boolean historyQuery = TextUtils.isEmpty(query) || "<history>".equals(query);
+        return launcherUiResumed
+                && historyQuery
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                && forwarderManager != null
+                && forwarderManager.isHistoryScrollInProgress();
+    }
+
+    public void runWhenHistoryScrollIdle(@NonNull Runnable work) {
+        if (forwarderManager == null) {
+            work.run();
+            return;
+        }
+        forwarderManager.runWhenHistoryScrollIdle(work);
     }
 
     public void search(@NonNull Searcher.Type type, String query, boolean isRefresh) {
@@ -1299,11 +1340,14 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     public void beforeListChange() {
-        list.prepareChangeAnim();
+        listChangeAnimationPrepared = list != null
+                && (forwarderManager == null || !forwarderManager.isHistoryScrollInProgress());
+        if (listChangeAnimationPrepared) list.prepareChangeAnim();
     }
 
     public void afterListChange() {
-        list.animateChange();
+        if (listChangeAnimationPrepared) list.animateChange();
+        listChangeAnimationPrepared = false;
     }
 
     public void dismissPopup() {

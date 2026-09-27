@@ -386,6 +386,11 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
                     startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
                 }
+            } else if ("smart-history-layout".equals(key)) {
+                // History renderers own different view hierarchies. Recreate Home once after a
+                // mode change so adapter style caches and hidden renderer trees cannot leak across
+                // Vertical List, Vertical Cards and 3D Wheel.
+                sharedPreferences.edit().putBoolean("require-layout-update", true).apply();
             } else if ("selected-contact-mime-types".equals(key)) {
                 getDataHandler().reloadContactsProvider();
             } else if ("theme".equals(key)) {

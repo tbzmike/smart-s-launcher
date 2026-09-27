@@ -111,16 +111,27 @@ public class ForwarderManager extends Forwarder {
             verticalCardViewportController.onLauncherResumed();
         }
 
-        // These two listeners are explicitly unregistered in onPause and therefore must be restored.
+        // These listeners are explicitly unregistered in onPause and therefore must be restored.
         experienceTweaks.onResume();
         notificationForwarder.onResume();
 
-        if (initialResumeComplete) {
+        // Re-evaluate renderer ownership on every resume. Previously this happened only on the
+        // first launcher resume, so choosing Vertical Cards or 3D Wheel in Settings could leave the
+        // old renderer visible/active until the whole activity was recreated.
+        historyDisplayForwarder.onResume();
+        smartCardListForwarder.onResume();
+
+        if (verticalCards) {
+            verticalMapsCardForwarder.onResume();
             verticalCardGroupResizeController.onResume();
-            if (verticalCards) {
-                verticalCardNotificationHistoryForwarder.onResume();
-                verticalCardUsageForwarder.onResume();
-            }
+            verticalCardNotificationHistoryForwarder.onResume();
+            verticalCardUsageForwarder.onResume();
+        } else if (isHistorySearch()) {
+            // Native Vertical List and 3D Wheel share the idle-only metadata loader.
+            historyVisualEnhancer.onResume();
+        }
+
+        if (initialResumeComplete) {
             return;
         }
 
@@ -128,22 +139,12 @@ public class ForwarderManager extends Forwarder {
         lockedHistoryGestureBridge.onResume();
         tagsMenu.onResume();
         communicationHistoryForwarder.onResume();
-        historyDisplayForwarder.onResume();
 
         if (verticalCards) {
             verticalCardViewportController.beforeDataSetChanged();
-            smartCardListForwarder.onResume();
-            verticalMapsCardForwarder.onResume();
-            verticalCardGroupResizeController.onResume();
-            verticalCardNotificationHistoryForwarder.onResume();
-            verticalCardUsageForwarder.onResume();
             verticalCardViewportController.afterDataSetChanged();
         }
 
-        // Vertical Cards already have dedicated usage/notification enrichment. Running the
-        // native-list HistoryVisualEnhancer as well duplicates DB/UsageStats work for a hidden
-        // renderer and can compete with the visible card UI.
-        if (isHistorySearch() && !verticalCards) historyVisualEnhancer.onResume();
         initialResumeComplete = true;
     }
 
@@ -277,6 +278,20 @@ public class ForwarderManager extends Forwarder {
             lockedHistoryGestureBridge.onDataSetChanged();
         } else {
             verticalCardViewportController.applyExplicitBottomNow();
+        }
+    }
+
+    public boolean isHistoryScrollInProgress() {
+        return isVerticalCardsMode()
+                ? smartCardListForwarder.isScrollInProgress()
+                : historyDisplayForwarder.isScrollInProgress();
+    }
+
+    public void runWhenHistoryScrollIdle(@NonNull Runnable work) {
+        if (isVerticalCardsMode()) {
+            smartCardListForwarder.runWhenScrollIdle(work);
+        } else {
+            historyDisplayForwarder.runWhenScrollIdle(work);
         }
     }
 

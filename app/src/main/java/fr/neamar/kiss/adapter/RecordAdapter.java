@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 import fr.neamar.kiss.KissApplication;
+import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.UIColors;
 import fr.neamar.kiss.forwarder.HistoryEdgeWidthPolicy;
@@ -119,6 +120,15 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private int cachedLabelContrast = 100;
     private int cachedBodyContrast = 100;
     private int cachedRowSpacing = 4;
+
+    // History results may finish loading while a native/custom history renderer is moving.
+    // Keep only the newest pending publication and apply it once after scrolling is idle.
+    private List<Result<?>> pendingScrollResults;
+    private Context pendingScrollContext;
+    private boolean pendingScrollRefresh;
+    private String pendingScrollQuery;
+    private boolean pendingScrollApplyScheduled;
+    private final Runnable applyPendingScrollResults = this::flushPendingScrollResults;
 
     public RecordAdapter(QueryInterface parent, List<Result<?>> results) {
         this.parent = parent;
@@ -997,45 +1007,36 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             }
         }
 
-        // Final presentation boundary: exact App/Shortcut/Setting matches belong at the bottom.
-        // Preserve the existing order of every other result; this does not change relevance scoring.
-        moveExactLaunchTargetsToBottom(updatedResults, query);
+        // Final presentation boundary: every matching app and shortcut belongs at the physical
+        // bottom of search results. QuerySearcher also uses a reachability relevance band so these
+        // targets survive result limiting; this final stable partition guarantees their display
+        // position after history-preview and semantic publications are merged.
+        moveLaunchTargetsToBottom(updatedResults, query);
         updateResults(context, updatedResults, isRefresh, query);
     }
 
-    private void moveExactLaunchTargetsToBottom(List<Result<?>> items, String query) {
-        if (items == null || items.size() < 2 || TextUtils.isEmpty(query)) return;
-
-        String normalizedQuery = normalizeSearchName(query);
-        if (normalizedQuery.isEmpty()) return;
+    private void moveLaunchTargetsToBottom(List<Result<?>> items, String query) {
+        if (items == null || items.size() < 2 || TextUtils.isEmpty(query)
+                || "<history>".equals(query)
+                || SearchHandler.getInstance().getLastSearchType() != Searcher.Type.QUERY) {
+            return;
+        }
 
         List<Result<?>> normalResults = new ArrayList<>(items.size());
-        List<Result<?>> exactLaunchTargets = new ArrayList<>(3);
+        List<Result<?>> launchTargets = new ArrayList<>(4);
         for (Result<?> result : items) {
-            if (result == null || !isExactLaunchTarget(result.getPojo(), normalizedQuery)) {
-                normalResults.add(result);
+            Pojo pojo = result == null ? null : result.getPojo();
+            if (pojo instanceof AppPojo || pojo instanceof ShortcutPojo) {
+                launchTargets.add(result);
             } else {
-                exactLaunchTargets.add(result);
+                normalResults.add(result);
             }
         }
-        if (exactLaunchTargets.isEmpty()) return;
+        if (launchTargets.isEmpty()) return;
 
         items.clear();
         items.addAll(normalResults);
-        items.addAll(exactLaunchTargets);
-    }
-
-    private boolean isExactLaunchTarget(Pojo pojo, String normalizedQuery) {
-        if (pojo == null || pojo.isDisabled()) return false;
-        if (!(pojo instanceof AppPojo)
-                && !(pojo instanceof ShortcutPojo)
-                && !(pojo instanceof SettingPojo)) return false;
-        return normalizedQuery.equals(normalizeSearchName(pojo.getName()));
-    }
-
-    private String normalizeSearchName(String value) {
-        if (value == null) return "";
-        return value.trim().toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", " ");
+        items.addAll(launchTargets);
     }
 
     private String reuseKey(Pojo pojo) {
@@ -1046,6 +1047,54 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public void updateResults(@NonNull Context context, List<Result<?>> updatedResults, boolean isRefresh, String query) {
         String normalizedQuery = query == null ? "" : query;
         invalidateRenderConfig();
+        if (sameVisibleState(updatedResults, normalizedQuery)) return;
+
+        if (parent instanceof MainActivity
+                && ((MainActivity) parent).shouldDeferHistoryAdapterUpdate(normalizedQuery)) {
+            pendingScrollResults = new ArrayList<>(updatedResults);
+            pendingScrollContext = context.getApplicationContext();
+            pendingScrollRefresh = isRefresh;
+            pendingScrollQuery = normalizedQuery;
+            if (!pendingScrollApplyScheduled) {
+                pendingScrollApplyScheduled = true;
+                ((MainActivity) parent).runWhenHistoryScrollIdle(applyPendingScrollResults);
+            }
+            return;
+        }
+
+        clearPendingScrollUpdate();
+        applyResultsNow(context, updatedResults, isRefresh, normalizedQuery);
+    }
+
+    private void flushPendingScrollResults() {
+        pendingScrollApplyScheduled = false;
+        if (pendingScrollResults == null || pendingScrollContext == null) return;
+
+        if (parent instanceof MainActivity
+                && ((MainActivity) parent).shouldDeferHistoryAdapterUpdate(pendingScrollQuery)) {
+            pendingScrollApplyScheduled = true;
+            ((MainActivity) parent).runWhenHistoryScrollIdle(applyPendingScrollResults);
+            return;
+        }
+
+        List<Result<?>> readyResults = pendingScrollResults;
+        Context readyContext = pendingScrollContext;
+        boolean readyRefresh = pendingScrollRefresh;
+        String readyQuery = pendingScrollQuery;
+        clearPendingScrollUpdate();
+        applyResultsNow(readyContext, readyResults, readyRefresh, readyQuery);
+    }
+
+    private void clearPendingScrollUpdate() {
+        pendingScrollResults = null;
+        pendingScrollContext = null;
+        pendingScrollRefresh = false;
+        pendingScrollQuery = null;
+        pendingScrollApplyScheduled = false;
+    }
+
+    private void applyResultsNow(@NonNull Context context, List<Result<?>> updatedResults,
+                                 boolean isRefresh, String normalizedQuery) {
         if (sameVisibleState(updatedResults, normalizedQuery)) return;
 
         parent.beforeListChange();
