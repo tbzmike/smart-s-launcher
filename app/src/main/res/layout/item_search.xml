@@ -6,7 +6,7 @@
     android:orientation="horizontal"
     tools:ignore="UseCompoundDrawables">
 
-    <ImageView
+    <android.widget.ImageView
         android:id="@+id/item_search_icon"
         style="@style/ResultItemIcon"
         android:contentDescription="@null"
