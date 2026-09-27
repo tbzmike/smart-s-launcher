@@ -6,6 +6,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteStatement;
+import android.os.CancellationSignal;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -212,6 +213,21 @@ public class DBHelper {
         });
     }
 
+
+    /**
+     * Strict RECENCY history read used by the visible Home timeline. This variant is cancellable so
+     * touching the Vertical List can abort SQLite itself instead of merely interrupting Java after
+     * the query has already consumed CPU/I/O.
+     */
+    public static List<ValuedHistoryRecord> getHistoryByRecency(
+            Context context, int limit, CancellationSignal cancellationSignal) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            Cursor cursor = recoveryDb.query(true, "history", new String[]{"record", "1"},
+                    null, null, null, null, "_id DESC", Integer.toString(limit),
+                    cancellationSignal);
+            return readCursor(cursor);
+        });
+    }
 
     /**
      * Retrieve history size
@@ -493,18 +509,28 @@ public class DBHelper {
      * Retrieve a list of all shortcuts, without icons.
      */
     public static List<ShortcutRecord> getShortcuts(Context context) {
+        return getShortcuts(context, null);
+    }
+
+    public static List<ShortcutRecord> getShortcuts(
+            Context context, @Nullable CancellationSignal cancellationSignal) {
         return DatabaseRecovery.run(context, recoveryDb -> {
         SQLiteDatabase db = recoveryDb;
 
-        // Cursor query (String table, String[] columns, String selection,
-        // String[] selectionArgs, String groupBy, String having, String
-        // orderBy)
-        Cursor cursor = db.query("shortcuts", new String[]{"_id", "name", "package", "intent_uri"},
-                null, null, null, null, null);
+        Cursor cursor;
+        if (cancellationSignal == null) {
+            cursor = db.query("shortcuts", new String[]{"_id", "name", "package", "intent_uri"},
+                    null, null, null, null, null);
+        } else {
+            cursor = db.query(false, "shortcuts",
+                    new String[]{"_id", "name", "package", "intent_uri"},
+                    null, null, null, null, null, null, cancellationSignal);
+        }
         cursor.moveToFirst();
 
         List<ShortcutRecord> records = new ArrayList<>(cursor.getCount());
         while (!cursor.isAfterLast()) {
+            if (cancellationSignal != null) cancellationSignal.throwIfCanceled();
             ShortcutRecord entry = new ShortcutRecord();
 
             entry.dbId = cursor.getInt(0);
