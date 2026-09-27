@@ -39,6 +39,9 @@ public class AutoScrollPreviewTextView extends TextView {
     private final Runnable deferredLayoutRequest = () -> {
         if (attached) requestLayout();
     };
+    private final Runnable deferredPreviewRestart = () -> {
+        if (attached) restartAutoScroll();
+    };
 
     public AutoScrollPreviewTextView(Context context) {
         super(context);
@@ -115,7 +118,7 @@ public class AutoScrollPreviewTextView extends TextView {
             scrollTo(0, 0);
             scheduleLayoutRequest();
         } else {
-            post(this::restartAutoScroll);
+            schedulePreviewRestart();
         }
     }
 
@@ -125,6 +128,7 @@ public class AutoScrollPreviewTextView extends TextView {
         arrowGesture = false;
         cancelScrollStep();
         removeCallbacks(deferredLayoutRequest);
+        removeCallbacks(deferredPreviewRestart);
         super.onDetachedFromWindow();
     }
 
@@ -139,14 +143,14 @@ public class AutoScrollPreviewTextView extends TextView {
         scrollTo(0, 0);
         if (!attached) return;
         if (isAutoExpand()) scheduleLayoutRequest();
-        else post(this::restartAutoScroll);
+        else schedulePreviewRestart();
     }
 
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         if (attached && (width != oldWidth || height != oldHeight) && !isAutoExpand()) {
-            post(this::restartAutoScroll);
+            schedulePreviewRestart();
         }
     }
 
@@ -279,6 +283,26 @@ public class AutoScrollPreviewTextView extends TextView {
         postOnAnimation(deferredLayoutRequest);
     }
 
+    private void schedulePreviewRestart() {
+        removeCallbacks(deferredPreviewRestart);
+        AnimatedListView list = findNativeListAncestor();
+        if (list != null && list.isScrollInProgress()) {
+            cancelScrollStep();
+            list.runWhenScrollIdle(deferredPreviewRestart);
+            return;
+        }
+        postOnAnimation(deferredPreviewRestart);
+    }
+
+    private AnimatedListView findNativeListAncestor() {
+        android.view.ViewParent parent = getParent();
+        while (parent instanceof View) {
+            if (parent instanceof AnimatedListView) return (AnimatedListView) parent;
+            parent = parent.getParent();
+        }
+        return null;
+    }
+
     private boolean isActuallyVisibleOnScreen() {
         if (!attached || !isShown() || !hasWindowFocus() || isNativeListScrolling()) return false;
         visibleRect.setEmpty();
@@ -288,14 +312,8 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private boolean isNativeListScrolling() {
-        android.view.ViewParent parent = getParent();
-        while (parent instanceof View) {
-            if (parent instanceof AnimatedListView) {
-                return ((AnimatedListView) parent).isScrollInProgress();
-            }
-            parent = parent.getParent();
-        }
-        return false;
+        AnimatedListView list = findNativeListAncestor();
+        return list != null && list.isScrollInProgress();
     }
 
     private void cancelScrollStep() {
