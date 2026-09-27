@@ -17,6 +17,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.activitylauncher.ActivityLauncherActivity;
+import fr.neamar.kiss.dataprovider.AppProvider;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
@@ -44,6 +45,10 @@ public class ForwarderManager extends Forwarder {
     private boolean initialResumeComplete;
     private boolean lastUiEditLocked;
     private String lastSearchQuery;
+    private final Runnable providerScrollStarted = () -> {
+        AppProvider.setLauncherScrolling(true);
+        runWhenHistoryScrollIdle(() -> AppProvider.setLauncherScrolling(false));
+    };
 
     public ForwarderManager(MainActivity mainActivity) {
         super(mainActivity);
@@ -90,6 +95,10 @@ public class ForwarderManager extends Forwarder {
         tagsMenu.onCreate();
         smartCardListForwarder.onCreate();
         historyDisplayForwarder.onCreate();
+        // Package/freezer reconciliation is useful, but it must never compete with an active
+        // launcher fling. Pause the fallback scanner for every history renderer until motion stops.
+        historyDisplayForwarder.addScrollStartedListener(providerScrollStarted);
+        smartCardListForwarder.addScrollStartedListener(providerScrollStarted);
         verticalCardViewportController.onCreate();
         verticalMapsCardForwarder.onCreate();
         verticalCardGroupResizeController.onCreate();
@@ -126,8 +135,9 @@ public class ForwarderManager extends Forwarder {
             verticalCardGroupResizeController.onResume();
             verticalCardNotificationHistoryForwarder.onResume();
             verticalCardUsageForwarder.onResume();
-        } else if (isHistorySearch()) {
-            // Native Vertical List and 3D Wheel share the idle-only metadata loader.
+        } else if (isHistorySearch() && isVerticalListMode()) {
+            // Only the recycled native list needs this enrichment pipeline. 3D Wheel owns a
+            // retained tree; rebuilding that tree merely to refresh metadata caused visible stalls.
             historyVisualEnhancer.onResume();
         }
 
@@ -233,9 +243,9 @@ public class ForwarderManager extends Forwarder {
             visibleResultTreeChanged = verticalCardTreeChanged;
         }
 
-        // Native-list/wheel history enrichment is useful for the native renderer, but Vertical Cards
-        // already own equivalent enrichment. Do not run both pipelines against the same history.
-        if (isHistorySearch() && !verticalCards) historyVisualEnhancer.onDataSetChanged();
+        // Run idle metadata enrichment only for the native recycled list. Vertical Cards have
+        // dedicated enrichment and 3D Wheel must not rebuild its retained tree for metadata.
+        if (isHistorySearch() && isVerticalListMode()) historyVisualEnhancer.onDataSetChanged();
         // Recursive gesture attachment is needed only when the visible Vertical Cards tree changed.
         if (!verticalCards || verticalCardTreeChanged) lockedHistoryGestureBridge.onDataSetChanged();
         return visibleResultTreeChanged;
@@ -398,6 +408,10 @@ public class ForwarderManager extends Forwarder {
 
     private boolean isVerticalCardsMode() {
         return HistoryDisplayForwarder.VERTICAL_CARDS.equals(activeHistoryLayout());
+    }
+
+    private boolean isVerticalListMode() {
+        return HistoryDisplayForwarder.VERTICAL.equals(activeHistoryLayout());
     }
 
     private boolean isHistorySearch() {
