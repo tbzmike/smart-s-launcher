@@ -146,6 +146,10 @@ public class QuerySearcher extends Searcher {
         return super.addResults(pojos);
     }
 
+    public void publishProviderProgress() {
+        if (!isCancelled()) publishCurrentResults();
+    }
+
     @Override
     protected Void doInBackground(Void... voids) {
         MainActivity activity = activityWeakReference.get();
