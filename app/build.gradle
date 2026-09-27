@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.122 - remove scroll work and preserve cold-start icon cache
-        versionCode 550
-        versionName "3.30.122"
+        // Smart S Launcher 3.30.123 - zero History background work while scrolling
+        versionCode 551
+        versionName "3.30.123"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
