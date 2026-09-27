@@ -21,6 +21,7 @@ import fr.neamar.kiss.dataprovider.AppProvider;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 
 public class ForwarderManager extends Forwarder {
     private final Widgets widgetsForwarder;
@@ -47,10 +48,14 @@ public class ForwarderManager extends Forwarder {
     private String lastSearchQuery;
     private final Runnable historyScrollIdle = () -> {
         AppProvider.setLauncherScrolling(false);
+        LauncherScrollWorkGate.setScrolling(false);
         SearchHandler.getInstance().onHistoryScrollIdle(mainActivity);
     };
 
     private final Runnable providerScrollStarted = () -> {
+        // Flip the process-wide gate before any feature-specific cancellation so recurring services
+        // and optional workers see "scrolling" immediately.
+        LauncherScrollWorkGate.setScrolling(true);
         AppProvider.setLauncherScrolling(true);
         if (isHistorySearch()) {
             SearchHandler.getInstance().onHistoryScrollStarted(mainActivity);
@@ -392,6 +397,7 @@ public class ForwarderManager extends Forwarder {
     public boolean onMenuButtonClicked(View menuButton) { return tagsMenu.onMenuButtonClicked(menuButton); }
 
     public void onDestroy() {
+        LauncherScrollWorkGate.setScrolling(false);
         liveWallpaperForwarder.onDestroy();
         widgetPeelController.onDestroy();
         historyVisualEnhancer.onDestroy();
