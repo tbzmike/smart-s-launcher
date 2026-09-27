@@ -152,18 +152,14 @@ public class AutoMarqueeTextView extends TextView {
         // horizontal position completely static: no marquee, no selected-state restart, no
         // after-scroll animation. Vertical Cards/3D Wheel retain the configured behavior.
         if (isNativeVerticalListRow()) {
+            // Vertical List is deliberately fixed-geometry. Auto Expand and marquee are disabled
+            // here because either can change row measurement/position during or after a fling.
             setMarqueeRepeatLimit(0);
             setHorizontalFadingEdgeEnabled(false);
             setSelected(false);
-            if (isAutoExpand()) {
-                super.setSingleLine(false);
-                super.setMaxLines(Integer.MAX_VALUE);
-                super.setEllipsize(null);
-            } else {
-                super.setSingleLine(true);
-                super.setMaxLines(1);
-                super.setEllipsize(TextUtils.TruncateAt.END);
-            }
+            super.setSingleLine(true);
+            super.setMaxLines(1);
+            super.setEllipsize(TextUtils.TruncateAt.END);
             super.setHorizontallyScrolling(false);
             return;
         }
@@ -235,6 +231,7 @@ public class AutoMarqueeTextView extends TextView {
 
     @Override
     public boolean isFocused() {
+        if (isNativeVerticalListRow()) return false;
         // ScrollView keeps off-screen cards attached. isShown() alone therefore marked every row as
         // marquee-active and continuously invalidated text that was nowhere near the viewport.
         return isAutoExpand() ? super.isFocused() : isActuallyVisibleOnScreen();
@@ -242,6 +239,7 @@ public class AutoMarqueeTextView extends TextView {
 
     @Override
     public boolean isSelected() {
+        if (isNativeVerticalListRow()) return false;
         return isAutoExpand() ? super.isSelected() : isActuallyVisibleOnScreen();
     }
 
