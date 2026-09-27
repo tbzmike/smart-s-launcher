@@ -1,5 +1,6 @@
 package fr.neamar.kiss.ui;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.text.TextUtils;
 import android.util.AttributeSet;
@@ -67,6 +68,7 @@ public class AnimatedListView extends BlockableListView {
         return scrollIdleGate != null && scrollIdleGate.isScrolling();
     }
 
+    @SuppressLint("WrongThreadInterprocedural")
     public void runWhenScrollIdle(Runnable work) {
         if (scrollIdleGate == null) work.run();
         else scrollIdleGate.runWhenIdle(work);
