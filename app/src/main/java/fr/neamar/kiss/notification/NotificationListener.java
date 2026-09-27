@@ -47,6 +47,7 @@ import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 
@@ -207,6 +208,9 @@ public class NotificationListener extends NotificationListenerService {
 
     @Override public void onNotificationRankingUpdate(RankingMap rankingMap) {
         super.onNotificationRankingUpdate(rankingMap);
+        // Ranking updates can arrive repeatedly while a notification shade/app changes state. A
+        // full active-notification scan plus SharedPreferences rewrite is optional during a fling.
+        if (LauncherScrollWorkGate.isScrolling()) return;
         Set<String> before = getVerifiedActiveNotificationIds();
         if (refreshAllNotifications(false)
                 && !before.equals(getVerifiedActiveNotificationIds())) {
@@ -245,6 +249,9 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private void sendTimelineRefresh(String notificationId, boolean posted) {
+        // Persisted notification state remains available, but never force MainActivity to rebuild
+        // its visible list underneath an active fling.
+        if (LauncherScrollWorkGate.isScrolling()) return;
         Intent refresh = MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER)
                 .putExtra(MainActivity.EXTRA_NOTIFICATION_TIMELINE_ID, notificationId)
                 .putExtra(MainActivity.EXTRA_NOTIFICATION_POSTED, posted);
@@ -297,7 +304,10 @@ public class NotificationListener extends NotificationListenerService {
     private void autoRebindStaleRecordsAsync(String packageName, String freshId, long postTime,
                                              String shortcutId, String routeUri,
                                              String pendingIntentToken, String locusId) {
-        if (TextUtils.isEmpty(packageName) || TextUtils.isEmpty(shortcutId)) return;
+        // Automatic stale-route repair is opportunistic. Never let it compete with scrolling;
+        // manual repair and a later notification can still repair the same saved destination.
+        if (LauncherScrollWorkGate.isScrolling()
+                || TextUtils.isEmpty(packageName) || TextUtils.isEmpty(shortcutId)) return;
         Context appContext = getApplicationContext();
         RECONCILE_EXECUTOR.execute(() -> {
             try {
@@ -530,6 +540,7 @@ public class NotificationListener extends NotificationListenerService {
      * onListenerConnected() supplies a verified platform snapshot and requests a refresh.
      */
     public static boolean reconcileActiveNotifications() {
+        if (LauncherScrollWorkGate.isScrolling()) return false;
         NotificationListener listener = instance;
         if (listener == null || !listenerConnected) {
             publishUnverifiedActiveState();
@@ -544,6 +555,7 @@ public class NotificationListener extends NotificationListenerService {
      * actually changed while it was away.
      */
     public static void reconcileActiveNotificationsAsync(Context context) {
+        if (LauncherScrollWorkGate.isScrolling()) return;
         NotificationListener listener = instance;
         if (listener == null || !listenerConnected) {
             publishUnverifiedActiveState();
@@ -554,9 +566,13 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private static void startAsyncReconcile(NotificationListener listener) {
+        if (LauncherScrollWorkGate.isScrolling()) return;
         if (!RECONCILE_RUNNING.compareAndSet(false, true)) return;
         RECONCILE_EXECUTOR.execute(() -> {
             try {
+                if (LauncherScrollWorkGate.isScrolling() || Thread.currentThread().isInterrupted()) {
+                    return;
+                }
                 Set<String> before = getVerifiedActiveNotificationIds();
                 if (listener.refreshAllNotifications(false)
                         && !before.equals(getVerifiedActiveNotificationIds())) {
