@@ -281,6 +281,14 @@ public abstract class Result<T extends Pojo> {
 
     protected boolean displayHighlighted(StringNormalizer.Result normalized, String text, FuzzyScore fuzzyScore,
                                          TextView view, Context context) {
+        // History is not a query result surface. Running the fuzzy matcher/highlight allocator for
+        // every recycled row during a fling is pure work with no visible benefit.
+        if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                || fuzzyScore == null) {
+            view.setText(text);
+            return false;
+        }
+
         MatchInfo matchInfo = fuzzyScore.match(normalized.codePoints);
 
         if (!matchInfo.match) {
