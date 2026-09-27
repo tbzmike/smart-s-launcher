@@ -579,6 +579,7 @@ public class SearchHandler {
 
         if (runningSearch instanceof HistorySearcher) {
             searchGeneration.incrementAndGet();
+            ((HistorySearcher) runningSearch).cancelDatabaseWork();
             runningSearch.cancel(true);
             Searcher.purgeCancelledSearches();
             resetRunningSearch();
@@ -623,6 +624,9 @@ public class SearchHandler {
 
     private void cancelRunningSearch() {
         if (runningSearch != null) {
+            if (runningSearch instanceof HistorySearcher) {
+                ((HistorySearcher) runningSearch).cancelDatabaseWork();
+            }
             runningSearch.cancel(true);
             Searcher.purgeCancelledSearches();
             resetRunningSearch();
