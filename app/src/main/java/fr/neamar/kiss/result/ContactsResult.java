@@ -41,13 +41,18 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 public class ContactsResult extends CallResult<ContactsPojo> {
 
     private final QueryInterface queryInterface;
+    private final Uri contactUri;
     private volatile Drawable icon = null;
     private volatile Drawable appDrawable = null;
+    private static volatile Boolean deviceHasTelephony;
     private static final String TAG = ContactsResult.class.getSimpleName();
 
     ContactsResult(QueryInterface queryInterface, @NonNull ContactsPojo pojo) {
         super(pojo);
         this.queryInterface = queryInterface;
+        Uri uri = ContactsContract.Contacts.CONTENT_LOOKUP_URI;
+        uri = Uri.withAppendedPath(uri, String.valueOf(pojo.lookupKey));
+        contactUri = Uri.withAppendedPath(uri, String.valueOf(pojo.getContactId()));
     }
 
     @NonNull
@@ -94,15 +99,10 @@ public class ContactsResult extends CallResult<ContactsPojo> {
             contactIcon.setImageDrawable(null);
         }
 
-        Uri contactUri = ContactsContract.Contacts.CONTENT_LOOKUP_URI;
-        contactUri = Uri.withAppendedPath(contactUri, String.valueOf(pojo.lookupKey));
-        contactUri = Uri.withAppendedPath(contactUri, String.valueOf(pojo.getContactId()));
         contactIcon.assignContactUri(contactUri);
-
         contactIcon.setExtraOnClickListener(v -> recordLaunch(v.getContext(), queryInterface));
 
-        PackageManager pm = context.getPackageManager();
-        boolean hasPhone = pojo.phone != null && pm.hasSystemFeature(PackageManager.FEATURE_TELEPHONY);
+        boolean hasPhone = pojo.phone != null && hasTelephony(context);
 
         // Phone action
         ImageButton phoneButton = view.findViewById(R.id.item_contact_action_phone);
@@ -150,6 +150,19 @@ public class ContactsResult extends CallResult<ContactsPojo> {
         }
 
         return view;
+    }
+
+    private static boolean hasTelephony(Context context) {
+        Boolean cached = deviceHasTelephony;
+        if (cached != null) return cached;
+        synchronized (ContactsResult.class) {
+            cached = deviceHasTelephony;
+            if (cached == null) {
+                cached = context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY);
+                deviceHasTelephony = cached;
+            }
+        }
+        return cached;
     }
 
     private Drawable getAppDrawable(Context context) {
