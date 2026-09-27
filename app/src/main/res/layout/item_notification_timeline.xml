@@ -5,7 +5,7 @@
     android:orientation="horizontal"
     tools:layout_height="wrap_content">
 
-    <ImageView
+    <android.widget.ImageView
         android:id="@+id/item_notification_icon"
         style="@style/ResultItemIcon"
         android:layout_gravity="top"
@@ -55,7 +55,7 @@
         <include layout="@layout/item_history_metadata" />
     </LinearLayout>
 
-    <Button
+    <android.widget.Button
         android:id="@+id/item_notification_dismiss"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
