@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<fr.neamar.kiss.ui.AutoMarqueeTextView xmlns:android="http://schemas.android.com/apk/res/android"
+<android.widget.TextView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/item_history_meta"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="2dp"
+    android:ellipsize="end"
+    android:maxLines="1"
+    android:singleLine="true"
     android:textColor="?android:attr/textColorSecondary"
     android:textSize="12sp"
     android:visibility="gone" />
