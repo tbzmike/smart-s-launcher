@@ -18,6 +18,7 @@ import fr.neamar.kiss.searcher.Searcher;
  */
 public class AutoMarqueeTextView extends TextView {
     private boolean behaviorLocked;
+    private boolean autoExpand;
     private final Rect visibleRect = new Rect();
     private final Runnable deferredLayoutRequest = () -> {
         if (isAttachedToWindow()) requestLayout();
@@ -43,6 +44,7 @@ public class AutoMarqueeTextView extends TextView {
 
     private void init() {
         behaviorLocked = false;
+        autoExpand = TextOverflowMode.isAutoExpandForHistory(getContext());
         setFocusable(false);
         setFocusableInTouchMode(false);
         behaviorLocked = true;
@@ -50,7 +52,11 @@ public class AutoMarqueeTextView extends TextView {
     }
 
     private boolean isAutoExpand() {
-        return TextOverflowMode.isAutoExpandForHistory(getContext());
+        return autoExpand;
+    }
+
+    private void refreshOverflowMode() {
+        autoExpand = TextOverflowMode.isAutoExpandForHistory(getContext());
     }
 
     @Override
@@ -92,6 +98,7 @@ public class AutoMarqueeTextView extends TextView {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+        refreshOverflowMode();
         applySearchAppearanceIfNeeded();
         applyConfiguredBehavior();
         if (isAutoExpand()) scheduleLayoutRequest();
@@ -224,6 +231,10 @@ public class AutoMarqueeTextView extends TextView {
     @Override
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
-        if (hasWindowFocus && !isAutoExpand()) scheduleMarqueeRestart();
+        if (hasWindowFocus) {
+            refreshOverflowMode();
+            applyConfiguredBehavior();
+            if (!isAutoExpand()) scheduleMarqueeRestart();
+        }
     }
 }
