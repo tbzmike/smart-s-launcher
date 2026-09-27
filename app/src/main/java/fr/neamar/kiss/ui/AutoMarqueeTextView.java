@@ -1,5 +1,6 @@
 package fr.neamar.kiss.ui;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Rect;
 import android.text.TextUtils;
@@ -16,6 +17,7 @@ import fr.neamar.kiss.searcher.Searcher;
  * Auto-scroll preserves the compact one-line marquee. Auto-expand disables marquee work and lets
  * the text wrap to unlimited lines so its parent tile can grow until the complete text is visible.
  */
+@SuppressLint("AppCompatCustomView")
 public class AutoMarqueeTextView extends TextView {
     private boolean behaviorLocked;
     private boolean autoExpand;
