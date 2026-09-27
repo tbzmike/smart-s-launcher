@@ -87,6 +87,11 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                     body.setText(cleanMessageBody(pojo.body));
                     body.setVisibility(View.VISIBLE);
                     actions.setVisibility(View.VISIBLE);
+                    markRead.setVisibility(View.GONE);
+                    markRead.setEnabled(false);
+                    markRead.setOnClickListener(null);
+                    open.setText("Open message");
+                    open.setOnClickListener(v -> openMessageAndRecord(v.getContext(), v));
                     break;
                 case TRUECALLER_NOTIFICATION:
                 default:
@@ -95,6 +100,11 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
                     body.setText(pojo.body);
                     body.setVisibility(View.VISIBLE);
                     actions.setVisibility(View.VISIBLE);
+                    markRead.setVisibility(View.GONE);
+                    markRead.setEnabled(false);
+                    markRead.setOnClickListener(null);
+                    open.setText("Open message");
+                    open.setOnClickListener(v -> openMessageAndRecord(v.getContext(), v));
                     break;
             }
             title.setSelected(false);
