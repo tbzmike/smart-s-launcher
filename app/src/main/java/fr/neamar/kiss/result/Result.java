@@ -710,20 +710,15 @@ public abstract class Result<T extends Pojo> {
             return;
         }
 
-        // While scrolling, do not decode icons and do not enqueue one callback per recycled bind.
-        // Reuse one pending object per ImageView so only the newest binding survives to idle.
+        // HARD scroll freeze: if the drawable is not already cached, do absolutely no icon work
+        // while the native Vertical List is moving. Do not decode, allocate a task, or queue an
+        // idle callback. A later normal row bind can load it after the user is no longer scrolling.
         AnimatedListView scrollingList = findAnimatedListAncestor(imageView);
         if (scrollingList != null && scrollingList.isScrollInProgress()) {
+            if (pendingIdle != null) pendingIdle.clear();
+            imageView.setTag(R.id.smart_s_icon_idle_loader, null);
             if (defaultResId != 0) imageView.setImageResource(defaultResId);
             else imageView.setImageDrawable(null);
-
-            if (pendingIdle == null) {
-                pendingIdle = new PendingDrawableBind();
-                imageView.setTag(R.id.smart_s_icon_idle_loader, pendingIdle);
-            }
-            pendingIdle.update(this, imageView, defaultResId, invalidateDrawable,
-                    isCachedSupplier, drawableGetter, cachedDrawableSetter, onDrawableBound);
-            scrollingList.runWhenScrollIdle(pendingIdle);
             return;
         }
 
@@ -752,6 +747,11 @@ public abstract class Result<T extends Pojo> {
             if (onDrawableBound != null) onDrawableBound.accept(drawable);
         }, ICON_EXECUTOR);
         imageView.setTag(TAG_RUNNING_TASK, newTask);
+    }
+
+    protected final boolean isNativeListScrolling(@NonNull ViewGroup parent) {
+        return parent instanceof AnimatedListView
+                && ((AnimatedListView) parent).isScrollInProgress();
     }
 
     @Nullable
