@@ -288,14 +288,10 @@ public class SearchHandler {
 
     private boolean quickMatch(String value, String normalizedQuery) {
         if (value == null || normalizedQuery == null || normalizedQuery.isEmpty()) return false;
-        String name = value.toLowerCase(Locale.ROOT);
-        if (name.startsWith(normalizedQuery) || name.contains(normalizedQuery)) return true;
-        int start = 0;
-        while (start < name.length()) {
-            while (start < name.length() && !Character.isLetterOrDigit(name.charAt(start))) start++;
-            if (start >= name.length()) break;
-            if (name.startsWith(normalizedQuery, start)) return true;
-            while (start < name.length() && Character.isLetterOrDigit(name.charAt(start))) start++;
+        int queryLength = normalizedQuery.length();
+        int lastStart = value.length() - queryLength;
+        for (int i = 0; i <= lastStart; i++) {
+            if (value.regionMatches(true, i, normalizedQuery, 0, queryLength)) return true;
         }
         return false;
     }
