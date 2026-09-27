@@ -195,17 +195,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     private boolean pendingBackgroundRefresh;
     private boolean pendingBackgroundFavoriteRefresh;
     @Nullable private String pendingNotificationTargetId;
-    private boolean pendingHistoryRefreshAfterScroll;
     private boolean listChangeAnimationPrepared;
-    private final Runnable flushPendingHistoryRefresh = () -> {
-        if (!pendingHistoryRefreshAfterScroll) return;
-        pendingHistoryRefreshAfterScroll = false;
-        if (!launcherUiResumed || searchEditText == null
-                || !TextUtils.isEmpty(searchEditText.getText())) {
-            return;
-        }
-        updateSearchRecords(true, searchEditText.getText().toString());
-    };
 
     /**
      * Called when the activity is first created.
@@ -1083,16 +1073,12 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     protected void updateSearchRecords(boolean isRefresh, String query) {
         String normalizedQuery = query == null ? "" : query;
 
-        // History updates can arrive from notifications, provider reloads and other background
-        // events while the user's finger is moving the list. Coalesce those requests and run one
-        // refresh after the active renderer has been motionless, instead of rebuilding underneath
-        // the scroll gesture.
+        // HARD scroll freeze: a refresh that arrives while History is moving is discarded.
+        // Older builds queued one refresh for idle, which meant background work and a visible list
+        // adjustment were deliberately triggered as soon as the fling stopped.
         if (isRefresh && shouldDeferHistoryAdapterUpdate(normalizedQuery)) {
-            pendingHistoryRefreshAfterScroll = true;
-            forwarderManager.runWhenHistoryScrollIdle(flushPendingHistoryRefresh);
             return;
         }
-        pendingHistoryRefreshAfterScroll = false;
 
         cancelSearch();
         dismissPopup();
