@@ -94,6 +94,7 @@ final class HistoryVisualEnhancer {
         // A real resume or dataset change can request fresh metadata later.
         generation++;
         refreshPending = false;
+        historyDisplayForwarder.cancelWhenScrollIdle(refreshAtIdle);
         CancellationSignal signal = cancellationSignal;
         if (signal != null) signal.cancel();
         cancellationSignal = null;
