@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="smart_s_icon_bind_token" type="id" />
+    <item name="smart_s_icon_idle_loader" type="id" />
 </resources>
