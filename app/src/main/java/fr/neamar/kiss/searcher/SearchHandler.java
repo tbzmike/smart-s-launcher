@@ -126,9 +126,9 @@ public class SearchHandler {
         cancelRunningSearch();
 
         if (type == Searcher.Type.HISTORY && historyScrollActive) {
+            // HARD scroll freeze: History work requested during a fling is dropped, not queued.
             lastSearchType = Searcher.Type.HISTORY;
             lastSearchQuery = query;
-            rememberHistoryAfterScroll(activity, isRefresh);
             return;
         }
 
@@ -185,7 +185,6 @@ public class SearchHandler {
                              String query, boolean isRefresh, long generation) {
         if (generation != searchGeneration.get()) return;
         if (type == Searcher.Type.HISTORY && historyScrollActive) {
-            rememberHistoryAfterScroll(activity, isRefresh);
             return;
         }
 
@@ -369,7 +368,6 @@ public class SearchHandler {
     /** Refresh the lightweight History seed independently and publish it only while still current. */
     private void refreshHistorySeedAndPublish(@NonNull MainActivity activity, long generation) {
         if (historyScrollActive) {
-            rememberHistoryAfterScroll(activity, false);
             return;
         }
         final WeakReference<MainActivity> activityRef = new WeakReference<>(activity);
@@ -572,18 +570,13 @@ public class SearchHandler {
         if (historyScrollActive) return;
         historyScrollActive = true;
 
-        // Nothing History-owned should keep queuing work behind the user's finger.
-        historySeedExecutor.getQueue().clear();
-        historyPreviewExecutor.getQueue().clear();
-        Thread seedWorker = historySeedWorker;
-        if (seedWorker != null) seedWorker.interrupt();
-        Thread previewWorker = historyPreviewWorker;
-        if (previewWorker != null) previewWorker.interrupt();
+        // HARD scroll freeze: kill every History helper and the full History search immediately.
+        // Nothing is remembered for idle, because an idle replay caused the visible post-scroll
+        // text/list jump the user reported.
+        stopHistoryAuxWorkers();
+        clearPendingHistoryAfterScroll();
 
         if (runningSearch instanceof HistorySearcher) {
-            // Resume exactly this interrupted refresh after idle. A plain scroll over an already
-            // settled History list must NOT create a new refresh by itself.
-            rememberHistoryAfterScroll(activity, true);
             searchGeneration.incrementAndGet();
             runningSearch.cancel(true);
             Searcher.purgeCancelledSearches();
@@ -594,21 +587,7 @@ public class SearchHandler {
     public void onHistoryScrollIdle(@NonNull MainActivity activity) {
         if (!historyScrollActive) return;
         historyScrollActive = false;
-
-        if (!pendingHistoryAfterScroll || lastSearchType != Searcher.Type.HISTORY) {
-            clearPendingHistoryAfterScroll();
-            return;
-        }
-
-        MainActivity target = pendingHistoryActivity.get();
-        if (target == null || target.isFinishing()) target = activity;
-        boolean refresh = pendingHistoryRefreshAfterScroll;
         clearPendingHistoryAfterScroll();
-
-        final long generation = searchGeneration.incrementAndGet();
-        cancelPendingQuery();
-        cancelRunningSearch();
-        startSearch(Searcher.Type.HISTORY, target, null, refresh, generation);
     }
 
     public boolean isHistoryScrollActive() {
