@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.121 - scroll-idle refreshes and restored history renderers
-        versionCode 549
-        versionName "3.30.121"
+        // Smart S Launcher 3.30.122 - remove scroll work and preserve cold-start icon cache
+        versionCode 550
+        versionName "3.30.122"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
