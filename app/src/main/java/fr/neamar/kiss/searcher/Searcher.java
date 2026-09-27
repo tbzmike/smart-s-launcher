@@ -63,11 +63,25 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
             30L,
             TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(1),
-            runnable -> new Thread(runnable, "smart-s-search"),
+            runnable -> new Thread(runnable, "smart-s-history-search"),
+            new ThreadPoolExecutor.DiscardOldestPolicy());
+
+    /**
+     * Interactive typing must never wait behind a History reconstruction. Query work has its own
+     * bounded worker; stale generations are still cancelled and discarded exactly as before.
+     */
+    public static final ThreadPoolExecutor QUERY_THREAD = new ThreadPoolExecutor(
+            1,
+            1,
+            30L,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(1),
+            runnable -> new Thread(runnable, "smart-s-query-search"),
             new ThreadPoolExecutor.DiscardOldestPolicy());
 
     static {
         SEARCH_THREAD.allowCoreThreadTimeOut(true);
+        QUERY_THREAD.allowCoreThreadTimeOut(true);
     }
 
     protected static final int DEFAULT_MAX_RESULTS = 50;
@@ -95,6 +109,7 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
     /** Remove cancelled FutureTasks immediately instead of retaining them in the worker queue. */
     public static void purgeCancelledSearches() {
         SEARCH_THREAD.purge();
+        QUERY_THREAD.purge();
     }
 
     PriorityQueue<Pojo> getPojoProcessor(Context context) {
