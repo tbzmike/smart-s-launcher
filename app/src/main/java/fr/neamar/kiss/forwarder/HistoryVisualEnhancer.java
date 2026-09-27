@@ -83,24 +83,13 @@ final class HistoryVisualEnhancer {
     private void onScrollStarted() {
         if (destroyed) return;
 
-        // Scrolling is render-only. Stop metadata/database/UsageStats work immediately. Do not
-        // create a new refresh merely because the user scrolled.
+        // Scrolling is render-only. Cancel any metadata/database/UsageStats work immediately and
+        // drop it. The act of scrolling must never create deferred work that fires when motion stops.
+        // A real resume or dataset change can request fresh metadata later.
         generation++;
-        if (inFlight != null) {
-            inFlight.cancel(true);
-            inFlight = null;
-            // This refresh was already requested for real data/lifecycle reasons, so remember it.
-            refreshPending = true;
-        }
-
-        if (!UniversalHistoryTimestamp.isHistorySurface(activity)) {
-            refreshPending = false;
-            return;
-        }
-
-        if (refreshPending) {
-            historyDisplayForwarder.runWhenScrollIdle(refreshAtIdle);
-        }
+        refreshPending = false;
+        if (inFlight != null) inFlight.cancel(true);
+        inFlight = null;
     }
 
     private void refreshNow() {
