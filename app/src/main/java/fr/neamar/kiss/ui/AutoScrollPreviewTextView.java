@@ -1,5 +1,6 @@
 package fr.neamar.kiss.ui;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -17,6 +18,7 @@ import android.widget.TextView;
  * Auto-scroll keeps the compact two-line stepping preview. Auto-expand removes the timer but starts
  * at roughly half of the wrapped message and exposes a dedicated arrow for full-text expansion.
  */
+@SuppressLint("AppCompatCustomView")
 public class AutoScrollPreviewTextView extends TextView {
     private static final int VISIBLE_LINES = 2;
     private static final long STEP_DELAY_MS = 2400L;
