@@ -49,13 +49,23 @@ public class SearchHandler {
     }
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile Thread historySeedWorker;
+    private volatile Thread historyPreviewWorker;
     private final ThreadPoolExecutor historySeedExecutor = new ThreadPoolExecutor(
             1, 1, 15L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1),
-            runnable -> lowPriorityThread(runnable, "smart-s-history-seed"),
+            runnable -> {
+                Thread worker = lowPriorityThread(runnable, "smart-s-history-seed");
+                historySeedWorker = worker;
+                return worker;
+            },
             new ThreadPoolExecutor.DiscardOldestPolicy());
     private final ThreadPoolExecutor historyPreviewExecutor = new ThreadPoolExecutor(
             1, 1, 15L, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1),
-            runnable -> lowPriorityThread(runnable, "smart-s-history-preview"),
+            runnable -> {
+                Thread worker = lowPriorityThread(runnable, "smart-s-history-preview");
+                historyPreviewWorker = worker;
+                return worker;
+            },
             new ThreadPoolExecutor.DiscardOldestPolicy());
     private final AtomicLong searchGeneration = new AtomicLong();
     private final AtomicLong completedSearchGeneration = new AtomicLong(-1L);
@@ -475,6 +485,10 @@ public class SearchHandler {
         // Nothing History-owned should keep queuing work behind the user's finger.
         historySeedExecutor.getQueue().clear();
         historyPreviewExecutor.getQueue().clear();
+        Thread seedWorker = historySeedWorker;
+        if (seedWorker != null) seedWorker.interrupt();
+        Thread previewWorker = historyPreviewWorker;
+        if (previewWorker != null) previewWorker.interrupt();
 
         if (runningSearch instanceof HistorySearcher) {
             // Resume exactly this interrupted refresh after idle. A plain scroll over an already
