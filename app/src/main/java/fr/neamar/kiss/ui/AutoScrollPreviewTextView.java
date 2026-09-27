@@ -222,10 +222,11 @@ public class AutoScrollPreviewTextView extends TextView {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (!isAutoExpand()) {
-            // ScrollView keeps every card attached. Starting the timer from draw means only rows
-            // that actually intersect the viewport can own an auto-scroll callback; off-screen
-            // notification previews perform no periodic work while the user scrolls elsewhere.
-            scheduleScrollStep(STEP_DELAY_MS);
+            if (!isNativeVerticalListRow()) {
+                // Cards/3D Wheel keep the existing stepping preview. Native Vertical List stays
+                // static and schedules no timer/callback at all.
+                scheduleScrollStep(STEP_DELAY_MS);
+            }
             return;
         }
         if (!expandable) return;
@@ -293,28 +294,46 @@ public class AutoScrollPreviewTextView extends TextView {
     private void applyConfiguredBehavior() {
         if (!behaviorLocked) return;
         super.setSingleLine(false);
-        super.setMaxLines(Integer.MAX_VALUE);
         super.setHorizontallyScrolling(false);
-        super.setEllipsize(null);
         setHorizontalFadingEdgeEnabled(false);
+
+        // A notification preview in Vertical List must never move on its own. Keep a stable
+        // two-line END-ellipsized preview; Cards/3D Wheel may still use the existing stepping
+        // preview behavior.
+        if (isNativeVerticalListRow() && !isAutoExpand()) {
+            super.setMaxLines(VISIBLE_LINES);
+            super.setEllipsize(TextUtils.TruncateAt.END);
+            setVerticalFadingEdgeEnabled(false);
+            firstVisibleLine = 0;
+            scrollTo(0, 0);
+            return;
+        }
+
+        super.setMaxLines(Integer.MAX_VALUE);
+        super.setEllipsize(null);
         setVerticalFadingEdgeEnabled(!isAutoExpand());
         if (!isAutoExpand()) setFadingEdgeLength(dp(8));
     }
 
     private void scheduleLayoutRequest() {
         removeCallbacks(deferredLayoutRequest);
+        if (isNativeVerticalListRow()) return;
         postOnAnimation(deferredLayoutRequest);
     }
 
     private void schedulePreviewRestart() {
         removeCallbacks(deferredPreviewRestart);
-        AnimatedListView list = findNativeListAncestor();
-        if (list != null && list.isScrollInProgress()) {
+        if (isNativeVerticalListRow()) {
             cancelScrollStep();
-            list.runWhenScrollIdle(deferredPreviewRestart);
+            firstVisibleLine = 0;
+            scrollTo(0, 0);
             return;
         }
         postOnAnimation(deferredPreviewRestart);
+    }
+
+    private boolean isNativeVerticalListRow() {
+        return findNativeListAncestor() != null;
     }
 
     private AnimatedListView findNativeListAncestor() {
@@ -345,7 +364,8 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private void scheduleScrollStep(long delayMs) {
-        if (scrollStepScheduled || isAutoExpand() || !isActuallyVisibleOnScreen()) return;
+        if (isNativeVerticalListRow()
+                || scrollStepScheduled || isAutoExpand() || !isActuallyVisibleOnScreen()) return;
         scrollStepScheduled = true;
         postDelayed(scrollStep, delayMs);
     }
@@ -355,11 +375,12 @@ public class AutoScrollPreviewTextView extends TextView {
         applyConfiguredBehavior();
         firstVisibleLine = 0;
         scrollTo(0, 0);
-        scheduleScrollStep(STEP_DELAY_MS);
+        if (!isNativeVerticalListRow()) scheduleScrollStep(STEP_DELAY_MS);
     }
 
     private void advancePreview() {
-        if (!attached || isAutoExpand() || !isActuallyVisibleOnScreen()) return;
+        if (isNativeVerticalListRow()
+                || !attached || isAutoExpand() || !isActuallyVisibleOnScreen()) return;
         Layout layout = getLayout();
         if (layout == null) {
             scheduleScrollStep(STEP_DELAY_MS);
