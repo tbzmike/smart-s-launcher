@@ -126,6 +126,9 @@ public class ForwarderManager extends Forwarder {
             verticalCardGroupResizeController.onResume();
             verticalCardNotificationHistoryForwarder.onResume();
             verticalCardUsageForwarder.onResume();
+        } else if (isHistorySearch()) {
+            // Native Vertical List and 3D Wheel share the idle-only metadata loader.
+            historyVisualEnhancer.onResume();
         }
 
         if (initialResumeComplete) {
@@ -142,10 +145,6 @@ public class ForwarderManager extends Forwarder {
             verticalCardViewportController.afterDataSetChanged();
         }
 
-        // Vertical Cards already have dedicated usage/notification enrichment. Running the
-        // native-list HistoryVisualEnhancer as well duplicates DB/UsageStats work for a hidden
-        // renderer and can compete with the visible card UI.
-        if (isHistorySearch() && !verticalCards) historyVisualEnhancer.onResume();
         initialResumeComplete = true;
     }
 
