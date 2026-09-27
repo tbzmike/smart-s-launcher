@@ -23,6 +23,7 @@ import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.notification.NotificationTimelineState;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.Log;
 
 class Notification extends Forwarder {
@@ -38,7 +39,7 @@ class Notification extends Forwarder {
 
     private final SharedPreferences.OnSharedPreferenceChangeListener onNotificationDisplayed =
             (sharedPreferences, packageKey) -> {
-                if (packageKey == null) return;
+                if (packageKey == null || LauncherScrollWorkGate.isScrolling()) return;
                 final ListView list = mainActivity.list;
 
                 // Keep the legacy notification-dot update cheap: only currently rendered rows.
@@ -90,9 +91,11 @@ class Notification extends Forwarder {
         if (notificationPreferences != null) {
             notificationPreferences.registerOnSharedPreferenceChangeListener(onNotificationDisplayed);
         }
-        if (detailPreferences != null && isTimelineEnabled()) {
-            detailPreferences.registerOnSharedPreferenceChangeListener(onNotificationDetailChanged);
-            queueAllActiveTimelineIds();
+        if (detailPreferences != null && isTimelineEnabled()
+                && !LauncherScrollWorkGate.isScrolling()) {
+            // NotificationListener already persists each live timeline event. This is now only a
+            // resume-time recovery pass for records that arrived while the Activity/process UI was
+            // unavailable; do not duplicate every live detail change on the main thread.
             catchUpPersistedTimelineAsync();
         }
     }
@@ -177,7 +180,7 @@ class Notification extends Forwarder {
 
     /** Catch notifications that arrived while the launcher Activity was paused. */
     private void catchUpPersistedTimelineAsync() {
-        if (!isTimelineEnabled()) return;
+        if (!isTimelineEnabled() || LauncherScrollWorkGate.isScrolling()) return;
         long lastScan = NotificationTimelineState.getLastPersistedScan(mainActivity);
         if (lastScan <= 0L) lastScan = System.currentTimeMillis() - FIRST_SCAN_LOOKBACK_MS;
         final long scanAfter = Math.max(0L, lastScan - 1L);
@@ -185,15 +188,19 @@ class Notification extends Forwarder {
 
         Thread worker = new Thread(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            if (LauncherScrollWorkGate.isScrolling()) return;
             List<NotificationHistoryRecord> records = NotificationTimelineStore.queryAfter(
                     mainActivity.getApplicationContext(), scanAfter, PERSISTED_CATCH_UP_BATCH);
-            if (mainActivity.list != null) {
-                if (records.isEmpty()) {
-                    mainActivity.list.post(() -> NotificationTimelineState.setLastPersistedScan(
-                            mainActivity, Math.max(0L, scanStartedAt - 5000L)));
-                } else {
-                    mainActivity.list.post(() -> indexPersistedRecords(records));
-                }
+            if (LauncherScrollWorkGate.isScrolling()) return;
+
+            // Keep the recovery database/history writes off the UI looper too. Only the eventual
+            // LOAD_OVER broadcast is visible to MainActivity, and it is suppressed if scrolling
+            // has resumed before this pass finishes.
+            if (records.isEmpty()) {
+                NotificationTimelineState.setLastPersistedScan(
+                        mainActivity, Math.max(0L, scanStartedAt - 5000L));
+            } else {
+                indexPersistedRecords(records);
             }
         }, "notification-timeline-catchup");
         worker.start();
@@ -219,7 +226,9 @@ class Notification extends Forwarder {
             changed = true;
         }
         if (newestPost > 0L) NotificationTimelineState.setLastPersistedScan(mainActivity, newestPost);
-        if (changed) mainActivity.sendBroadcast(MainActivity.internalBroadcast(mainActivity, MainActivity.LOAD_OVER));
+        if (changed && !LauncherScrollWorkGate.isScrolling()) {
+            mainActivity.sendBroadcast(MainActivity.internalBroadcast(mainActivity, MainActivity.LOAD_OVER));
+        }
     }
 
     private void updateDots(ViewGroup vg, int childCount, String packageKey) {
