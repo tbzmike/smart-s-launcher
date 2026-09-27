@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.123 - zero History background work while scrolling
-        versionCode 551
-        versionName "3.30.123"
+        // Smart S Launcher 3.30.124 - stable Vertical List text and zero scroll animations
+        versionCode 552
+        versionName "3.30.124"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
