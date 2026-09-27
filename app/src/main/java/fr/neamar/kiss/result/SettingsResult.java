@@ -192,12 +192,13 @@ public class SettingsResult extends Result<SettingPojo> {
 
         markRead.setVisibility(View.VISIBLE);
         markRead.setEnabled(true);
+        final View boundRow = view;
         markRead.setOnClickListener(v -> {
             boolean marked = NotificationListener.markNotificationRead(
                     context, exactNotificationId);
             if (marked) {
                 markRead.setEnabled(false);
-                view.setVisibility(View.GONE);
+                boundRow.setVisibility(View.GONE);
                 context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
             } else {
                 Toast.makeText(context, R.string.notification_dismiss_failed, Toast.LENGTH_SHORT).show();
