@@ -183,7 +183,7 @@ public class AutoScrollPreviewTextView extends TextView {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
         Layout layout = getLayout();
-        if (isAutoExpand()) {
+        if (isAutoExpand() && !isNativeVerticalListRow()) {
             int totalLines = layout == null ? 0 : layout.getLineCount();
             int collapsedLines = TextOverflowMode.collapsedPreviewLineCount(totalLines);
             expandable = totalLines > collapsedLines && collapsedLines > 0;
@@ -221,12 +221,12 @@ public class AutoScrollPreviewTextView extends TextView {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        if (isNativeVerticalListRow()) {
+            // Native Vertical List has no preview timer, arrow animation, auto-step or expansion.
+            return;
+        }
         if (!isAutoExpand()) {
-            if (!isNativeVerticalListRow()) {
-                // Cards/3D Wheel keep the existing stepping preview. Native Vertical List stays
-                // static and schedules no timer/callback at all.
-                scheduleScrollStep(STEP_DELAY_MS);
-            }
+            scheduleScrollStep(STEP_DELAY_MS);
             return;
         }
         if (!expandable) return;
@@ -249,7 +249,7 @@ public class AutoScrollPreviewTextView extends TextView {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        if (isAutoExpand() && expandable) {
+        if (!isNativeVerticalListRow() && isAutoExpand() && expandable) {
             boolean inArrowArea = event.getX() >= getWidth() - getPaddingRight() - dp(40);
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
@@ -300,11 +300,13 @@ public class AutoScrollPreviewTextView extends TextView {
         // A notification preview in Vertical List must never move on its own. Keep a stable
         // two-line END-ellipsized preview; Cards/3D Wheel may still use the existing stepping
         // preview behavior.
-        if (isNativeVerticalListRow() && !isAutoExpand()) {
+        if (isNativeVerticalListRow()) {
             super.setMaxLines(VISIBLE_LINES);
             super.setEllipsize(TextUtils.TruncateAt.END);
             setVerticalFadingEdgeEnabled(false);
             firstVisibleLine = 0;
+            expanded = false;
+            expandable = false;
             scrollTo(0, 0);
             return;
         }
