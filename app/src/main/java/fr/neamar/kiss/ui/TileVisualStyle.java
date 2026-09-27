@@ -36,18 +36,9 @@ public final class TileVisualStyle {
             BASE_ROW_STYLED.put(row, Boolean.TRUE);
         }
 
-        // Metadata/date formatting is not scroll-critical. Recycled rows can be rebound many
-        // times during one fling, so leave metadata blank while the native list is moving; the
-        // idle enrichment pass restores the visible rows once motion stops.
-        if (isNativeListScrolling(row)) {
-            View metadata = row.findViewById(R.id.item_history_meta);
-            if (metadata instanceof android.widget.TextView) {
-                ((android.widget.TextView) metadata).setText(null);
-                metadata.setVisibility(View.GONE);
-            }
-        } else {
-            UniversalHistoryTimestamp.bind(row, result, context);
-        }
+        // Keep metadata layout stable while scrolling. Hiding it during a fling and restoring it
+        // at idle made the text/row height visibly jump exactly when scrolling stopped.
+        UniversalHistoryTimestamp.bind(row, result, context);
 
         ImageView primary = ensureImmediateIcon(row, context);
         if (primary == null || BASE_ICON_STYLED.containsKey(primary)) return;
@@ -56,17 +47,6 @@ public final class TileVisualStyle {
         primary.setPadding(0, 0, 0, 0);
         primary.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         BASE_ICON_STYLED.put(primary, Boolean.TRUE);
-    }
-
-    private static boolean isNativeListScrolling(@NonNull View view) {
-        android.view.ViewParent parent = view.getParent();
-        while (parent instanceof View) {
-            if (parent instanceof AnimatedListView) {
-                return ((AnimatedListView) parent).isScrollInProgress();
-            }
-            parent = parent.getParent();
-        }
-        return false;
     }
 
     private static ImageView ensureImmediateIcon(View row, Context context) {
