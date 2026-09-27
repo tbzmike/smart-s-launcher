@@ -66,9 +66,6 @@ final class HistoryVisualEnhancer {
         CancellationSignal signal = cancellationSignal;
         if (signal != null) signal.cancel();
         cancellationSignal = null;
-        CancellationSignal signal = cancellationSignal;
-        if (signal != null) signal.cancel();
-        cancellationSignal = null;
         if (inFlight != null) inFlight.cancel(true);
         inFlight = null;
         executor.shutdownNow();
@@ -97,6 +94,9 @@ final class HistoryVisualEnhancer {
         // A real resume or dataset change can request fresh metadata later.
         generation++;
         refreshPending = false;
+        CancellationSignal signal = cancellationSignal;
+        if (signal != null) signal.cancel();
+        cancellationSignal = null;
         if (inFlight != null) inFlight.cancel(true);
         inFlight = null;
     }
