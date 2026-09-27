@@ -1,5 +1,7 @@
 package fr.neamar.kiss.forwarder;
 
+import android.os.CancellationSignal;
+import android.os.OperationCanceledException;
 import android.os.SystemClock;
 
 import java.util.Map;
@@ -27,6 +29,7 @@ final class HistoryVisualEnhancer {
     private final Runnable scrollStarted = this::onScrollStarted;
 
     private Future<?> inFlight;
+    private CancellationSignal cancellationSignal;
     private boolean refreshPending;
     private boolean listenerRegistered;
     private boolean destroyed;
@@ -60,6 +63,12 @@ final class HistoryVisualEnhancer {
             historyDisplayForwarder.removeScrollStartedListener(scrollStarted);
             listenerRegistered = false;
         }
+        CancellationSignal signal = cancellationSignal;
+        if (signal != null) signal.cancel();
+        cancellationSignal = null;
+        CancellationSignal signal = cancellationSignal;
+        if (signal != null) signal.cancel();
+        cancellationSignal = null;
         if (inFlight != null) inFlight.cancel(true);
         inFlight = null;
         executor.shutdownNow();
@@ -116,14 +125,21 @@ final class HistoryVisualEnhancer {
 
         refreshPending = false;
         final long taskGeneration = ++generation;
+        final CancellationSignal signal = new CancellationSignal();
+        cancellationSignal = signal;
         inFlight = executor.submit(() -> {
-            Map<String, LaunchStatsProvider.LaunchStats> stats =
-                    LaunchStatsProvider.loadAll(activity.getApplicationContext());
-            if (Thread.currentThread().isInterrupted()) return;
-            AppUsageTodayStore.Snapshot usage =
-                    AppUsageTodayStore.getToday(activity.getApplicationContext());
-            if (Thread.currentThread().isInterrupted()) return;
-            activity.runOnUiThread(() -> finishRefresh(taskGeneration, stats, usage));
+            try {
+                Map<String, LaunchStatsProvider.LaunchStats> stats =
+                        LaunchStatsProvider.loadAll(activity.getApplicationContext(), signal);
+                if (signal.isCanceled() || Thread.currentThread().isInterrupted()) return;
+
+                // Do not query UsageStats for Vertical List. It is optional decoration and can keep
+                // running after a fling begins on some vendor builds. Scroll-critical History now
+                // performs only the single cancellation-aware SQLite stats query.
+                activity.runOnUiThread(() -> finishRefresh(taskGeneration, stats, null));
+            } catch (OperationCanceledException ignored) {
+                // Expected when the user starts scrolling.
+            }
         });
     }
 
@@ -132,6 +148,7 @@ final class HistoryVisualEnhancer {
                                AppUsageTodayStore.Snapshot usage) {
         if (destroyed || taskGeneration != generation) return;
         inFlight = null;
+        cancellationSignal = null;
         if (!UniversalHistoryTimestamp.isHistorySurface(activity)) {
             // A History load can finish after the user has started typing. Never decorate the
             // current QUERY tree with data loaded for the previous History surface.
