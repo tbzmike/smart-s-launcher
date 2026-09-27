@@ -26,6 +26,7 @@ import java.util.Locale;
 
 import fr.neamar.kiss.BatteryHistoryActivity;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 
 public final class BatteryMonitorService extends Service {
     public static final String ACTION_START = "fr.neamar.kiss.battery.START";
@@ -64,6 +65,10 @@ public final class BatteryMonitorService extends Service {
 
     private final Runnable sampler = new Runnable() {
         @Override public void run() {
+            if (LauncherScrollWorkGate.isScrolling()) {
+                handler.postDelayed(this, 15_000L);
+                return;
+            }
             boolean forceWidgets = forceNextWidgetRefresh;
             forceNextWidgetRefresh = false;
             BatterySnapshot s = sampleNow(forceWidgets);
@@ -73,6 +78,10 @@ public final class BatteryMonitorService extends Service {
 
     private final Runnable liveRefresher = new Runnable() {
         @Override public void run() {
+            if (LauncherScrollWorkGate.isScrolling()) {
+                handler.postDelayed(this, 15_000L);
+                return;
+            }
             BatterySnapshot s = refreshLiveNow();
             handler.postDelayed(this, nextLiveRefreshDelay(s));
         }
@@ -163,6 +172,10 @@ public final class BatteryMonitorService extends Service {
 
     private void scheduleSampleNow(boolean forceWidgets) {
         forceNextWidgetRefresh |= forceWidgets;
+        if (LauncherScrollWorkGate.isScrolling()) {
+            // Keep the state-change hint, but do not wake telemetry while the user is scrolling.
+            return;
+        }
         handler.removeCallbacks(sampler);
         handler.postDelayed(sampler, EVENT_DEBOUNCE_MS);
     }
