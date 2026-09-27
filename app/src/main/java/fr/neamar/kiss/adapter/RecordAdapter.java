@@ -1016,7 +1016,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void moveLaunchTargetsToBottom(List<Result<?>> items, String query) {
-        if (items == null || items.size() < 2 || TextUtils.isEmpty(query)) return;
+        if (items == null || items.size() < 2 || TextUtils.isEmpty(query)
+                || "<history>".equals(query)
+                || SearchHandler.getInstance().getLastSearchType() != Searcher.Type.QUERY) {
+            return;
+        }
 
         List<Result<?>> normalResults = new ArrayList<>(items.size());
         List<Result<?>> launchTargets = new ArrayList<>(4);
