@@ -10,14 +10,14 @@ import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
 
-import androidx.appcompat.widget.AppCompatTextView;
+import android.widget.TextView;
 
 /**
  * Notification/message preview shared by Smart S result tiles.
  * Auto-scroll keeps the compact two-line stepping preview. Auto-expand removes the timer but starts
  * at roughly half of the wrapped message and exposes a dedicated arrow for full-text expansion.
  */
-public class AutoScrollPreviewTextView extends AppCompatTextView {
+public class AutoScrollPreviewTextView extends TextView {
     private static final int VISIBLE_LINES = 2;
     private static final long STEP_DELAY_MS = 2400L;
     private static final long RESET_DELAY_MS = 3200L;
@@ -280,11 +280,22 @@ public class AutoScrollPreviewTextView extends AppCompatTextView {
     }
 
     private boolean isActuallyVisibleOnScreen() {
-        if (!attached || !isShown() || !hasWindowFocus()) return false;
+        if (!attached || !isShown() || !hasWindowFocus() || isNativeListScrolling()) return false;
         visibleRect.setEmpty();
-        return getGlobalVisibleRect(visibleRect)
+        return getLocalVisibleRect(visibleRect)
                 && visibleRect.width() > 0
                 && visibleRect.height() > 0;
+    }
+
+    private boolean isNativeListScrolling() {
+        android.view.ViewParent parent = getParent();
+        while (parent instanceof View) {
+            if (parent instanceof AnimatedListView) {
+                return ((AnimatedListView) parent).isScrollInProgress();
+            }
+            parent = parent.getParent();
+        }
+        return false;
     }
 
     private void cancelScrollStep() {
