@@ -21,7 +21,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.LaunchStatsProvider;
+import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
@@ -39,6 +41,7 @@ public final class UniversalHistoryTimestamp {
     private static final LruCache<String, CharSequence> FORMATTED_CACHE = new LruCache<>(512);
     private static final WeakHashMap<TextView, Boolean> STYLED_VIEWS = new WeakHashMap<>();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
+    private static volatile AppUsageTodayStore.Snapshot usageSnapshot;
 
     private UniversalHistoryTimestamp() {}
 
@@ -56,7 +59,8 @@ public final class UniversalHistoryTimestamp {
 
         LaunchStatsProvider.LaunchStats stats = resolveStats(pojo);
         long resolvedTimestamp = resolveTimestamp(pojo, stats);
-        CharSequence formatted = formatTimestampCached(context, pojo, resolvedTimestamp, stats);
+        CharSequence formatted = formatTimestampCached(
+                context, pojo, resolvedTimestamp, stats, usageSnapshot);
         if (!TextUtils.equals(timestampView.getText(), formatted)) {
             timestampView.setText(formatted);
         }
@@ -117,53 +121,89 @@ public final class UniversalHistoryTimestamp {
 
     public static void invalidateStats() {
         launchStats = null;
+        usageSnapshot = null;
         synchronized (FORMATTED_CACHE) {
             FORMATTED_CACHE.evictAll();
         }
     }
 
-    /** Supplies one bulk stats snapshot loaded by the scroll-idle history enrichment pipeline. */
-    public static void updateStats(Map<String, LaunchStatsProvider.LaunchStats> stats) {
+    /** Supplies one bulk enrichment snapshot without forcing already-visible rows to re-layout. */
+    public static void updateEnrichment(Map<String, LaunchStatsProvider.LaunchStats> stats,
+                                        AppUsageTodayStore.Snapshot usage) {
         launchStats = stats == null
                 ? Collections.emptyMap()
                 : Collections.unmodifiableMap(new HashMap<>(stats));
+        usageSnapshot = usage;
         synchronized (FORMATTED_CACHE) {
             FORMATTED_CACHE.evictAll();
         }
     }
 
+    /** Compatibility entry point for callers that only have launch statistics. */
+    public static void updateStats(Map<String, LaunchStatsProvider.LaunchStats> stats) {
+        updateEnrichment(stats, usageSnapshot);
+    }
+
     private static CharSequence formatTimestampCached(
-            Context context, Pojo pojo, long timestamp, LaunchStatsProvider.LaunchStats stats) {
+            Context context, Pojo pojo, long timestamp, LaunchStatsProvider.LaunchStats stats,
+            AppUsageTodayStore.Snapshot usage) {
         int interactionsToday = stats == null ? 0 : Math.max(0, stats.launchesToday);
+        long lastOpened = stats == null ? 0L : Math.max(0L, stats.lastLaunchTime);
+        long foregroundMs = 0L;
+        if (pojo instanceof AppPojo && usage != null && usage.available) {
+            Long value = usage.foregroundMsByPackage.get(((AppPojo) pojo).packageName);
+            foregroundMs = value == null ? 0L : Math.max(0L, value);
+        }
+
         String historyId = pojo.getHistoryId();
         if (TextUtils.isEmpty(historyId)) historyId = pojo.id;
         String locale = context.getResources().getConfiguration().locale.toLanguageTag();
         String key = historyId + '|' + timestamp + '|' + interactionsToday + '|'
+                + lastOpened + '|' + foregroundMs + '|'
                 + DateFormat.is24HourFormat(context) + '|' + locale + '|'
                 + TimeZone.getDefault().getID();
         synchronized (FORMATTED_CACHE) {
             CharSequence cached = FORMATTED_CACHE.get(key);
             if (cached != null) return cached;
         }
-        CharSequence formatted = formatTimestamp(context, timestamp, interactionsToday);
+        CharSequence formatted = formatTimestamp(
+                context, pojo, timestamp, interactionsToday, lastOpened, foregroundMs);
         synchronized (FORMATTED_CACHE) {
             FORMATTED_CACHE.put(key, formatted);
         }
         return formatted;
     }
 
-    private static CharSequence formatTimestamp(Context context, long timestamp,
-                                                int interactionsToday) {
+    private static CharSequence formatTimestamp(Context context, Pojo pojo, long timestamp,
+                                                int interactionsToday, long lastOpened,
+                                                long foregroundMs) {
         Date date = new Date(timestamp);
         java.text.DateFormat dateFormat = DateFormat.getMediumDateFormat(context);
         java.text.DateFormat timeFormat = DateFormat.getTimeFormat(context);
-        return new StringBuilder()
+        StringBuilder text = new StringBuilder()
                 .append(dateFormat.format(date))
                 .append("  •  ")
                 .append(timeFormat.format(date))
                 .append("  •  ")
                 .append(interactionsToday)
                 .append(interactionsToday == 1 ? " interaction today" : " interactions today");
+
+        if (pojo instanceof AppPojo) {
+            if (foregroundMs > 0L) {
+                text.append("  •  Used today ").append(formatDuration(foregroundMs));
+            }
+        } else if (lastOpened > 0L) {
+            text.append("  •  Last opened ")
+                    .append(timeFormat.format(new Date(lastOpened)));
+        }
+        return text;
+    }
+
+    private static String formatDuration(long durationMs) {
+        long totalMinutes = Math.max(0L, durationMs) / 60_000L;
+        long hours = totalMinutes / 60L;
+        long minutes = totalMinutes % 60L;
+        return hours > 0L ? hours + "h " + minutes + "m" : minutes + "m";
     }
 
     private static TextView ensureTimestampView(View row, Context context) {
