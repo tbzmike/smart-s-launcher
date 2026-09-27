@@ -6,7 +6,7 @@
     tools:ignore="UseCompoundDrawables"
     tools:layout_height="@dimen/result_height">
 
-    <ImageView
+    <android.widget.ImageView
         android:id="@+id/item_phone_icon"
         style="@style/ResultItemIcon"
         android:contentDescription="@null"
