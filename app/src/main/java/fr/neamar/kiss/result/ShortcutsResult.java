@@ -94,7 +94,9 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             shortcutIcon.setImageDrawable(null);
         }
 
-        displaySmartCardTargetNotification(context, view);
+        if (!isNativeListScrolling(parent)) {
+            displaySmartCardTargetNotification(context, view);
+        }
         return view;
     }
 
