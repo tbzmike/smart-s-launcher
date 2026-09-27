@@ -22,6 +22,9 @@ public class AutoMarqueeTextView extends TextView {
     private final Runnable deferredLayoutRequest = () -> {
         if (isAttachedToWindow()) requestLayout();
     };
+    private final Runnable deferredMarqueeRestart = () -> {
+        if (isAttachedToWindow()) restartMarquee();
+    };
 
     public AutoMarqueeTextView(Context context) {
         super(context);
@@ -92,12 +95,13 @@ public class AutoMarqueeTextView extends TextView {
         applySearchAppearanceIfNeeded();
         applyConfiguredBehavior();
         if (isAutoExpand()) scheduleLayoutRequest();
-        else restartMarquee();
+        else scheduleMarqueeRestart();
     }
 
     @Override
     protected void onDetachedFromWindow() {
         removeCallbacks(deferredLayoutRequest);
+        removeCallbacks(deferredMarqueeRestart);
         super.onDetachedFromWindow();
     }
 
@@ -106,14 +110,14 @@ public class AutoMarqueeTextView extends TextView {
         super.onTextChanged(text, start, lengthBefore, lengthAfter);
         if (!isAttachedToWindow()) return;
         if (isAutoExpand()) scheduleLayoutRequest();
-        else post(this::restartMarquee);
+        else scheduleMarqueeRestart();
     }
 
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         if (isAttachedToWindow() && width != oldWidth && !isAutoExpand()) {
-            post(this::restartMarquee);
+            scheduleMarqueeRestart();
         }
     }
 
@@ -161,8 +165,30 @@ public class AutoMarqueeTextView extends TextView {
         postOnAnimation(deferredLayoutRequest);
     }
 
+    private void scheduleMarqueeRestart() {
+        removeCallbacks(deferredMarqueeRestart);
+        AnimatedListView list = findNativeListAncestor();
+        if (list != null && list.isScrollInProgress()) {
+            setSelected(false);
+            list.runWhenScrollIdle(deferredMarqueeRestart);
+            return;
+        }
+        postOnAnimation(deferredMarqueeRestart);
+    }
+
+    private AnimatedListView findNativeListAncestor() {
+        android.view.ViewParent parent = getParent();
+        while (parent instanceof android.view.View) {
+            if (parent instanceof AnimatedListView) return (AnimatedListView) parent;
+            parent = parent.getParent();
+        }
+        return null;
+    }
+
     private boolean isActuallyVisibleOnScreen() {
         if (!isShown() || !isAttachedToWindow() || !hasWindowFocus()) return false;
+        AnimatedListView list = findNativeListAncestor();
+        if (list != null && list.isScrollInProgress()) return false;
         visibleRect.setEmpty();
         return getLocalVisibleRect(visibleRect)
                 && visibleRect.width() > 0
@@ -192,12 +218,12 @@ public class AutoMarqueeTextView extends TextView {
     @Override
     protected void onFocusChanged(boolean focused, int direction, Rect previouslyFocusedRect) {
         super.onFocusChanged(focused, direction, previouslyFocusedRect);
-        if (isShown() && !isAutoExpand()) restartMarquee();
+        if (isShown() && !isAutoExpand()) scheduleMarqueeRestart();
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
-        if (hasWindowFocus && !isAutoExpand()) restartMarquee();
+        if (hasWindowFocus && !isAutoExpand()) scheduleMarqueeRestart();
     }
 }
