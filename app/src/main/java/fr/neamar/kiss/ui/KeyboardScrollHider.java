@@ -47,6 +47,8 @@ public class KeyboardScrollHider implements View.OnTouchListener {
 
     public void stop() {
         this.list.setOnTouchListener(null);
+        this.resizeDone = false;
+        this.resizeActive = true;
         this.handleResizeDone();
     }
 
@@ -209,6 +211,7 @@ public class KeyboardScrollHider implements View.OnTouchListener {
     public void fixScroll() {
         this.list.post(() -> {
             resizeDone = false;
+            resizeActive = true;
             handleResizeDone();
         });
     }
