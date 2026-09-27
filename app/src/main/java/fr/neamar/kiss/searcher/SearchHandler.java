@@ -237,18 +237,23 @@ public class SearchHandler {
         // Apps and pinned shortcuts are already memory-resident. Scanning their labels is cheap and
         // makes the common "type app name -> launch" path visible immediately.
         DataHandler dataHandler = fr.neamar.kiss.KissApplication.getApplication(activity).getDataHandler();
-        List<AppPojo> apps = dataHandler.getApplicationsWithoutExcluded();
+        fr.neamar.kiss.dataprovider.AppProvider appProvider = dataHandler.getAppProvider();
+        List<AppPojo> apps = appProvider == null ? null : appProvider.getPojos();
         if (apps != null) {
             for (AppPojo app : apps) {
                 if (generation != searchGeneration.get()) return;
-                if (app != null && quickMatch(app.getName(), q)) putImmediatePreview(normal, launch, app);
+                if (app != null && !app.isExcluded() && quickMatch(app.getName(), q)) {
+                    putImmediatePreview(normal, launch, app);
+                }
             }
         }
-        List<ShortcutPojo> shortcuts = dataHandler.getPinnedShortcuts();
+        fr.neamar.kiss.dataprovider.ShortcutsProvider shortcutsProvider =
+                dataHandler.getShortcutsProvider();
+        List<ShortcutPojo> shortcuts = shortcutsProvider == null ? null : shortcutsProvider.getPojos();
         if (shortcuts != null) {
             for (ShortcutPojo shortcut : shortcuts) {
                 if (generation != searchGeneration.get()) return;
-                if (shortcut != null && quickMatch(shortcut.getName(), q)) {
+                if (shortcut != null && shortcut.isPinned() && quickMatch(shortcut.getName(), q)) {
                     putImmediatePreview(normal, launch, shortcut);
                 }
             }
