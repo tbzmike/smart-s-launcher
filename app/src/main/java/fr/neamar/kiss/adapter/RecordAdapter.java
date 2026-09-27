@@ -1099,14 +1099,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
         if (parent instanceof MainActivity
                 && ((MainActivity) parent).shouldDeferHistoryAdapterUpdate(normalizedQuery)) {
-            pendingScrollResults = new ArrayList<>(updatedResults);
-            pendingScrollContext = context.getApplicationContext();
-            pendingScrollRefresh = isRefresh;
-            pendingScrollQuery = normalizedQuery;
-            if (!pendingScrollApplyScheduled) {
-                pendingScrollApplyScheduled = true;
-                ((MainActivity) parent).runWhenHistoryScrollIdle(applyPendingScrollResults);
-            }
+            // HARD scroll freeze: never queue a dataset replacement to fire at idle. The current
+            // rows remain untouched for the whole gesture and after it; a later real History event
+            // or lifecycle refresh can publish fresh data.
+            clearPendingScrollUpdate();
             return;
         }
 
