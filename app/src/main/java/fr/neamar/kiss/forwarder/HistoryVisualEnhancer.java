@@ -1,6 +1,7 @@
 package fr.neamar.kiss.forwarder;
 
 import android.graphics.Color;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.view.View;
@@ -22,6 +23,8 @@ import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 
 /** Loads native-list/wheel history metadata only while the active viewport is idle. */
 final class HistoryVisualEnhancer {
+    private static final long MIN_RELOAD_INTERVAL_MS = 15_000L;
+
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
@@ -36,7 +39,11 @@ final class HistoryVisualEnhancer {
     private boolean refreshPending;
     private boolean listenerRegistered;
     private boolean destroyed;
+    private boolean forceReload = true;
     private long generation;
+    private long lastLoadUptime;
+    private Map<String, LaunchStatsProvider.LaunchStats> cachedStats = java.util.Collections.emptyMap();
+    private AppUsageTodayStore.Snapshot cachedUsage;
 
     HistoryVisualEnhancer(MainActivity activity,
                           HistoryDisplayForwarder historyDisplayForwarder) {
@@ -51,6 +58,7 @@ final class HistoryVisualEnhancer {
 
     void onDataSetChanged() {
         ensureScrollListener();
+        forceReload = true;
         requestRefresh();
     }
 
@@ -84,19 +92,17 @@ final class HistoryVisualEnhancer {
     private void onScrollStarted() {
         if (destroyed) return;
         if (!UniversalHistoryTimestamp.isHistorySurface(activity)) {
-            // The native-list listener remains attached while QUERY owns the same ListView. Cancel
-            // any History-only work instead of letting search scrolling schedule another metadata
-            // pass against recycled query rows.
             generation++;
             refreshPending = false;
             if (inFlight != null) inFlight.cancel(true);
             inFlight = null;
             return;
         }
-        generation++;
+
+        // Scrolling itself does not make usage/launch statistics stale. Older code cancelled the
+        // current load and started another DB/UsageStats pass after every fling, creating repeated
+        // background work. Keep any in-flight load and only rebind the final visible rows at idle.
         refreshPending = true;
-        if (inFlight != null) inFlight.cancel(true);
-        inFlight = null;
         historyDisplayForwarder.runWhenScrollIdle(refreshAtIdle);
     }
 
@@ -111,6 +117,15 @@ final class HistoryVisualEnhancer {
         }
         if (inFlight != null && !inFlight.isDone()) {
             refreshPending = true;
+            return;
+        }
+
+        long now = SystemClock.uptimeMillis();
+        if (!forceReload && !cachedStats.isEmpty()
+                && now - lastLoadUptime < MIN_RELOAD_INTERVAL_MS) {
+            refreshPending = false;
+            UniversalHistoryTimestamp.updateStats(cachedStats);
+            applyStatsToVisibleRows(cachedStats, cachedUsage);
             return;
         }
 
@@ -143,9 +158,12 @@ final class HistoryVisualEnhancer {
             return;
         }
 
-        UniversalHistoryTimestamp.updateStats(stats);
-        applyStatsToVisibleRows(stats, usage);
-        historyDisplayForwarder.onHistoryMetadataLoaded();
+        cachedStats = stats == null ? java.util.Collections.emptyMap() : stats;
+        cachedUsage = usage;
+        lastLoadUptime = SystemClock.uptimeMillis();
+        forceReload = false;
+        UniversalHistoryTimestamp.updateStats(cachedStats);
+        applyStatsToVisibleRows(cachedStats, cachedUsage);
         if (refreshPending) requestRefresh();
     }
 
