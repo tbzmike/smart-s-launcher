@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -27,6 +28,7 @@ import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
@@ -135,19 +137,13 @@ public class SearchHandler {
         }
 
         if (type == Searcher.Type.QUERY && !isRefresh) {
-            publishHistoryPreview(activity, query, generation);
-
-            final String scheduledQuery = query;
-            final WeakReference<MainActivity> activityRef = new WeakReference<>(activity);
-            pendingQuery = () -> {
-                pendingQuery = null;
-                if (generation != searchGeneration.get()) return;
-                MainActivity currentActivity = activityRef.get();
-                if (currentActivity != null) {
-                    startSearch(type, currentActivity, scheduledQuery, false, generation);
-                }
-            };
-            mainHandler.postDelayed(pendingQuery, QUERY_DEBOUNCE_MS);
+            // Typing is interactive: stop every History-only helper immediately and publish
+            // already-indexed app/shortcut matches in this same UI turn.
+            stopHistoryAuxWorkers();
+            lastSearchType = Searcher.Type.QUERY;
+            lastSearchQuery = query;
+            publishImmediateQueryPreview(activity, query, generation);
+            startSearch(type, activity, query, false, generation);
             return;
         }
 
@@ -212,7 +208,96 @@ public class SearchHandler {
         // A prior generation may have been cancelled while still queued. Remove its FutureTask
         // before scheduling this generation so it cannot retain stale search/UI state.
         Searcher.purgeCancelledSearches();
-        runningSearch.executeOnExecutor(Searcher.SEARCH_THREAD);
+        runningSearch.executeOnExecutor(
+                startedType == Searcher.Type.QUERY ? Searcher.QUERY_THREAD : Searcher.SEARCH_THREAD);
+    }
+
+    private void publishImmediateQueryPreview(@NonNull MainActivity activity,
+                                              String query, long generation) {
+        if (generation != searchGeneration.get() || activity.adapter == null) return;
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        if (q.isEmpty()) return;
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
+        int limit = getConfiguredSearchResultCount(prefs);
+        if (limit <= 0) return;
+
+        LinkedHashMap<String, Pojo> normal = new LinkedHashMap<>();
+        LinkedHashMap<String, Pojo> launch = new LinkedHashMap<>();
+
+        // Ready Home rows first: this instantly surfaces recent messages/contacts/settings without
+        // waiting for any provider or SQLite query.
+        for (Result<?> result : homeResultSnapshot) {
+            if (generation != searchGeneration.get()) return;
+            Pojo pojo = result == null ? null : result.getPojo();
+            if (pojo == null || !quickMatch(pojo.getName(), q)) continue;
+            putImmediatePreview(normal, launch, pojo);
+        }
+
+        // Apps and pinned shortcuts are already memory-resident. Scanning their labels is cheap and
+        // makes the common "type app name -> launch" path visible immediately.
+        DataHandler dataHandler = fr.neamar.kiss.KissApplication.getApplication(activity).getDataHandler();
+        List<AppPojo> apps = dataHandler.getApplicationsWithoutExcluded();
+        if (apps != null) {
+            for (AppPojo app : apps) {
+                if (generation != searchGeneration.get()) return;
+                if (app != null && quickMatch(app.getName(), q)) putImmediatePreview(normal, launch, app);
+            }
+        }
+        List<ShortcutPojo> shortcuts = dataHandler.getPinnedShortcuts();
+        if (shortcuts != null) {
+            for (ShortcutPojo shortcut : shortcuts) {
+                if (generation != searchGeneration.get()) return;
+                if (shortcut != null && quickMatch(shortcut.getName(), q)) {
+                    putImmediatePreview(normal, launch, shortcut);
+                }
+            }
+        }
+
+        if (normal.isEmpty() && launch.isEmpty()) return;
+        List<Pojo> visible = new ArrayList<>(Math.min(limit, normal.size() + launch.size()));
+        for (Pojo pojo : normal.values()) {
+            if (visible.size() >= limit) break;
+            visible.add(pojo);
+        }
+        // Preserve the launch-target-at-bottom rule from the first visible frame.
+        int launchSlots = Math.max(0, limit - visible.size());
+        if (launchSlots == 0 && !launch.isEmpty() && limit > 0) {
+            int keepNormal = Math.max(0, limit - Math.min(limit, launch.size()));
+            while (visible.size() > keepNormal) visible.remove(visible.size() - 1);
+        }
+        for (Pojo pojo : launch.values()) {
+            if (visible.size() >= limit) break;
+            visible.add(pojo);
+        }
+
+        if (!visible.isEmpty() && generation == searchGeneration.get()) {
+            activity.adapter.updateWithPojos(activity, visible, true, query == null ? "" : query);
+        }
+    }
+
+    private void putImmediatePreview(Map<String, Pojo> normal, Map<String, Pojo> launch, Pojo pojo) {
+        String key = pojo.getClass().getName() + '|' + pojo.id;
+        if (pojo instanceof AppPojo || pojo instanceof ShortcutPojo) launch.put(key, pojo);
+        else normal.put(key, pojo);
+    }
+
+    private boolean quickMatch(String value, String normalizedQuery) {
+        if (value == null || normalizedQuery == null || normalizedQuery.isEmpty()) return false;
+        String name = value.toLowerCase(Locale.ROOT);
+        if (name.startsWith(normalizedQuery) || name.contains(normalizedQuery)) return true;
+        int start = 0;
+        while (start < name.length()) {
+            while (start < name.length() && !Character.isLetterOrDigit(name.charAt(start))) start++;
+            if (start >= name.length()) break;
+            if (name.startsWith(normalizedQuery, start)) return true;
+            while (start < name.length() && Character.isLetterOrDigit(name.charAt(start))) start++;
+        }
+        return false;
+    }
+
+    private void stopHistoryAuxWorkers() {
+        stopHistoryAuxWorkers();
     }
 
     /**
