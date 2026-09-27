@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.KissApplication;
@@ -53,6 +54,7 @@ public class AppProvider extends Provider<AppPojo>
         return thread;
     });
     private final AtomicBoolean reconcileRunning = new AtomicBoolean(false);
+    private volatile Future<?> reconcileFuture;
     private LauncherApps launcherApps;
     private SharedPreferences prefs;
 
@@ -100,8 +102,6 @@ public class AppProvider extends Provider<AppPojo>
     private final Runnable reconcileFrozenState = () -> {
         if (!launcherUiVisible || !isFrozenDetectionEnabled()) return;
         if (launcherScrolling) {
-            long delay = getFrozenReconcileDelayMs();
-            if (delay >= 0L) scheduleNextReconcile(Math.min(1500L, delay));
             return;
         }
         long reconcileDelayMs = getFrozenReconcileDelayMs();
@@ -116,13 +116,17 @@ public class AppProvider extends Provider<AppPojo>
         // unchanged-state filtering on a low-priority worker. The UI thread receives only packages
         // whose disabled state may actually need to change; the common no-change pass posts no UI work.
         final List<AppPojo> snapshot = new ArrayList<>(getPojos());
-        stateExecutor.execute(() -> {
+        reconcileFuture = stateExecutor.submit(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             final boolean[] enabledStates = new boolean[snapshot.size()];
             final ArrayList<Integer> changedIndices = new ArrayList<>();
             PackageManager pm = getPackageManager();
 
             for (int i = 0; i < snapshot.size(); i++) {
+                if (launcherScrolling || Thread.currentThread().isInterrupted()) {
+                    reconcileRunning.set(false);
+                    return;
+                }
                 AppPojo pojo = snapshot.get(i);
                 boolean enabled = true;
                 try {
@@ -155,15 +159,19 @@ public class AppProvider extends Provider<AppPojo>
 
             if (changedIndices.isEmpty()) {
                 reconcileRunning.set(false);
-                if (launcherUiVisible && isFrozenDetectionEnabled()) {
+                if (!launcherScrolling && launcherUiVisible && isFrozenDetectionEnabled()) {
                     scheduleNextReconcile(reconcileDelayMs);
                 }
+                return;
+            }
+            if (launcherScrolling || Thread.currentThread().isInterrupted()) {
+                reconcileRunning.set(false);
                 return;
             }
 
             stateHandler.post(() -> {
                 try {
-                    if (!launcherUiVisible) return;
+                    if (!launcherUiVisible || launcherScrolling) return;
                     boolean changed = false;
                     for (int index : changedIndices) {
                         AppPojo pojo = snapshot.get(index);
@@ -184,7 +192,7 @@ public class AppProvider extends Provider<AppPojo>
                     }
                 } finally {
                     reconcileRunning.set(false);
-                    if (launcherUiVisible && isFrozenDetectionEnabled())
+                    if (!launcherScrolling && launcherUiVisible && isFrozenDetectionEnabled())
                         scheduleNextReconcile(reconcileDelayMs);
                 }
             });
@@ -210,10 +218,14 @@ public class AppProvider extends Provider<AppPojo>
         if (provider == null || !launcherUiVisible || !provider.isFrozenDetectionEnabled()) return;
         if (scrolling) {
             provider.stateHandler.removeCallbacks(provider.reconcileFrozenState);
-        } else {
-            long delay = provider.getFrozenReconcileDelayMs();
-            if (delay >= 0L) provider.scheduleNextReconcile(Math.min(1500L, delay));
+            Future<?> running = provider.reconcileFuture;
+            if (running != null) running.cancel(true);
+            provider.reconcileFuture = null;
+            provider.reconcileRunning.set(false);
         }
+        // Deliberately do not schedule a reconciliation when scrolling ends. Scrolling itself must
+        // not create deferred background work. LauncherApps callbacks, lifecycle and the normal
+        // provider schedule remain the sources for future state refreshes.
     }
 
     @Override
