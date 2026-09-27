@@ -40,10 +40,9 @@ public class SystemUiVisibilityHelper implements View.OnSystemUiVisibilityChange
 
     public void onWindowFocusChanged(boolean hasFocus) {
         if (hasFocus) {
-            if (mIsScrolling)
-                applyScrollSystemUi();
-            else
-                applySystemUi();
+            // Re-assert the current preference state after returning to the launcher. The normal
+            // scroll path remains idempotent and does not repeat this work for every MOVE event.
+            applySystemUi();
         }
     }
 
