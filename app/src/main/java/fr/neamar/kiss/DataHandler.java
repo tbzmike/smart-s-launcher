@@ -327,6 +327,10 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
                 continue;
             // Retrieve results for query:
             entry.provider.requestResults(query, searcher);
+            if (searcher instanceof fr.neamar.kiss.searcher.QuerySearcher
+                    && !searcher.isCancelled()) {
+                ((fr.neamar.kiss.searcher.QuerySearcher) searcher).publishProviderProgress();
+            }
         }
     }
 
