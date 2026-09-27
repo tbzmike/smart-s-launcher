@@ -30,6 +30,7 @@ public class KeyboardScrollHider implements View.OnTouchListener {
     private MotionEvent lastMotionEvent;
     private int initialWindowPadding = 0;
     private boolean resizeDone = false;
+    private boolean resizeActive = false;
 
     private boolean scrollBarEnabled = true;
 
@@ -61,20 +62,23 @@ public class KeyboardScrollHider implements View.OnTouchListener {
 
     private void setListLayoutHeight(int height) {
         final ViewGroup.LayoutParams params = this.list.getLayoutParams();
+        if (params.height == height) return;
         params.height = height;
+        // setLayoutParams already requests the necessary layout. forceLayout() here used to force
+        // an additional measure/layout pass for every touch/animation frame.
         this.list.setLayoutParams(params);
-        this.list.forceLayout();
     }
 
     protected void handleResizeDone() {
-        if (this.resizeDone) {
-            return;
-        }
+        if (this.resizeDone) return;
 
         this.list.unblockTouchEvents();
         this.pullEffect.releasePull();
         this.list.setVerticalScrollBarEnabled(this.scrollBarEnabled);
-        this.setListLayoutHeight(ViewGroup.LayoutParams.MATCH_PARENT);
+        if (this.resizeActive) {
+            this.setListLayoutHeight(ViewGroup.LayoutParams.MATCH_PARENT);
+        }
+        this.resizeActive = false;
         this.resizeDone = true;
     }
 
@@ -83,6 +87,7 @@ public class KeyboardScrollHider implements View.OnTouchListener {
             return;
         }
 
+        this.resizeActive = true;
         this.list.blockTouchEvents();
         this.list.setVerticalScrollBarEnabled(false);
 
@@ -123,9 +128,11 @@ public class KeyboardScrollHider implements View.OnTouchListener {
                 this.offsetYDiff = 0;
                 this.lastMotionEvent = event;
                 this.resizeDone = false;
+                this.resizeActive = false;
                 this.initialWindowPadding = this.getWindowPadding();
                 this.listHeightInitial = this.list.getHeight();
-                this.setListLayoutHeight(this.listHeightInitial);
+                // Do not force an otherwise unchanged ListView through measure/layout at the start
+                // of every scroll gesture. Resize only if the system IME inset actually changes.
                 break;
 
             case MotionEvent.ACTION_MOVE:
@@ -137,52 +144,58 @@ public class KeyboardScrollHider implements View.OnTouchListener {
             case MotionEvent.ACTION_UP:
                 this.lastMotionEvent = null;
                 if (Math.abs(this.offsetYCurrent - this.offsetYStart) <= THRESHOLD) {
-                    this.list.post(this::handleResizeDone);
+                    this.handleResizeDone();
                     break;
                 }
                 // fall through for a real scroll gesture
             case MotionEvent.ACTION_CANCEL:
                 this.lastMotionEvent = null;
 
-                if (!this.resizeDone) {
-                    if (isScrolled()) {
-                        this.handler.hideKeyboardOnScroll();
-                    }
-                    ValueAnimator animator = ValueAnimator.ofInt(
-                            this.list.getHeight(),
-                            this.listParent.getHeight()
-                    );
-                    int animationDuration = v.getContext().getResources().getInteger(android.R.integer.config_shortAnimTime);
-                    animator.setDuration(animationDuration);
-                    animator.setInterpolator(new AccelerateInterpolator());
-                    animator.addUpdateListener(animation -> {
-                        int height = (int) animation.getAnimatedValue();
-                        KeyboardScrollHider.this.setListLayoutHeight(height);
-                    });
-                    animator.addListener(new Animator.AnimatorListener() {
-                        @Override
-                        public void onAnimationStart(@NonNull Animator animation) {
-                            KeyboardScrollHider.this.list.unblockTouchEvents();
-                            KeyboardScrollHider.this.pullEffect.releasePull();
-                        }
-
-                        @Override
-                        public void onAnimationEnd(@NonNull Animator animation) {
-                            KeyboardScrollHider.this.handleResizeDone();
-                        }
-
-                        @Override
-                        public void onAnimationCancel(@NonNull Animator animation) {
-                        }
-
-                        @Override
-                        public void onAnimationRepeat(@NonNull Animator animation) {
-                        }
-                    });
-                    animator.start();
-                } else {
-                    this.handleResizeDone();
+                if (isScrolled()) {
+                    this.handler.hideKeyboardOnScroll();
                 }
+
+                // If the IME inset never changed, there is nothing to resize. The old code still
+                // ran a ValueAnimator from height X to the same height X and force-laid out the
+                // ListView on every animation frame after every fling.
+                if (!this.resizeActive || this.resizeDone) {
+                    this.handleResizeDone();
+                    break;
+                }
+
+                ValueAnimator animator = ValueAnimator.ofInt(
+                        this.list.getHeight(),
+                        this.listParent.getHeight()
+                );
+                int animationDuration = v.getContext().getResources().getInteger(android.R.integer.config_shortAnimTime);
+                animator.setDuration(animationDuration);
+                animator.setInterpolator(new AccelerateInterpolator());
+                animator.addUpdateListener(animation -> {
+                    int height = (int) animation.getAnimatedValue();
+                    KeyboardScrollHider.this.setListLayoutHeight(height);
+                });
+                animator.addListener(new Animator.AnimatorListener() {
+                    @Override
+                    public void onAnimationStart(@NonNull Animator animation) {
+                        KeyboardScrollHider.this.list.unblockTouchEvents();
+                        KeyboardScrollHider.this.pullEffect.releasePull();
+                    }
+
+                    @Override
+                    public void onAnimationEnd(@NonNull Animator animation) {
+                        KeyboardScrollHider.this.handleResizeDone();
+                    }
+
+                    @Override
+                    public void onAnimationCancel(@NonNull Animator animation) {
+                        KeyboardScrollHider.this.handleResizeDone();
+                    }
+
+                    @Override
+                    public void onAnimationRepeat(@NonNull Animator animation) {
+                    }
+                });
+                animator.start();
                 break;
         }
 
