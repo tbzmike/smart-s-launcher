@@ -91,19 +91,15 @@ final class HistoryVisualEnhancer {
 
     private void onScrollStarted() {
         if (destroyed) return;
-        if (!UniversalHistoryTimestamp.isHistorySurface(activity)) {
-            generation++;
-            refreshPending = false;
-            if (inFlight != null) inFlight.cancel(true);
-            inFlight = null;
-            return;
-        }
 
-        // Scrolling itself does not make usage/launch statistics stale. Older code cancelled the
-        // current load and started another DB/UsageStats pass after every fling, creating repeated
-        // background work. Keep any in-flight load and only rebind the final visible rows at idle.
-        refreshPending = true;
-        historyDisplayForwarder.runWhenScrollIdle(refreshAtIdle);
+        // The native Vertical List must be visually frozen while the viewport is moving.
+        // Do not let an already-running metadata/UsageStats task finish behind the fling and then
+        // mutate TextViews when the list becomes idle. A later real dataset change/resume can
+        // request fresh metadata; scrolling by itself never creates deferred row work.
+        generation++;
+        refreshPending = false;
+        if (inFlight != null) inFlight.cancel(true);
+        inFlight = null;
     }
 
     private void refreshNow() {
