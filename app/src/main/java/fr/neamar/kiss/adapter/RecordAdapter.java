@@ -151,6 +151,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         refreshRenderConfigIfNeeded(renderContext);
         Result<?> result = getItem(position);
         View view = result.display(renderContext, convertView, parent, fuzzyScore);
+
+        // HARD scroll freeze for native Vertical List. Result.display() performs only the minimum
+        // identity/text bind; every optional decorator below is skipped until a later normal bind.
+        // No notification enrichment, overflow traversal, timestamp formatting, style traversal,
+        // width mutation, click rewiring or bell work is allowed in the fling hot path.
+        boolean hardScrollFreeze = cachedVerticalHistory
+                && parent instanceof fr.neamar.kiss.ui.AnimatedListView
+                && ((fr.neamar.kiss.ui.AnimatedListView) parent).isScrollInProgress();
+        if (hardScrollFreeze) return view;
+
         NotificationBellStyle.applyToResult(view, result, parent instanceof AbsListView);
         if (result.getPojo() instanceof NotificationPojo) {
             configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
