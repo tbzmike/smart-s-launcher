@@ -42,8 +42,13 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 public final class CommunicationResult extends Result<CommunicationPojo> {
     private static final long ACTIVE_MESSAGE_MATCH_WINDOW_MS = 10 * 60_000L;
     private volatile Drawable icon;
+    private final String formattedWhen;
 
-    public CommunicationResult(@NonNull CommunicationPojo pojo) { super(pojo); }
+    public CommunicationResult(@NonNull CommunicationPojo pojo) {
+        super(pojo);
+        formattedWhen = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                .format(new Date(pojo.timestamp));
+    }
 
     @NonNull @Override
     public View display(Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
@@ -59,10 +64,42 @@ public final class CommunicationResult extends Result<CommunicationPojo> {
 
         if (isHideIcons(context)) image.setImageDrawable(null); else setAsyncDrawable(image);
 
-        String when = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
-                .format(new Date(pojo.timestamp));
+        String when = formattedWhen;
         String label = pojo.primaryLabel();
         if (TextUtils.isEmpty(label)) label = pojo.address;
+
+        if (isNativeListScrolling(parent)) {
+            // During a fling this row is display-only. No active-notification scan, expanded-text
+            // lookup, mark-read verification, route resolution, or listener rewiring is allowed.
+            switch (pojo.kind) {
+                case CALL:
+                    title.setText(TextUtils.isEmpty(label) ? "Call" : label);
+                    meta.setText("Call · " + when
+                            + (TextUtils.isEmpty(pojo.address) ? "" : " · " + pojo.address));
+                    body.setText(pojo.body);
+                    body.setVisibility(TextUtils.isEmpty(pojo.body) ? View.GONE : View.VISIBLE);
+                    actions.setVisibility(View.GONE);
+                    break;
+                case SMS:
+                    title.setText(TextUtils.isEmpty(label) ? "Message" : label);
+                    meta.setText("Message · " + when
+                            + (TextUtils.isEmpty(pojo.address) ? "" : " · " + pojo.address));
+                    body.setText(cleanMessageBody(pojo.body));
+                    body.setVisibility(View.VISIBLE);
+                    actions.setVisibility(View.VISIBLE);
+                    break;
+                case TRUECALLER_NOTIFICATION:
+                default:
+                    title.setText(TextUtils.isEmpty(label) ? "Truecaller" : label);
+                    meta.setText("Message · " + when);
+                    body.setText(pojo.body);
+                    body.setVisibility(View.VISIBLE);
+                    actions.setVisibility(View.VISIBLE);
+                    break;
+            }
+            title.setSelected(false);
+            return view;
+        }
 
         switch (pojo.kind) {
             case CALL:
