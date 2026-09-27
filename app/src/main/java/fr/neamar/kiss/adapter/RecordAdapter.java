@@ -53,6 +53,8 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.ui.AutoMarqueeTextView;
+import fr.neamar.kiss.ui.AutoScrollPreviewTextView;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationBellStyle;
@@ -348,6 +350,15 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureMarquee(TextView text) {
+        // These views already own their text-change, visibility and scroll/marquee lifecycle.
+        // Adding RecordAdapter's TextWatcher + layout listener on top duplicated width measurement
+        // and selected-state invalidation on every recycled bind.
+        if (text instanceof AutoMarqueeTextView || text instanceof AutoScrollPreviewTextView) {
+            text.setFocusable(false);
+            text.setFocusableInTouchMode(false);
+            makeTextUseAvailableWidth(text);
+            return;
+        }
         if (TextOverflowMode.AUTO_EXPAND.equals(cachedOverflowMode)) {
             configureExpandedText(text);
             return;
@@ -366,6 +377,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void configureExpandedText(TextView text) {
+        if (text instanceof AutoMarqueeTextView || text instanceof AutoScrollPreviewTextView) {
+            text.setFocusable(false);
+            text.setFocusableInTouchMode(false);
+            makeTextUseAvailableWidth(text);
+            return;
+        }
         text.setSelected(false);
         text.setSingleLine(false);
         text.setMaxLines(Integer.MAX_VALUE);
