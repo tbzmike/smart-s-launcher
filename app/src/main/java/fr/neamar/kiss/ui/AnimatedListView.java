@@ -19,7 +19,6 @@ public class AnimatedListView extends BlockableListView {
     private ViewTreeObserver pendingAnimationObserver;
     private ViewTreeObserver.OnPreDrawListener pendingAnimationListener;
     private final Runnable restoreScrollAnimations = () -> {
-        setVisibleMarqueesPaused(false);
         NotificationBellStyle.resumeFlashingInTree(this);
     };
 
@@ -40,13 +39,11 @@ public class AnimatedListView extends BlockableListView {
 
     private void initScrollIdleGate() {
         scrollIdleGate = new ScrollIdleGate(this);
-        // Vertical Cards do not continuously restart TextView marquees while moving. Give the
-        // native Vertical List the same property: pause visible marquees once when scrolling starts,
-        // then restore them once the viewport is idle. No child traversal happens per scroll frame.
-        scrollIdleGate.addScrollStartedListener(() -> {
-            setVisibleMarqueesPaused(true);
-            NotificationBellStyle.pauseFlashingInTree(this);
-        });
+        // Freeze decorative notification flashing while the native list moves. Text marquee state
+        // is deliberately left untouched: toggling TextView.selected at scroll start/idle restarts
+        // marquee layout and is visible as the text "adjusting" when the fling stops.
+        scrollIdleGate.addScrollStartedListener(() ->
+                NotificationBellStyle.pauseFlashingInTree(this));
     }
 
     @Override
@@ -80,35 +77,6 @@ public class AnimatedListView extends BlockableListView {
 
     public void removeScrollStartedListener(Runnable listener) {
         if (scrollIdleGate != null) scrollIdleGate.removeScrollStartedListener(listener);
-    }
-
-    private void setVisibleMarqueesPaused(boolean paused) {
-        for (int i = 0; i < getChildCount(); i++) {
-            updateMarqueeTree(getChildAt(i), paused);
-        }
-    }
-
-    private void updateMarqueeTree(View view, boolean paused) {
-        if (view instanceof TextView) {
-            TextView text = (TextView) view;
-            if (text.getEllipsize() == TextUtils.TruncateAt.MARQUEE) {
-                if (paused) {
-                    if (text.isSelected()) text.setSelected(false);
-                } else {
-                    CharSequence value = text.getText();
-                    int available = text.getWidth()
-                            - text.getCompoundPaddingLeft() - text.getCompoundPaddingRight();
-                    boolean overflow = available > 0 && !TextUtils.isEmpty(value)
-                            && text.getPaint().measureText(value.toString()) > available;
-                    if (text.isSelected() != overflow) text.setSelected(overflow);
-                }
-            }
-        }
-        if (!(view instanceof ViewGroup)) return;
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            updateMarqueeTree(group.getChildAt(i), paused);
-        }
     }
 
     public void prepareChangeAnim() {
