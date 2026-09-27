@@ -1340,7 +1340,13 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     public void beforeListChange() {
+        // Query results can publish several times in quick succession as providers finish.
+        // Animate none of those publications: show them immediately instead of spending a frame
+        // capturing child positions and running move animations.
+        boolean interactiveQuery = SearchHandler.getInstance().getLastSearchType()
+                == Searcher.Type.QUERY;
         listChangeAnimationPrepared = list != null
+                && !interactiveQuery
                 && (forwarderManager == null || !forwarderManager.isHistoryScrollInProgress());
         if (listChangeAnimationPrepared) list.prepareChangeAnim();
     }
