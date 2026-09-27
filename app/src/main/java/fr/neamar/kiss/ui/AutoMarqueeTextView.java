@@ -147,6 +147,27 @@ public class AutoMarqueeTextView extends TextView {
 
     private void applyConfiguredBehavior() {
         if (!behaviorLocked) return;
+
+        // Native Vertical List rows are recycled during a fling. Keep their text geometry and
+        // horizontal position completely static: no marquee, no selected-state restart, no
+        // after-scroll animation. Vertical Cards/3D Wheel retain the configured behavior.
+        if (isNativeVerticalListRow()) {
+            setMarqueeRepeatLimit(0);
+            setHorizontalFadingEdgeEnabled(false);
+            setSelected(false);
+            if (isAutoExpand()) {
+                super.setSingleLine(false);
+                super.setMaxLines(Integer.MAX_VALUE);
+                super.setEllipsize(null);
+            } else {
+                super.setSingleLine(true);
+                super.setMaxLines(1);
+                super.setEllipsize(TextUtils.TruncateAt.END);
+            }
+            super.setHorizontallyScrolling(false);
+            return;
+        }
+
         if (isAutoExpand()) {
             super.setSingleLine(false);
             super.setMaxLines(Integer.MAX_VALUE);
@@ -167,22 +188,24 @@ public class AutoMarqueeTextView extends TextView {
     }
 
     private void scheduleLayoutRequest() {
-        // Text often changes while History/Card containers are already in a measure/layout pass.
-        // Requesting another layout synchronously forces Android into a second pass and was visible
-        // in the captured frame-drop logs. Coalesce the resize onto the next animation frame.
         removeCallbacks(deferredLayoutRequest);
+        // ListView's normal row measurement already handles the new text. Posting another
+        // requestLayout from a recycled row creates a second layout pass and visible settling.
+        if (isNativeVerticalListRow()) return;
         postOnAnimation(deferredLayoutRequest);
     }
 
     private void scheduleMarqueeRestart() {
         removeCallbacks(deferredMarqueeRestart);
-        AnimatedListView list = findNativeListAncestor();
-        if (list != null && list.isScrollInProgress()) {
+        if (isNativeVerticalListRow()) {
             setSelected(false);
-            list.runWhenScrollIdle(deferredMarqueeRestart);
             return;
         }
         postOnAnimation(deferredMarqueeRestart);
+    }
+
+    private boolean isNativeVerticalListRow() {
+        return findNativeListAncestor() != null;
     }
 
     private AnimatedListView findNativeListAncestor() {
@@ -196,8 +219,6 @@ public class AutoMarqueeTextView extends TextView {
 
     private boolean isActuallyVisibleOnScreen() {
         if (!isShown() || !isAttachedToWindow() || !hasWindowFocus()) return false;
-        AnimatedListView list = findNativeListAncestor();
-        if (list != null && list.isScrollInProgress()) return false;
         visibleRect.setEmpty();
         return getLocalVisibleRect(visibleRect)
                 && visibleRect.width() > 0
