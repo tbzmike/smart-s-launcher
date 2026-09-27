@@ -25,6 +25,7 @@ public class AutoScrollPreviewTextView extends TextView {
     private int firstVisibleLine;
     private boolean attached;
     private boolean behaviorLocked;
+    private boolean autoExpand;
     private boolean expanded;
     private boolean expandable;
     private boolean arrowGesture;
@@ -60,6 +61,7 @@ public class AutoScrollPreviewTextView extends TextView {
 
     private void init() {
         behaviorLocked = false;
+        autoExpand = TextOverflowMode.isAutoExpandForHistory(getContext());
         super.setSingleLine(false);
         super.setMaxLines(Integer.MAX_VALUE);
         super.setHorizontallyScrolling(false);
@@ -78,7 +80,11 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private boolean isAutoExpand() {
-        return TextOverflowMode.isAutoExpandForHistory(getContext());
+        return autoExpand;
+    }
+
+    private void refreshOverflowMode() {
+        autoExpand = TextOverflowMode.isAutoExpandForHistory(getContext());
     }
 
     @Override
@@ -110,12 +116,27 @@ public class AutoScrollPreviewTextView extends TextView {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         attached = true;
+        refreshOverflowMode();
         SmartTextAppearance.applySearchBody(this);
         applyConfiguredBehavior();
         if (isAutoExpand()) {
             cancelScrollStep();
             firstVisibleLine = 0;
             scrollTo(0, 0);
+            scheduleLayoutRequest();
+        } else {
+            schedulePreviewRestart();
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasWindowFocus) {
+        super.onWindowFocusChanged(hasWindowFocus);
+        if (!hasWindowFocus) return;
+        refreshOverflowMode();
+        applyConfiguredBehavior();
+        if (isAutoExpand()) {
+            cancelScrollStep();
             scheduleLayoutRequest();
         } else {
             schedulePreviewRestart();
