@@ -60,7 +60,13 @@ public class SettingsResult extends Result<SettingPojo> {
     @Override
     public View display(Context context, View view, @NonNull ViewGroup parent, FuzzyScore fuzzyScore) {
         if (pojo instanceof NotificationPojo) {
-            return displayNotificationGroup(context, parent, (NotificationPojo) pojo);
+            NotificationPojo notification = (NotificationPojo) pojo;
+            if (parent instanceof fr.neamar.kiss.ui.AnimatedListView
+                    && fr.neamar.kiss.searcher.SearchHandler.getInstance().getLastSearchType()
+                    == fr.neamar.kiss.searcher.Searcher.Type.HISTORY) {
+                return displayNotificationGroupHistory(context, view, parent, notification);
+            }
+            return displayNotificationGroup(context, view, parent, notification);
         }
 
         if (view == null || view.findViewById(R.id.item_setting_name) == null) {
@@ -81,8 +87,51 @@ public class SettingsResult extends Result<SettingPojo> {
         return view;
     }
 
-    private View displayNotificationGroup(Context context, ViewGroup parent, NotificationPojo notification) {
-        View view = inflateFromId(context, R.layout.item_notification_timeline, parent);
+    private View displayNotificationGroupHistory(Context context, View view, ViewGroup parent,
+                                                 NotificationPojo notification) {
+        if (view == null || view.findViewById(R.id.item_notification_app) == null) {
+            view = inflateFromId(context, R.layout.item_notification_timeline, parent);
+        }
+
+        TextView appName = view.findViewById(R.id.item_notification_app);
+        TextView title = view.findViewById(R.id.item_notification_title);
+        TextView text = view.findViewById(R.id.item_notification_text);
+        Button markRead = view.findViewById(R.id.item_notification_dismiss);
+        ImageView icon = view.findViewById(R.id.item_notification_icon);
+        CompactNotificationFrame nativeContainer = view.findViewById(R.id.item_notification_native_container);
+
+        appName.setText(notification.appName);
+        title.setText(notification.getSummary());
+        String preview = notification.getPreview();
+        if (preview.isEmpty()) preview = notification.getSummary();
+        text.setText(preview);
+        text.setVisibility(View.VISIBLE);
+
+        // Native RemoteViews, active-notification verification and identity-image resolution are
+        // intentionally disabled on History Vertical List. Those operations made recycled rows
+        // expensive and changed geometry after a fling. The exact notification is still opened
+        // when the row is tapped.
+        nativeContainer.setVisibility(View.GONE);
+        markRead.setVisibility(View.GONE);
+        markRead.setEnabled(false);
+        markRead.setOnClickListener(null);
+
+        if (!isHideIcons(context)) setAsyncDrawable(icon);
+        else icon.setImageDrawable(null);
+
+        View.OnClickListener openExact = v -> launchNotificationTarget(context, notification);
+        icon.setOnClickListener(openExact);
+        appName.setOnClickListener(openExact);
+        title.setOnClickListener(openExact);
+        text.setOnClickListener(openExact);
+        return view;
+    }
+
+    private View displayNotificationGroup(Context context, View view, ViewGroup parent,
+                                          NotificationPojo notification) {
+        if (view == null || view.findViewById(R.id.item_notification_app) == null) {
+            view = inflateFromId(context, R.layout.item_notification_timeline, parent);
+        }
         TextView appName = view.findViewById(R.id.item_notification_app);
         TextView title = view.findViewById(R.id.item_notification_title);
         TextView text = view.findViewById(R.id.item_notification_text);
