@@ -84,6 +84,13 @@ public class AppResult extends ResultWithTags<AppPojo> {
             appIcon.clearColorFilter();
         }
 
+        if (isNativeListScrolling(parent)) {
+            // Notification lookups are not required to keep the row scrollable. Do not ask the
+            // notification listener, read expanded text, create click listeners, or mutate the
+            // notification sub-tree during a fling.
+            return view;
+        }
+
         displayNotificationDot(context, view, false);
         displayNotificationMessage(context, view);
         return view;
