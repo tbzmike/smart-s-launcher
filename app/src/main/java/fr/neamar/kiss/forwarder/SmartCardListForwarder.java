@@ -122,8 +122,12 @@ final class SmartCardListForwarder extends Forwarder {
 
     void onResume() {
         migrateLegacySelection();
+        boolean wasVisible = scroller != null && scroller.getVisibility() == View.VISIBLE;
         applyState(false);
-        if (isEnabled() && column != null && column.getChildCount() == 0) rebuild();
+        // A hidden card tree is deliberately discarded when another renderer owns History.
+        // Re-entering Vertical Cards must therefore rebuild from the current adapter, never reuse
+        // stale cards from an earlier mode.
+        if (isEnabled() && column != null && (!wasVisible || column.getChildCount() == 0)) rebuild();
     }
 
     boolean onDataSetChanged() {
@@ -327,7 +331,18 @@ final class SmartCardListForwarder extends Forwarder {
             scroller.setVisibility(View.VISIBLE);
             if (force) rebuild();
         } else {
+            boolean wasVisible = scroller.getVisibility() == View.VISIBLE;
             scroller.setVisibility(View.GONE);
+            if (wasVisible && column != null) {
+                // Do not keep a second complete card hierarchy attached behind Vertical List/3D
+                // Wheel. Hidden AutoMarquee/preview views retain callbacks and memory even though
+                // the user cannot see them.
+                column.removeAllViews();
+                activeQueryCardSignatures.clear();
+                pendingDataSetRefresh = false;
+                forceNextHistoryRebuild = false;
+                renderedActiveQuery = false;
+            }
             if (HistoryDisplayForwarder.VERTICAL.equals(
                     prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL))) {
                 mainActivity.list.setVisibility(View.VISIBLE);
