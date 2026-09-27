@@ -42,7 +42,13 @@ public class PhoneResult extends CallResult<PhonePojo> {
                 : context.getString(R.string.ui_item_phone, pojo.phone);
         int pos = text.indexOf(pojo.phone);
         int len = pojo.phone.length();
-        displayHighlighted(text, Collections.singletonList(new Pair<>(pos, pos + len)), phoneText, context);
+        if (isNativeListScrolling(parent)) {
+            // History scrolling never needs query highlighting. Avoid Spannable allocation,
+            // SharedPreferences reads and span objects in the ListView bind path.
+            phoneText.setText(text);
+        } else {
+            displayHighlighted(text, Collections.singletonList(new Pair<>(pos, pos + len)), phoneText, context);
+        }
 
         setAsyncDrawable(view.findViewById(R.id.item_phone_icon), 0);
 
