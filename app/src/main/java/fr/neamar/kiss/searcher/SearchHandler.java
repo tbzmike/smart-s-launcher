@@ -472,15 +472,14 @@ public class SearchHandler {
         if (historyScrollActive) return;
         historyScrollActive = true;
 
-        if (lastSearchType == Searcher.Type.HISTORY) {
-            rememberHistoryAfterScroll(activity, true);
-        }
-
         // Nothing History-owned should keep queuing work behind the user's finger.
         historySeedExecutor.getQueue().clear();
         historyPreviewExecutor.getQueue().clear();
 
         if (runningSearch instanceof HistorySearcher) {
+            // Resume exactly this interrupted refresh after idle. A plain scroll over an already
+            // settled History list must NOT create a new refresh by itself.
+            rememberHistoryAfterScroll(activity, true);
             searchGeneration.incrementAndGet();
             runningSearch.cancel(true);
             Searcher.purgeCancelledSearches();
