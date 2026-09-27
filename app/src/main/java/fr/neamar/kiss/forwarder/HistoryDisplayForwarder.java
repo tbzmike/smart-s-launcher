@@ -103,6 +103,14 @@ final class HistoryDisplayForwarder extends Forwarder {
         }
     }
 
+    void cancelWhenScrollIdle(Runnable work) {
+        if (WHEEL_3D.equals(activeMode) && wheelScroller != null) {
+            wheelScroller.scrollIdleGate.cancel(work);
+        } else if (mainActivity.list != null) {
+            mainActivity.list.cancelWhenScrollIdle(work);
+        }
+    }
+
     void addScrollStartedListener(Runnable listener) {
         if (mainActivity.list != null) mainActivity.list.addScrollStartedListener(listener);
         if (wheelScroller != null) wheelScroller.scrollIdleGate.addScrollStartedListener(listener);
