@@ -41,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.ShortcutUtil;
 
@@ -85,7 +86,7 @@ public final class NotificationAvatarSupport {
     /** Capture the best Android-exposed identity image and persist it for saved history. */
     public static void captureAsync(@NonNull Context context, @NonNull String notificationId,
                                     @NonNull StatusBarNotification sbn) {
-        if (TextUtils.isEmpty(notificationId)) return;
+        if (TextUtils.isEmpty(notificationId) || LauncherScrollWorkGate.isScrolling()) return;
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> {
             if (captureNow(app, notificationId, sbn)) {
@@ -102,6 +103,7 @@ public final class NotificationAvatarSupport {
      */
     public static void loadHistoryAvatarsAsync(@NonNull Context context,
                                                @Nullable LoadCallback callback) {
+        if (LauncherScrollWorkGate.isScrolling()) return;
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> {
             int fresh = 0;
@@ -183,6 +185,9 @@ public final class NotificationAvatarSupport {
         if (context == null || TextUtils.isEmpty(notificationId)) return null;
         Bitmap bitmap = MEMORY_CACHE.get(notificationId);
         if (bitmap != null) return new BitmapDrawable(context.getResources(), bitmap);
+        // A disk decode and cache touch are optional decoration. During a fling, fall back to the
+        // normal app icon rather than doing bitmap/file work in this process.
+        if (LauncherScrollWorkGate.isScrolling()) return null;
         String path = avatarPath(context, notificationId);
         if (path == null) return null;
         bitmap = BitmapFactory.decodeFile(path);
