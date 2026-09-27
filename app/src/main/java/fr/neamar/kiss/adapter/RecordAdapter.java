@@ -138,8 +138,17 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         this.fuzzyScore = null;
     }
 
-    @Override public int getViewTypeCount() { return 8; }
-    @Override public int getItemViewType(int position) { Result<?> result = getItem(position); return result instanceof CommunicationResult ? 7 : Result.getItemViewType(result); }
+    @Override public int getViewTypeCount() { return 9; }
+    @Override public int getItemViewType(int position) {
+        Result<?> result = getItem(position);
+        if (result instanceof CommunicationResult) return 7;
+        // Notification timeline rows use a completely different layout from ordinary
+        // SettingsResult rows. Sharing one ListView recycle pool made each type reject and
+        // reinflate the other's convertView repeatedly while scrolling mixed History.
+        if (result instanceof fr.neamar.kiss.result.SettingsResult
+                && result.getPojo() instanceof NotificationPojo) return 8;
+        return Result.getItemViewType(result);
+    }
     @Override public boolean hasStableIds() { return true; }
     @Override public int getCount() { return results.size(); }
     @Override public Result<?> getItem(int position) { return results.get(position); }
