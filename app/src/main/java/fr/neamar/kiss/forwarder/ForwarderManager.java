@@ -251,11 +251,18 @@ public class ForwarderManager extends Forwarder {
             visibleResultTreeChanged = verticalCardTreeChanged;
         }
 
-        // Run idle metadata enrichment only for the native recycled list. Vertical Cards have
-        // dedicated enrichment and 3D Wheel must not rebuild its retained tree for metadata.
-        if (isHistorySearch() && isVerticalListMode()) historyVisualEnhancer.onDataSetChanged();
-        // Recursive gesture attachment is needed only when the visible Vertical Cards tree changed.
-        if (!verticalCards || verticalCardTreeChanged) lockedHistoryGestureBridge.onDataSetChanged();
+        // Run metadata enrichment only for the native recycled list, and never schedule it while
+        // that viewport is moving. Vertical Cards have dedicated enrichment and 3D Wheel must not
+        // rebuild its retained tree for metadata.
+        if (isHistorySearch() && isVerticalListMode()
+                && !historyDisplayForwarder.isScrollInProgress()) {
+            historyVisualEnhancer.onDataSetChanged();
+        }
+
+        // The native ListView owns one stable OnTouchListener; it does not need a recursive
+        // re-attachment after every dataset publication. Keep recursive attachment only for a
+        // newly rebuilt Vertical Cards tree.
+        if (verticalCards && verticalCardTreeChanged) lockedHistoryGestureBridge.onDataSetChanged();
         return visibleResultTreeChanged;
     }
 
