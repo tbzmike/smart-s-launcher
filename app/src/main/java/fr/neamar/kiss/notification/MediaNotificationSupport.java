@@ -86,7 +86,8 @@ public final class MediaNotificationSupport {
      * background worker, never from row binding.
      */
     public static void capture(Context context, StatusBarNotification sbn) {
-        if (context == null || sbn == null || sbn.getNotification() == null) return;
+        if (context == null || sbn == null || sbn.getNotification() == null
+                || LauncherScrollWorkGate.isScrolling()) return;
         Notification notification = sbn.getNotification();
         if (!isTransportMediaNotification(notification)) return;
 
