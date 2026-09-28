@@ -53,26 +53,27 @@ public final class NotificationRichPreview {
 
     @Nullable
     public static Preview create(Context context, String notificationId, String packageName,
-                                 CharSequence fallbackTitle, CharSequence fallbackBody) {
-        StatusBarNotification active = findActive(notificationId);
+                                 long postTime, CharSequence fallbackTitle,
+                                 CharSequence fallbackBody) {
+        StatusBarNotification active = findActive(notificationId, packageName, postTime);
         Notification notification = active == null ? null : active.getNotification();
         boolean media = isMedia(notification);
         NotificationVisualSupport.Snapshot visual =
                 NotificationVisualSupport.snapshot(context, notificationId);
 
         if (media) {
-            return new Preview(createMediaPanel(context, notificationId, packageName, notification,
-                    visual, fallbackTitle, fallbackBody), true, true);
+            return new Preview(createMediaPanel(context, notificationId, packageName, postTime,
+                    notification, visual, fallbackTitle, fallbackBody), true, true);
         }
 
-        // A media notification may already have left Android's panel. Persisted album art still
-        // identifies it as rich content when the package has a saved media snapshot.
-        MediaNotificationSupport.Snapshot mediaSnapshot = packageName == null ? null
-                : MediaNotificationSupport.snapshotForPackage(context, packageName);
-        if (active == null && mediaSnapshot != null && mediaSnapshot.artwork != null
-                && visual != null && visual.image != null) {
-            return new Preview(createMediaPanel(context, notificationId, packageName, null,
-                    visual, fallbackTitle, fallbackBody), true, false);
+        // A media notification may already have left Android's panel. Restore artwork only from
+        // this exact saved notification post; never from another event in the same package.
+        MediaNotificationSupport.Snapshot mediaSnapshot =
+                MediaNotificationSupport.snapshotForEvent(
+                        context, packageName, notificationId, postTime);
+        if (active == null && mediaSnapshot != null && mediaSnapshot.artwork != null) {
+            return new Preview(createMediaPanel(context, notificationId, packageName, postTime,
+                    null, visual, fallbackTitle, fallbackBody), true, false);
         }
 
         if (visual == null || (!visual.hasImage() && !visual.hasPlayableVideo())) return null;
@@ -80,7 +81,7 @@ public final class NotificationRichPreview {
     }
 
     private static View createMediaPanel(Context context, String notificationId, String packageName,
-                                         @Nullable Notification notification,
+                                         long postTime, @Nullable Notification notification,
                                          @Nullable NotificationVisualSupport.Snapshot visual,
                                          CharSequence fallbackTitle, CharSequence fallbackBody) {
         int pad = dp(context, 12);
@@ -88,8 +89,9 @@ public final class NotificationRichPreview {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(0, pad, 0, dp(context, 4));
 
-        MediaNotificationSupport.Snapshot support = packageName == null ? null
-                : MediaNotificationSupport.snapshotForPackage(context, packageName);
+        MediaNotificationSupport.Snapshot support =
+                MediaNotificationSupport.snapshotForEvent(
+                        context, packageName, notificationId, postTime);
         MediaController controller = notification == null ? null : controller(context, notification);
         MediaMetadata metadata = null;
         PlaybackState playback = null;
@@ -206,11 +208,12 @@ public final class NotificationRichPreview {
             controls.setGravity(Gravity.CENTER);
             controls.setPadding(0, dp(context, 6), 0, 0);
             if (support.previous) controls.addView(controlButton(context, "◀|", packageName,
-                    MediaControlClassifier.Kind.PREVIOUS));
+                    notificationId, postTime, MediaControlClassifier.Kind.PREVIOUS));
             if (support.playPause) controls.addView(controlButton(context,
-                    support.playing ? "Ⅱ" : "▶", packageName, MediaControlClassifier.Kind.PLAY_PAUSE));
+                    support.playing ? "Ⅱ" : "▶", packageName, notificationId, postTime,
+                    MediaControlClassifier.Kind.PLAY_PAUSE));
             if (support.next) controls.addView(controlButton(context, "|▶", packageName,
-                    MediaControlClassifier.Kind.NEXT));
+                    notificationId, postTime, MediaControlClassifier.Kind.NEXT));
             root.addView(controls, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 64)));
         }
@@ -248,6 +251,7 @@ public final class NotificationRichPreview {
     }
 
     private static Button controlButton(Context context, String label, String packageName,
+                                        String notificationId, long postTime,
                                         MediaControlClassifier.Kind kind) {
         Button button = new Button(context);
         button.setText(label);
@@ -264,7 +268,8 @@ public final class NotificationRichPreview {
         lp.leftMargin = dp(context, 9);
         lp.rightMargin = dp(context, 9);
         button.setLayoutParams(lp);
-        button.setOnClickListener(v -> MediaNotificationSupport.perform(context, packageName, kind));
+        button.setOnClickListener(v -> MediaNotificationSupport.perform(
+                context, packageName, notificationId, postTime, kind));
         return button;
     }
 
@@ -277,12 +282,14 @@ public final class NotificationRichPreview {
     }
 
     public static boolean isActiveMedia(Context context, String notificationId) {
-        StatusBarNotification active = findActive(notificationId);
+        StatusBarNotification active = findActive(notificationId, null, 0L);
         return active != null && isMedia(active.getNotification());
     }
 
     @Nullable
-    private static StatusBarNotification findActive(String notificationId) {
+    private static StatusBarNotification findActive(String notificationId,
+                                                    @Nullable String packageName,
+                                                    long postTime) {
         if (TextUtils.isEmpty(notificationId)) return null;
         NotificationListener listener = listener();
         if (listener == null) return null;
@@ -294,16 +301,20 @@ public final class NotificationRichPreview {
         }
         if (active == null) return null;
         for (StatusBarNotification sbn : active) {
-            if (sbn != null && notificationId.equals(NotificationListener.getTimelineId(sbn))) return sbn;
+            if (sbn == null || !notificationId.equals(NotificationListener.getTimelineId(sbn))) {
+                continue;
+            }
+            if (!TextUtils.isEmpty(packageName) && !packageName.equals(sbn.getPackageName())) {
+                continue;
+            }
+            if (postTime > 0L && postTime != sbn.getPostTime()) continue;
+            return sbn;
         }
         return null;
     }
 
     private static boolean isMedia(@Nullable Notification notification) {
-        if (notification == null) return false;
-        if (Notification.CATEGORY_TRANSPORT.equals(notification.category)) return true;
-        Bundle extras = notification.extras;
-        return extras != null && extras.get(Notification.EXTRA_MEDIA_SESSION) instanceof MediaSession.Token;
+        return MediaNotificationSupport.isTransportMediaNotification(notification);
     }
 
     @Nullable
