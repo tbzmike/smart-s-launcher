@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.127 - exact per-event media artwork
-        versionCode 555
-        versionName "3.30.127"
+        // Smart S Launcher 3.30.128 - cancel icon/resource workers during scroll
+        versionCode 556
+        versionName "3.30.128"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
