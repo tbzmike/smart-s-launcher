@@ -93,11 +93,12 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
                 NotificationVisualSupport.captureAsync(context, timelineId, sbn);
             }
 
-            if (!isMediaNotification(sbn)) continue;
+            if (!MediaNotificationSupport.isTransportMediaNotification(sbn.getNotification())) continue;
             if (contentChanged) {
                 MediaNotificationSupport.capture(context, sbn);
             }
-            if (addToHistory && SEEDED_MEDIA_HISTORY.add(timelineId)) {
+            String mediaEventId = timelineId + "|" + sbn.getPostTime();
+            if (addToHistory && SEEDED_MEDIA_HISTORY.add(mediaEventId)) {
                 KissApplication.getApplication(context).getDataHandler().addToHistory(timelineId);
                 historyChanged = true;
             }
@@ -106,7 +107,11 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
         // Forget ended notifications so a future notification reusing the same timeline id can be
         // captured and seeded normally. This also keeps the process-local maps bounded.
         CAPTURE_FINGERPRINTS.keySet().removeIf(id -> !activeIds.contains(id));
-        SEEDED_MEDIA_HISTORY.removeIf(id -> !activeIds.contains(id));
+        SEEDED_MEDIA_HISTORY.removeIf(eventId -> {
+            int split = eventId.lastIndexOf('|');
+            String id = split > 0 ? eventId.substring(0, split) : eventId;
+            return !activeIds.contains(id);
+        });
 
         if (historyChanged) {
             context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
@@ -129,21 +134,6 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
 
     private static int textHash(CharSequence value) {
         return value == null ? 0 : value.toString().hashCode();
-    }
-
-    private static boolean isMediaNotification(StatusBarNotification sbn) {
-        if (sbn == null || sbn.getNotification() == null) return false;
-        Notification notification = sbn.getNotification();
-        if (Notification.CATEGORY_TRANSPORT.equals(notification.category)) return true;
-        Bundle extras = notification.extras;
-        if (extras != null && extras.get(Notification.EXTRA_MEDIA_SESSION) != null) return true;
-        Notification.Action[] actions = notification.actions;
-        if (actions == null) return false;
-        for (Notification.Action action : actions) {
-            if (action != null && MediaControlClassifier.classify(action.title)
-                    != MediaControlClassifier.Kind.OTHER) return true;
-        }
-        return false;
     }
 
     @Nullable
