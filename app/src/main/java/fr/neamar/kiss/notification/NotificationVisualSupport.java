@@ -32,6 +32,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.Log;
 
 /** Persists notification-owned visual content for the history dialog. */
@@ -71,9 +72,12 @@ public final class NotificationVisualSupport {
     private NotificationVisualSupport() {}
 
     public static void captureAsync(Context context, String notificationId, StatusBarNotification sbn) {
-        if (context == null || TextUtils.isEmpty(notificationId) || sbn == null) return;
+        if (context == null || TextUtils.isEmpty(notificationId) || sbn == null
+                || LauncherScrollWorkGate.isScrolling()) return;
         Context app = context.getApplicationContext();
-        EXECUTOR.execute(() -> captureNow(app, notificationId, sbn));
+        EXECUTOR.execute(() -> {
+            if (!LauncherScrollWorkGate.isScrolling()) captureNow(app, notificationId, sbn);
+        });
     }
 
     private static void captureNow(Context context, String notificationId, StatusBarNotification sbn) {
