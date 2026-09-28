@@ -23,7 +23,7 @@ import java.util.Set;
 public final class ScrollIdleGate {
     private static final long LEGACY_IDLE_DELAY_MS = 180L;
 
-    @Nullable private final View legacyHost;
+    @Nullable private View legacyHost;
     private final Set<Runnable> pending = new LinkedHashSet<>();
     private final List<Runnable> scrollStartedListeners = new ArrayList<>();
 
