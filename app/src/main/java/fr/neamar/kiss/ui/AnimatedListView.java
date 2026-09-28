@@ -61,7 +61,7 @@ public class AnimatedListView extends BlockableListView {
     }
 
     @Override
-    public void setOnScrollListener(OnScrollListener listener) {
+    public void setOnScrollListener(AbsListView.OnScrollListener listener) {
         if (listener == internalScrollListener) {
             super.setOnScrollListener(listener);
             return;
