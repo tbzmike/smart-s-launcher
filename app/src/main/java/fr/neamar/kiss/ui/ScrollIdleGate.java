@@ -1,9 +1,12 @@
 package fr.neamar.kiss.ui;
 
+import android.os.SystemClock;
 import android.view.MotionEvent;
+import android.view.View;
 import android.widget.AbsListView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -11,14 +14,16 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Keeps optional launcher work out of an active ListView gesture/fling.
+ * Keeps optional launcher work out of an active scroll gesture/fling.
  *
- * Older builds used a delayed 180 ms settle Runnable that woke repeatedly on the main looper
- * throughout a long fling. That repeating wake-up was itself unnecessary work in the scroll
- * critical path. The gate now follows ListView's native scroll-state callbacks and performs no
- * periodic polling while the list is moving.
+ * Native Vertical List uses ListView's own TOUCH_SCROLL / FLING / IDLE callbacks and therefore
+ * does no periodic main-looper polling while a fling is active. The optional View constructor is
+ * retained only for the custom ScrollView renderers, which do not expose AbsListView state.
  */
 public final class ScrollIdleGate {
+    private static final long LEGACY_IDLE_DELAY_MS = 180L;
+
+    @Nullable private final View legacyHost;
     private final Set<Runnable> pending = new LinkedHashSet<>();
     private final List<Runnable> scrollStartedListeners = new ArrayList<>();
 
@@ -27,7 +32,30 @@ public final class ScrollIdleGate {
     private boolean destroyed;
     private int nativeScrollState = AbsListView.OnScrollListener.SCROLL_STATE_IDLE;
 
+    // Compatibility state for wheel/card ScrollView users only. Native Vertical List never uses it.
+    private boolean legacySettleScheduled;
+    private long legacyLastMotionUptime;
+
+    private final Runnable legacySettleRunnable = () -> {
+        legacySettleScheduled = false;
+        if (destroyed || legacyHost == null || touching) return;
+
+        long elapsed = Math.max(0L, SystemClock.uptimeMillis() - legacyLastMotionUptime);
+        if (elapsed < LEGACY_IDLE_DELAY_MS) {
+            scheduleLegacyIdleCheck(LEGACY_IDLE_DELAY_MS - elapsed);
+            return;
+        }
+        finishIdle();
+    };
+
+    /** Native ListView mode: no polling timer. */
     public ScrollIdleGate() {
+        legacyHost = null;
+    }
+
+    /** Compatibility mode for custom ScrollViews that lack native scroll-state callbacks. */
+    public ScrollIdleGate(@NonNull View host) {
+        legacyHost = host;
     }
 
     public void onTouchEvent(@NonNull MotionEvent event) {
@@ -35,14 +63,20 @@ public final class ScrollIdleGate {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 touching = true;
-                // Enter the hard work gate immediately, before ListView has decided whether this
-                // touch becomes a drag. A simple tap exits again on ACTION_UP below.
                 markScrolling();
+                if (legacyHost != null) {
+                    legacyLastMotionUptime = SystemClock.uptimeMillis();
+                    cancelLegacyIdleCheck();
+                }
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 touching = false;
-                if (nativeScrollState == AbsListView.OnScrollListener.SCROLL_STATE_IDLE) {
+                if (legacyHost != null) {
+                    legacyLastMotionUptime = SystemClock.uptimeMillis();
+                    scheduleLegacyIdleCheck(LEGACY_IDLE_DELAY_MS);
+                } else if (nativeScrollState
+                        == AbsListView.OnScrollListener.SCROLL_STATE_IDLE) {
                     finishIdle();
                 }
                 break;
@@ -51,8 +85,9 @@ public final class ScrollIdleGate {
         }
     }
 
+    /** Called only by native ListView mode. */
     public void onScrollStateChanged(int scrollState) {
-        if (destroyed) return;
+        if (destroyed || legacyHost != null) return;
         nativeScrollState = scrollState;
         if (scrollState == AbsListView.OnScrollListener.SCROLL_STATE_IDLE) {
             if (!touching) finishIdle();
@@ -61,7 +96,18 @@ public final class ScrollIdleGate {
         }
     }
 
+    /**
+     * Compatibility hook for wheel/card ScrollViews. AnimatedListView deliberately never calls it.
+     */
+    public void onScrollChanged() {
+        if (destroyed || legacyHost == null) return;
+        legacyLastMotionUptime = SystemClock.uptimeMillis();
+        markScrolling();
+        if (!touching) scheduleLegacyIdleCheck(LEGACY_IDLE_DELAY_MS);
+    }
+
     public boolean isScrolling() {
+        if (legacyHost != null) return scrolling || touching;
         return scrolling || touching
                 || nativeScrollState != AbsListView.OnScrollListener.SCROLL_STATE_IDLE;
     }
@@ -89,6 +135,7 @@ public final class ScrollIdleGate {
 
     public void destroy() {
         destroyed = true;
+        cancelLegacyIdleCheck();
         pending.clear();
         scrollStartedListeners.clear();
         touching = false;
@@ -113,5 +160,17 @@ public final class ScrollIdleGate {
         for (Runnable work : ready) {
             if (!destroyed) work.run();
         }
+    }
+
+    private void scheduleLegacyIdleCheck(long delayMs) {
+        if (destroyed || legacyHost == null || legacySettleScheduled) return;
+        legacySettleScheduled = true;
+        legacyHost.postDelayed(legacySettleRunnable, Math.max(1L, delayMs));
+    }
+
+    private void cancelLegacyIdleCheck() {
+        if (!legacySettleScheduled || legacyHost == null) return;
+        legacyHost.removeCallbacks(legacySettleRunnable);
+        legacySettleScheduled = false;
     }
 }
