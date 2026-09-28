@@ -58,11 +58,6 @@ public final class MediaNotificationRow extends LinearLayout {
         if (!LauncherScrollWorkGate.isScrolling()) refreshMedia();
     }
 
-    @Override protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        if (!LauncherScrollWorkGate.isScrolling()) refreshMedia();
-    }
-
     public void refreshMedia() {
         if (LauncherScrollWorkGate.isScrolling()
                 || TextUtils.isEmpty(boundPackage)
