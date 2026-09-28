@@ -201,7 +201,8 @@ public final class RichNotificationHistoryDialog {
             if (expanded == null || expanded.trim().isEmpty()) expanded = record.text;
 
             NotificationRichPreview.Preview rich = NotificationRichPreview.create(
-                    context, record.notificationId, packageName, record.title, expanded);
+                    context, record.notificationId, packageName, record.postTime,
+                    record.title, expanded);
             boolean media = rich != null && rich.media;
 
             setHeaderIdentity(record);
