@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.126 - deeper scroll quiescence
-        versionCode 554
-        versionName "3.30.126"
+        // Smart S Launcher 3.30.127 - exact per-event media artwork
+        versionCode 555
+        versionName "3.30.127"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
