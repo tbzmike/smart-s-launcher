@@ -3,6 +3,7 @@ package fr.neamar.kiss.ui;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.View;
@@ -17,11 +18,18 @@ import androidx.annotation.Nullable;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.notification.MediaControlClassifier;
 import fr.neamar.kiss.notification.MediaNotificationSupport;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 
-/** Notification history row that augments media notifications with art and live transport controls. */
+/**
+ * Notification history row that augments only the exact media notification represented by the row.
+ * It never discovers media by app label/package, preventing artwork from bleeding into unrelated
+ * calls, messages or ordinary history entries from the same app.
+ */
 public final class MediaNotificationRow extends LinearLayout {
     private LinearLayout mediaPanel;
     private String boundPackage;
+    private String boundNotificationId;
+    private long boundPostTime;
 
     public MediaNotificationRow(Context context) {
         super(context);
@@ -31,21 +39,46 @@ public final class MediaNotificationRow extends LinearLayout {
         super(context, attrs);
     }
 
+    /** Bind exact notification identity before any media decoration is resolved. */
+    public void bindNotification(@Nullable String packageName, @Nullable String notificationId,
+                                 long postTime) {
+        String safePackage = packageName == null ? "" : packageName;
+        String safeId = notificationId == null ? "" : notificationId;
+        boolean changed = !TextUtils.equals(boundPackage, safePackage)
+                || !TextUtils.equals(boundNotificationId, safeId)
+                || boundPostTime != postTime;
+        boundPackage = safePackage;
+        boundNotificationId = safeId;
+        boundPostTime = postTime;
+
+        // Recycled rows must never retain the previous event's panel even for one frame.
+        if (changed) removeMediaPanel();
+
+        // Scrolling is render-only. Do not decode artwork, scan notifications or query MediaSession.
+        if (!LauncherScrollWorkGate.isScrolling()) refreshMedia();
+    }
+
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        post(this::refreshMedia);
+        if (!LauncherScrollWorkGate.isScrolling()) refreshMedia();
     }
 
     public void refreshMedia() {
-        TextView app = findViewById(R.id.item_notification_app);
-        CharSequence label = app == null ? null : app.getText();
+        if (LauncherScrollWorkGate.isScrolling()
+                || TextUtils.isEmpty(boundPackage)
+                || TextUtils.isEmpty(boundNotificationId)
+                || boundPostTime <= 0L) {
+            if (TextUtils.isEmpty(boundNotificationId)) removeMediaPanel();
+            return;
+        }
+
         MediaNotificationSupport.Snapshot snapshot =
-                MediaNotificationSupport.snapshotForLabel(getContext(), label);
+                MediaNotificationSupport.snapshotForEvent(
+                        getContext(), boundPackage, boundNotificationId, boundPostTime);
         if (snapshot == null || (snapshot.artwork == null && !snapshot.active)) {
             removeMediaPanel();
             return;
         }
-        boundPackage = snapshot.packageName;
         ensureMediaPanel(snapshot);
     }
 
@@ -120,7 +153,8 @@ public final class MediaNotificationRow extends LinearLayout {
         button.setMinimumWidth(0);
         button.setPadding(dp(8), 0, dp(8), 0);
         button.setOnClickListener(v -> {
-            if (MediaNotificationSupport.perform(getContext(), boundPackage, kind)) {
+            if (MediaNotificationSupport.perform(getContext(), boundPackage,
+                    boundNotificationId, boundPostTime, kind)) {
                 postDelayed(this::refreshMedia, 180L);
             }
         });
@@ -133,7 +167,6 @@ public final class MediaNotificationRow extends LinearLayout {
         ViewGroup parent = (ViewGroup) mediaPanel.getParent();
         if (parent != null) parent.removeView(mediaPanel);
         mediaPanel = null;
-        boundPackage = null;
     }
 
     private int dp(int value) {
