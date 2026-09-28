@@ -12,7 +12,7 @@ public final class MediaControlClassifier {
         if (title == null) return Kind.OTHER;
         String value = title.toString().trim().toLowerCase(Locale.ROOT);
         if (value.isEmpty()) return Kind.OTHER;
-        if (containsKeyword(value, "previous", "prev", "back", "rewind")) return Kind.PREVIOUS;
+        if (containsKeyword(value, "previous", "prev", "rewind")) return Kind.PREVIOUS;
         if (containsKeyword(value, "next", "skip forward")) return Kind.NEXT;
         if (containsKeyword(value, "play", "pause", "resume")) return Kind.PLAY_PAUSE;
         return Kind.OTHER;
