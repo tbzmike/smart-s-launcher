@@ -19,6 +19,7 @@ import fr.neamar.kiss.R;
 import fr.neamar.kiss.activitylauncher.ActivityLauncherActivity;
 import fr.neamar.kiss.dataprovider.AppProvider;
 import fr.neamar.kiss.preference.UiEditLock;
+import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.LauncherScrollWorkGate;
@@ -56,6 +57,9 @@ public class ForwarderManager extends Forwarder {
         // Flip the process-wide gate before any feature-specific cancellation so recurring services
         // and optional workers see "scrolling" immediately.
         LauncherScrollWorkGate.setScrolling(true);
+        // Cancel cold icon/package-resource work that may have started just before the gesture.
+        // This is not deferred or restarted at idle.
+        Result.cancelIconLoadsForScroll();
         AppProvider.setLauncherScrolling(true);
         if (isHistorySearch()) {
             SearchHandler.getInstance().onHistoryScrollStarted(mainActivity);
