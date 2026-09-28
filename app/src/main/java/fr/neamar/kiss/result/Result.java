@@ -40,11 +40,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 
 import fr.neamar.kiss.BuildConfig;
 import fr.neamar.kiss.CustomIconDialog;
@@ -76,6 +78,7 @@ import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.utils.ClipboardUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.Utilities;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
@@ -85,7 +88,14 @@ public abstract class Result<T extends Pojo> {
 
     private static final String TAG = Result.class.getSimpleName();
     private static final int TAG_RUNNING_TASK = R.id.item_app_icon;
-    private static final Executor ICON_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
+    /**
+     * One icon worker is enough for cold-cache decoration. Two workers were observed allocating
+     * package resources in parallel while the launcher was visible, producing AssetManager churn
+     * and a large GC during scrolling. More workers do not make a fling look better; they only
+     * compete for CPU/memory bandwidth.
+     */
+    private static final ThreadPoolExecutor ICON_EXECUTOR = new ThreadPoolExecutor(
+            1, 1, 30L, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), runnable -> {
         Thread thread = new Thread(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             runnable.run();
@@ -93,6 +103,25 @@ public abstract class Result<T extends Pojo> {
         thread.setPriority(Thread.MIN_PRIORITY);
         return thread;
     });
+    private static final Set<Utilities.AsyncRun<?>> ACTIVE_ICON_TASKS =
+            ConcurrentHashMap.newKeySet();
+
+    static {
+        ICON_EXECUTOR.allowCoreThreadTimeOut(true);
+    }
+
+    /**
+     * Scroll start is a hard cancellation boundary. Do not let icon work that began a moment before
+     * the gesture continue decoding package resources behind the ListView. Nothing is replayed at
+     * idle; icons load only on a later ordinary row bind.
+     */
+    public static void cancelIconLoadsForScroll() {
+        for (Utilities.AsyncRun<?> task : ACTIVE_ICON_TASKS) {
+            if (task != null && !task.isCancelled()) task.cancel(true);
+        }
+        ACTIVE_ICON_TASKS.clear();
+        ICON_EXECUTOR.purge();
+    }
 
     /**
      * One reusable idle request per recycled ImageView. A long fling can rebind the same row many
@@ -695,7 +724,8 @@ public abstract class Result<T extends Pojo> {
 
         Utilities.AsyncRun<Drawable> taskToCancel = getTask(imageView);
         if (taskToCancel != null) {
-            if (!taskToCancel.isCancelled()) taskToCancel.cancel();
+            ACTIVE_ICON_TASKS.remove(taskToCancel);
+            if (!taskToCancel.isCancelled()) taskToCancel.cancel(true);
             imageView.setTag(TAG_RUNNING_TASK, null);
         }
 
@@ -714,7 +744,8 @@ public abstract class Result<T extends Pojo> {
         // while the native Vertical List is moving. Do not decode, allocate a task, or queue an
         // idle callback. A later normal row bind can load it after the user is no longer scrolling.
         AnimatedListView scrollingList = findAnimatedListAncestor(imageView);
-        if (scrollingList != null && scrollingList.isScrollInProgress()) {
+        if (LauncherScrollWorkGate.isScrolling()
+                || (scrollingList != null && scrollingList.isScrollInProgress())) {
             if (pendingIdle != null) pendingIdle.clear();
             imageView.setTag(R.id.smart_s_icon_idle_loader, null);
             if (defaultResId != 0) imageView.setImageResource(defaultResId);
@@ -729,13 +760,22 @@ public abstract class Result<T extends Pojo> {
         if (defaultResId != 0) imageView.setImageResource(defaultResId);
 
         Utilities.AsyncRun<Drawable> newTask = Utilities.runAsync((task) -> {
-            if (task.isCancelled()) return null;
-            return drawableGetter.apply(imageView.getContext());
+            if (task.isCancelled() || Thread.currentThread().isInterrupted()
+                    || LauncherScrollWorkGate.isScrolling()) {
+                return null;
+            }
+            Drawable drawable = drawableGetter.apply(imageView.getContext());
+            if (task.isCancelled() || Thread.currentThread().isInterrupted()
+                    || LauncherScrollWorkGate.isScrolling()) {
+                return null;
+            }
+            return drawable;
         }, (task, drawable) -> {
+            ACTIVE_ICON_TASKS.remove(task);
             Object current = imageView.getTag(R.id.smart_s_icon_bind_token);
             boolean stillBound = TextUtils.equals(bindToken, current instanceof CharSequence
                     ? (CharSequence) current : null);
-            if (task.isCancelled() || !stillBound) return;
+            if (task.isCancelled() || !stillBound || LauncherScrollWorkGate.isScrolling()) return;
             imageView.setTag(TAG_RUNNING_TASK, null);
             if (drawable == null) {
                 Log.w(TAG, "Cannot set drawable for " + getPojoId());
@@ -746,6 +786,7 @@ public abstract class Result<T extends Pojo> {
             if (invalidateDrawable) imageView.invalidateDrawable(drawable);
             if (onDrawableBound != null) onDrawableBound.accept(drawable);
         }, ICON_EXECUTOR);
+        ACTIVE_ICON_TASKS.add(newTask);
         imageView.setTag(TAG_RUNNING_TASK, newTask);
     }
 
