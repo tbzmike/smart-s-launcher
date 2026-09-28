@@ -1,7 +1,5 @@
 package fr.neamar.kiss.notification;
 
-import android.text.TextUtils;
-
 /**
  * Stable identity for artwork/control state that belongs to one exact Android notification post.
  *
@@ -13,7 +11,8 @@ public final class MediaEventIdentity {
     private MediaEventIdentity() { }
 
     public static String create(String packageName, String notificationId, long postTime) {
-        if (TextUtils.isEmpty(packageName) || TextUtils.isEmpty(notificationId) || postTime <= 0L) {
+        if (packageName == null || packageName.isEmpty()
+                || notificationId == null || notificationId.isEmpty() || postTime <= 0L) {
             return "";
         }
         return packageName + '\n' + notificationId + '\n' + postTime;
