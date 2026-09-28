@@ -38,6 +38,7 @@ import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
+import fr.neamar.kiss.ui.MediaNotificationRow;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
@@ -101,6 +102,11 @@ public class SettingsResult extends Result<SettingPojo> {
         ImageView icon = view.findViewById(R.id.item_notification_icon);
         CompactNotificationFrame nativeContainer = view.findViewById(R.id.item_notification_native_container);
 
+        if (view instanceof MediaNotificationRow) {
+            ((MediaNotificationRow) view).bindNotification(
+                    notification.packageName, notification.exactNotificationId, notification.postTime);
+        }
+
         appName.setText(notification.appName);
         title.setText(notification.getSummary());
         String preview = notification.getPreview();
@@ -139,6 +145,11 @@ public class SettingsResult extends Result<SettingPojo> {
         Button markRead = view.findViewById(R.id.item_notification_dismiss);
         ImageView icon = view.findViewById(R.id.item_notification_icon);
         CompactNotificationFrame nativeContainer = view.findViewById(R.id.item_notification_native_container);
+
+        if (view instanceof MediaNotificationRow) {
+            ((MediaNotificationRow) view).bindNotification(
+                    notification.packageName, notification.exactNotificationId, notification.postTime);
+        }
 
         appName.setText(notification.appName);
         title.setText(notification.getSummary());
