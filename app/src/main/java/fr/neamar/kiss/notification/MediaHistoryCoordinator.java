@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.Log;
 
 /**
@@ -52,7 +53,8 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
     }
 
     public static void refresh(Context context, boolean addToHistory) {
-        if (context == null || !REFRESH_RUNNING.compareAndSet(false, true)) return;
+        if (context == null || LauncherScrollWorkGate.isScrolling()
+                || !REFRESH_RUNNING.compareAndSet(false, true)) return;
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> {
             try {
@@ -64,6 +66,7 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
     }
 
     private static void refreshNow(Context context, boolean addToHistory) {
+        if (LauncherScrollWorkGate.isScrolling()) return;
         NotificationListener listener = listenerInstance();
         if (listener == null) return;
         StatusBarNotification[] active;
@@ -78,6 +81,7 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
         boolean historyChanged = false;
         Set<String> activeIds = new HashSet<>(Math.max(4, active.length * 2));
         for (StatusBarNotification sbn : active) {
+            if (LauncherScrollWorkGate.isScrolling()) return;
             if (sbn == null || sbn.getNotification() == null) continue;
 
             String timelineId = NotificationListener.getTimelineId(sbn);
