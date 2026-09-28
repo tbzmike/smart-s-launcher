@@ -20,6 +20,7 @@ class MediaControlClassifierTest {
         assertEquals(MediaControlClassifier.Kind.NEXT, MediaControlClassifier.classify("Next"));
         assertEquals(MediaControlClassifier.Kind.NEXT, MediaControlClassifier.classify("Skip forward"));
         assertEquals(MediaControlClassifier.Kind.OTHER, MediaControlClassifier.classify("Like"));
+        assertEquals(MediaControlClassifier.Kind.OTHER, MediaControlClassifier.classify("Call back"));
         assertEquals(MediaControlClassifier.Kind.OTHER, MediaControlClassifier.classify(null));
     }
 }
