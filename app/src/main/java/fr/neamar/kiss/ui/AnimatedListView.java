@@ -7,6 +7,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
+import android.widget.AbsListView;
 
 import java.util.HashMap;
 
@@ -14,6 +15,26 @@ public class AnimatedListView extends BlockableListView {
 
     protected final HashMap<Long, ItemInfo> mItemMap = new HashMap<>();
     private ScrollIdleGate scrollIdleGate;
+    private AbsListView.OnScrollListener externalScrollListener;
+    private final AbsListView.OnScrollListener internalScrollListener =
+            new AbsListView.OnScrollListener() {
+                @Override
+                public void onScrollStateChanged(AbsListView view, int scrollState) {
+                    if (scrollIdleGate != null) scrollIdleGate.onScrollStateChanged(scrollState);
+                    if (externalScrollListener != null) {
+                        externalScrollListener.onScrollStateChanged(view, scrollState);
+                    }
+                }
+
+                @Override
+                public void onScroll(AbsListView view, int firstVisibleItem,
+                                     int visibleItemCount, int totalItemCount) {
+                    if (externalScrollListener != null) {
+                        externalScrollListener.onScroll(
+                                view, firstVisibleItem, visibleItemCount, totalItemCount);
+                    }
+                }
+            };
     private ViewTreeObserver pendingAnimationObserver;
     private ViewTreeObserver.OnPreDrawListener pendingAnimationListener;
     public AnimatedListView(Context context) {
@@ -32,7 +53,21 @@ public class AnimatedListView extends BlockableListView {
     }
 
     private void initScrollIdleGate() {
-        scrollIdleGate = new ScrollIdleGate(this);
+        scrollIdleGate = new ScrollIdleGate();
+        // Use ListView's own TOUCH_SCROLL / FLING / IDLE state instead of a repeating delayed
+        // polling Runnable. Keep this internal listener installed even if another feature later
+        // asks for scroll callbacks.
+        super.setOnScrollListener(internalScrollListener);
+    }
+
+    @Override
+    public void setOnScrollListener(OnScrollListener listener) {
+        if (listener == internalScrollListener) {
+            super.setOnScrollListener(listener);
+            return;
+        }
+        externalScrollListener = listener;
+        super.setOnScrollListener(internalScrollListener);
     }
 
     @Override
@@ -43,10 +78,8 @@ public class AnimatedListView extends BlockableListView {
 
     @Override
     protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+        // Deliberately no scroll-idle polling here. Native scroll state drives ScrollIdleGate.
         super.onScrollChanged(l, t, oldl, oldt);
-        if (scrollIdleGate != null) {
-            scrollIdleGate.onScrollChanged();
-        }
     }
 
     public boolean isScrollInProgress() {
