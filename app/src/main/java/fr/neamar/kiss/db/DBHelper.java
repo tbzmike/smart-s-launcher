@@ -222,10 +222,13 @@ public class DBHelper {
     public static List<ValuedHistoryRecord> getHistoryByRecency(
             Context context, int limit, CancellationSignal cancellationSignal) {
         return DatabaseRecovery.run(context, recoveryDb -> {
-            Cursor cursor = recoveryDb.query(true, "history", new String[]{"record", "1"},
+            // Cancellation can throw while the cursor is being stepped. try-with-resources is
+            // required here; otherwise Android later finalizes an unclosed cursor on a GC thread.
+            try (Cursor cursor = recoveryDb.query(true, "history", new String[]{"record", "1"},
                     null, null, null, null, "_id DESC", Integer.toString(limit),
-                    cancellationSignal);
-            return readCursor(cursor);
+                    cancellationSignal)) {
+                return readCursor(cursor);
+            }
         });
     }
 
@@ -517,33 +520,30 @@ public class DBHelper {
         return DatabaseRecovery.run(context, recoveryDb -> {
         SQLiteDatabase db = recoveryDb;
 
-        Cursor cursor;
-        if (cancellationSignal == null) {
-            cursor = db.query("shortcuts", new String[]{"_id", "name", "package", "intent_uri"},
-                    null, null, null, null, null);
-        } else {
-            cursor = db.query(false, "shortcuts",
-                    new String[]{"_id", "name", "package", "intent_uri"},
-                    null, null, null, null, null, null, cancellationSignal);
+        Cursor cursor = cancellationSignal == null
+                ? db.query("shortcuts", new String[]{"_id", "name", "package", "intent_uri"},
+                        null, null, null, null, null)
+                : db.query(false, "shortcuts",
+                        new String[]{"_id", "name", "package", "intent_uri"},
+                        null, null, null, null, null, null, cancellationSignal);
+        try (Cursor closeable = cursor) {
+            closeable.moveToFirst();
+
+            List<ShortcutRecord> records = new ArrayList<>(closeable.getCount());
+            while (!closeable.isAfterLast()) {
+                if (cancellationSignal != null) cancellationSignal.throwIfCanceled();
+                ShortcutRecord entry = new ShortcutRecord();
+
+                entry.dbId = closeable.getInt(0);
+                entry.name = closeable.getString(1);
+                entry.packageName = closeable.getString(2);
+                entry.intentUri = closeable.getString(3);
+
+                records.add(entry);
+                closeable.moveToNext();
+            }
+            return records;
         }
-        cursor.moveToFirst();
-
-        List<ShortcutRecord> records = new ArrayList<>(cursor.getCount());
-        while (!cursor.isAfterLast()) {
-            if (cancellationSignal != null) cancellationSignal.throwIfCanceled();
-            ShortcutRecord entry = new ShortcutRecord();
-
-            entry.dbId = cursor.getInt(0);
-            entry.name = cursor.getString(1);
-            entry.packageName = cursor.getString(2);
-            entry.intentUri = cursor.getString(3);
-
-            records.add(entry);
-            cursor.moveToNext();
-        }
-        cursor.close();
-
-        return records;
 
         });
     }
