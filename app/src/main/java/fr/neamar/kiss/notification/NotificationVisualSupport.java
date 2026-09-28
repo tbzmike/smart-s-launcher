@@ -134,18 +134,7 @@ public final class NotificationVisualSupport {
     }
 
     private static boolean isMediaNotification(Notification notification) {
-        if (notification == null) return false;
-        if (Notification.CATEGORY_TRANSPORT.equals(notification.category)) return true;
-        Bundle extras = notification.extras;
-        if (extras != null && extras.get(Notification.EXTRA_MEDIA_SESSION) != null) return true;
-        Notification.Action[] actions = notification.actions;
-        if (actions != null) {
-            for (Notification.Action action : actions) {
-                if (action != null && MediaControlClassifier.classify(action.title)
-                        != MediaControlClassifier.Kind.OTHER) return true;
-            }
-        }
-        return false;
+        return MediaNotificationSupport.isTransportMediaNotification(notification);
     }
 
     @Nullable
