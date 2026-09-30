@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.129 - Standard/Pixel favorites bar modes
-        versionCode 557
-        versionName "3.30.129"
+        // Smart S Launcher 3.30.130 - canonical frozen app identity
+        versionCode 558
+        versionName "3.30.130"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
