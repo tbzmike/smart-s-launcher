@@ -399,6 +399,7 @@ public class ForwarderManager extends Forwarder {
 
     public void onDestroy() {
         LauncherScrollWorkGate.setScrolling(false);
+        favoritesForwarder.onDestroy();
         liveWallpaperForwarder.onDestroy();
         widgetPeelController.onDestroy();
         historyVisualEnhancer.onDestroy();
