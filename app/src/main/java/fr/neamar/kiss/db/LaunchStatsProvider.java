@@ -15,7 +15,6 @@ import java.util.Map;
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.pojo.AppPojo;
-import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.utils.AppIdentityResolver;
 
@@ -95,56 +94,16 @@ public final class LaunchStatsProvider {
         }
         if (dataHandler == null) return;
 
-        HashMap<String, MutableStats> totalsByPackage = new HashMap<>();
+        // Build direct history-id -> package mappings once. The previous implementation called
+        // DataHandler.getPojo() for every grouped history row; Provider.findById() is a linear scan,
+        // so a large history multiplied app/shortcut scans and made Pixel HOME resume extremely
+        // expensive. This keeps the same merged semantics with O(apps + shortcuts + historyRows).
         HashMap<String, String> packageByHistoryId = new HashMap<>();
-
-        // First merge every raw history id we can resolve to a real app identity.
-        for (Map.Entry<String, LaunchStats> entry : new HashMap<>(stats).entrySet()) {
-            String historyId = entry.getKey();
-            Pojo pojo;
-            try {
-                pojo = dataHandler.getPojo(historyId);
-            } catch (RuntimeException ignored) {
-                continue;
-            }
-            if (pojo == null) continue;
-
-            boolean mergeable = pojo instanceof AppPojo
-                    || AppIdentityResolver.isAppAliasShortcut(context, dataHandler, pojo);
-            if (!mergeable) continue;
-
-            String packageName = AppIdentityResolver.canonicalPackage(
-                    context, dataHandler, pojo);
-            if (packageName == null || packageName.isEmpty()) continue;
-
-            packageByHistoryId.put(historyId, packageName);
-            totalsByPackage.computeIfAbsent(packageName, ignored -> new MutableStats())
-                    .add(entry.getValue());
-        }
-
-        if (totalsByPackage.isEmpty()) return;
-
-        HashMap<String, LaunchStats> mergedByPackage = new HashMap<>();
-        for (Map.Entry<String, MutableStats> entry : totalsByPackage.entrySet()) {
-            MutableStats value = entry.getValue();
-            mergedByPackage.put(entry.getKey(),
-                    new LaunchStats(value.lastLaunchTime, value.launchesToday, value.totalLaunches));
-        }
-
-        // Replace all raw members with the merged value.
-        for (Map.Entry<String, String> entry : packageByHistoryId.entrySet()) {
-            LaunchStats merged = mergedByPackage.get(entry.getValue());
-            if (merged != null) stats.put(entry.getKey(), merged);
-        }
-
-        // Also expose the merged total through current app/alias ids that may not have their own
-        // raw history row yet. This keeps frozen/remembered aliases and the normal app icon in sync.
         List<AppPojo> apps = dataHandler.getApplications();
         if (apps != null) {
             for (AppPojo app : apps) {
-                if (app == null) continue;
-                LaunchStats merged = mergedByPackage.get(app.packageName);
-                if (merged != null) stats.put(app.getHistoryId(), merged);
+                if (app == null || app.packageName == null) continue;
+                packageByHistoryId.put(app.getHistoryId(), app.packageName);
             }
         }
 
@@ -156,9 +115,33 @@ public final class LaunchStatsProvider {
                         context, dataHandler, shortcut)) continue;
                 String packageName = AppIdentityResolver.canonicalPackage(
                         context, dataHandler, shortcut);
-                LaunchStats merged = mergedByPackage.get(packageName);
-                if (merged != null) stats.put(shortcut.getHistoryId(), merged);
+                if (packageName != null && !packageName.isEmpty()) {
+                    packageByHistoryId.put(shortcut.getHistoryId(), packageName);
+                }
             }
+        }
+
+        if (packageByHistoryId.isEmpty()) return;
+
+        HashMap<String, MutableStats> totalsByPackage = new HashMap<>();
+        for (Map.Entry<String, LaunchStats> entry : stats.entrySet()) {
+            String packageName = packageByHistoryId.get(entry.getKey());
+            if (packageName == null) continue;
+            totalsByPackage.computeIfAbsent(packageName, ignored -> new MutableStats())
+                    .add(entry.getValue());
+        }
+        if (totalsByPackage.isEmpty()) return;
+
+        HashMap<String, LaunchStats> mergedByPackage = new HashMap<>();
+        for (Map.Entry<String, MutableStats> entry : totalsByPackage.entrySet()) {
+            MutableStats value = entry.getValue();
+            mergedByPackage.put(entry.getKey(),
+                    new LaunchStats(value.lastLaunchTime, value.launchesToday, value.totalLaunches));
+        }
+
+        for (Map.Entry<String, String> entry : packageByHistoryId.entrySet()) {
+            LaunchStats merged = mergedByPackage.get(entry.getValue());
+            if (merged != null) stats.put(entry.getKey(), merged);
         }
     }
 
