@@ -164,6 +164,9 @@
     <string name="enable_app">Show newly installed apps in history</string>
     <string name="enable_notification_history">Show apps with new notifications in history</string>
     <string name="enable_favorites_bar">Show favorites above search bar</string>
+    <string name="favorites_bar_mode">Bottom favorites bar mode</string>
+    <string name="pixel_favorites_max_apps">Pixel mode app slots</string>
+    <string name="pixel_favorites_max_apps_summary">Total favorites + suggested apps shown in Pixel mode (maximum 10)</string>
     <string name="exclude_favorites_apps">Exclude favorites from apps list</string>
     <string name="exclude_favorites_history">Exclude favorites from history</string>
     <string name="favorites_hide">Hide favorites bar initially</string>
