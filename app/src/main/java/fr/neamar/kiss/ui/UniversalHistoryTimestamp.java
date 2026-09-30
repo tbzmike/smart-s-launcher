@@ -25,8 +25,10 @@ import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.CommunicationPojo;
+import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
 
 /**
@@ -150,8 +152,9 @@ public final class UniversalHistoryTimestamp {
         int interactionsToday = stats == null ? 0 : Math.max(0, stats.launchesToday);
         long lastOpened = stats == null ? 0L : Math.max(0L, stats.lastLaunchTime);
         long foregroundMs = 0L;
-        if (pojo instanceof AppPojo && usage != null && usage.available) {
-            Long value = usage.foregroundMsByPackage.get(((AppPojo) pojo).packageName);
+        String usagePackage = usagePackage(pojo);
+        if (!TextUtils.isEmpty(usagePackage) && usage != null && usage.available) {
+            Long value = usage.foregroundMsByPackage.get(usagePackage);
             foregroundMs = value == null ? 0L : Math.max(0L, value);
         }
 
@@ -188,7 +191,7 @@ public final class UniversalHistoryTimestamp {
                 .append(interactionsToday)
                 .append(interactionsToday == 1 ? " interaction today" : " interactions today");
 
-        if (pojo instanceof AppPojo) {
+        if (!TextUtils.isEmpty(usagePackage(pojo))) {
             if (foregroundMs > 0L) {
                 text.append("  •  Used today ").append(formatDuration(foregroundMs));
             }
@@ -197,6 +200,23 @@ public final class UniversalHistoryTimestamp {
                     .append(timeFormat.format(new Date(lastOpened)));
         }
         return text;
+    }
+
+    /**
+     * App-backed wrapper shortcuts share Android's package usage total with the real app. Ordinary
+     * in-app shortcuts remain independent and therefore return no package here.
+     */
+    private static String usagePackage(Pojo pojo) {
+        if (pojo instanceof AppPojo) return ((AppPojo) pojo).packageName;
+        if (pojo instanceof DisabledAppPojo) return ((DisabledAppPojo) pojo).targetPackage;
+        if (pojo instanceof ShortcutPojo) {
+            ShortcutPojo shortcut = (ShortcutPojo) pojo;
+            if (!TextUtils.isEmpty(shortcut.targetPackage)
+                    && !TextUtils.equals(shortcut.targetPackage, shortcut.packageName)) {
+                return shortcut.targetPackage;
+            }
+        }
+        return null;
     }
 
     private static String formatDuration(long durationMs) {
