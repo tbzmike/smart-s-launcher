@@ -42,7 +42,13 @@ public class ShortcutsProvider extends Provider<ShortcutPojo> {
                 public void onShortcutsChanged(@NonNull String packageName, @NonNull List<ShortcutInfo> shortcuts, @NonNull android.os.UserHandle user) {
                     if (isAnyShortcutVisible(shortcuts)) {
                         Log.d(TAG, "Shortcuts changed for " + packageName);
-                        KissApplication.getApplication(ShortcutsProvider.this).getDataHandler().reloadShortcuts();
+                        // Package/freezer callbacks often deliver the same shortcut change several
+                        // times while HOME is being restored. Coalesce with AppProvider's deferred
+                        // package reload instead of cancelling/restarting this provider immediately.
+                        if (!AppProvider.deferPackageReloadWhileHomeVisible(true)) {
+                            KissApplication.getApplication(ShortcutsProvider.this)
+                                    .getDataHandler().reloadShortcuts();
+                        }
                     }
                 }
                 private boolean isAnyShortcutVisible(List<ShortcutInfo> shortcuts) {
