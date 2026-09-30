@@ -24,7 +24,7 @@ import fr.neamar.kiss.utils.UserHandle;
 class DB extends SQLiteOpenHelper {
 
     static final String DB_NAME = "kiss.s3db";
-    private final static int DB_VERSION = 17;
+    private final static int DB_VERSION = 18;
     private static final String TAG = DB.class.getSimpleName();
 
     private final Context mContext;
@@ -38,7 +38,7 @@ class DB extends SQLiteOpenHelper {
     public void onCreate(SQLiteDatabase database) {
         database.execSQL("CREATE TABLE history ( _id INTEGER PRIMARY KEY AUTOINCREMENT, \"query\" TEXT, record TEXT NOT NULL)");
         database.execSQL("CREATE TABLE shortcuts ( _id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, package TEXT,"
-                + "icon TEXT, intent_uri TEXT NOT NULL, icon_blob BLOB)");
+                + "icon TEXT, intent_uri TEXT NOT NULL, icon_blob BLOB, target_package TEXT NOT NULL DEFAULT '')");
         createTags(database);
         addTimeStamps(database);
         addAppsTable(database);
@@ -84,7 +84,7 @@ class DB extends SQLiteOpenHelper {
                 case 2:
                 case 3:
                     database.execSQL("CREATE TABLE shortcuts ( _id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, package TEXT,"
-                            + "icon TEXT, intent_uri TEXT NOT NULL, icon_blob BLOB)");
+                            + "icon TEXT, intent_uri TEXT NOT NULL, icon_blob BLOB, target_package TEXT NOT NULL DEFAULT '')");
                     // fall through
                 case 4:
                     createTags(database);
@@ -126,6 +126,10 @@ class DB extends SQLiteOpenHelper {
                     addColumnIfMissing(database, "notification_history", "pending_intent_token",
                             "TEXT NOT NULL DEFAULT ''");
                     addColumnIfMissing(database, "notification_history", "locus_id",
+                            "TEXT NOT NULL DEFAULT ''");
+                    // fall through
+                case 17:
+                    addColumnIfMissing(database, "shortcuts", "target_package",
                             "TEXT NOT NULL DEFAULT ''");
                     break;
                 default:
