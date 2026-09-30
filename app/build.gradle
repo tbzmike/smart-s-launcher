@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.131 - non-blocking Pixel Home prediction
-        versionCode 559
-        versionName "3.30.131"
+        // Smart S Launcher 3.30.132 - keep Home responsive during package/freezer reloads
+        versionCode 560
+        versionName "3.30.132"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
