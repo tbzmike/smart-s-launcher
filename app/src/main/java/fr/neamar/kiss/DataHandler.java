@@ -59,6 +59,7 @@ import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.AppIdentityResolver;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
+import fr.neamar.kiss.utils.RecentLaunchTracker;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
 
@@ -1011,6 +1012,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         // second application. Record the canonical app:// identity when it can be resolved so all
         // future recency/frequency/launch counts naturally accumulate under one app.
         Pojo launchedPojo = getPojo(id);
+        if (launchedPojo == null) launchedPojo = RecentLaunchTracker.resolve(id);
         String canonicalId = AppIdentityResolver.canonicalHistoryId(
                 this.context, this, launchedPojo);
         if (TextUtils.isEmpty(canonicalId)) canonicalId = id;
