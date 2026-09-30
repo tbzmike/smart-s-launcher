@@ -56,6 +56,7 @@ import fr.neamar.kiss.pojo.NameComparator;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.utils.AppIdentityResolver;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.ShortcutUtil;
@@ -889,6 +890,20 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
     }
 
     /**
+     * Pixel mode must retain a pinned app when that app is frozen. Standard mode deliberately keeps
+     * using getFavorites() unchanged; this method is only the Pixel-mode source.
+     */
+    public List<Pojo> getFavoritesIncludingDisabled() {
+        List<String> favoriteIds = getFavoriteIds();
+        List<Pojo> favorites = new ArrayList<>(favoriteIds.size());
+        for (String id : favoriteIds) {
+            Pojo pojo = getPojo(id);
+            if (pojo != null) favorites.add(pojo);
+        }
+        return favorites;
+    }
+
+    /**
      * This method is used to set the specific position of an app in the fav array.
      *
      * @param positions the new positions for favorites
@@ -987,12 +1002,23 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
 
         boolean frozen = PreferenceManager.getDefaultSharedPreferences(context).
                 getBoolean("freeze-history", false);
+        if (frozen) return;
 
         Set<String> excludedFromHistory = getExcludedFromHistory();
+        if (excludedFromHistory.contains(id)) return;
 
-        if (!frozen && !excludedFromHistory.contains(id)) {
-            DBHelper.insertHistory(this.context, currentQuery, id);
-        }
+        // A wrapper shortcut such as "Ice Box: Facebook" is a launch route to Facebook, not a
+        // second application. Record the canonical app:// identity when it can be resolved so all
+        // future recency/frequency/launch counts naturally accumulate under one app.
+        Pojo launchedPojo = getPojo(id);
+        String canonicalId = AppIdentityResolver.canonicalHistoryId(
+                this.context, this, launchedPojo);
+        if (TextUtils.isEmpty(canonicalId)) canonicalId = id;
+
+        // Respect exclusions on either representation. Canonicalization must never bypass a user's
+        // explicit history privacy choice.
+        if (excludedFromHistory.contains(canonicalId)) return;
+        DBHelper.insertHistory(this.context, currentQuery, canonicalId);
     }
 
     public Pojo getPojo(String id) {
