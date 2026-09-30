@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.130 - canonical frozen app identity
-        versionCode 558
-        versionName "3.30.130"
+        // Smart S Launcher 3.30.131 - non-blocking Pixel Home prediction
+        versionCode 559
+        versionName "3.30.131"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
