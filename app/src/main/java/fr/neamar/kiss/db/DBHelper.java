@@ -7,6 +7,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteStatement;
 import android.os.CancellationSignal;
+import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -21,6 +22,11 @@ import fr.neamar.kiss.utils.Log;
 public class DBHelper {
     private static final String TAG = DBHelper.class.getSimpleName();
     private DBHelper() {
+    }
+
+    @Nullable
+    private static String emptyToNull(@Nullable String value) {
+        return TextUtils.isEmpty(value) ? null : value;
     }
 
     private static SQLiteDatabase getDatabase(Context context) {
@@ -308,13 +314,23 @@ public class DBHelper {
     public static boolean insertShortcut(Context context, ShortcutRecord shortcut) {
         return DatabaseRecovery.run(context, recoveryDb -> {
         SQLiteDatabase db = recoveryDb;
-        // check if any field has changed
-        try (Cursor cursor = db.query("shortcuts", new String[]{"name", "package", "intent_uri"},
-                "name = ? and package = ? AND intent_uri = ?", new String[]{shortcut.name, shortcut.packageName, shortcut.intentUri}, null, null, null, null)) {
-            if (cursor.getCount() > 0) {
-                return false;
+        String targetPackage = TextUtils.isEmpty(shortcut.targetPackage)
+                ? "" : shortcut.targetPackage;
+
+        boolean existing = false;
+        boolean changed = true;
+        try (Cursor cursor = db.query("shortcuts",
+                new String[]{"name", "target_package"},
+                "package = ? AND intent_uri = ?",
+                new String[]{shortcut.packageName, shortcut.intentUri},
+                null, null, null, "1")) {
+            if (cursor.moveToFirst()) {
+                existing = true;
+                changed = !TextUtils.equals(shortcut.name, cursor.getString(0))
+                        || !TextUtils.equals(targetPackage, cursor.getString(1));
             }
         }
+        if (existing && !changed) return false;
 
         ContentValues values = new ContentValues();
         values.put("name", shortcut.name);
@@ -322,12 +338,12 @@ public class DBHelper {
         values.put("icon", (String) null); // Legacy field (for shortcuts before Oreo), not used anymore
         values.put("icon_blob", (String) null); // Another legacy field (icon is dynamically retrieved)
         values.put("intent_uri", shortcut.intentUri);
+        values.put("target_package", targetPackage);
 
-        // do not add duplicate shortcuts
-        int rowsAffected = db.update("shortcuts", values, "package = ? AND intent_uri = ?", new String[]{shortcut.packageName, shortcut.intentUri});
-        if (rowsAffected == 0) {
-            db.insert("shortcuts", null, values);
-        }
+        int rowsAffected = db.update("shortcuts", values,
+                "package = ? AND intent_uri = ?",
+                new String[]{shortcut.packageName, shortcut.intentUri});
+        if (rowsAffected == 0) db.insert("shortcuts", null, values);
         return true;
 
         });
@@ -504,25 +520,26 @@ public class DBHelper {
         // Cursor query (String table, String[] columns, String selection,
         // String[] selectionArgs, String groupBy, String having, String
         // orderBy)
-        Cursor cursor = db.query("shortcuts", new String[]{"_id", "name", "package", "intent_uri"},
-                "package = ?", new String[]{packageName}, null, null, null);
-        cursor.moveToFirst();
+        try (Cursor cursor = db.query("shortcuts",
+                new String[]{"_id", "name", "package", "intent_uri", "target_package"},
+                "package = ?", new String[]{packageName}, null, null, null)) {
+            cursor.moveToFirst();
 
-        List<ShortcutRecord> records = new ArrayList<>();
-        while (!cursor.isAfterLast()) {
-            ShortcutRecord entry = new ShortcutRecord();
+            List<ShortcutRecord> records = new ArrayList<>();
+            while (!cursor.isAfterLast()) {
+                ShortcutRecord entry = new ShortcutRecord();
 
-            entry.dbId = cursor.getInt(0);
-            entry.name = cursor.getString(1);
-            entry.packageName = cursor.getString(2);
-            entry.intentUri = cursor.getString(3);
+                entry.dbId = cursor.getInt(0);
+                entry.name = cursor.getString(1);
+                entry.packageName = cursor.getString(2);
+                entry.intentUri = cursor.getString(3);
+                entry.targetPackage = emptyToNull(cursor.getString(4));
 
-            records.add(entry);
-            cursor.moveToNext();
+                records.add(entry);
+                cursor.moveToNext();
+            }
+            return records;
         }
-        cursor.close();
-
-        return records;
 
         });
     }
@@ -539,33 +556,32 @@ public class DBHelper {
         return DatabaseRecovery.run(context, recoveryDb -> {
         SQLiteDatabase db = recoveryDb;
 
-        Cursor cursor;
-        if (cancellationSignal == null) {
-            cursor = db.query("shortcuts", new String[]{"_id", "name", "package", "intent_uri"},
-                    null, null, null, null, null);
-        } else {
-            cursor = db.query(false, "shortcuts",
-                    new String[]{"_id", "name", "package", "intent_uri"},
-                    null, null, null, null, null, null, cancellationSignal);
+        Cursor cursor = cancellationSignal == null
+                ? db.query("shortcuts",
+                        new String[]{"_id", "name", "package", "intent_uri", "target_package"},
+                        null, null, null, null, null)
+                : db.query(false, "shortcuts",
+                        new String[]{"_id", "name", "package", "intent_uri", "target_package"},
+                        null, null, null, null, null, null, cancellationSignal);
+        try (Cursor closeable = cursor) {
+            closeable.moveToFirst();
+
+            List<ShortcutRecord> records = new ArrayList<>(closeable.getCount());
+            while (!closeable.isAfterLast()) {
+                if (cancellationSignal != null) cancellationSignal.throwIfCanceled();
+                ShortcutRecord entry = new ShortcutRecord();
+
+                entry.dbId = closeable.getInt(0);
+                entry.name = closeable.getString(1);
+                entry.packageName = closeable.getString(2);
+                entry.intentUri = closeable.getString(3);
+                entry.targetPackage = emptyToNull(closeable.getString(4));
+
+                records.add(entry);
+                closeable.moveToNext();
+            }
+            return records;
         }
-        cursor.moveToFirst();
-
-        List<ShortcutRecord> records = new ArrayList<>(cursor.getCount());
-        while (!cursor.isAfterLast()) {
-            if (cancellationSignal != null) cancellationSignal.throwIfCanceled();
-            ShortcutRecord entry = new ShortcutRecord();
-
-            entry.dbId = cursor.getInt(0);
-            entry.name = cursor.getString(1);
-            entry.packageName = cursor.getString(2);
-            entry.intentUri = cursor.getString(3);
-
-            records.add(entry);
-            cursor.moveToNext();
-        }
-        cursor.close();
-
-        return records;
 
         });
     }
