@@ -14,6 +14,7 @@ import java.util.Set;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.dataprovider.AppProvider;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.PackageManagerUtils;
@@ -69,10 +70,15 @@ public class PackageAddedRemovedHandler extends BroadcastReceiver {
             }
         } else {
             KissApplication.getApplication(ctx).resetIconsHandler();
-            // Package changed/available events include freeze/unfreeze transitions. Always reload:
-            // relying on getLaunchingComponent() would hide exactly the packages IceBox disabled.
-            KissApplication.getApplication(ctx).getDataHandler().reloadApps();
-            KissApplication.getApplication(ctx).getDataHandler().reloadShortcuts();
+            // Package changed/available events include freeze/unfreeze transitions. When HOME is
+            // already visible, keep the warm provider snapshot for the first frame and coalesce the
+            // expensive canonical-app + shortcut reload into one delayed pass. The logcat showed
+            // duplicate ShortcutsProvider restarts and a 7.6s AppProvider/ShortcutsProvider load
+            // during HOME, which starved the main thread and produced the black screen.
+            if (!AppProvider.deferPackageReloadWhileHomeVisible(true)) {
+                KissApplication.getApplication(ctx).getDataHandler().reloadApps();
+                KissApplication.getApplication(ctx).getDataHandler().reloadShortcuts();
+            }
         }
     }
 
