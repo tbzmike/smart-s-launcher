@@ -92,6 +92,20 @@
                 app:summaryOff="@string/enable_favorites_bar_summary_off"
                 app:summaryOn="@string/enable_favorites_bar_summary_on"
                 app:title="@string/enable_favorites_bar" />
+            <ListPreference
+                app:defaultValue="standard"
+                app:entries="@array/favoritesBarModeEntries"
+                app:entryValues="@array/favoritesBarModeValues"
+                app:key="favorites-bar-mode"
+                app:title="@string/favorites_bar_mode"
+                app:useSimpleSummaryProvider="true" />
+            <ListPreference
+                app:defaultValue="5"
+                app:entries="@array/pixelFavoritesCountEntries"
+                app:entryValues="@array/pixelFavoritesCountValues"
+                app:key="pixel-favorites-max-apps"
+                app:summary="@string/pixel_favorites_max_apps_summary"
+                app:title="@string/pixel_favorites_max_apps" />
             <SwitchPreference
                 app:defaultValue="false"
                 app:dependency="enable-favorites-bar"
