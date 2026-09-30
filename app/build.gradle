@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.127 - exact per-event media artwork
-        versionCode 555
-        versionName "3.30.127"
+        // Smart S Launcher 3.30.129 - Standard/Pixel favorites bar modes
+        versionCode 557
+        versionName "3.30.129"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
