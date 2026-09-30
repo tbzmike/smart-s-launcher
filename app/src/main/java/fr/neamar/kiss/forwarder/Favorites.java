@@ -1,6 +1,5 @@
 package fr.neamar.kiss.forwarder;
 
-import static androidx.recyclerview.widget.ItemTouchHelper.ACTION_STATE_DRAG;
 import static androidx.recyclerview.widget.ItemTouchHelper.ACTION_STATE_IDLE;
 
 import android.content.ComponentName;
@@ -12,11 +11,14 @@ import android.net.Uri;
 import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.ContactsContract;
 import android.util.Pair;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
@@ -45,6 +47,7 @@ import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
@@ -66,6 +69,7 @@ public class Favorites extends Forwarder {
     static final String PREF_PIXEL_MAX_APPS = "pixel-favorites-max-apps";
 
     private FavoriteAdapter favoriteAdapter;
+    @Nullable private ItemTouchHelper favoriteTouchHelper;
     private String lastRenderedMode;
     private int lastPixelLimit = -1;
 
@@ -88,7 +92,7 @@ public class Favorites extends Forwarder {
         }
     }
 
-    private static class FavoriteAdapter extends RecyclerView.Adapter<ViewHolder> {
+    private class FavoriteAdapter extends RecyclerView.Adapter<ViewHolder> {
         private final List<Result<?>> results = new ArrayList<>();
         private OnItemClickListener mOnItemClickListener;
         private OnItemLongClickListener mOnItemLongClickListener;
@@ -191,6 +195,55 @@ public class Favorites extends Forwarder {
             });
             holder.itemView.setOnLongClickListener(v ->
                     mOnItemLongClickListener == null || mOnItemLongClickListener.onLongClick(v, result));
+
+            // ItemTouchHelper's built-in long-press drag used to win the gesture before the normal
+            // Smart S popup could remain visible. Keep a stationary long press for the standard
+            // result menu, while preserving Standard-mode reordering as hold-then-drag.
+            final int touchSlop = ViewConfiguration.get(holder.itemView.getContext())
+                    .getScaledTouchSlop();
+            holder.itemView.setOnTouchListener(new View.OnTouchListener() {
+                float downX;
+                float downY;
+                long downTime;
+                boolean dragStarted;
+
+                @Override
+                public boolean onTouch(View v, MotionEvent event) {
+                    switch (event.getActionMasked()) {
+                        case MotionEvent.ACTION_DOWN:
+                            downX = event.getX();
+                            downY = event.getY();
+                            downTime = SystemClock.uptimeMillis();
+                            dragStarted = false;
+                            break;
+                        case MotionEvent.ACTION_MOVE:
+                            if (!dragStarted
+                                    && !isPixelMode()
+                                    && !UiEditLock.isLocked(mainActivity)
+                                    && favoriteTouchHelper != null
+                                    && holder.getAbsoluteAdapterPosition()
+                                    != RecyclerView.NO_POSITION
+                                    && SystemClock.uptimeMillis() - downTime
+                                    >= ViewConfiguration.getLongPressTimeout()) {
+                                float dx = event.getX() - downX;
+                                float dy = event.getY() - downY;
+                                if (dx * dx + dy * dy >= (float) touchSlop * touchSlop) {
+                                    dragStarted = true;
+                                    mainActivity.dismissPopup();
+                                    favoriteTouchHelper.startDrag(holder);
+                                }
+                            }
+                            break;
+                        case MotionEvent.ACTION_UP:
+                        case MotionEvent.ACTION_CANCEL:
+                            dragStarted = false;
+                            break;
+                        default:
+                            break;
+                    }
+                    return false;
+                }
+            });
         }
 
         @Override public int getItemCount() {
@@ -211,6 +264,12 @@ public class Favorites extends Forwarder {
         }
 
         @Override public boolean isItemViewSwipeEnabled() {
+            return false;
+        }
+
+        @Override public boolean isLongPressDragEnabled() {
+            // Long press belongs to the normal Smart S item menu. Standard-mode reordering is
+            // explicitly started only after the user holds and then moves the favorite.
             return false;
         }
 
@@ -248,11 +307,7 @@ public class Favorites extends Forwarder {
         @Override
         public void onSelectedChanged(@Nullable RecyclerView.ViewHolder viewHolder, int actionState) {
             super.onSelectedChanged(viewHolder, actionState);
-            if (actionState == ACTION_STATE_DRAG) {
-                if (viewHolder != null && viewHolder.itemView.isLongClickable()) {
-                    viewHolder.itemView.performLongClick();
-                }
-            } else if (actionState == ACTION_STATE_IDLE && moved) {
+            if (actionState == ACTION_STATE_IDLE && moved) {
                 if (!isPixelMode()) mAdapter.updateFavoritePositions(mainActivity);
                 moved = false;
             }
@@ -275,8 +330,8 @@ public class Favorites extends Forwarder {
         favoriteAdapter = new FavoriteAdapter();
         favoriteAdapter.setOnItemClickListener(this::onClick);
         favoriteAdapter.setOnItemLongClickListener(this::onLongClick);
-        ItemTouchHelper touchHelper = new ItemTouchHelper(new ItemMoveCallback(favoriteAdapter));
-        touchHelper.attachToRecyclerView(mainActivity.favoritesBar);
+        favoriteTouchHelper = new ItemTouchHelper(new ItemMoveCallback(favoriteAdapter));
+        favoriteTouchHelper.attachToRecyclerView(mainActivity.favoritesBar);
         mainActivity.favoritesBar.setAdapter(favoriteAdapter);
 
         if (prefs.getBoolean("first-run-favorites", true)) {
@@ -402,6 +457,10 @@ public class Favorites extends Forwarder {
 
     void onDestroy() {
         cancelPixelPrediction();
+        if (favoriteTouchHelper != null) {
+            favoriteTouchHelper.attachToRecyclerView(null);
+            favoriteTouchHelper = null;
+        }
         pixelExecutor.shutdownNow();
     }
 
