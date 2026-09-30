@@ -25,6 +25,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.db.ShortcutRecord;
+import fr.neamar.kiss.pojo.ShortcutPojo;
+
 /** Copies the usage history Android still exposes into Smart S's 365-day local timeline. */
 public final class AppUsageSync {
     private static final String META_LAST_EVENT_SYNC = "last_event_sync";
@@ -157,6 +161,9 @@ public final class AppUsageSync {
         PackageManager pm = context.getPackageManager();
         Map<String, SessionStart> foregroundStarts = new HashMap<>();
         Map<String, PackageMeta> packageMetaCache = new HashMap<>();
+        // Loaded lazily only when Android reports a shortcut invocation. Wrapper shortcuts such as
+        // IceBox can then be attributed to the real target app without adding another tracker/job.
+        Map<String, Map<String, String>> shortcutTargetsByPublisher = new HashMap<>();
         int screenState = 0; // 1 interactive, -1 non-interactive, 0 unknown
         long screenStateStart = 0L;
         long windowStart = begin;
@@ -249,16 +256,24 @@ public final class AppUsageSync {
                     }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1
                             && type == UsageEvents.Event.SHORTCUT_INVOCATION && !TextUtils.isEmpty(pkg)) {
+                        String shortcutId = event.getShortcutId();
+                        String logicalPackage = resolveShortcutUsagePackage(
+                                context, pkg, shortcutId, shortcutTargetsByPublisher);
+                        if (TextUtils.isEmpty(logicalPackage)) logicalPackage = pkg;
+
                         PackageMeta meta = packageMetaCache.computeIfAbsent(
-                                pkg, p -> packageMeta(pm, p, null));
-                        String detail = "App shortcut invoked";
-                        if (!TextUtils.isEmpty(event.getShortcutId())) {
-                            detail += " · " + event.getShortcutId();
+                                logicalPackage, p -> packageMeta(pm, p, null));
+                        String detail = TextUtils.equals(logicalPackage, pkg)
+                                ? "App shortcut invoked"
+                                : "App shortcut invoked through " + pkg;
+                        if (!TextUtils.isEmpty(shortcutId)) {
+                            detail += " · " + shortcutId;
                         }
                         store.putTimeline(new AppUsageStore.TimelineEntry(
-                                "shortcut:" + pkg + ":" + time,
-                                time, 0L, AppUsageStore.KIND_SHORTCUT, pkg, meta.label,
-                                0L, meta.system, detail, null, null));
+                                "shortcut:" + logicalPackage + ":" + time + ":" + pkg,
+                                time, 0L, AppUsageStore.KIND_SHORTCUT,
+                                logicalPackage, meta.label, 0L, meta.system,
+                                detail, null, null));
                     }
                 }
             }
@@ -268,6 +283,37 @@ public final class AppUsageSync {
         }
 
         store.setMeta(META_LAST_EVENT_SYNC, now);
+    }
+
+    @Nullable
+    private static String resolveShortcutUsagePackage(
+            @NonNull Context context,
+            @NonNull String publisherPackage,
+            @Nullable String shortcutId,
+            @NonNull Map<String, Map<String, String>> cache) {
+        if (TextUtils.isEmpty(shortcutId)) return null;
+
+        Map<String, String> targets = cache.get(publisherPackage);
+        if (targets == null) {
+            targets = new HashMap<>();
+            try {
+                List<ShortcutRecord> records = DBHelper.getShortcuts(context, publisherPackage);
+                for (ShortcutRecord record : records) {
+                    if (record == null || TextUtils.isEmpty(record.intentUri)
+                            || TextUtils.isEmpty(record.targetPackage)
+                            || TextUtils.equals(record.targetPackage, record.packageName)
+                            || !record.intentUri.startsWith(ShortcutPojo.OREO_PREFIX)) {
+                        continue;
+                    }
+                    targets.put(record.intentUri.substring(ShortcutPojo.OREO_PREFIX.length()),
+                            record.targetPackage);
+                }
+            } catch (RuntimeException ignored) {
+                // Usage import remains valid even if the shortcut catalog is temporarily unavailable.
+            }
+            cache.put(publisherPackage, targets);
+        }
+        return targets.get(shortcutId);
     }
 
     private static String interactionDetail(UsageEvents.Event event) {
