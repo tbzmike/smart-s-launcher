@@ -12,6 +12,23 @@
     <string-array name="nightModeValues" translatable="false">
         <item>no</item><item>yes</item><item>follow-system</item>
     </string-array>
+    <string-array name="favoritesBarModeEntries" translatable="false">
+        <item>Standard — favorites only</item>
+        <item>Pixel — favorites + most used apps</item>
+    </string-array>
+    <string-array name="favoritesBarModeValues" translatable="false">
+        <item>standard</item>
+        <item>pixel</item>
+    </string-array>
+    <string-array name="pixelFavoritesCountEntries" translatable="false">
+        <item>1</item><item>2</item><item>3</item><item>4</item><item>5</item>
+        <item>6</item><item>7</item><item>8</item><item>9</item><item>10</item>
+    </string-array>
+    <string-array name="pixelFavoritesCountValues" translatable="false">
+        <item>1</item><item>2</item><item>3</item><item>4</item><item>5</item>
+        <item>6</item><item>7</item><item>8</item><item>9</item><item>10</item>
+    </string-array>
+
     <string-array name="historyModeEntries">
         <item>@string/history_recency</item><item>@string/history_frecency</item><item>@string/history_frequency</item><item>@string/history_adaptive</item><item>@string/history_time</item><item>@string/history_alphabetically</item>
     </string-array>
