@@ -9,6 +9,9 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.net.Uri;
+import android.os.CancellationSignal;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.ContactsContract;
 import android.util.Pair;
 import android.view.HapticFeedbackConstants;
@@ -27,6 +30,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Collections;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.KissApplication;
@@ -42,6 +49,7 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.utils.AppIdentityResolver;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.PackageManagerUtils;
@@ -60,6 +68,18 @@ public class Favorites extends Forwarder {
     private FavoriteAdapter favoriteAdapter;
     private String lastRenderedMode;
     private int lastPixelLimit = -1;
+
+    // Pixel prediction must never block HOME rendering. The previous synchronous launch-stats
+    // query ran from onResume/onFavoriteChange and could hold the main thread for several seconds.
+    private final Handler pixelHandler = new Handler(Looper.getMainLooper());
+    private final ExecutorService pixelExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "smart-s-pixel-predict");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
+    });
+    @Nullable private Future<?> pixelFuture;
+    @Nullable private CancellationSignal pixelCancellation;
+    private int pixelGeneration;
 
     private static class ViewHolder extends RecyclerView.ViewHolder {
         private ViewHolder(@NonNull View itemView) { super(itemView); }
@@ -287,18 +307,27 @@ public class Favorites extends Forwarder {
     public void onFavoriteChange() {
         DataHandler dataHandler = KissApplication.getApplication(mainActivity).getDataHandler();
         String mode = currentMode();
+        int pixelLimit = getPixelLimit();
 
-        List<Pojo> displayed;
         if (MODE_PIXEL.equals(mode)) {
-            // Pixel mode retains pinned apps even when frozen. Standard mode below deliberately
-            // keeps the legacy favorites source and behavior unchanged.
-            displayed = buildPixelFavorites(
-                    dataHandler, dataHandler.getFavoritesIncludingDisabled(), getPixelLimit());
-        } else {
-            // Legacy behavior: no cap, no usage query, no predictor.
-            displayed = dataHandler.getFavorites();
+            // Draw something immediately from already-loaded in-memory state. No SQLite, usage
+            // query or package scan is allowed to delay HOME.
+            List<Pojo> pinned = dataHandler.getFavoritesIncludingDisabled();
+            List<Pojo> immediate = buildPixelFavorites(
+                    dataHandler, pinned, pixelLimit, Collections.emptyMap());
+            applyFavorites(immediate, mode, pixelLimit);
+
+            // Prediction runs only for Pixel mode, at background priority, after HOME gets a chance
+            // to draw. Standard mode never starts this worker.
+            schedulePixelPrediction(dataHandler, pinned, pixelLimit);
+            return;
         }
 
+        cancelPixelPrediction();
+        applyFavorites(dataHandler.getFavorites(), mode, pixelLimit);
+    }
+
+    private void applyFavorites(List<Pojo> displayed, String mode, int pixelLimit) {
         List<Result<?>> results = new ArrayList<>(displayed.size());
         for (Pojo pojo : displayed) {
             results.add(Result.fromPojo(mainActivity, pojo));
@@ -310,14 +339,76 @@ public class Favorites extends Forwarder {
                     .setSpanCount(Math.max(displayed.size(), 1));
         }
         favoriteAdapter.setFavorites(results);
-
         lastRenderedMode = mode;
-        lastPixelLimit = getPixelLimit();
+        lastPixelLimit = pixelLimit;
+    }
+
+    private void schedulePixelPrediction(DataHandler dataHandler,
+                                         List<Pojo> pinnedFavorites,
+                                         int pixelLimit) {
+        cancelPixelPrediction();
+        final int generation = ++pixelGeneration;
+        final List<Pojo> pinnedSnapshot = new ArrayList<>(pinnedFavorites);
+
+        pixelHandler.postDelayed(() -> {
+            if (generation != pixelGeneration || !MODE_PIXEL.equals(currentMode())
+                    || LauncherScrollWorkGate.isScrolling()) {
+                return;
+            }
+
+            final CancellationSignal signal = new CancellationSignal();
+            pixelCancellation = signal;
+            pixelFuture = pixelExecutor.submit(() -> {
+                android.os.Process.setThreadPriority(
+                        android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                try {
+                    if (signal.isCanceled() || generation != pixelGeneration
+                            || LauncherScrollWorkGate.isScrolling()) return;
+
+                    Map<String, LaunchStatsProvider.LaunchStats> launchStats =
+                            LaunchStatsProvider.loadAll(
+                                    mainActivity.getApplicationContext(), signal);
+                    if (signal.isCanceled() || generation != pixelGeneration
+                            || LauncherScrollWorkGate.isScrolling()) return;
+
+                    List<Pojo> predicted = buildPixelFavorites(
+                            dataHandler, pinnedSnapshot, pixelLimit, launchStats);
+                    pixelHandler.post(() -> {
+                        if (signal.isCanceled() || generation != pixelGeneration
+                                || !MODE_PIXEL.equals(currentMode())
+                                || LauncherScrollWorkGate.isScrolling()
+                                || mainActivity.isFinishing()) {
+                            return;
+                        }
+                        applyFavorites(predicted, MODE_PIXEL, pixelLimit);
+                    });
+                } catch (RuntimeException ignored) {
+                    // Cancellation/provider reload races are expected; keep the immediate bar.
+                }
+            });
+        }, 250L);
+    }
+
+    private void cancelPixelPrediction() {
+        pixelGeneration++;
+        pixelHandler.removeCallbacksAndMessages(null);
+        CancellationSignal signal = pixelCancellation;
+        if (signal != null) signal.cancel();
+        pixelCancellation = null;
+        Future<?> future = pixelFuture;
+        if (future != null) future.cancel(true);
+        pixelFuture = null;
+    }
+
+    void onDestroy() {
+        cancelPixelPrediction();
+        pixelExecutor.shutdownNow();
     }
 
     private List<Pojo> buildPixelFavorites(DataHandler dataHandler,
                                            List<Pojo> pinnedFavorites,
-                                           int requestedLimit) {
+                                           int requestedLimit,
+                                           Map<String, LaunchStatsProvider.LaunchStats> launchStats) {
         int max = PixelFavoritesPolicy.clampMaxApps(requestedLimit);
 
         // Wrapper launch routes (for example IceBox's Facebook shortcut) are kept separately from
@@ -354,15 +445,9 @@ public class Favorites extends Forwarder {
         }
 
         List<String> rankedKeys = new ArrayList<>();
-        if (pinnedKeys.size() < max) {
+        if (pinnedKeys.size() < max && launchStats != null && !launchStats.isEmpty()) {
             List<AppPojo> availableApps = dataHandler.getApplicationsWithoutExcluded();
             if (availableApps != null && !availableApps.isEmpty()) {
-                // LaunchStatsProvider merges historical IceBox shortcut rows with the real app
-                // identity. This is an on-demand foreground read only while Pixel mode is active;
-                // Standard mode never executes it.
-                Map<String, LaunchStatsProvider.LaunchStats> launchStats =
-                        LaunchStatsProvider.loadAll(mainActivity);
-
                 List<AppPojo> rankedApps = new ArrayList<>(availableApps);
                 rankedApps.sort((left, right) -> {
                     LaunchStatsProvider.LaunchStats leftStats =
