@@ -1340,6 +1340,26 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     public void afterListChange() {
         if (listChangeAnimationPrepared) list.animateChange();
         listChangeAnimationPrepared = false;
+
+        // Search launch targets (apps and shortcuts) are intentionally ranked at the bottom.
+        // Keep each streamed QUERY publication anchored there so the first visible search result
+        // is the launch target band instead of forcing the user to manually scroll down.
+        if (list != null
+                && adapter != null
+                && adapter.getCount() > 0
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.QUERY
+                && searchEditText != null
+                && !TextUtils.isEmpty(searchEditText.getText())) {
+            list.post(() -> {
+                if (adapter == null || adapter.getCount() <= 0
+                        || list == null || list.isScrollInProgress()
+                        || SearchHandler.getInstance().getLastSearchType() != Searcher.Type.QUERY
+                        || searchEditText == null || TextUtils.isEmpty(searchEditText.getText())) {
+                    return;
+                }
+                list.setSelection(adapter.getCount() - 1);
+            });
+        }
     }
 
     public void dismissPopup() {
