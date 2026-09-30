@@ -24,6 +24,7 @@ import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +34,7 @@ import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.DBHelper;
-import fr.neamar.kiss.db.ValuedHistoryRecord;
+import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.Pojo;
@@ -41,6 +42,7 @@ import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.utils.AppIdentityResolver;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.PackageManagerUtils;
@@ -285,15 +287,17 @@ public class Favorites extends Forwarder {
 
     public void onFavoriteChange() {
         DataHandler dataHandler = KissApplication.getApplication(mainActivity).getDataHandler();
-        List<Pojo> pinnedFavorites = dataHandler.getFavorites();
         String mode = currentMode();
 
         List<Pojo> displayed;
         if (MODE_PIXEL.equals(mode)) {
-            displayed = buildPixelFavorites(dataHandler, pinnedFavorites, getPixelLimit());
+            // Pixel mode retains pinned apps even when frozen. Standard mode below deliberately
+            // keeps the legacy favorites source and behavior unchanged.
+            displayed = buildPixelFavorites(
+                    dataHandler, dataHandler.getFavoritesIncludingDisabled(), getPixelLimit());
         } else {
             // Legacy behavior: no cap, no usage query, no predictor.
-            displayed = pinnedFavorites;
+            displayed = dataHandler.getFavorites();
         }
 
         List<Result<?>> results = new ArrayList<>(displayed.size());
@@ -317,48 +321,107 @@ public class Favorites extends Forwarder {
                                            int requestedLimit) {
         int max = PixelFavoritesPolicy.clampMaxApps(requestedLimit);
 
-        List<String> pinnedIds = new ArrayList<>(pinnedFavorites.size());
-        Map<String, Pojo> pojoById = new HashMap<>();
-        for (Pojo favorite : pinnedFavorites) {
-            if (favorite == null) continue;
-            String id = favorite.getFavoriteId();
-            if (id == null || id.isEmpty()) continue;
-            pinnedIds.add(id);
-            pojoById.put(id, favorite);
-        }
-
-        // If pinned favorites already fill every Pixel slot, there is nothing to predict and no
-        // history query is executed at all.
-        List<String> rankedIds = new ArrayList<>();
-        if (pinnedIds.size() < max) {
-            List<AppPojo> availableApps = dataHandler.getApplicationsWithoutExcluded();
-            Map<String, AppPojo> appsById = new HashMap<>();
-            if (availableApps != null) {
-                for (AppPojo app : availableApps) {
-                    if (app == null || app.isDisabled()) continue;
-                    appsById.put(app.getFavoriteId(), app);
+        // Wrapper launch routes (for example IceBox's Facebook shortcut) are kept separately from
+        // logical identity. If the real app is frozen, Pixel mode can keep the same Facebook slot
+        // while launching through the working wrapper route.
+        Map<String, ShortcutPojo> aliasByPackage = new HashMap<>();
+        List<ShortcutPojo> shortcuts = dataHandler.getPinnedShortcuts();
+        if (shortcuts != null) {
+            for (ShortcutPojo shortcut : shortcuts) {
+                if (shortcut == null
+                        || !AppIdentityResolver.isAppAliasShortcut(
+                        mainActivity, dataHandler, shortcut)) continue;
+                String packageName = AppIdentityResolver.canonicalPackage(
+                        mainActivity, dataHandler, shortcut);
+                if (packageName != null && !packageName.isEmpty()) {
+                    aliasByPackage.putIfAbsent(packageName, shortcut);
                 }
             }
+        }
 
-            int scanLimit = Math.min(80, Math.max(24, max * 6));
-            List<ValuedHistoryRecord> mostUsed =
-                    DBHelper.getMostUsedAppHistory(mainActivity, scanLimit);
-            for (ValuedHistoryRecord record : mostUsed) {
-                if (record == null || record.record == null) continue;
-                AppPojo app = appsById.get(record.record);
-                if (app == null) continue;
-                rankedIds.add(app.getFavoriteId());
-                pojoById.put(app.getFavoriteId(), app);
+        List<String> pinnedKeys = new ArrayList<>(pinnedFavorites.size());
+        Map<String, Pojo> pojoByKey = new HashMap<>();
+        for (Pojo favorite : pinnedFavorites) {
+            if (favorite == null) continue;
+            String key = AppIdentityResolver.canonicalSelectionKey(
+                    mainActivity, dataHandler, favorite);
+            if (key == null || key.isEmpty() || pojoByKey.containsKey(key)) continue;
+
+            Pojo representative = launchablePixelRepresentative(
+                    dataHandler, favorite, aliasByPackage);
+            pinnedKeys.add(key);
+            pojoByKey.put(key, representative);
+            if (pinnedKeys.size() >= max) break;
+        }
+
+        List<String> rankedKeys = new ArrayList<>();
+        if (pinnedKeys.size() < max) {
+            List<AppPojo> availableApps = dataHandler.getApplicationsWithoutExcluded();
+            if (availableApps != null && !availableApps.isEmpty()) {
+                // LaunchStatsProvider merges historical IceBox shortcut rows with the real app
+                // identity. This is an on-demand foreground read only while Pixel mode is active;
+                // Standard mode never executes it.
+                Map<String, LaunchStatsProvider.LaunchStats> launchStats =
+                        LaunchStatsProvider.loadAll(mainActivity);
+
+                List<AppPojo> rankedApps = new ArrayList<>(availableApps);
+                rankedApps.sort((left, right) -> {
+                    LaunchStatsProvider.LaunchStats leftStats =
+                            launchStats.get(left.getHistoryId());
+                    LaunchStatsProvider.LaunchStats rightStats =
+                            launchStats.get(right.getHistoryId());
+                    int leftCount = leftStats == null ? 0 : leftStats.totalLaunches;
+                    int rightCount = rightStats == null ? 0 : rightStats.totalLaunches;
+                    int byCount = Integer.compare(rightCount, leftCount);
+                    if (byCount != 0) return byCount;
+
+                    long leftTime = leftStats == null ? 0L : leftStats.lastLaunchTime;
+                    long rightTime = rightStats == null ? 0L : rightStats.lastLaunchTime;
+                    int byTime = Long.compare(rightTime, leftTime);
+                    if (byTime != 0) return byTime;
+                    return String.CASE_INSENSITIVE_ORDER.compare(
+                            left.getName(), right.getName());
+                });
+
+                for (AppPojo app : rankedApps) {
+                    if (app == null) continue;
+                    LaunchStatsProvider.LaunchStats stats = launchStats.get(app.getHistoryId());
+                    if (stats == null || stats.totalLaunches <= 0) continue;
+
+                    String key = AppIdentityResolver.canonicalSelectionKey(
+                            mainActivity, dataHandler, app);
+                    if (key == null || key.isEmpty() || pojoByKey.containsKey(key)) continue;
+
+                    Pojo representative = launchablePixelRepresentative(
+                            dataHandler, app, aliasByPackage);
+                    rankedKeys.add(key);
+                    pojoByKey.put(key, representative);
+                }
             }
         }
 
-        List<String> selectedIds = PixelFavoritesPolicy.select(pinnedIds, rankedIds, max);
-        List<Pojo> selected = new ArrayList<>(selectedIds.size());
-        for (String id : selectedIds) {
-            Pojo pojo = pojoById.get(id);
+        List<String> selectedKeys = PixelFavoritesPolicy.select(
+                pinnedKeys, rankedKeys, max);
+        List<Pojo> selected = new ArrayList<>(selectedKeys.size());
+        for (String key : selectedKeys) {
+            Pojo pojo = pojoByKey.get(key);
             if (pojo != null) selected.add(pojo);
         }
         return selected;
+    }
+
+    private Pojo launchablePixelRepresentative(DataHandler dataHandler,
+                                               Pojo logicalItem,
+                                               Map<String, ShortcutPojo> aliasByPackage) {
+        String packageName = AppIdentityResolver.canonicalPackage(
+                mainActivity, dataHandler, logicalItem);
+        if (packageName == null || packageName.isEmpty()) return logicalItem;
+
+        if (logicalItem instanceof AppPojo && ((AppPojo) logicalItem).isDisabled()) {
+            ShortcutPojo alias = aliasByPackage.get(packageName);
+            if (alias != null) return alias;
+        }
+        return logicalItem;
     }
 
     private String currentMode() {
