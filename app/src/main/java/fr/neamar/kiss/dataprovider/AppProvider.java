@@ -46,6 +46,23 @@ public class AppProvider extends Provider<AppPojo>
     private static volatile boolean launcherUiVisible;
     private static volatile boolean launcherScrolling;
     private static volatile AppProvider activeInstance;
+    // Package/freezer callbacks can arrive while Android is bringing HOME to the foreground.
+    // Never restart the expensive canonical app scan in that critical window. Coalesce it and run
+    // once after the first Home frame has had time to render.
+    private static final long HOME_RELOAD_GRACE_MS = 900L;
+    private boolean deferredPackageReload;
+    private boolean deferredShortcutReload;
+    private final Runnable deferredPackageReloadRunnable = () -> {
+        if (!launcherUiVisible) return;
+        boolean apps = deferredPackageReload;
+        boolean shortcuts = deferredShortcutReload;
+        deferredPackageReload = false;
+        deferredShortcutReload = false;
+        if (apps) reload();
+        if (shortcuts) {
+            KissApplication.getApplication(this).getDataHandler().reloadShortcuts();
+        }
+    };
 
     private final Handler stateHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService stateExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -209,7 +226,31 @@ public class AppProvider extends Provider<AppPojo>
         launcherUiVisible = visible;
         if (!visible) launcherScrolling = false;
         AppProvider provider = activeInstance;
-        if (changed && provider != null) provider.updateFrozenReconcileSchedule(visible);
+        if (provider != null) {
+            if (!visible) {
+                provider.stateHandler.removeCallbacks(provider.deferredPackageReloadRunnable);
+            } else if (changed && (provider.deferredPackageReload || provider.deferredShortcutReload)) {
+                provider.stateHandler.removeCallbacks(provider.deferredPackageReloadRunnable);
+                provider.stateHandler.postDelayed(provider.deferredPackageReloadRunnable, HOME_RELOAD_GRACE_MS);
+            }
+            if (changed) provider.updateFrozenReconcileSchedule(visible);
+        }
+    }
+
+    /**
+     * Coalesce package/freezer state callbacks while Home is visible. The currently loaded AppPojo
+     * list remains usable (including remembered frozen entries), so there is no reason to throw it
+     * away during the Home transition. This also prevents AppProvider + ShortcutsProvider from
+     * repeatedly cancelling/restarting each other for one package-state burst.
+     */
+    public static boolean deferPackageReloadWhileHomeVisible(boolean reloadShortcuts) {
+        AppProvider provider = activeInstance;
+        if (provider == null || !launcherUiVisible) return false;
+        provider.deferredPackageReload = true;
+        provider.deferredShortcutReload |= reloadShortcuts;
+        provider.stateHandler.removeCallbacks(provider.deferredPackageReloadRunnable);
+        provider.stateHandler.postDelayed(provider.deferredPackageReloadRunnable, HOME_RELOAD_GRACE_MS);
+        return true;
     }
 
     public static void setLauncherScrolling(boolean scrolling) {
@@ -242,6 +283,9 @@ public class AppProvider extends Provider<AppPojo>
 
     @Override public void onDestroy() {
         stateHandler.removeCallbacks(reconcileFrozenState);
+        stateHandler.removeCallbacks(deferredPackageReloadRunnable);
+        deferredPackageReload = false;
+        deferredShortcutReload = false;
         if (prefs != null) prefs.unregisterOnSharedPreferenceChangeListener(this);
         reconcileRunning.set(false);
         stateExecutor.shutdownNow();
