@@ -92,6 +92,14 @@ public class Favorites extends Forwarder {
         }
     }
 
+    private interface OnItemClickListener {
+        void onClick(View v, Result<?> result);
+    }
+
+    private interface OnItemLongClickListener {
+        boolean onLongClick(View v, Result<?> result);
+    }
+
     private class FavoriteAdapter extends RecyclerView.Adapter<ViewHolder> {
         private final List<Result<?>> results = new ArrayList<>();
         private OnItemClickListener mOnItemClickListener;
@@ -145,14 +153,6 @@ public class Favorites extends Forwarder {
                 positions.add(new Pair<>(getItem(i).getFavoriteId(), i));
             }
             KissApplication.getApplication(context).getDataHandler().setFavoritePositions(positions);
-        }
-
-        public interface OnItemClickListener {
-            void onClick(View v, Result<?> result);
-        }
-
-        public interface OnItemLongClickListener {
-            boolean onLongClick(View v, Result<?> result);
         }
 
         public void setOnItemClickListener(OnItemClickListener listener) {
