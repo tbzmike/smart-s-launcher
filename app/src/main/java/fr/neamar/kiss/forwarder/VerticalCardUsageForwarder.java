@@ -19,6 +19,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.HistoryItemUsageTodayStore;
@@ -33,6 +34,7 @@ import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.SmartTextAppearance;
 import fr.neamar.kiss.ui.TileLaunchCounter;
+import fr.neamar.kiss.utils.AppIdentityResolver;
 
 /**
  * Adds complete history metadata below every Vertical Card.
@@ -229,10 +231,21 @@ final class VerticalCardUsageForwarder extends Forwarder {
     private Map<String, String> collectShortcutTargets() {
         if (mainActivity.adapter == null) return Collections.emptyMap();
         HashMap<String, String> targets = new HashMap<>();
+        fr.neamar.kiss.DataHandler dataHandler =
+                KissApplication.getApplication(mainActivity).getDataHandler();
         for (int position = 0; position < mainActivity.adapter.getCount(); position++) {
             Result<?> result = mainActivity.adapter.getItem(position);
             if (result == null || !(result.getPojo() instanceof ShortcutPojo)) continue;
             ShortcutPojo shortcut = (ShortcutPojo) result.getPojo();
+
+            // An IceBox/wrapper shortcut is the real app for usage purposes. Android UsageStats
+            // already records the target package's foreground time, so attributing a second
+            // shortcut-specific slice would split one app into two identities.
+            if (AppIdentityResolver.isAppAliasShortcut(
+                    mainActivity, dataHandler, shortcut)) {
+                continue;
+            }
+
             String packageName = resolvePackage(shortcut);
             if (!TextUtils.isEmpty(packageName)) {
                 targets.put(shortcut.getHistoryId(), packageName);
@@ -403,7 +416,20 @@ final class VerticalCardUsageForwarder extends Forwarder {
                                AppUsageTodayStore.Snapshot currentSnapshot,
                                HistoryItemUsageTodayStore.Snapshot currentShortcutSnapshot) {
         if (TextUtils.isEmpty(packageName)) return null;
+
         if (pojo instanceof ShortcutPojo) {
+            fr.neamar.kiss.DataHandler dataHandler =
+                    KissApplication.getApplication(mainActivity).getDataHandler();
+            if (AppIdentityResolver.isAppAliasShortcut(
+                    mainActivity, dataHandler, pojo)) {
+                // Wrapper shortcut + real app are one logical app. Show the complete package usage
+                // total rather than a separate shortcut-attributed fragment.
+                if (!currentSnapshot.available) return "Used today: unavailable";
+                Long foregroundMs = currentSnapshot.foregroundMsByPackage.get(packageName);
+                return "Used today: " + formatDuration(
+                        foregroundMs == null ? 0L : foregroundMs);
+            }
+
             if (currentShortcutSnapshot == null || !currentShortcutSnapshot.available) {
                 return "Used today: unavailable";
             }
@@ -411,6 +437,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
                     pojo.getHistoryId());
             return "Used today: " + formatDuration(foregroundMs == null ? 0L : foregroundMs);
         }
+
         if (!currentSnapshot.available) return "Used today: unavailable";
         Long foregroundMs = currentSnapshot.foregroundMsByPackage.get(packageName);
         return "Used today: " + formatDuration(foregroundMs == null ? 0L : foregroundMs);
@@ -460,6 +487,12 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private String resolvePackage(Pojo pojo) {
+        fr.neamar.kiss.DataHandler dataHandler =
+                KissApplication.getApplication(mainActivity).getDataHandler();
+        String canonical = AppIdentityResolver.canonicalPackage(
+                mainActivity, dataHandler, pojo);
+        if (!TextUtils.isEmpty(canonical)) return canonical;
+
         if (pojo instanceof DisabledAppPojo) {
             return ((DisabledAppPojo) pojo).targetPackage;
         }
@@ -467,9 +500,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
             return ((AppPojo) pojo).packageName;
         }
         if (pojo instanceof ShortcutPojo) {
-            ShortcutPojo shortcut = (ShortcutPojo) pojo;
-            return TextUtils.isEmpty(shortcut.targetPackage)
-                    ? shortcut.packageName : shortcut.targetPackage;
+            return ((ShortcutPojo) pojo).packageName;
         }
         if (pojo instanceof NotificationPojo) {
             return ((NotificationPojo) pojo).packageName;
