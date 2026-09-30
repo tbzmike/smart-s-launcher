@@ -230,6 +230,28 @@ public class DBHelper {
     }
 
     /**
+     * Return the most frequently launched application ids for the Pixel favorites bar.
+     *
+     * This is a foreground, on-demand read only. It does not start a tracker, service, job or
+     * background worker. Filtering to app:// ids in SQL also avoids resolving notification,
+     * shortcut and contact history that can never become an app suggestion.
+     */
+    public static List<ValuedHistoryRecord> getMostUsedAppHistory(Context context, int limit) {
+        final int safeLimit = Math.max(1, Math.min(80, limit));
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            String sql = "SELECT record, COUNT(*) AS launch_count FROM history "
+                    + "WHERE record LIKE 'app://%' "
+                    + "GROUP BY record "
+                    + "ORDER BY launch_count DESC, MAX(timeStamp) DESC "
+                    + "LIMIT " + safeLimit;
+            try (Cursor cursor = recoveryDb.rawQuery(sql, null)) {
+                return readCursor(cursor);
+            }
+        });
+    }
+
+
+    /**
      * Retrieve history size
      *
      * @param context android context
