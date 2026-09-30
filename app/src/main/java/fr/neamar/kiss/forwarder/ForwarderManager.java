@@ -136,6 +136,7 @@ public class ForwarderManager extends Forwarder {
         // These listeners are explicitly unregistered in onPause and therefore must be restored.
         experienceTweaks.onResume();
         notificationForwarder.onResume();
+        favoritesForwarder.onResume();
 
         // Re-evaluate renderer ownership on every resume. Previously this happened only on the
         // first launcher resume, so choosing Vertical Cards or 3D Wheel in Settings could leave the
