@@ -52,6 +52,7 @@ import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.UIColors;
 import fr.neamar.kiss.adapter.RecordAdapter;
+import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.normalizer.StringNormalizer;
@@ -582,6 +583,7 @@ public abstract class Result<T extends Pojo> {
         if (canAddToHistory()) {
             KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());
             SearchHandler.getInstance().rememberLaunchedResult(this);
+            AppUsageTodayStore.invalidate();
             UniversalHistoryTimestamp.invalidateStats();
         }
         // Record the launch after some period,
