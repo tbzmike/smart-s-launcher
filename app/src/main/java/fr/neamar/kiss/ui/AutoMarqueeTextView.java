@@ -124,6 +124,7 @@ public class AutoMarqueeTextView extends TextView {
     protected void onTextChanged(CharSequence text, int start, int lengthBefore, int lengthAfter) {
         super.onTextChanged(text, start, lengthBefore, lengthAfter);
         if (!isAttachedToWindow()) return;
+        applySearchAppearanceIfNeeded();
         if (isAutoExpand()) scheduleLayoutRequest();
         else scheduleMarqueeRestart();
     }
@@ -144,7 +145,9 @@ public class AutoMarqueeTextView extends TextView {
                 || id == R.id.item_contact_phone
                 || id == R.id.item_contact_nickname
                 || id == R.id.item_notification_text
-                || id == R.id.item_notification_title) {
+                || id == R.id.item_notification_title
+                || id == R.id.item_communication_meta
+                || id == R.id.item_communication_body) {
             SmartTextAppearance.applySearchBody(this);
         } else {
             SmartTextAppearance.applySearchTitle(this);
