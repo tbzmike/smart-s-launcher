@@ -868,6 +868,9 @@ final class SmartCardListForwarder extends Forwarder {
         card.setFocusableInTouchMode(false);
         cardTitle.setFocusable(false);
         cardTitle.setFocusableInTouchMode(false);
+
+        // Dynamic cards are the only new hierarchy that needs the global text multiplier.
+        mainActivity.applyGlobalTextScaleToSubtree(wrapper);
         return wrapper;
     }
 
