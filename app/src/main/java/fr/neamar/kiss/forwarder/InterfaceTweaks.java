@@ -219,7 +219,7 @@ public class InterfaceTweaks extends Forwarder {
 
     private void applyDefaultSearchTypography() {
         if (mainActivity.searchEditText == null) return;
-        SmartTextAppearance.applySearchTitle(mainActivity.searchEditText);
+        SmartTextAppearance.applyDefaultTitle(mainActivity.searchEditText);
 
         int textColor = mainActivity.searchEditText.getCurrentTextColor();
         int hintColor = Color.argb(170, Color.red(textColor), Color.green(textColor), Color.blue(textColor));
