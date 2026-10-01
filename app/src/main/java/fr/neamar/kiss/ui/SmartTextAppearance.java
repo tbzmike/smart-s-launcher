@@ -21,30 +21,45 @@ public final class SmartTextAppearance {
     private SmartTextAppearance() {
     }
 
+    /** Dedicated appearance for query/search result titles. */
     public static void applySearchTitle(TextView view) {
+        applySearch(view, true);
+    }
+
+    /** Dedicated appearance for query/search result subtitles, tags and message previews. */
+    public static void applySearchBody(TextView view) {
+        applySearch(view, false);
+    }
+
+    /** Launcher-wide fallback primary typography (search input, generic titles, etc.). */
+    public static void applyDefaultTitle(TextView view) {
         applyDefault(view, true);
     }
 
-    public static void applySearchBody(TextView view) {
+    /** Launcher-wide fallback secondary typography. */
+    public static void applyDefaultBody(TextView view) {
         applyDefault(view, false);
     }
 
     public static void applyHistoryMetadata(TextView view) {
         SharedPreferences prefs = prefs(view.getContext());
         int size = readInt(prefs, "smart-history-meta-size-sp", 12, 8, 28);
-        String family = prefs.getString("smart-history-meta-font-family", DEFAULT_FAMILY);
-        String style = prefs.getString("smart-history-meta-font-style", DEFAULT_STYLE);
+        String font = prefs.getString("smart-history-meta-font", "sans_normal");
         String colorValue = prefs.getString("smart-history-meta-color",
                 UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        int contrast = readInt(prefs, "smart-history-meta-contrast", 100, 25, 200);
         int themeColor = view.getCurrentTextColor();
-        int selectedColor = applyTextColorInverter(view.getContext(),
-                resolveConfiguredColor(colorValue, themeColor));
+        int selectedColor = resolveConfiguredColor(colorValue, themeColor);
+        int renderedColor = applyTextColorInverter(view.getContext(),
+                applyContrast(selectedColor, themeColor, contrast));
 
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
-        view.setTypeface(typefaceFor(family, style));
-        view.setTextColor(selectedColor);
+        view.setTypeface(typefaceFor(font));
+        view.setTextColor(renderedColor);
         view.setAlpha(1f);
-        if (!prefs.getBoolean("smart-history-meta-shadow", false)) view.setShadowLayer(0f, 0f, 0f, 0);
+        if (!prefs.getBoolean("smart-history-meta-shadow", false)) {
+            view.setShadowLayer(0f, 0f, 0f, 0);
+        }
     }
 
     public static int historyMetadataSizeSp(Context context) {
@@ -55,7 +70,38 @@ public final class SmartTextAppearance {
         SharedPreferences prefs = prefs(context);
         String value = prefs.getString("smart-history-meta-color",
                 UIColors.colorToString(UIColors.COLOR_SYSTEM));
-        return applyTextColorInverter(context, resolveConfiguredColor(value, themeColor));
+        int contrast = readInt(prefs, "smart-history-meta-contrast", 100, 25, 200);
+        int selected = resolveConfiguredColor(value, themeColor);
+        return applyTextColorInverter(context, applyContrast(selected, themeColor, contrast));
+    }
+
+    private static void applySearch(TextView view, boolean title) {
+        SharedPreferences prefs = prefs(view.getContext());
+        int size = readInt(prefs,
+                title ? "smart-search-title-size-sp" : "smart-search-body-size-sp",
+                title ? 18 : 14,
+                title ? 10 : 8,
+                title ? 40 : 32);
+        String font = prefs.getString(
+                title ? "smart-search-title-font" : "smart-search-body-font",
+                "sans_normal");
+        String colorValue = prefs.getString(
+                title ? "smart-search-title-color" : "smart-search-body-color",
+                UIColors.colorToString(UIColors.COLOR_SYSTEM));
+        int contrast = readInt(prefs,
+                title ? "smart-search-title-contrast" : "smart-search-body-contrast",
+                100, 25, 200);
+
+        int themeColor = view.getCurrentTextColor();
+        int selectedColor = resolveConfiguredColor(colorValue, themeColor);
+        int renderedColor = applyTextColorInverter(view.getContext(),
+                applyContrast(selectedColor, themeColor, contrast));
+
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
+        view.setTypeface(typefaceFor(font));
+        view.setTextColor(renderedColor);
+        view.setAlpha(1f);
+        applyDefaultShadow(view, prefs);
     }
 
     private static void applyDefault(TextView view, boolean title) {
@@ -77,7 +123,56 @@ public final class SmartTextAppearance {
         view.setTypeface(typefaceFor(family, style));
         view.setTextColor(selectedColor);
         view.setAlpha(1f);
-        if (!prefs.getBoolean("smart-default-text-shadow", false)) view.setShadowLayer(0f, 0f, 0f, 0);
+        applyDefaultShadow(view, prefs);
+    }
+
+    private static void applyDefaultShadow(TextView view, SharedPreferences prefs) {
+        if (!prefs.getBoolean("smart-default-text-shadow", false)) {
+            view.setShadowLayer(0f, 0f, 0f, 0);
+            return;
+        }
+
+        // Make the ON state deterministic instead of merely preserving whatever a theme happened
+        // to provide. Use the opposite luminance so the shadow remains useful on light/dark text.
+        int color = view.getCurrentTextColor();
+        double luminance = 0.2126 * linear(Color.red(color) / 255.0)
+                + 0.7152 * linear(Color.green(color) / 255.0)
+                + 0.0722 * linear(Color.blue(color) / 255.0);
+        int shadow = luminance >= 0.5 ? Color.argb(180, 0, 0, 0)
+                : Color.argb(180, 255, 255, 255);
+        view.setShadowLayer(2f, 1f, 1f, shadow);
+    }
+
+    static int applyContrast(int color, int themeReferenceColor, int contrast) {
+        int alpha = Color.alpha(color);
+        int red = Color.red(color);
+        int green = Color.green(color);
+        int blue = Color.blue(color);
+
+        if (contrast < 100) {
+            float strength = 0.25f + (contrast / 100f) * 0.75f;
+            alpha = Math.max(0, Math.min(255, Math.round(alpha * strength)));
+            return Color.argb(alpha, red, green, blue);
+        }
+        if (contrast == 100) return color;
+
+        boolean themeUsesLightText = relativeLuminance(themeReferenceColor) >= 0.5f;
+        int target = themeUsesLightText ? 255 : 0;
+        float amount = Math.min(1f, (contrast - 100) / 100f);
+        return Color.argb(alpha,
+                blendChannel(red, target, amount),
+                blendChannel(green, target, amount),
+                blendChannel(blue, target, amount));
+    }
+
+    private static int blendChannel(int value, int target, float amount) {
+        return Math.max(0, Math.min(255, Math.round(value + (target - value) * amount)));
+    }
+
+    private static float relativeLuminance(int color) {
+        return (0.2126f * Color.red(color)
+                + 0.7152f * Color.green(color)
+                + 0.0722f * Color.blue(color)) / 255f;
     }
 
     /**
