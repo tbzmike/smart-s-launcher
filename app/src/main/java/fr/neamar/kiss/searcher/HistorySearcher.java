@@ -492,22 +492,11 @@ public class HistorySearcher extends Searcher {
 
     @Override
     public boolean addResults(List<? extends Pojo> pojos) {
-        MainActivity activity = activityWeakReference.get();
-        if (activity == null) return false;
-
-        DataHandler dataHandler = KissApplication.getApplication(activity).getDataHandler();
-        if (dataHandler.getHistoryMode() != HistoryMode.ALPHABETICALLY) {
-            for (Pojo pojo : pojos) {
-                // Shortcuts must retain their true history relevance even when their publisher or
-                // target app is temporarily disabled. Otherwise an older shortcut jumps hundreds
-                // of relevance points instead of simply moving upward as newer launches arrive.
-                if (pojo.isDisabled() && !(pojo instanceof ShortcutPojo)
-                        && pojo.relevance != Integer.MAX_VALUE) {
-                    pojo.relevance -= 200;
-                }
-            }
-        }
-
+        // The visible Home timeline is strict database RECENCY. Never rewrite relevance merely
+        // because an app is currently frozen/disabled. IceBox can disable Facebook immediately
+        // after a successful launch; the old -200 penalty then moved that just-launched row far
+        // away when the authoritative HistorySearcher replaced the warm row, making it look as if
+        // Facebook disappeared. Frozen state affects launch handling/visuals, not recency.
         return super.addResults(pojos);
     }
 }
