@@ -78,10 +78,12 @@ final class SmartCardListForwarder extends Forwarder {
     private final Runnable deferredRefreshAfterIdle = () -> {
         deferredRefreshIdleScheduled = false;
         if (scroller == null || !pendingDataSetRefresh || isActiveQuery()) return;
-        if (isAtBottom()) {
-            Runnable callback = deferredHistoryRefreshCallback;
-            if (callback != null) callback.run();
-        }
+
+        // History order is authoritative. While a finger/fling is active we defer rebuilding so
+        // content cannot jump underneath the gesture, but as soon as motion settles the pending
+        // chronological dataset must replace the stale tree regardless of viewport position.
+        Runnable callback = deferredHistoryRefreshCallback;
+        if (callback != null) callback.run();
     };
     private final Runnable activeQueryRebuildRunnable = () -> {
         if (isEnabled() && isActiveQuery()) rebuild(true);
@@ -132,10 +134,10 @@ final class SmartCardListForwarder extends Forwarder {
 
     boolean onDataSetChanged() {
         if (!isEnabled()) return false;
-        // Search can publish several adapter updates for one input change. Rebuilding every
-        // card synchronously for each publication competes with the IME and causes visible
-        // typing stalls. Active queries remain coalesced. Idle History marks one pending refresh
-        // and lets the manager perform a complete rebuild only after scrolling has actually settled.
+        // Search can publish several adapter updates for one input change, so active QUERY
+        // publications remain coalesced. History is different: its adapter order is the visible
+        // chronological contract. Rebuild immediately when idle; while scrolling, defer only until
+        // the gesture settles so the card tree can never remain stale/mixed.
         boolean activeQuery = isActiveQuery();
         if (willRebuildSynchronouslyForDataSetChange()) {
             cancelPendingActiveQueryRebuild();
@@ -148,12 +150,8 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         cancelPendingActiveQueryRebuild();
-        // Keep the currently rendered history tree frozen. The adapter may re-rank an app/shortcut
-        // after a launch or append a notification, but that background fact must not move what the
-        // user is looking at. The pending tree is materialized only by explicit latest navigation
-        // or after the user manually reaches the visible bottom.
         pendingDataSetRefresh = true;
-        cancelDeferredRefreshIdleProbe();
+        scheduleDeferredRefreshIdleProbe();
         return false;
     }
 
@@ -196,10 +194,13 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     boolean willRebuildSynchronouslyForDataSetChange() {
-        if (!isEnabled()) return false;
+        if (!isEnabled() || isScrollInProgress()) return false;
         boolean activeQuery = isActiveQuery();
-        return !isScrollInProgress() && (column == null || column.getChildCount() == 0
-                || (!activeQuery && (renderedActiveQuery || forceNextHistoryRebuild)));
+
+        // Every idle History dataset publication is authoritative and must be reflected in the
+        // visible card order immediately. Active QUERY still uses its debounce/reuse path.
+        if (!activeQuery) return true;
+        return column == null || column.getChildCount() == 0;
     }
 
     boolean hasPendingDataSetRefresh() {
@@ -221,7 +222,10 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     boolean consumeDeferredKeepBottom() {
-        return false;
+        // Preserve the bottom edge only when the user was actually at the bottom when deferred
+        // history work becomes safe to apply. Otherwise the viewport controller restores the
+        // current stable row while the chronological tree is rebuilt around it.
+        return isAtBottom();
     }
 
     private boolean isAtBottom() {
