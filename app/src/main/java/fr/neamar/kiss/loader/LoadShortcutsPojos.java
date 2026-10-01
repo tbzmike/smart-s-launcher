@@ -26,6 +26,7 @@ import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
@@ -41,6 +42,7 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         // ShortcutManager can return a large binder payload. Run all parsing/database catalog work
         // at background priority so a provider refresh cannot compete with scroll rendering.
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+        if (!waitForScrollIdle()) return new ArrayList<>();
         Context context = this.context.get();
         if (context == null) return new ArrayList<>();
 
@@ -70,6 +72,7 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         Set<String> excludedApps = dataHandler.getExcluded();
         Set<String> excludedShortcutApps = dataHandler.getExcludedShortcutApps();
         UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
+        if (!waitForScrollIdle()) return oreoPojos;
         List<ShortcutInfo> shortcutInfos = ShortcutUtil.getAllShortcuts(context);
         Set<String> liveKeys = new HashSet<>();
         Map<String, ShortcutRecord> storedByKey = new HashMap<>();
@@ -81,7 +84,7 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         }
 
         for (ShortcutInfo shortcutInfo : shortcutInfos) {
-            if (isCancelled()) break;
+            if (isCancelled() || !waitForScrollIdle()) break;
 
             boolean packageDisabled = !isPackageEnabled(context, shortcutInfo.getPackage());
             boolean normalVisible = ShortcutUtil.isShortcutVisible(context, shortcutInfo,
@@ -137,7 +140,7 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
             UserHandle currentUser = new UserHandle(context, Process.myUserHandle());
             TagsHandler tagsHandler = dataHandler.getTagsHandler();
             for (ShortcutRecord remembered : new ArrayList<>(storedByKey.values())) {
-                if (isCancelled()) break;
+                if (isCancelled() || !waitForScrollIdle()) break;
                 if (remembered == null || remembered.packageName == null || remembered.intentUri == null) continue;
                 if (!remembered.intentUri.contains(ShortcutPojo.OREO_PREFIX)) continue;
                 if (excludedShortcutApps.contains(remembered.packageName)) continue;
@@ -173,7 +176,7 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         List<ShortcutPojo> pojos = new ArrayList<>();
 
         for (ShortcutRecord shortcutRecord : records) {
-            if (isCancelled()) break;
+            if (isCancelled() || !waitForScrollIdle()) break;
             ShortcutPojo pojo;
             if (ActivityLauncherStore.isManaged(shortcutRecord)) {
                 pojo = new ShortcutPojo(UserHandle.OWNER, shortcutRecord, null,
@@ -186,6 +189,18 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
             if (!pojo.isOreoShortcut()) pojos.add(pojo);
         }
         return pojos;
+    }
+
+    private boolean waitForScrollIdle() {
+        while (LauncherScrollWorkGate.isScrolling() && !isCancelled()) {
+            try {
+                Thread.sleep(40L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return !isCancelled();
     }
 
     private boolean isPackageInstalled(Context context, String packageName) {
