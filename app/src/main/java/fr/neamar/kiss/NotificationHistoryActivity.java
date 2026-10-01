@@ -329,7 +329,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         open.setText("Open notification");
         open.setOnClickListener(v -> {
             SavedNotificationDestinationResolver.OpenResult result =
-                    SavedNotificationDestinationResolver.openExactResult(this, record);
+                    SavedNotificationDestinationResolver.openExactOrAppResult(this, record);
             if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
                 AppReinstallSupport.showUninstalledDialog(
                         this, record.packageName, record.appName);
