@@ -1342,23 +1342,38 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         listChangeAnimationPrepared = false;
 
         // Search launch targets (apps and shortcuts) are intentionally ranked at the bottom.
-        // Keep each streamed QUERY publication anchored there so the first visible search result
-        // is the launch target band instead of forcing the user to manually scroll down.
+        // Anchor every QUERY publication to that band. Do NOT consult ScrollIdleGate here:
+        // notifyDataSetChanged()/keyboard relayout itself can trigger onScrollChanged(), which made
+        // isScrollInProgress() briefly true and caused the old 3.30.133 anchor to be skipped.
+        // The second frame pin survives the ListView/IME layout pass without adding smooth-scroll
+        // animation or background work.
         if (list != null
                 && adapter != null
                 && adapter.getCount() > 0
                 && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.QUERY
                 && searchEditText != null
                 && !TextUtils.isEmpty(searchEditText.getText())) {
-            list.post(() -> {
-                if (adapter == null || adapter.getCount() <= 0
-                        || list == null || list.isScrollInProgress()
-                        || SearchHandler.getInstance().getLastSearchType() != Searcher.Type.QUERY
-                        || searchEditText == null || TextUtils.isEmpty(searchEditText.getText())) {
-                    return;
-                }
-                list.setSelection(adapter.getCount() - 1);
-            });
+            final String anchoredQuery = searchEditText.getText().toString();
+            list.post(() -> anchorQueryResultsToBottom(anchoredQuery, true));
+        }
+    }
+
+    private void anchorQueryResultsToBottom(@NonNull String anchoredQuery,
+                                            boolean pinAgainNextFrame) {
+        if (list == null || adapter == null || adapter.getCount() <= 0
+                || SearchHandler.getInstance().getLastSearchType() != Searcher.Type.QUERY
+                || searchEditText == null
+                || TextUtils.isEmpty(searchEditText.getText())
+                || !TextUtils.equals(anchoredQuery, searchEditText.getText().toString())) {
+            return;
+        }
+
+        // QUERY is the one mode where the useful app/shortcut band is deliberately last.
+        list.setTranscriptMode(AbsListView.TRANSCRIPT_MODE_ALWAYS_SCROLL);
+        list.setSelection(adapter.getCount() - 1);
+
+        if (pinAgainNextFrame) {
+            list.postOnAnimation(() -> anchorQueryResultsToBottom(anchoredQuery, false));
         }
     }
 
