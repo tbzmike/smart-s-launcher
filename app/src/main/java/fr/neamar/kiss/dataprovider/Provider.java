@@ -55,6 +55,10 @@ public abstract class Provider<T extends Pojo> extends Service implements IProvi
 
     void initialize(LoadPojos<T> loader) {
         cancelInitialize();
+        // A replacement snapshot is not loaded until this loader finishes. Keeping loaded=true
+        // during a reload made MainActivity treat AppProvider/ShortcutsProvider completions as
+        // independent finished batches, causing duplicate History/favorites rebuilds.
+        this.loaded = false;
         start = System.currentTimeMillis();
 
         Log.i(TAG, "Starting provider: " + this.getClass().getSimpleName());
