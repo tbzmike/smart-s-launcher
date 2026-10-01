@@ -14,6 +14,8 @@ import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.PojoWithTags;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
+import fr.neamar.kiss.utils.ShortcutUtil;
 
 /** Lightweight matcher for the history-first search stage. */
 final class HistoryPreviewMatcher {
@@ -32,8 +34,7 @@ final class HistoryPreviewMatcher {
 
         Set<String> excludedFavoriteIds = KissApplication.getApplication(activity)
                 .getDataHandler().getExcludedFavorites();
-        boolean detectFrozen = prefs.getBoolean("smart-detect-frozen-apps", true);
-        boolean keepFrozenSearchable = prefs.getBoolean("smart-keep-frozen-searchable", true);
+        boolean keepFrozenSearchable = FrozenAppPreferences.keepSearchable(activity);
         boolean enableExcludedApps = prefs.getBoolean("enable-excluded-apps", false);
 
         for (Pojo pojo : historySeed) {
@@ -42,7 +43,12 @@ final class HistoryPreviewMatcher {
             if (pojo instanceof AppPojo) {
                 AppPojo app = (AppPojo) pojo;
                 if (app.isExcluded() && !enableExcludedApps) continue;
-                if (app.isDisabled() && (!detectFrozen || !keepFrozenSearchable)) continue;
+                if (app.isDisabled() && !keepFrozenSearchable) continue;
+            } else if (pojo instanceof ShortcutPojo) {
+                ShortcutPojo shortcut = (ShortcutPojo) pojo;
+                if (shortcut.isDisabled()
+                        && !ShortcutUtil.isIceBoxPublisher(activity, shortcut.packageName)
+                        && !keepFrozenSearchable) continue;
             }
 
             String name = normalize(pojo.getName());
