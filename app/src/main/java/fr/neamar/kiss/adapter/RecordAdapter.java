@@ -819,7 +819,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             text.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
             text.setTypeface(typeface);
             int selectedColor = resolveConfiguredTextColor(colorValue, state.textColor);
-            text.setTextColor(applyContrast(selectedColor, state.textColor, contrast));
+            int contrasted = applyContrast(selectedColor, state.textColor, contrast);
+            text.setTextColor(SmartTextAppearance.applyTextColorInverter(
+                    text.getContext(), contrasted));
         }
     }
 
