@@ -1064,6 +1064,19 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             }
         }
 
+        // A background/provider refresh must never make already-visible History rows disappear
+        // merely because a provider was reloading, an app was temporarily frozen, or a dynamic
+        // shortcut was momentarily unavailable. Explicit user removal still works because
+        // removeResult() updates this adapter immediately before any later refresh is considered.
+        if (isRefresh
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                && (TextUtils.isEmpty(query) || "<history>".equals(query))) {
+            updatedResults = HistoryRefreshPreserver.preserveMissing(
+                    results, updatedResults,
+                    result -> result == null || result.getPojo() == null
+                            ? null : reuseKey(result.getPojo()));
+        }
+
         // Final presentation boundary: every matching app and shortcut belongs at the physical
         // bottom of search results. QuerySearcher also uses a reachability relevance band so these
         // targets survive result limiting; this final stable partition guarantees their display
