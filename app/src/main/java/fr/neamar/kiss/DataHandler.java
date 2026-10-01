@@ -47,16 +47,20 @@ import fr.neamar.kiss.dataprovider.simpleprovider.SearchProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.SettingsProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.TagsProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.TimerProvider;
+import fr.neamar.kiss.db.AppCatalogRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ShortcutRecord;
+import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NameComparator;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.AppIdentityResolver;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
@@ -383,7 +387,10 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         int size = ids.size();
         for (int i = 0; i < ids.size(); i++) {
             // Ask all providers if they know this id
-            Pojo pojo = getPojo(ids.get(i).record);
+            String historyId = ids.get(i).record;
+            Pojo pojo = getPojo(historyId);
+            if (pojo == null) pojo = RecentLaunchTracker.resolve(historyId);
+            if (pojo == null) pojo = resolveRememberedAppHistory(historyId);
 
             if (pojo == null) {
                 continue;
@@ -1017,10 +1024,77 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
                 this.context, this, launchedPojo);
         if (TextUtils.isEmpty(canonicalId)) canonicalId = id;
 
+        // Persist enough app identity to reconstruct the row even when LauncherApps/provider state
+        // changes immediately after launch (for example IceBox freeze/unfreeze or package reload).
+        // This does not add a background worker; it piggy-backs on the same explicit launch event
+        // that already writes the history row.
+        rememberLaunchedAppIdentity(launchedPojo);
+
         // Respect exclusions on either representation. Canonicalization must never bypass a user's
         // explicit history privacy choice.
         if (excludedFromHistory.contains(canonicalId)) return;
         DBHelper.insertHistory(this.context, currentQuery, canonicalId);
+    }
+
+    private void rememberLaunchedAppIdentity(@Nullable Pojo pojo) {
+        UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
+        if (userManager == null || pojo == null) return;
+
+        if (pojo instanceof AppPojo) {
+            AppPojo app = (AppPojo) pojo;
+            long serial = userManager.getSerialNumberForUser(app.userHandle.getRealHandle());
+            if (serial >= 0L) {
+                SmartStateStore.rememberApp(context, app.packageName, app.activityName,
+                        TextUtils.isEmpty(app.getName()) ? app.packageName : app.getName(), serial);
+            }
+            return;
+        }
+
+        if (pojo instanceof DisabledAppPojo) {
+            DisabledAppPojo app = (DisabledAppPojo) pojo;
+            long serial = userManager.getSerialNumberForUser(UserHandle.OWNER.getRealHandle());
+            if (serial >= 0L) {
+                SmartStateStore.rememberApp(context, app.targetPackage, app.activityName,
+                        TextUtils.isEmpty(app.getName()) ? app.targetPackage : app.getName(), serial);
+            }
+        }
+    }
+
+    /**
+     * Resolve an app:// history identity from the persistent app catalog when the live app provider
+     * temporarily cannot see it. This keeps a successfully launched app on History across provider
+     * reloads, freezes and disabled-package transitions.
+     */
+    @Nullable
+    public AppPojo resolveRememberedAppHistory(@Nullable String requestedId) {
+        if (TextUtils.isEmpty(requestedId) || !requestedId.startsWith("app://")) return null;
+
+        UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
+        if (userManager == null) return null;
+
+        for (android.os.UserHandle profile : userManager.getUserProfiles()) {
+            long serial = userManager.getSerialNumberForUser(profile);
+            if (serial < 0L) continue;
+            UserHandle user = new UserHandle(context, profile);
+            for (AppCatalogRecord record : SmartStateStore.getRememberedApps(context, serial)) {
+                if (record == null || TextUtils.isEmpty(record.packageName)
+                        || TextUtils.isEmpty(record.activityName)) continue;
+                String historyId = user.addUserSuffixToString(
+                        "app://" + record.packageName + "/" + record.activityName, '/');
+                if (!requestedId.equals(historyId)) continue;
+
+                boolean excludedFromHistory = getExcludedFromHistory().contains(requestedId);
+                boolean disabled = user.isCurrentUser()
+                        && !AppLaunchUtils.isPackageEnabled(context, record.packageName);
+                AppPojo app = new AppPojo(requestedId, record.packageName, record.activityName, user,
+                        false, excludedFromHistory, false, disabled);
+                app.setName(TextUtils.isEmpty(record.label) ? record.packageName : record.label);
+                app.setTags(getTagsHandler().getTags(app.id));
+                RecentLaunchTracker.remember(app);
+                return app;
+            }
+        }
+        return null;
     }
 
     public Pojo getPojo(String id) {
