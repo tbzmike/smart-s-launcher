@@ -10,12 +10,16 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.preference.PreferenceManager;
 
+import java.util.List;
 import java.util.Set;
+
+import fr.neamar.kiss.DataHandler;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.dataprovider.AppProvider;
 import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.PackageManagerUtils;
@@ -26,6 +30,19 @@ public class PackageAddedRemovedHandler extends BroadcastReceiver {
     public static void handleEvent(@NonNull Context ctx, @Nullable String action, @NonNull String[] packageNames, @NonNull UserHandle user, boolean replacing) {
         if (packageNames.length == 1 && packageNames[0].equalsIgnoreCase(ctx.getPackageName())) return;
         if (!FrozenAppPreferences.monitorPackageChanges(ctx)) return;
+
+        // Android emits package callbacks for many packages that can never appear in this
+        // launcher. A full app + shortcut provider reload for those events is pure churn and was
+        // visible in the supplied trace as overlapping expensive provider scans. Ignore unrelated
+        // packages before touching icon caches or providers.
+        boolean launcherRelevant = false;
+        for (String packageName : packageNames) {
+            if (isLauncherRelevantPackage(ctx, packageName, user)) {
+                launcherRelevant = true;
+                break;
+            }
+        }
+        if (!launcherRelevant) return;
 
         // Freeze/unfreeze changes must be reflected immediately. AppLaunchUtils normally caches
         // package enabled state for a short period, which is useful during ordinary rendering but
@@ -82,6 +99,32 @@ public class PackageAddedRemovedHandler extends BroadcastReceiver {
                 KissApplication.getApplication(ctx).getDataHandler().reloadShortcuts();
             }
         }
+    }
+
+    private static boolean isLauncherRelevantPackage(
+            Context ctx, String packageName, UserHandle userHandle) {
+        if (packageName == null || packageName.isEmpty()) return false;
+
+        DataHandler dataHandler = KissApplication.getApplication(ctx).getDataHandler();
+        if (dataHandler != null) {
+            List<AppPojo> apps = dataHandler.getApplications();
+            if (apps != null) {
+                for (AppPojo app : apps) {
+                    if (app != null && packageName.equals(app.packageName)) return true;
+                }
+            }
+
+            fr.neamar.kiss.dataprovider.ShortcutsProvider shortcuts =
+                    dataHandler.getShortcutsProvider();
+            if (shortcuts != null) {
+                for (ShortcutPojo shortcut : shortcuts.getPojos()) {
+                    if (shortcut != null && packageName.equals(shortcut.packageName)) return true;
+                }
+            }
+        }
+
+        // New launcher apps are not in our current provider snapshot yet.
+        return PackageManagerUtils.getLaunchingComponent(ctx, packageName, userHandle) != null;
     }
 
     private static boolean isInstalledIncludingDisabled(Context ctx, String packageName) {
