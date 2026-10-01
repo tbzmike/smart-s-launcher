@@ -40,6 +40,12 @@ public final class AppUsageTodayStore {
         }
     }
 
+    public static synchronized void invalidate() {
+        cachedSnapshot = null;
+        cachedAtElapsed = 0L;
+        cachedDayStart = 0L;
+    }
+
     @NonNull
     public static synchronized Snapshot getToday(@NonNull Context context) {
         Context appContext = context.getApplicationContext();
