@@ -22,6 +22,8 @@ import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.loader.LoadShortcutsPojos;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
@@ -83,6 +85,14 @@ public class ShortcutsProvider extends Provider<ShortcutPojo> {
         for (ShortcutPojo pojo : getPojos()) {
             if ((checked++ & 31) == 0 && searcher.isCancelled()) return;
             if (excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
+            // The frozen-search toggle applies to shortcuts whose publisher app itself is disabled.
+            // IceBox shortcuts are launch routes managed by IceBox and must not inherit the wrapped
+            // app's frozen visibility rules.
+            if (pojo.isDisabled()
+                    && !ShortcutUtil.isIceBoxPublisher(this, pojo.packageName)
+                    && !FrozenAppPreferences.keepSearchable(this)) {
+                continue;
+            }
             MatchInfo matchInfo = SmartMatcher.match(this, query, pojo.normalizedName, pojo.getName());
             boolean match = pojo.updateMatchingRelevance(matchInfo, false);
             if (pojo.getNormalizedTags() != null) {
@@ -137,8 +147,16 @@ public class ShortcutsProvider extends Provider<ShortcutPojo> {
                 UserHandle user = new UserHandle(this, profile);
                 if (!id.equals(ShortcutUtil.generateShortcutId(user, record))) continue;
 
+                boolean disabled = !AppLaunchUtils.isPackageEnabled(this, record.packageName);
+                if (ShortcutUtil.isIceBoxPublisher(this, record.packageName)) {
+                    disabled = false;
+                }
+                if (disabled && !FrozenAppPreferences.keepHistoryAndFavorites(this)) {
+                    return null;
+                }
+
                 ShortcutPojo recovered = new ShortcutPojo(user, record, null,
-                        true, false, true);
+                        true, false, disabled);
                 recovered.setName(record.name);
                 recovered.setTags(dataHandler.getTagsHandler().getTags(recovered.id));
                 return recovered;
