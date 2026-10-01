@@ -88,6 +88,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     public static final String EXTRA_NOTIFICATION_POSTED =
             "fr.neamar.summon.extra.NOTIFICATION_POSTED";
     public static final String REFRESH_FAVORITES = "fr.neamar.summon.REFRESH_FAVORITES";
+    public static final String EXTRA_FORCE_VISIBLE_REBIND =
+            "fr.neamar.summon.extra.FORCE_VISIBLE_REBIND";
 
     protected static final String TAG = MainActivity.class.getSimpleName();
 
@@ -279,7 +281,15 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                         return;
                     }
 
+                    boolean forceVisibleRebind =
+                            intent.getBooleanExtra(EXTRA_FORCE_VISIBLE_REBIND, false);
                     updateSearchRecords();
+                    if (forceVisibleRebind && adapter != null) {
+                        // Preference-only icon presentation (for example grey frozen apps) can
+                        // leave the Pojo list byte-for-byte identical. Force only a visible row
+                        // rebind; do not start another provider scan or background worker.
+                        adapter.notifyDataSetChanged();
+                    }
                     if (!KissApplication.getApplication(context).getDataHandler().isAllProvidersLoaded()) {
                         displayLoader(true);
                     } else {
