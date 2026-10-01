@@ -985,7 +985,8 @@ public class NotificationListener extends NotificationListenerService {
                 NotificationUnreadStore.markRead(context, notificationId);
                 return true;
             }
-            forgetRetainedContentIntent(notificationId, retained);
+            // Keep the retained target. A frozen package or temporary Android routing failure can
+            // reject one send and accept a later retry after the app is enabled/rebound.
         }
 
         // Only after live routes fail do we replay the Android-managed historical relay.
@@ -1002,11 +1003,9 @@ public class NotificationListener extends NotificationListenerService {
                             context, saved.dbId, availableToken);
                 }
                 if (NotificationPendingIntentStore.open(context, availableToken)) return true;
-                SmartStateStore.clearNotificationPendingIntentToken(context, availableToken);
-                saved.pendingIntentToken = "";
-            } else if (persistedToken != null && !persistedToken.isEmpty()) {
-                SmartStateStore.clearNotificationPendingIntentToken(context, persistedToken);
-                saved.pendingIntentToken = "";
+                // Preserve the token on failure. A later live notification, unfreeze or listener
+                // reconnect may make the exact target usable again, and route metadata must not be
+                // destroyed merely because one attempt failed.
             }
         }
         return false;
@@ -1069,14 +1068,9 @@ public class NotificationListener extends NotificationListenerService {
             NotificationUnreadStore.markRead(context, notificationId);
             return true;
         }
-        forgetRetainedContentIntent(notificationId, contentIntent);
-        if (activeRecord != null && activeRecord.pendingIntentToken != null
-                && !activeRecord.pendingIntentToken.isEmpty()) {
-            NotificationPendingIntentStore.discard(context, activeRecord.pendingIntentToken);
-            SmartStateStore.clearNotificationPendingIntentToken(
-                    context, activeRecord.pendingIntentToken);
-            activeRecord.pendingIntentToken = "";
-        }
+        // Do not erase the retained content intent or saved relay after one failed attempt.
+        // Freezing/unfreezing and app process replacement can make the same exact route temporarily
+        // fail even though it becomes valid again moments later.
         return activeRecord != null
                 && SavedNotificationDestinationResolver.openPublishedShortcut(context, activeRecord);
     }
