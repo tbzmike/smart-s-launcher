@@ -8,7 +8,9 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherApps;
+import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
 import android.os.Build;
 import android.os.Handler;
@@ -61,6 +63,7 @@ import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.AppIdentityResolver;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
@@ -382,8 +385,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         List<ValuedHistoryRecord> ids = DBHelper.getHistory(context, extendedItemCount, historyMode);
 
         // Find associated items
-        boolean keepFrozenHistory = PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean("smart-keep-frozen-history", true);
+        boolean keepFrozenHistory = FrozenAppPreferences.keepHistoryAndFavorites(context);
         int size = ids.size();
         for (int i = 0; i < ids.size(); i++) {
             // Ask all providers if they know this id
@@ -882,11 +884,14 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
     public List<Pojo> getFavorites() {
         List<String> favoriteIds = getFavoriteIds();
         List<Pojo> favorites = new ArrayList<>(favoriteIds.size());
-        boolean keepFrozenHistory = PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean("smart-keep-frozen-history", true);
-        // Find associated items
+        boolean keepFrozenHistory = FrozenAppPreferences.keepHistoryAndFavorites(context);
+        // Find associated items. Provider reloads must not make a configured frozen favorite
+        // disappear: recover the exact remembered app identity while the provider is rebuilding.
         for (int i = 0; i < favoriteIds.size(); i++) {
-            Pojo pojo = getPojo(favoriteIds.get(i));
+            String id = favoriteIds.get(i);
+            Pojo pojo = getPojo(id);
+            if (pojo == null) pojo = RecentLaunchTracker.resolve(id);
+            if (pojo == null) pojo = resolveRememberedAppHistory(id);
             if (pojo != null
                     && (keepFrozenHistory || !(pojo instanceof AppPojo)
                     || !((AppPojo) pojo).isDisabled())) {
@@ -906,6 +911,8 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         List<Pojo> favorites = new ArrayList<>(favoriteIds.size());
         for (String id : favoriteIds) {
             Pojo pojo = getPojo(id);
+            if (pojo == null) pojo = RecentLaunchTracker.resolve(id);
+            if (pojo == null) pojo = resolveRememberedAppHistory(id);
             if (pojo != null) favorites.add(pojo);
         }
         return favorites;
@@ -1088,6 +1095,8 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
         if (userManager == null) return null;
 
+        // First prefer the persistent catalog because it preserves the exact launcher label/activity
+        // even when Android temporarily hides the disabled package.
         for (android.os.UserHandle profile : userManager.getUserProfiles()) {
             long serial = userManager.getSerialNumberForUser(profile);
             if (serial < 0L) continue;
@@ -1098,19 +1107,62 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
                 String historyId = user.addUserSuffixToString(
                         "app://" + record.packageName + "/" + record.activityName, '/');
                 if (!requestedId.equals(historyId)) continue;
+                return buildRecoveredApp(requestedId, user, record.packageName,
+                        record.activityName, record.label);
+            }
+        }
 
-                boolean excludedFromHistory = getExcludedFromHistory().contains(requestedId);
-                boolean disabled = user.isCurrentUser()
-                        && !AppLaunchUtils.isPackageEnabled(context, record.packageName);
-                AppPojo app = new AppPojo(requestedId, record.packageName, record.activityName, user,
-                        false, excludedFromHistory, false, disabled);
-                app.setName(TextUtils.isEmpty(record.label) ? record.packageName : record.label);
-                app.setTags(getTagsHandler().getTags(app.id));
-                RecentLaunchTracker.remember(app);
-                return app;
+        // The history id itself contains package/activity identity. Do not make History depend on a
+        // second cache entry surviving a freezer/package callback. This fallback is what guarantees
+        // a frozen installed app can still render (grey when configured) instead of disappearing.
+        for (android.os.UserHandle profile : userManager.getUserProfiles()) {
+            long serial = userManager.getSerialNumberForUser(profile);
+            if (serial < 0L) continue;
+            UserHandle user = new UserHandle(context, profile);
+            String base = requestedId;
+            if (!user.isCurrentUser()) {
+                String suffix = "/" + serial;
+                if (!base.endsWith(suffix)) continue;
+                base = base.substring(0, base.length() - suffix.length());
+            }
+            if (!base.startsWith("app://")) continue;
+            String body = base.substring("app://".length());
+            int slash = body.indexOf('/');
+            if (slash <= 0 || slash >= body.length() - 1) continue;
+            String packageName = body.substring(0, slash);
+            String activityName = body.substring(slash + 1);
+
+            try {
+                PackageManager pm = context.getPackageManager();
+                ApplicationInfo info = pm.getApplicationInfo(
+                        packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+                CharSequence label = pm.getApplicationLabel(info);
+                return buildRecoveredApp(requestedId, user, packageName, activityName,
+                        label == null ? packageName : label.toString());
+            } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
+                // A genuinely uninstalled package is not reconstructed.
             }
         }
         return null;
+    }
+
+    @Nullable
+    private AppPojo buildRecoveredApp(@NonNull String requestedId,
+                                      @NonNull UserHandle user,
+                                      @NonNull String packageName,
+                                      @NonNull String activityName,
+                                      @Nullable String label) {
+        boolean disabled = user.isCurrentUser()
+                && !AppLaunchUtils.isPackageEnabled(context, packageName);
+        if (disabled && !FrozenAppPreferences.detect(context)) return null;
+
+        boolean excludedFromHistory = getExcludedFromHistory().contains(requestedId);
+        AppPojo app = new AppPojo(requestedId, packageName, activityName, user,
+                false, excludedFromHistory, false, disabled);
+        app.setName(TextUtils.isEmpty(label) ? packageName : label);
+        app.setTags(getTagsHandler().getTags(app.id));
+        RecentLaunchTracker.remember(app);
+        return app;
     }
 
     public Pojo getPojo(String id) {
