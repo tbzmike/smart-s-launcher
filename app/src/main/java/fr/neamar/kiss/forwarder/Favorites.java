@@ -519,10 +519,10 @@ public class Favorites extends Forwarder {
             if (availableApps != null && !availableApps.isEmpty()) {
                 List<AppPojo> rankedApps = new ArrayList<>(availableApps);
                 rankedApps.sort((left, right) -> {
-                    LaunchStatsProvider.LaunchStats leftStats =
-                            launchStats.get(left.getHistoryId());
-                    LaunchStatsProvider.LaunchStats rightStats =
-                            launchStats.get(right.getHistoryId());
+                    LaunchStatsProvider.LaunchStats leftStats = launchStats == null
+                            ? null : launchStats.get(left.getHistoryId());
+                    LaunchStatsProvider.LaunchStats rightStats = launchStats == null
+                            ? null : launchStats.get(right.getHistoryId());
 
                     long leftForeground = usageForPackage(usageSnapshot, left.packageName);
                     long rightForeground = usageForPackage(usageSnapshot, right.packageName);
