@@ -80,21 +80,6 @@ public class DBHelper {
         });
     }
 
-    /**
-     * Merge a legacy/wrapper history identity into its canonical application identity without
-     * changing timestamps, query text or row order. Used for routes such as IceBox app shortcuts:
-     * launching Facebook through IceBox must count as Facebook, while explicitly opening the
-     * IceBox application remains a separate app://IceBox history identity.
-     */
-    public static void remapHistoryRecord(Context context, String fromRecord, String toRecord) {
-        if (fromRecord == null || toRecord == null || fromRecord.equals(toRecord)) return;
-        DatabaseRecovery.runVoid(context, recoveryDb -> {
-            ContentValues values = new ContentValues();
-            values.put("record", toRecord);
-            recoveryDb.update("history", values, "record = ?", new String[]{fromRecord});
-        });
-    }
-
     public static void removeFromHistory(Context context, String record) {
         DatabaseRecovery.runVoid(context, recoveryDb -> {
         SQLiteDatabase db = recoveryDb;
