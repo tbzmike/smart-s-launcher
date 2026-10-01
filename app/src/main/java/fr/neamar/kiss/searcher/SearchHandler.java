@@ -30,7 +30,9 @@ import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
+import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
 public class SearchHandler {
@@ -241,7 +243,10 @@ public class SearchHandler {
         if (apps != null) {
             for (AppPojo app : apps) {
                 if (generation != searchGeneration.get()) return;
-                if (app != null && !app.isExcluded() && quickMatch(app.getName(), q)) {
+                if (app != null
+                        && !app.isExcluded()
+                        && (!app.isDisabled() || FrozenAppPreferences.keepSearchable(activity))
+                        && quickMatch(app.getName(), q)) {
                     putImmediatePreview(normal, launch, app);
                 }
             }
@@ -252,7 +257,12 @@ public class SearchHandler {
         if (shortcuts != null) {
             for (ShortcutPojo shortcut : shortcuts) {
                 if (generation != searchGeneration.get()) return;
-                if (shortcut != null && shortcut.isPinned() && quickMatch(shortcut.getName(), q)) {
+                if (shortcut != null
+                        && shortcut.isPinned()
+                        && (!shortcut.isDisabled()
+                        || ShortcutUtil.isIceBoxPublisher(activity, shortcut.packageName)
+                        || FrozenAppPreferences.keepSearchable(activity))
+                        && quickMatch(shortcut.getName(), q)) {
                     putImmediatePreview(normal, launch, shortcut);
                 }
             }
@@ -481,14 +491,14 @@ public class SearchHandler {
         DataHandler dataHandler = fr.neamar.kiss.KissApplication.getApplication(activity).getDataHandler();
         Set<String> excluded = new HashSet<>(dataHandler.getExcludedFromHistory());
         if (prefs.getBoolean("exclude-favorites-history", false)) {
-            for (Pojo favorite : dataHandler.getFavorites()) {
+            for (Pojo favorite : dataHandler.getFavoritesIncludingDisabled()) {
                 if (favorite == null) continue;
                 excluded.add(favorite.id);
                 String historyId = favorite.getHistoryId();
                 if (historyId != null) excluded.add(historyId);
             }
         }
-        boolean keepFrozenHistory = prefs.getBoolean("smart-keep-frozen-history", true);
+        boolean keepFrozenHistory = FrozenAppPreferences.keepHistoryAndFavorites(activity);
 
         return HomeHistoryWindow.select(
                 seed,
