@@ -309,10 +309,22 @@ public class AppProvider extends Provider<AppPojo>
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if (FrozenAppPreferences.PREF_DETECT.equals(key)) {
             updateFrozenReconcileSchedule(launcherUiVisible);
+            // Master detection controls both canonical apps and remembered disabled shortcuts.
+            // Reload both providers so the toggle cannot leave half of the UI on stale semantics.
             reload();
+            KissApplication.getApplication(this).getDataHandler().reloadShortcuts();
+            KissApplication.getApplication(this).getDataHandler().refreshFavorites();
+            sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         } else if (FrozenAppPreferences.PREF_RECONCILE_INTERVAL.equals(key)) {
             updateFrozenReconcileSchedule(launcherUiVisible);
         } else if (FrozenAppPreferences.PREF_KEEP_SEARCHABLE.equals(key)) {
+            // Re-run the visible query/history boundary; provider data itself does not need reload.
+            sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
+        } else if (FrozenAppPreferences.PREF_GREY.equals(key)
+                || FrozenAppPreferences.PREF_KEEP_HISTORY.equals(key)) {
+            // These are presentation/history policies, not provider data. Rebind History and
+            // favorites without clearing icons or starting a package scan.
+            KissApplication.getApplication(this).getDataHandler().refreshFavorites();
             sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         }
     }
