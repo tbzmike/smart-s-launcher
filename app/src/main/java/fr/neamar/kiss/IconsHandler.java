@@ -171,19 +171,30 @@ public class IconsHandler {
             return icon;
         }
 
-        // A selected icon pack is a launcher-wide visual choice. Shortcuts therefore inherit
-        // the packed icon of the app/activity they launch instead of bypassing the pack with
-        // Android's raw shortcut drawable.
+        // A selected icon pack is a launcher-wide visual choice. Wrapper shortcuts such as
+        // IceBox must use the REAL target application's icon, not the wrapper Activity's icon.
+        // targetPackage is authoritative when it differs from the shortcut publisher.
         if (mIconPack != null && pojo instanceof ShortcutPojo) {
             ShortcutPojo shortcut = (ShortcutPojo) pojo;
+            String targetPackage = shortcut.targetPackage == null
+                    ? null : shortcut.targetPackage.trim();
+            boolean wrapperTarget = targetPackage != null && !targetPackage.isEmpty()
+                    && !targetPackage.equals(shortcut.packageName);
+
+            if (wrapperTarget) {
+                icon = getDrawableIconForPackageName(targetPackage, shortcut.getUserHandle());
+                if (icon != null) return icon;
+            }
+
             ComponentName componentName = null;
             if (shortcutInfo != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
                 componentName = shortcutInfo.getActivity();
             }
-            String packageName = shortcut.targetPackage == null || shortcut.targetPackage.trim().isEmpty()
-                    ? shortcut.packageName : shortcut.targetPackage;
+            String packageName = targetPackage == null || targetPackage.isEmpty()
+                    ? shortcut.packageName : targetPackage;
             if (componentName == null && packageName != null && !packageName.trim().isEmpty()) {
-                componentName = PackageManagerUtils.getLaunchingComponent(ctx, packageName, shortcut.getUserHandle());
+                componentName = PackageManagerUtils.getLaunchingComponent(
+                        ctx, packageName, shortcut.getUserHandle());
             }
             if (componentName != null) {
                 icon = getDrawableIconForPackage(componentName, shortcut.getUserHandle());
