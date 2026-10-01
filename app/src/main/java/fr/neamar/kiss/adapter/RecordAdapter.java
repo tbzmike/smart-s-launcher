@@ -163,10 +163,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         Result<?> result = getItem(position);
         View view = result.display(renderContext, convertView, parent, fuzzyScore);
 
-        // Even during a fling a recycled icon must point at the row it now represents. Binding one
-        // cheap long-click listener here prevents a recycled icon from opening the previous row's
-        // context menu after the user stops and long-presses it.
-        configurePrimaryIconLongPress(view, result);
+        // Bind deterministic tap + long-press routing directly to the rendered row and its primary
+        // icon. This avoids relying on ListView's parent item-click dispatch after we made icons
+        // long-clickable in 3.30.142; that combination caused single taps to be swallowed or require
+        // repeated presses. Notification rows keep their specialized exact-message routing below.
+        configureStandardRowActions(view, result);
 
         // HARD scroll freeze for native Vertical List. Result.display() performs only the minimum
         // identity/text bind; every optional decorator below is skipped until a later normal bind.
@@ -277,17 +278,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         return value.matches("\\d+ notifications?");
     }
 
-    private void configurePrimaryIconLongPress(View row, Result<?> result) {
-        if (row == null || result == null) return;
-        ImageView icon = findPrimaryIcon(row);
-        if (icon == null) return;
+    private void configureStandardRowActions(View row, Result<?> result) {
+        if (row == null || result == null || result.getPojo() instanceof NotificationPojo) return;
 
-        icon.setLongClickable(true);
-        icon.setOnLongClickListener(v -> {
-            Context context = v.getContext();
+        View.OnClickListener launch = v -> {
+            int position = results.indexOf(result);
+            if (position >= 0) onClick(position, v);
+        };
+        View.OnLongClickListener menu = v -> {
             int position = results.indexOf(result);
             if (position < 0) return false;
 
+            Context context = v.getContext();
             if (UiEditLock.isLocked(context)) {
                 if (NotificationHistoryResolver.showForPojo(context, result.getPojo())) return true;
                 UiEditLock.allowEdit(context);
@@ -296,7 +298,22 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
             onLongClick(position, v);
             return true;
-        });
+        };
+
+        // The complete row owns ordinary taps, while clickable message/notification children can
+        // still override just their own target. This makes History and active Search deterministic.
+        row.setClickable(true);
+        row.setLongClickable(true);
+        row.setOnClickListener(launch);
+        row.setOnLongClickListener(menu);
+
+        ImageView icon = findPrimaryIcon(row);
+        if (icon != null) {
+            icon.setClickable(true);
+            icon.setLongClickable(true);
+            icon.setOnClickListener(launch);
+            icon.setOnLongClickListener(menu);
+        }
     }
 
     private void configureNotificationTileClick(View view, Result<?> result) {
