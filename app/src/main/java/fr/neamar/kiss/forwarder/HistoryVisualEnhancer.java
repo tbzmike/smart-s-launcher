@@ -63,6 +63,13 @@ final class HistoryVisualEnhancer {
         requestRefresh();
     }
 
+    void onScrollIdle() {
+        // Scrolling may have recycled native rows while metadata decoration was intentionally
+        // frozen. Re-apply only cached metadata to the now-visible rows; no database/UsageStats
+        // work is started by the act of scrolling.
+        applyToVisibleNativeRows();
+    }
+
     void onDestroy() {
         destroyed = true;
         generation++;
