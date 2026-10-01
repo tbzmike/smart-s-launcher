@@ -116,8 +116,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
      */
     private void applyFrozenIconFilter(@Nullable ImageView imageView) {
         if (imageView == null) return;
-        boolean greyFrozen = PreferenceManager.getDefaultSharedPreferences(imageView.getContext())
-                .getBoolean("smart-grey-frozen-apps", true);
+        boolean greyFrozen = FrozenAppPreferences.grey(imageView.getContext());
         if (pojo.isDisabled() && greyFrozen) imageView.setColorFilter(FROZEN_ICON_FILTER);
         else imageView.clearColorFilter();
     }
@@ -183,8 +182,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
     private String getPackageKey() { return pojo.getPackageKey(); }
 
     private boolean refreshLiveDisabledState(Context context) {
-        if (!PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean("smart-detect-frozen-apps", true)) {
+        if (!FrozenAppPreferences.detect(context)) {
             pojo.setDisabled(false);
             return false;
         }
@@ -360,8 +358,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
         launchSucceeded = false;
         boolean wasFrozen = refreshLiveDisabledState(context);
         if (wasFrozen) {
-            if (!PreferenceManager.getDefaultSharedPreferences(context)
-                    .getBoolean("smart-auto-enable-frozen-apps", true)) {
+            if (!FrozenAppPreferences.autoEnable(context)) {
                 Toast.makeText(context, "App is frozen. Auto-enable frozen apps is off.",
                         Toast.LENGTH_LONG).show();
                 return;
