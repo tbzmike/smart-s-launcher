@@ -39,6 +39,7 @@ import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
 import fr.neamar.kiss.ui.MediaNotificationRow;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
@@ -370,7 +371,14 @@ public class SettingsResult extends Result<SettingPojo> {
             launchSucceeded = true;
             return;
         }
-        Toast.makeText(context, "No exact notification destination is available.",
+        // Exact routes are always preferred. Only after both the saved route and the live
+        // notification route are genuinely unavailable do we open the originating application.
+        if (AppLaunchUtils.launchPackage(context, notification.packageName)) {
+            launchSucceeded = true;
+            return;
+        }
+        Toast.makeText(context,
+                "No exact notification destination is available and the app could not be opened.",
                 Toast.LENGTH_SHORT).show();
     }
 
