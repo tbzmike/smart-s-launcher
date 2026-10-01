@@ -165,8 +165,10 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 TileLaunchCounter.recordNotification(
                         context, latestActive.id, latestActive.postTime);
                 if (!NotificationListener.openNotification(
-                        context, latestActive.id, latestActive.postTime)) {
-                    Toast.makeText(context, "No exact notification destination is available.",
+                        context, latestActive.id, latestActive.postTime)
+                        && !AppLaunchUtils.launchPackage(context, targetPackage)) {
+                    Toast.makeText(context,
+                            "No exact notification destination is available and the app could not be opened.",
                             Toast.LENGTH_SHORT).show();
                 }
             };
@@ -185,8 +187,13 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 View.OnClickListener exactSavedNotificationClick = v -> {
                     TileLaunchCounter.recordNotification(
                             context, latestSaved.notificationId, latestSaved.postTime);
-                    if (!SavedNotificationDestinationResolver.openExact(context, latestSaved)) {
-                        Toast.makeText(context, "Unable to open this exact notification", Toast.LENGTH_SHORT).show();
+                    SavedNotificationDestinationResolver.OpenResult openResult =
+                            SavedNotificationDestinationResolver.openExactOrAppResult(
+                                    context, latestSaved);
+                    if (!openResult.accepted()) {
+                        Toast.makeText(context,
+                                "Unable to open this notification or its app.",
+                                Toast.LENGTH_SHORT).show();
                     }
                 };
                 row.setOnClickListener(exactSavedNotificationClick);
