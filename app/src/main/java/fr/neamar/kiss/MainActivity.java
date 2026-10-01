@@ -1193,6 +1193,18 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
     }
 
+    /**
+     * An item already visible in History was explicitly launched. Arm the active History renderer
+     * before RecordAdapter notifies the dataset change so Vertical Cards rebuilds immediately from
+     * the adapter's new oldest-to-newest order instead of deferring that recency move as if it were
+     * a passive background update.
+     */
+    public void prepareExplicitHistoryLaunchReorder() {
+        if (forwarderManager != null) {
+            forwarderManager.prepareExplicitHistoryLaunchReorder();
+        }
+    }
+
     @Override
     public void externalResultLaunchStarting() {
         // Record whether this verified external transition started from a real query before the
