@@ -46,12 +46,14 @@ public class ForwarderManager extends Forwarder {
     private boolean initialResumeComplete;
     private boolean lastUiEditLocked;
     private String lastSearchQuery;
-    private final Runnable historyScrollIdle = () -> {
+    private final Runnable historyScrollIdle = this::onHistoryScrollIdle;
+
+    private void onHistoryScrollIdle() {
         AppProvider.setLauncherScrolling(false);
         LauncherScrollWorkGate.setScrolling(false);
         SearchHandler.getInstance().onHistoryScrollIdle(mainActivity);
         historyVisualEnhancer.onScrollIdle();
-    };
+    }
 
     private final Runnable providerScrollStarted = () -> {
         // Flip the process-wide gate before any feature-specific cancellation so recurring services
