@@ -1,1 +1,1 @@
-History now stays strictly oldest-to-newest from top to bottom, so every newly launched app is always placed at the bottom. Also hardens Search-to-Home restoration against concurrent relevance updates while preserving the 3.30.138 frozen-app fixes.
+History now uses one strict chronological timeline across apps, shortcuts and notifications: oldest at the top and the newest launch/notification at the bottom. Search relevance and result type can no longer create separate or mixed ordering bands. Also preserves the 3.30.138 frozen-app fixes.
