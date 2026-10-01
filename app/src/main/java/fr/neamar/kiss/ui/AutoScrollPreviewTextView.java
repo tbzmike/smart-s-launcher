@@ -13,6 +13,8 @@ import android.view.View;
 
 import android.widget.TextView;
 
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
+
 /**
  * Notification/message preview shared by Smart S result tiles.
  * Auto-scroll keeps the compact two-line stepping preview. Auto-expand removes the timer but starts
@@ -356,7 +358,8 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private boolean isActuallyVisibleOnScreen() {
-        if (!attached || !isShown() || !hasWindowFocus() || isNativeListScrolling()) return false;
+        if (LauncherScrollWorkGate.isScrolling()
+                || !attached || !isShown() || !hasWindowFocus() || isNativeListScrolling()) return false;
         visibleRect.setEmpty();
         return getLocalVisibleRect(visibleRect)
                 && visibleRect.width() > 0
@@ -374,8 +377,11 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private void scheduleScrollStep(long delayMs) {
-        if (isNativeVerticalListRow()
-                || scrollStepScheduled || isAutoExpand() || !isActuallyVisibleOnScreen()) return;
+        if (LauncherScrollWorkGate.isScrolling() || isNativeVerticalListRow()
+                || scrollStepScheduled || isAutoExpand() || !isActuallyVisibleOnScreen()) {
+            cancelScrollStep();
+            return;
+        }
         scrollStepScheduled = true;
         postDelayed(scrollStep, delayMs);
     }
@@ -389,8 +395,11 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private void advancePreview() {
-        if (isNativeVerticalListRow()
-                || !attached || isAutoExpand() || !isActuallyVisibleOnScreen()) return;
+        if (LauncherScrollWorkGate.isScrolling() || isNativeVerticalListRow()
+                || !attached || isAutoExpand() || !isActuallyVisibleOnScreen()) {
+            cancelScrollStep();
+            return;
+        }
         Layout layout = getLayout();
         if (layout == null) {
             scheduleScrollStep(STEP_DELAY_MS);
