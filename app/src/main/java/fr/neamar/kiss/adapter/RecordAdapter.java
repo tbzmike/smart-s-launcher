@@ -171,6 +171,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 && ((fr.neamar.kiss.ui.AnimatedListView) parent).isScrollInProgress();
         if (hardScrollFreeze) return view;
 
+        // Scale only this recycled/new row, never the complete launcher hierarchy.
+        if (renderContext instanceof MainActivity) {
+            ((MainActivity) renderContext).applyGlobalTextScaleToSubtree(view);
+        }
+
         NotificationBellStyle.applyToResult(view, result, parent instanceof AbsListView);
         if (result.getPojo() instanceof NotificationPojo) {
             configureSocialMessageCard(view, (NotificationPojo) result.getPojo());
