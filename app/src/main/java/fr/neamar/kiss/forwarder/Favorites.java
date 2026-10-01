@@ -196,8 +196,18 @@ public class Favorites extends Forwarder {
             holder.itemView.setOnClickListener(v -> {
                 if (mOnItemClickListener != null) mOnItemClickListener.onClick(v, result);
             });
-            holder.itemView.setOnLongClickListener(v ->
-                    mOnItemLongClickListener == null || mOnItemLongClickListener.onLongClick(v, result));
+            View.OnLongClickListener contextLongPress = v ->
+                    mOnItemLongClickListener == null
+                            || mOnItemLongClickListener.onLongClick(v, result);
+            holder.itemView.setOnLongClickListener(contextLongPress);
+
+            // A bottom-bar icon is the user's primary touch target. Bind the exact same menu
+            // directly to the icon so RecyclerView/ItemTouchHelper cannot swallow the gesture.
+            View favoriteIcon = holder.itemView.findViewById(R.id.favorite);
+            if (favoriteIcon != null) {
+                favoriteIcon.setLongClickable(true);
+                favoriteIcon.setOnLongClickListener(contextLongPress);
+            }
 
             // ItemTouchHelper's built-in long-press drag used to win the gesture before the normal
             // Smart S popup could remain visible. Keep a stationary long press for the standard
@@ -657,10 +667,21 @@ public class Favorites extends Forwarder {
     }
 
     private boolean onLongClick(View v, Result<?> result) {
-        if (NotificationHistoryResolver.showForPojo(mainActivity, result.getPojo())) return true;
+        if (UiEditLock.isLocked(mainActivity)) {
+            // Locked UI keeps the previous read-only notification-history behavior. Editing menus
+            // are deliberately available only after the launcher UI is unlocked.
+            if (NotificationHistoryResolver.showForPojo(mainActivity, result.getPojo())) return true;
+            UiEditLock.allowEdit(mainActivity);
+            return true;
+        }
+
+        // Standard and Pixel bars use the same Result popup as History/Search: tags, add/remove
+        // favorite, custom icon and every result-specific action are therefore identical.
         ListPopup popup = result.getPopupMenu(mainActivity, mainActivity.adapter, v);
-        mainActivity.registerPopup(popup);
-        popup.show(v);
+        if (popup.getAdapter() != null && popup.getAdapter().getCount() > 0) {
+            mainActivity.registerPopup(popup);
+            popup.show(v);
+        }
         return true;
     }
 
