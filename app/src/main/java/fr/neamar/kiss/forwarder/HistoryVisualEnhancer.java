@@ -3,6 +3,7 @@ package fr.neamar.kiss.forwarder;
 import android.os.CancellationSignal;
 import android.os.OperationCanceledException;
 import android.os.SystemClock;
+import android.view.View;
 
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -12,6 +13,7 @@ import java.util.concurrent.Future;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.LaunchStatsProvider;
+import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 
@@ -160,6 +162,30 @@ final class HistoryVisualEnhancer {
         });
     }
 
+    /**
+     * Refresh only the already-visible native History rows after the idle enrichment snapshot is
+     * ready. This gives every visible item its full timestamp/launch/usage line without publishing a
+     * new adapter dataset or rebuilding the History tree.
+     */
+    private void applyToVisibleNativeRows() {
+        if (destroyed || activity.list == null || activity.adapter == null
+                || historyDisplayForwarder.isScrollInProgress()
+                || LauncherScrollWorkGate.isScrolling()) {
+            return;
+        }
+        int first = activity.list.getFirstVisiblePosition();
+        int childCount = activity.list.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            int position = first + i;
+            if (position < 0 || position >= activity.adapter.getCount()) continue;
+            View child = activity.list.getChildAt(i);
+            Result<?> result = activity.adapter.getItem(position);
+            if (child != null && result != null) {
+                UniversalHistoryTimestamp.bind(child, result, activity);
+            }
+        }
+    }
+
     private void finishRefresh(long taskGeneration,
                                Map<String, LaunchStatsProvider.LaunchStats> stats,
                                AppUsageTodayStore.Snapshot usage) {
@@ -183,9 +209,8 @@ final class HistoryVisualEnhancer {
         lastStatsGeneration = UniversalHistoryTimestamp.statsGeneration();
         forceReload = false;
         hasLoadedSnapshot = true;
-        // Update only the model/cache. Rewriting visible TextViews here caused the exact
-        // after-scroll text jump seen in the supplied video.
         UniversalHistoryTimestamp.updateEnrichment(cachedStats, cachedUsage);
+        applyToVisibleNativeRows();
         if (refreshPending) requestRefresh();
     }
 
