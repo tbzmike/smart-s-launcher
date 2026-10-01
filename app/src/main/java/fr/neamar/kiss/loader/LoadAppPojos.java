@@ -31,6 +31,7 @@ import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.UserHandle;
 
@@ -50,6 +51,7 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         // PackageManager/LauncherApps enumeration can take >1s on large installs. Keep it at
         // background scheduling priority so it cannot steal CPU time from launcher frames.
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+        if (!waitForScrollIdle()) return new ArrayList<>();
         long start = System.currentTimeMillis();
         List<AppPojo> apps = new ArrayList<>();
         Set<String> seenPackages = new HashSet<>();
@@ -72,13 +74,15 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         Map<Long, Map<String, AppCatalogRecord>> rememberedBySerial = new LinkedHashMap<>();
 
         for (android.os.UserHandle profile : manager.getUserProfiles()) {
+            if (!waitForScrollIdle()) break;
             boolean isPrivateProfile = PackageManagerUtils.isPrivateProfile(launcherApps, profile);
             long serial = manager.getSerialNumberForUser(profile);
             UserHandle user = new UserHandle(serial, profile);
             Map<String, AppCatalogRecord> rememberedForProfile =
                     rememberedForProfile(ctx, serial, rememberedBySerial);
+            if (!waitForScrollIdle()) break;
             for (LauncherActivityInfo activityInfo : launcherApps.getActivityList(null, profile)) {
-                if (isCancelled()) break;
+                if (isCancelled() || !waitForScrollIdle()) break;
                 ApplicationInfo appInfo = activityInfo.getApplicationInfo();
                 String packageKey = packageKey(serial, appInfo.packageName);
                 if (seenPackages.contains(packageKey)) continue;
@@ -105,6 +109,7 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         int flags = indexDisabledApps ? PackageManager.MATCH_DISABLED_COMPONENTS : 0;
 
         // Existing global disabled-component query. Keep it because it is cheap and works on many ROMs.
+        if (!waitForScrollIdle()) return apps;
         List<ResolveInfo> disabledCandidates = pm.queryIntentActivities(launcherIntent, flags);
         for (ResolveInfo resolveInfo : disabledCandidates) {
             if (isCancelled()) break;
@@ -118,9 +123,10 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
             // installed package (including disabled ones), then ask PackageManager for that package's
             // launcher activity explicitly. Per-package queries recover apps that some ROMs omit from
             // the global launcher query while still respecting the real CATEGORY_LAUNCHER contract.
+            if (!waitForScrollIdle()) return apps;
             List<ApplicationInfo> installed = pm.getInstalledApplications(PackageManager.MATCH_DISABLED_COMPONENTS);
             for (ApplicationInfo info : installed) {
-                if (isCancelled()) break;
+                if (isCancelled() || !waitForScrollIdle()) break;
                 if (info == null || info.packageName == null) continue;
                 String packageKey = packageKey(currentSerial, info.packageName);
                 if (seenPackages.contains(packageKey)) continue;
@@ -229,6 +235,18 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         apps.add(app);
         seenPackages.add(packageKey);
         rememberAppIfChanged(ctx, app, serial, rememberedForProfile);
+    }
+
+    private boolean waitForScrollIdle() {
+        while (LauncherScrollWorkGate.isScrolling() && !isCancelled()) {
+            try {
+                Thread.sleep(40L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return !isCancelled();
     }
 
     private Map<String, AppCatalogRecord> rememberedForProfile(
