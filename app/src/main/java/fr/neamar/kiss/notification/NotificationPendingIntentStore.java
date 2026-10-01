@@ -86,9 +86,14 @@ public final class NotificationPendingIntentStore {
         try {
             relay.send();
             return true;
-        } catch (PendingIntent.CanceledException | RuntimeException e) {
+        } catch (PendingIntent.CanceledException e) {
             relay.cancel();
-            Log.w(TAG, "Saved notification relay is no longer available", e);
+            Log.w(TAG, "Saved notification relay was canceled by Android", e);
+            return false;
+        } catch (RuntimeException e) {
+            // Runtime routing failures can be transient (frozen package, activity transition,
+            // package process replacement). Keep the relay so the exact destination can be retried.
+            Log.w(TAG, "Saved notification relay could not be opened yet", e);
             return false;
         }
     }
