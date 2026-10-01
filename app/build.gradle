@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.140 - scroll frame-budget isolation and refresh de-duplication
-        versionCode 568
-        versionName "3.30.140"
+        // Smart S Launcher 3.30.141 - dynamic Pixel predictions and complete History metadata
+        versionCode 569
+        versionName "3.30.141"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
