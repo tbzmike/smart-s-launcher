@@ -25,6 +25,7 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.fuzzy.FuzzyFactory;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
@@ -79,7 +80,9 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
         pojos.add(createPojo("Notification history", context.getPackageName(),
                 NotificationHistoryActivity.class.getName(), R.drawable.setting_apps));
 
-        buildDisabledAppIndex(pm);
+        if (FrozenAppPreferences.detect(context)) {
+            buildDisabledAppIndex(pm);
+        }
         settingName = context.getString(R.string.settings_prefix).toLowerCase(Locale.ROOT);
         contextReference = new WeakReference<>(context);
         installedFeatureProvider = new InstalledFeatureProvider(context);
@@ -147,6 +150,7 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
     }
 
     private void requestDisabledApps(Context context, String query, Searcher searcher) {
+        if (!FrozenAppPreferences.keepSearchable(context)) return;
         PackageManager pm = context.getPackageManager();
         for (DisabledAppPojo pojo : disabledApps) {
             if (!isPackageDisabled(pm, pojo.targetPackage)) continue;
@@ -197,7 +201,10 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
     public SettingPojo findById(String id) {
         if (id == null) return null;
         for (SettingPojo pojo : pojos) if (pojo.id.equals(id)) return pojo;
-        for (DisabledAppPojo pojo : disabledApps) if (pojo.id.equals(id)) return pojo;
+        Context context = contextReference.get();
+        if (context != null && FrozenAppPreferences.detect(context)) {
+            for (DisabledAppPojo pojo : disabledApps) if (pojo.id.equals(id)) return pojo;
+        }
         if (installedFeatureProvider.mayFindById(id)) return installedFeatureProvider.findById(id);
         if (notificationProvider.mayFindById(id)) {
             NotificationPojo notification = notificationProvider.findById(id);
