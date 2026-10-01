@@ -41,6 +41,7 @@ import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -369,7 +370,7 @@ public class Favorites extends Forwarder {
             // query or package scan is allowed to delay HOME.
             List<Pojo> pinned = dataHandler.getFavoritesIncludingDisabled();
             List<Pojo> immediate = buildPixelFavorites(
-                    dataHandler, pinned, pixelLimit, Collections.emptyMap());
+                    dataHandler, pinned, pixelLimit, Collections.emptyMap(), null);
             applyFavorites(immediate, mode, pixelLimit);
 
             // Prediction runs only for Pixel mode, at background priority, after HOME gets a chance
@@ -426,8 +427,13 @@ public class Favorites extends Forwarder {
                     if (signal.isCanceled() || generation != pixelGeneration
                             || LauncherScrollWorkGate.isScrolling()) return;
 
+                    AppUsageTodayStore.Snapshot usage =
+                            AppUsageTodayStore.getToday(mainActivity.getApplicationContext());
+                    if (signal.isCanceled() || generation != pixelGeneration
+                            || LauncherScrollWorkGate.isScrolling()) return;
+
                     List<Pojo> predicted = buildPixelFavorites(
-                            dataHandler, pinnedSnapshot, pixelLimit, launchStats);
+                            dataHandler, pinnedSnapshot, pixelLimit, launchStats, usage);
                     pixelHandler.post(() -> {
                         if (signal.isCanceled() || generation != pixelGeneration
                                 || !MODE_PIXEL.equals(currentMode())
@@ -467,7 +473,8 @@ public class Favorites extends Forwarder {
     private List<Pojo> buildPixelFavorites(DataHandler dataHandler,
                                            List<Pojo> pinnedFavorites,
                                            int requestedLimit,
-                                           Map<String, LaunchStatsProvider.LaunchStats> launchStats) {
+                                           Map<String, LaunchStatsProvider.LaunchStats> launchStats,
+                                           @Nullable AppUsageTodayStore.Snapshot usageSnapshot) {
         int max = PixelFavoritesPolicy.clampMaxApps(requestedLimit);
 
         // Wrapper launch routes (for example IceBox's Facebook shortcut) are kept separately from
@@ -513,15 +520,16 @@ public class Favorites extends Forwarder {
                             launchStats.get(left.getHistoryId());
                     LaunchStatsProvider.LaunchStats rightStats =
                             launchStats.get(right.getHistoryId());
-                    int leftCount = leftStats == null ? 0 : leftStats.totalLaunches;
-                    int rightCount = rightStats == null ? 0 : rightStats.totalLaunches;
-                    int byCount = Integer.compare(rightCount, leftCount);
-                    if (byCount != 0) return byCount;
 
-                    long leftTime = leftStats == null ? 0L : leftStats.lastLaunchTime;
-                    long rightTime = rightStats == null ? 0L : rightStats.lastLaunchTime;
-                    int byTime = Long.compare(rightTime, leftTime);
-                    if (byTime != 0) return byTime;
+                    long leftForeground = usageForPackage(usageSnapshot, left.packageName);
+                    long rightForeground = usageForPackage(usageSnapshot, right.packageName);
+                    PixelFavoritesPolicy.PredictionSignal leftSignal =
+                            predictionSignal(leftStats, leftForeground);
+                    PixelFavoritesPolicy.PredictionSignal rightSignal =
+                            predictionSignal(rightStats, rightForeground);
+                    int prediction = PixelFavoritesPolicy.comparePrediction(
+                            leftSignal, rightSignal);
+                    if (prediction != 0) return prediction;
                     return String.CASE_INSENSITIVE_ORDER.compare(
                             left.getName(), right.getName());
                 });
@@ -551,6 +559,28 @@ public class Favorites extends Forwarder {
             if (pojo != null) selected.add(pojo);
         }
         return selected;
+    }
+
+    private PixelFavoritesPolicy.PredictionSignal predictionSignal(
+            @Nullable LaunchStatsProvider.LaunchStats stats, long foregroundMsToday) {
+        if (stats == null) {
+            return new PixelFavoritesPolicy.PredictionSignal(
+                    0, 0, 0, foregroundMsToday, 0L, 0);
+        }
+        return new PixelFavoritesPolicy.PredictionSignal(
+                stats.launchesToday,
+                stats.launchesLast24Hours,
+                stats.launchesLast7Days,
+                foregroundMsToday,
+                stats.lastLaunchTime,
+                stats.totalLaunches);
+    }
+
+    private long usageForPackage(@Nullable AppUsageTodayStore.Snapshot snapshot,
+                                 @Nullable String packageName) {
+        if (snapshot == null || !snapshot.available || packageName == null) return 0L;
+        Long value = snapshot.foregroundMsByPackage.get(packageName);
+        return value == null ? 0L : Math.max(0L, value);
     }
 
     private Pojo launchablePixelRepresentative(DataHandler dataHandler,
