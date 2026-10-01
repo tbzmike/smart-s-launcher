@@ -232,6 +232,7 @@ public final class UniversalHistoryTimestamp {
         }
         if (pojo instanceof AppPojo) return ((AppPojo) pojo).packageName;
         if (pojo instanceof DisabledAppPojo) return ((DisabledAppPojo) pojo).targetPackage;
+        if (pojo instanceof NotificationPojo) return ((NotificationPojo) pojo).packageName;
         return null;
     }
 
