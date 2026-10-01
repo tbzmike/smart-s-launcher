@@ -35,6 +35,7 @@ import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.SmartTextAppearance;
 import fr.neamar.kiss.ui.TileLaunchCounter;
+import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.utils.AppIdentityResolver;
 
 /**
@@ -71,6 +72,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
     private boolean refreshRequested;
     private boolean launchStatsLoaded;
     private long lastLaunchStatsRefreshUptime;
+    private long lastStatsGeneration = -1L;
     private boolean paused;
     private volatile boolean destroyed;
     private boolean pendingApplyFromDataSet;
@@ -185,6 +187,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
                 launchStats = freshStats;
                 launchStatsLoaded = true;
                 lastLaunchStatsRefreshUptime = SystemClock.uptimeMillis();
+                lastStatsGeneration = UniversalHistoryTimestamp.statsGeneration();
                 snapshot = fresh;
                 shortcutSnapshot = freshShortcuts;
                 loadedShortcutTargets = requestedTargets;
@@ -207,7 +210,9 @@ final class VerticalCardUsageForwarder extends Forwarder {
         if (destroyed || !isEnabled()) return;
 
         long now = SystemClock.uptimeMillis();
+        long requestedGeneration = UniversalHistoryTimestamp.statsGeneration();
         if (launchStatsLoaded
+                && requestedGeneration == lastStatsGeneration
                 && now - lastLaunchStatsRefreshUptime < MIN_LAUNCH_STATS_REFRESH_MS) {
             return;
         }
@@ -226,6 +231,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
                 launchStats = freshStats;
                 launchStatsLoaded = true;
                 lastLaunchStatsRefreshUptime = SystemClock.uptimeMillis();
+                lastStatsGeneration = UniversalHistoryTimestamp.statsGeneration();
                 postApplySnapshot(false, true);
             });
         });
@@ -355,23 +361,43 @@ final class VerticalCardUsageForwarder extends Forwarder {
                                  LaunchStatsProvider.LaunchStats stats,
                                  AppUsageTodayStore.Snapshot currentSnapshot,
                                  HistoryItemUsageTodayStore.Snapshot currentShortcutSnapshot) {
-        NotificationIdentity notification = resolveVisibleNotification(pojo, packageName);
         StringBuilder metadata = new StringBuilder();
-        if (notification != null) {
+        boolean directNotification = pojo instanceof NotificationPojo;
+
+        if (directNotification) {
+            NotificationPojo notification = (NotificationPojo) pojo;
             appendMetadata(metadata, formatEventTime("Received", notification.postTime));
         } else {
-            appendMetadata(metadata, formatEventTime("Posted", resolveHistoryTimestamp(pojo, stats)));
+            appendMetadata(metadata,
+                    formatEventTime("History time", resolveHistoryTimestamp(pojo, stats)));
         }
 
         String usage = formatUsage(
                 pojo, packageName, currentSnapshot, currentShortcutSnapshot);
         appendMetadata(metadata, usage);
 
-        long launches = notification != null
-                ? TileLaunchCounter.getNotificationTotal(
-                        mainActivity, notification.notificationId, notification.postTime)
-                : stats == null ? 0L : Math.max(0, stats.totalLaunches);
-        appendMetadata(metadata, formatLaunchCount(launches));
+        if (directNotification) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            long today = TileLaunchCounter.getNotificationToday(
+                    mainActivity, notification.id, notification.postTime);
+            long total = TileLaunchCounter.getNotificationTotal(
+                    mainActivity, notification.id, notification.postTime);
+            appendMetadata(metadata, "Opened today " + today);
+            appendMetadata(metadata, "Opened total " + total);
+        } else {
+            long today = stats == null ? 0L : Math.max(0, stats.launchesToday);
+            long total = stats == null ? 0L : Math.max(0, stats.totalLaunches);
+            appendMetadata(metadata, "Launched today " + today);
+            appendMetadata(metadata, "Total launches " + total);
+
+            // An app tile can also surface a live notification preview. Keep that event visible
+            // without replacing the app's own launch timestamp/counts with notification metadata.
+            NotificationIdentity latestNotification = resolveVisibleNotification(pojo, packageName);
+            if (latestNotification != null) {
+                appendMetadata(metadata,
+                        formatEventTime("Latest notification", latestNotification.postTime));
+            }
+        }
         return metadata.toString();
     }
 
@@ -400,24 +426,13 @@ final class VerticalCardUsageForwarder extends Forwarder {
     private String formatEventTime(String label, long timestamp) {
         if (timestamp <= 0L) return label + ": unavailable";
 
-        long now = System.currentTimeMillis();
-        String relative;
-        if (Math.abs(now - timestamp) < DateUtils.MINUTE_IN_MILLIS) {
-            relative = timestamp <= now ? "just now" : "in <1m";
-        } else {
-            relative = DateUtils.getRelativeTimeSpanString(
-                    timestamp,
-                    now,
-                    DateUtils.MINUTE_IN_MILLIS,
-                    DateUtils.FORMAT_ABBREV_RELATIVE).toString();
-        }
-
         Date date = new Date(timestamp);
-        String exact = DateFormat.getTimeFormat(mainActivity).format(date);
-        if (!DateUtils.isToday(timestamp)) {
-            exact = DateFormat.getMediumDateFormat(mainActivity).format(date) + " " + exact;
-        }
-        return label + " " + relative + " · " + exact;
+        String pattern = DateFormat.is24HourFormat(mainActivity) ? "HH:mm:ss" : "h:mm:ss a";
+        java.text.DateFormat exactTime = new java.text.SimpleDateFormat(
+                pattern, mainActivity.getResources().getConfiguration().locale);
+        String exact = DateFormat.getMediumDateFormat(mainActivity).format(date)
+                + " " + exactTime.format(date);
+        return label + " " + exact;
     }
 
     private long resolveHistoryTimestamp(Pojo pojo, LaunchStatsProvider.LaunchStats stats) {
