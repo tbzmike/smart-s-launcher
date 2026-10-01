@@ -163,6 +163,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         Result<?> result = getItem(position);
         View view = result.display(renderContext, convertView, parent, fuzzyScore);
 
+        // Even during a fling a recycled icon must point at the row it now represents. Binding one
+        // cheap long-click listener here prevents a recycled icon from opening the previous row's
+        // context menu after the user stops and long-presses it.
+        configurePrimaryIconLongPress(view, result);
+
         // HARD scroll freeze for native Vertical List. Result.display() performs only the minimum
         // identity/text bind; every optional decorator below is skipped until a later normal bind.
         // No notification enrichment, overflow traversal, timestamp formatting, style traversal,
@@ -188,7 +193,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             overflowConfigured.put(view, overflowMode);
         }
         if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
-        configurePrimaryIconLongPress(view, result);
         if (parent instanceof AbsListView) {
             Context context = renderContext;
             TileVisualStyle.apply(view, result, context);
