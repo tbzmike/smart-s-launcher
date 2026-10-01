@@ -126,7 +126,12 @@ public class HistorySearcher extends Searcher {
         collapseDuplicateNotifications(activity, pojos);
         if (shouldAbort()) return null;
 
-        this.addResults(pojos);
+        // Freeze the fully resolved History order before handing it back to the UI.
+        // Query search runs on a separate worker and may mutate provider-owned Pojo.relevance
+        // fields while History is finishing. Passing History through Searcher's PriorityQueue
+        // therefore made its order nondeterministic: the latest launched app could surface at the
+        // top. A defensive list snapshot makes oldest -> newest (bottom) the permanent contract.
+        setFinalOrderedResults(HistoryRecencyOrder.freezeOldestToNewest(pojos));
         return null;
     }
 
