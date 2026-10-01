@@ -29,11 +29,16 @@ public final class LaunchStatsProvider {
     public static final class LaunchStats {
         public final long lastLaunchTime;
         public final int launchesToday;
+        public final int launchesLast24Hours;
+        public final int launchesLast7Days;
         public final int totalLaunches;
 
-        LaunchStats(long lastLaunchTime, int launchesToday, int totalLaunches) {
+        LaunchStats(long lastLaunchTime, int launchesToday, int launchesLast24Hours,
+                    int launchesLast7Days, int totalLaunches) {
             this.lastLaunchTime = lastLaunchTime;
             this.launchesToday = launchesToday;
+            this.launchesLast24Hours = launchesLast24Hours;
+            this.launchesLast7Days = launchesLast7Days;
             this.totalLaunches = totalLaunches;
         }
     }
@@ -53,19 +58,29 @@ public final class LaunchStatsProvider {
         start.set(Calendar.SECOND, 0);
         start.set(Calendar.MILLISECOND, 0);
         long startOfToday = start.getTimeInMillis();
+        long now = System.currentTimeMillis();
+        long startOf24Hours = Math.max(0L, now - 24L * 60L * 60L * 1000L);
+        long startOf7Days = Math.max(0L, now - 7L * 24L * 60L * 60L * 1000L);
 
         HashMap<String, LaunchStats> stats = new HashMap<>();
         SQLiteDatabase db = recoveryDb;
         String sql = "SELECT record, MAX(timeStamp), "
-                + "SUM(CASE WHEN timeStamp >= ? THEN 1 ELSE 0 END), COUNT(*) "
-                + "FROM history GROUP BY record";
-        String[] args = new String[]{Long.toString(startOfToday)};
+                + "SUM(CASE WHEN timeStamp >= ? THEN 1 ELSE 0 END), "
+                + "SUM(CASE WHEN timeStamp >= ? THEN 1 ELSE 0 END), "
+                + "SUM(CASE WHEN timeStamp >= ? THEN 1 ELSE 0 END), "
+                + "COUNT(*) FROM history GROUP BY record";
+        String[] args = new String[]{
+                Long.toString(startOfToday),
+                Long.toString(startOf24Hours),
+                Long.toString(startOf7Days)
+        };
         try (Cursor cursor = cancellationSignal == null
                 ? db.rawQuery(sql, args)
                 : db.rawQuery(sql, args, cancellationSignal)) {
             while (cursor.moveToNext()) {
                 stats.put(cursor.getString(0), new LaunchStats(
-                        cursor.getLong(1), cursor.getInt(2), cursor.getInt(3)));
+                        cursor.getLong(1), cursor.getInt(2), cursor.getInt(3),
+                        cursor.getInt(4), cursor.getInt(5)));
             }
         }
         mergeCanonicalAppAliases(context, stats);
@@ -136,7 +151,9 @@ public final class LaunchStatsProvider {
         for (Map.Entry<String, MutableStats> entry : totalsByPackage.entrySet()) {
             MutableStats value = entry.getValue();
             mergedByPackage.put(entry.getKey(),
-                    new LaunchStats(value.lastLaunchTime, value.launchesToday, value.totalLaunches));
+                    new LaunchStats(value.lastLaunchTime, value.launchesToday,
+                            value.launchesLast24Hours, value.launchesLast7Days,
+                            value.totalLaunches));
         }
 
         for (Map.Entry<String, String> entry : packageByHistoryId.entrySet()) {
@@ -148,12 +165,18 @@ public final class LaunchStatsProvider {
     private static final class MutableStats {
         long lastLaunchTime;
         int launchesToday;
+        int launchesLast24Hours;
+        int launchesLast7Days;
         int totalLaunches;
 
         void add(LaunchStats stats) {
             if (stats == null) return;
             lastLaunchTime = Math.max(lastLaunchTime, stats.lastLaunchTime);
             launchesToday = saturatingAdd(launchesToday, stats.launchesToday);
+            launchesLast24Hours = saturatingAdd(
+                    launchesLast24Hours, stats.launchesLast24Hours);
+            launchesLast7Days = saturatingAdd(
+                    launchesLast7Days, stats.launchesLast7Days);
             totalLaunches = saturatingAdd(totalLaunches, stats.totalLaunches);
         }
 
