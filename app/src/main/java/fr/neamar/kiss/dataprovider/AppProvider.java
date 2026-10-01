@@ -28,6 +28,7 @@ import fr.neamar.kiss.loader.LoadAppPojos;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.ContextualRanker;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.SemanticHints;
 import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
@@ -39,10 +40,6 @@ public class AppProvider extends Provider<AppPojo>
     // only a fallback for freezer/root tools that can bypass callbacks, so it must never compete
     // with Home rendering or search on the main thread.
     private static final long FROZEN_RECONCILE_INITIAL_DELAY_MS = 2500L;
-    private static final String PREF_DETECT_FROZEN = "smart-detect-frozen-apps";
-    private static final String PREF_KEEP_FROZEN_SEARCHABLE = "smart-keep-frozen-searchable";
-    private static final String PREF_PACKAGE_MONITORING = "smart-package-change-monitoring";
-    private static final String PREF_RECONCILE_INTERVAL = "smart-frozen-refresh-interval";
     private static volatile boolean launcherUiVisible;
     private static volatile boolean launcherScrolling;
     private static volatile AppProvider activeInstance;
@@ -110,7 +107,7 @@ public class AppProvider extends Provider<AppPojo>
 
         private void handleEvent(String action, String[] packageNames,
                                  android.os.UserHandle user, boolean replacing) {
-            if (prefs != null && !prefs.getBoolean(PREF_PACKAGE_MONITORING, true)) return;
+            if (!FrozenAppPreferences.monitorPackageChanges(AppProvider.this)) return;
             PackageAddedRemovedHandler.handleEvent(AppProvider.this, action, packageNames,
                     new UserHandle(AppProvider.this, user), replacing);
         }
@@ -301,29 +298,21 @@ public class AppProvider extends Provider<AppPojo>
     }
 
     private boolean isFrozenDetectionEnabled() {
-        return prefs == null || prefs.getBoolean(PREF_DETECT_FROZEN, true);
+        return FrozenAppPreferences.detect(this);
     }
 
     private long getFrozenReconcileDelayMs() {
-        if (prefs == null) return -1L;
-        String value = prefs.getString(PREF_RECONCILE_INTERVAL, "15");
-        if (value == null || "package-only".equals(value)) return -1L;
-        try {
-            long seconds = Long.parseLong(value);
-            return Math.max(15L, Math.min(300L, seconds)) * 1000L;
-        } catch (NumberFormatException ignored) {
-            return -1L;
-        }
+        return FrozenAppPreferences.reconcileDelayMs(this);
     }
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-        if (PREF_DETECT_FROZEN.equals(key)) {
+        if (FrozenAppPreferences.PREF_DETECT.equals(key)) {
             updateFrozenReconcileSchedule(launcherUiVisible);
             reload();
-        } else if (PREF_RECONCILE_INTERVAL.equals(key)) {
+        } else if (FrozenAppPreferences.PREF_RECONCILE_INTERVAL.equals(key)) {
             updateFrozenReconcileSchedule(launcherUiVisible);
-        } else if (PREF_KEEP_FROZEN_SEARCHABLE.equals(key)) {
+        } else if (FrozenAppPreferences.PREF_KEEP_SEARCHABLE.equals(key)) {
             sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         }
     }
@@ -353,9 +342,7 @@ public class AppProvider extends Provider<AppPojo>
         for (AppPojo pojo : getPojos()) {
             if ((checked++ & 31) == 0 && searcher.isCancelled()) return;
             if (pojo.isExcluded() && !prefs.getBoolean("enable-excluded-apps", false)) continue;
-            if (pojo.isDisabled()
-                    && (!isFrozenDetectionEnabled()
-                    || !prefs.getBoolean(PREF_KEEP_FROZEN_SEARCHABLE, true))) continue;
+            if (pojo.isDisabled() && !FrozenAppPreferences.keepSearchable(this)) continue;
             if (excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
 
             MatchInfo matchInfo = SmartMatcher.match(this, query, pojo.normalizedName, pojo.getName());
