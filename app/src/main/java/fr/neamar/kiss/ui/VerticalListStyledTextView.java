@@ -65,7 +65,8 @@ public class VerticalListStyledTextView extends AutoMarqueeTextView {
         int selectedColor = resolveConfiguredColor(colorValue, themeColor);
         setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
         setTypeface(SmartTextAppearance.typefaceFor(font));
-        setTextColor(applyContrast(selectedColor, themeColor, contrast));
+        int contrasted = applyContrast(selectedColor, themeColor, contrast);
+        setTextColor(SmartTextAppearance.applyTextColorInverter(getContext(), contrasted));
         setAlpha(1f);
         if (body) configureMultilineBody();
     }
