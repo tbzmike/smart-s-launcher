@@ -162,10 +162,49 @@ public final class SettingsSearchIndex {
                 SmartTextAppearance.PREF_TEXT_COLOR_INVERTER, "ui-holder", Destination.STANDARD, null);
         dynamic(out, "Default font family", "Global fallback font including search and result text", 
                 "smart-default-text-font-family", "ui-holder", Destination.STANDARD, null);
-        dynamic(out, "Default text size", "Global fallback text size", 
-                "smart-default-text-size-sp", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Default primary text size", "Global title/input fallback size", 
+                "smart-default-text-primary-size-sp", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Default secondary text size", "Global subtitle/preview fallback size", 
+                "smart-default-text-secondary-size-sp", "ui-holder", Destination.STANDARD, null);
         dynamic(out, "Default text style", "Global fallback normal, bold or italic appearance", 
-                "smart-default-text-style", "ui-holder", Destination.STANDARD, null);
+                "smart-default-text-font-style", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Default text colour", "Global fallback colour for launcher text",
+                "smart-default-text-color", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Default text shadow", "Enable or disable the global fallback text shadow",
+                "smart-default-text-shadow", "ui-holder", Destination.STANDARD, null);
+
+        dynamic(out, "Highlight text style", "Style for letters matching the typed query",
+                "smart-highlight-style", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Highlight text size", "Size of matching highlighted query text",
+                "smart-highlight-size-percent", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Highlight text colour", "Colour for matching highlighted query text",
+                "smart-highlight-color", "ui-holder", Destination.STANDARD, null);
+
+        dynamic(out, "Search title text size", "Size of primary search-result titles",
+                "smart-search-title-size-sp", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Search title font style", "Font and style of primary search-result titles",
+                "smart-search-title-font", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Search title text color", "Colour of primary search-result titles",
+                "smart-search-title-color", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Search title contrast", "Contrast of primary search-result titles",
+                "smart-search-title-contrast", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Search body/subtitle size", "Size of secondary search-result text",
+                "smart-search-body-size-sp", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Search body font style", "Font and style of secondary search-result text",
+                "smart-search-body-font", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Search body text color", "Colour of secondary search-result text",
+                "smart-search-body-color", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "Search body contrast", "Contrast of secondary search-result text",
+                "smart-search-body-contrast", "ui-holder", Destination.STANDARD, null);
+
+        dynamic(out, "History timestamp text size", "Size of History time, usage and count metadata",
+                "smart-history-meta-size-sp", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "History timestamp font style", "Font and style of History metadata",
+                "smart-history-meta-font", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "History timestamp text color", "Colour of History metadata",
+                "smart-history-meta-color", "ui-holder", Destination.STANDARD, null);
+        dynamic(out, "History timestamp contrast", "Contrast of History metadata",
+                "smart-history-meta-contrast", "ui-holder", Destination.STANDARD, null);
 
         dynamic(out, "App history layout", "Vertical list, Vertical Cards and 3D wheel",
                 "smart-history-layout", "history_category", Destination.STANDARD, null);
