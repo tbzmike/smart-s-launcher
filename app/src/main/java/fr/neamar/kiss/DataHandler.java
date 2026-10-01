@@ -1061,15 +1061,6 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
             DBHelper.remapHistoryRecord(this.context, id, canonicalId);
         }
         DBHelper.insertHistory(this.context, currentQuery, canonicalId);
-
-        // Pixel mode is predictive, not a static favorite row. Re-score it after an explicit
-        // launch; MainActivity already defers this broadcast while HOME is backgrounded, so this
-        // adds no competing work while the launched app owns the screen.
-        SharedPreferences launcherPrefs =
-                PreferenceManager.getDefaultSharedPreferences(this.context);
-        if ("pixel".equals(launcherPrefs.getString("favorites-bar-mode", "standard"))) {
-            refreshFavorites();
-        }
     }
 
     private void rememberLaunchedAppIdentity(@Nullable Pojo pojo) {
