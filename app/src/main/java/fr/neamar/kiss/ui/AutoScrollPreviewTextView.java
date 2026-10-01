@@ -14,6 +14,8 @@ import android.view.View;
 import android.widget.TextView;
 
 import fr.neamar.kiss.utils.LauncherScrollWorkGate;
+import fr.neamar.kiss.searcher.SearchHandler;
+import fr.neamar.kiss.searcher.Searcher;
 
 /**
  * Notification/message preview shared by Smart S result tiles.
@@ -126,7 +128,7 @@ public class AutoScrollPreviewTextView extends TextView {
         super.onAttachedToWindow();
         attached = true;
         refreshOverflowMode();
-        SmartTextAppearance.applySearchBody(this);
+        applySearchAppearanceIfNeeded();
         applyConfiguredBehavior();
         if (isAutoExpand()) {
             cancelScrollStep();
@@ -172,6 +174,7 @@ public class AutoScrollPreviewTextView extends TextView {
         arrowGesture = false;
         scrollTo(0, 0);
         if (!attached) return;
+        applySearchAppearanceIfNeeded();
         if (isAutoExpand()) scheduleLayoutRequest();
         else schedulePreviewRestart();
     }
@@ -296,6 +299,11 @@ public class AutoScrollPreviewTextView extends TextView {
         requestLayout();
         invalidate();
         announceForAccessibility(expanded ? "Message expanded" : "Message collapsed");
+    }
+
+    private void applySearchAppearanceIfNeeded() {
+        if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY) return;
+        SmartTextAppearance.applySearchBody(this);
     }
 
     private void applyConfiguredBehavior() {
