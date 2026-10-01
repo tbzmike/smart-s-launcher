@@ -334,6 +334,13 @@ public class AppResult extends ResultWithTags<AppPojo> {
                 if (icon == null) {
                     IconsHandler iconsHandler = KissApplication.getApplication(context).getIconsHandler();
                     icon = iconsHandler.getDrawableIconForPackage(getClassName(), pojo.userHandle);
+                    if (icon == null) {
+                        // A freezer can hide the launcher Activity while the package is still installed.
+                        // Fall back to package-level icon resolution (including icon-pack package aliases)
+                        // so History keeps the same visible app icon instead of rendering it blank.
+                        icon = iconsHandler.getDrawableIconForPackageName(
+                                pojo.packageName, pojo.userHandle);
+                    }
                     AppIconMemoryCache.put(context, pojo.getComponentName(), icon);
                 }
             }
