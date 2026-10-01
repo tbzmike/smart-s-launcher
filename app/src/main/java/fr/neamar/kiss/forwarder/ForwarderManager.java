@@ -50,6 +50,7 @@ public class ForwarderManager extends Forwarder {
         AppProvider.setLauncherScrolling(false);
         LauncherScrollWorkGate.setScrolling(false);
         SearchHandler.getInstance().onHistoryScrollIdle(mainActivity);
+        historyVisualEnhancer.onScrollIdle();
     };
 
     private final Runnable providerScrollStarted = () -> {
