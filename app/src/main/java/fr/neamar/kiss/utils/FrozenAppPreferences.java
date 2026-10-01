@@ -6,6 +6,9 @@ import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
 
+import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
+
 /**
  * Single source of truth for Smart S frozen/disabled-app settings.
  *
@@ -54,6 +57,22 @@ public final class FrozenAppPreferences {
 
     public static boolean keepHistoryAndFavorites(@NonNull Context context) {
         return detect(context) && prefs(context).getBoolean(PREF_KEEP_HISTORY, true);
+    }
+
+    /**
+     * Apply the frozen-history policy consistently to every launcher surface.
+     *
+     * IceBox shortcuts are launch routes owned by IceBox, not frozen Smart S app rows. They must
+     * remain governed by IceBox's own shortcut behavior instead of being hidden/greyed merely
+     * because the wrapped target app is frozen.
+     */
+    public static boolean keepInHistoryAndFavorites(@NonNull Context context, Pojo pojo) {
+        if (pojo == null || !pojo.isDisabled()) return true;
+        if (pojo instanceof ShortcutPojo
+                && ShortcutUtil.isIceBoxPublisher(context, ((ShortcutPojo) pojo).packageName)) {
+            return true;
+        }
+        return keepHistoryAndFavorites(context);
     }
 
     /**
