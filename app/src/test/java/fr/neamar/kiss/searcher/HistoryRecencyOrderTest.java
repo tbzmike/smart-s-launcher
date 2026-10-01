@@ -11,6 +11,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import fr.neamar.kiss.db.HistoryMode;
+import fr.neamar.kiss.pojo.Pojo;
 
 class HistoryRecencyOrderTest {
     private static final class RankedItem {
@@ -39,6 +40,32 @@ class HistoryRecencyOrderTest {
                 "Twitter", "Photos", "Item6", "Item4", "Item3", "Item2", "Item1");
         assertThat(toVisibleOldestToNewest(afterTwitterClickNewestFirst), is(Arrays.asList(
                 "Item1", "Item2", "Item3", "Item4", "Item6", "Photos", "Twitter")));
+    }
+
+    @Test
+    void frozenPresentationOrderSurvivesLaterRelevanceMutation() {
+        Pojo oldest = new Pojo("oldest") { };
+        Pojo middle = new Pojo("middle") { };
+        Pojo newest = new Pojo("newest") { };
+        oldest.setName("Oldest");
+        middle.setName("Middle");
+        newest.setName("Newest");
+        oldest.relevance = 1;
+        middle.relevance = 2;
+        newest.relevance = 3;
+
+        List<Pojo> frozen = HistoryRecencyOrder.freezeOldestToNewest(
+                Arrays.asList(newest, oldest, middle));
+
+        // Simulate a concurrent query/provider pass mutating the same shared Pojo objects after
+        // History has already decided its display order.
+        oldest.relevance = 1000;
+        middle.relevance = 500;
+        newest.relevance = -100;
+
+        assertThat(Arrays.asList(
+                frozen.get(0).id, frozen.get(1).id, frozen.get(2).id),
+                is(Arrays.asList("oldest", "middle", "newest")));
     }
 
     private static List<String> toVisibleOldestToNewest(List<String> newestFirst) {
