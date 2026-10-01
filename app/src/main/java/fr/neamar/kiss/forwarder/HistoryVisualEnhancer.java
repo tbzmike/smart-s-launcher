@@ -13,6 +13,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.AppUsageTodayStore;
 import fr.neamar.kiss.db.LaunchStatsProvider;
 import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 
 /** Loads native-list/wheel history metadata only while the active viewport is idle. */
 final class HistoryVisualEnhancer {
@@ -37,6 +38,7 @@ final class HistoryVisualEnhancer {
     private boolean hasLoadedSnapshot;
     private long generation;
     private long lastLoadUptime;
+    private long lastStatsGeneration = -1L;
     private Map<String, LaunchStatsProvider.LaunchStats> cachedStats = java.util.Collections.emptyMap();
     private AppUsageTodayStore.Snapshot cachedUsage;
 
@@ -120,7 +122,9 @@ final class HistoryVisualEnhancer {
         }
 
         long now = SystemClock.uptimeMillis();
-        if (!forceReload && hasLoadedSnapshot
+        long requestedGeneration = UniversalHistoryTimestamp.statsGeneration();
+        boolean explicitLaunchChanged = requestedGeneration != lastStatsGeneration;
+        if (!forceReload && !explicitLaunchChanged && hasLoadedSnapshot
                 && now - lastLoadUptime < MIN_RELOAD_INTERVAL_MS) {
             refreshPending = false;
             UniversalHistoryTimestamp.updateEnrichment(cachedStats, cachedUsage);
@@ -137,10 +141,19 @@ final class HistoryVisualEnhancer {
                         LaunchStatsProvider.loadAll(activity.getApplicationContext(), signal);
                 if (signal.isCanceled() || Thread.currentThread().isInterrupted()) return;
 
-                // Do not query UsageStats for Vertical List. It is optional decoration and can keep
-                // running after a fling begins on some vendor builds. Scroll-critical History now
-                // performs only the single cancellation-aware SQLite stats query.
-                activity.runOnUiThread(() -> finishRefresh(taskGeneration, stats, null));
+                AppUsageTodayStore.Snapshot usage = null;
+                // Full History metadata includes today's foreground duration. Query only from the
+                // low-priority idle worker and never begin the UsageStats binder call while the
+                // launcher is moving; AppUsageTodayStore also shares a 30-second process cache.
+                if (!historyDisplayForwarder.isScrollInProgress()
+                        && !LauncherScrollWorkGate.isScrolling()) {
+                    usage = AppUsageTodayStore.getToday(activity.getApplicationContext());
+                }
+                if (signal.isCanceled() || Thread.currentThread().isInterrupted()) return;
+
+                AppUsageTodayStore.Snapshot finalUsage = usage;
+                activity.runOnUiThread(() ->
+                        finishRefresh(taskGeneration, stats, finalUsage));
             } catch (OperationCanceledException ignored) {
                 // Expected when the user starts scrolling.
             }
@@ -167,6 +180,7 @@ final class HistoryVisualEnhancer {
         cachedStats = stats == null ? java.util.Collections.emptyMap() : stats;
         cachedUsage = usage;
         lastLoadUptime = SystemClock.uptimeMillis();
+        lastStatsGeneration = UniversalHistoryTimestamp.statsGeneration();
         forceReload = false;
         hasLoadedSnapshot = true;
         // Update only the model/cache. Rewriting visible TextViews here caused the exact
