@@ -140,7 +140,8 @@ final class VerticalCardViewportController extends Forwarder {
         pendingVisualHistoryUpdate = true;
         pendingNotificationAttention |= notificationPosted;
         scheduleLatestCardControlsUpdate();
-        if (notificationPosted && !policy.isPersistentBottomPinned()) startLatestAttentionPulse();
+        // Keep the latest controls static. Repeated notification updates (for example ongoing VPN
+        // status notifications) must not restart a multi-frame pulse while History is visible.
     }
 
     void onPendingHistoryApplied() {
@@ -270,7 +271,7 @@ final class VerticalCardViewportController extends Forwarder {
         ensureSavedReturnSnapshotLoaded();
         requestSavedReturnRestore();
         scheduleLatestCardControlsUpdate();
-        if (pendingNotificationAttention) startLatestAttentionPulse();
+        // Pending notification attention is indicated by the visible latest controls only.
     }
 
     /** Forward exact IME state into the layout-driven viewport policy. */
@@ -515,42 +516,9 @@ final class VerticalCardViewportController extends Forwarder {
     }
 
     private void startLatestAttentionPulse() {
-        if (destroyed || !pendingNotificationAttention || policy.isPersistentBottomPinned()) return;
-        int token = ++latestAttentionPulseGeneration;
-        View target = host != null ? host : scroller;
-        if (target == null) return;
-        target.postOnAnimation(() -> runLatestAttentionPulse(token, 0));
-    }
-
-    private void runLatestAttentionPulse(int token, int step) {
-        if (token != latestAttentionPulseGeneration || destroyed || !resumed
-                || !pendingNotificationAttention || policy.isPersistentBottomPinned()) {
-            resetLatestControlTransforms();
-            return;
-        }
-        updateLatestCardControls();
-        boolean bright = (step & 1) == 0;
-        animateLatestControl(leftLatestCardButton, bright);
-        animateLatestControl(rightLatestCardButton, bright);
-        if (step >= 7) {
-            resetLatestControlTransforms();
-            return;
-        }
-        View target = host != null ? host : scroller;
-        if (target != null) {
-            target.postDelayed(() -> runLatestAttentionPulse(token, step + 1), 190L);
-        }
-    }
-
-    private void animateLatestControl(@Nullable View control, boolean bright) {
-        if (control == null || control.getVisibility() != View.VISIBLE) return;
-        control.animate().cancel();
-        control.animate()
-                .alpha(bright ? 1f : 0.72f)
-                .scaleX(bright ? 1.14f : 1f)
-                .scaleY(bright ? 1.14f : 1f)
-                .setDuration(170L)
-                .start();
+        // Intentionally static: no recurring alpha/scale animation. The prior 8-step pulse could be
+        // restarted by every notification update and compete with ScrollView rendering.
+        resetLatestControlTransforms();
     }
 
     private void stopLatestAttentionPulse() {
