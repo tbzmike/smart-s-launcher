@@ -13,6 +13,7 @@ import fr.neamar.kiss.pojo.Pojo;
 public final class TileLaunchCounter {
     private static final String PREFS = "smart-s-tile-launch-counts";
     private static final String COUNT_PREFIX = "count:";
+    private static final String DAY_COUNT_PREFIX = "day-count:";
     private static final Object LOCK = new Object();
 
     private TileLaunchCounter() {}
@@ -25,6 +26,15 @@ public final class TileLaunchCounter {
             return;
         }
         increment(context, storageKey(pojo));
+    }
+
+    /** Return explicit clicks recorded for this exact tile during the current local day. */
+    public static long getToday(@NonNull Context context, @NonNull Pojo pojo) {
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            return getNotificationToday(context, notification.id, notification.postTime);
+        }
+        return readToday(context, storageKey(pojo));
     }
 
     /** Return the number of clicks recorded for this exact tile since tracking became available. */
@@ -43,6 +53,13 @@ public final class TileLaunchCounter {
         increment(context, notificationStorageKey(notificationId, postTime));
     }
 
+    /** Return today's clicks for one exact notification identity. */
+    public static long getNotificationToday(@NonNull Context context,
+                                            String notificationId,
+                                            long postTime) {
+        return readToday(context, notificationStorageKey(notificationId, postTime));
+    }
+
     /** Return clicks for one exact notification identity. */
     public static long getNotificationTotal(@NonNull Context context,
                                             String notificationId,
@@ -58,8 +75,34 @@ public final class TileLaunchCounter {
             String countKey = COUNT_PREFIX + key;
             long current = Math.max(0L, prefs.getLong(countKey, 0L));
             long next = current == Long.MAX_VALUE ? Long.MAX_VALUE : current + 1L;
-            prefs.edit().putLong(countKey, next).apply();
+
+            String dayKey = DAY_COUNT_PREFIX + startOfToday() + ":" + key;
+            long today = Math.max(0L, prefs.getLong(dayKey, 0L));
+            long nextToday = today == Long.MAX_VALUE ? Long.MAX_VALUE : today + 1L;
+            prefs.edit()
+                    .putLong(countKey, next)
+                    .putLong(dayKey, nextToday)
+                    .apply();
         }
+    }
+
+    private static long readToday(@NonNull Context context, String key) {
+        if (TextUtils.isEmpty(key)) return 0L;
+        synchronized (LOCK) {
+            String dayKey = DAY_COUNT_PREFIX + startOfToday() + ":" + key;
+            return Math.max(0L, context.getApplicationContext()
+                    .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .getLong(dayKey, 0L));
+        }
+    }
+
+    private static long startOfToday() {
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        calendar.set(java.util.Calendar.MINUTE, 0);
+        calendar.set(java.util.Calendar.SECOND, 0);
+        calendar.set(java.util.Calendar.MILLISECOND, 0);
+        return calendar.getTimeInMillis();
     }
 
     private static long read(@NonNull Context context, String key) {
