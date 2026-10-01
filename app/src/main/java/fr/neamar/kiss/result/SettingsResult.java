@@ -312,7 +312,7 @@ public class SettingsResult extends Result<SettingPojo> {
                     context, history.historyDbId);
             if (record != null) {
                 SavedNotificationDestinationResolver.OpenResult result =
-                        SavedNotificationDestinationResolver.openExactResult(context, record);
+                        SavedNotificationDestinationResolver.openExactOrAppResult(context, record);
                 if (handleExactNotificationResult(context, record.appName,
                         record.packageName, result)) return;
             }
