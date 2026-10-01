@@ -309,7 +309,7 @@ public final class RichNotificationHistoryDialog {
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
                 SavedNotificationDestinationResolver.OpenResult result =
-                        SavedNotificationDestinationResolver.openExactResult(context, record);
+                        SavedNotificationDestinationResolver.openExactOrAppResult(context, record);
                 if (result.accepted()) {
                     SmartAnimationEngine.dismissDialog(dialog);
                 } else if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
