@@ -17,6 +17,45 @@ final class PixelFavoritesPolicy {
 
     private PixelFavoritesPolicy() { }
 
+    static final class PredictionSignal {
+        final int launchesToday;
+        final int launchesLast24Hours;
+        final int launchesLast7Days;
+        final long foregroundMsToday;
+        final long lastLaunchTime;
+        final int totalLaunches;
+
+        PredictionSignal(int launchesToday, int launchesLast24Hours, int launchesLast7Days,
+                         long foregroundMsToday, long lastLaunchTime, int totalLaunches) {
+            this.launchesToday = Math.max(0, launchesToday);
+            this.launchesLast24Hours = Math.max(0, launchesLast24Hours);
+            this.launchesLast7Days = Math.max(0, launchesLast7Days);
+            this.foregroundMsToday = Math.max(0L, foregroundMsToday);
+            this.lastLaunchTime = Math.max(0L, lastLaunchTime);
+            this.totalLaunches = Math.max(0, totalLaunches);
+        }
+    }
+
+    /**
+     * Pixel-style suggestions should react to what the user is using now, not be permanently
+     * dominated by an app's lifetime count. Compare recent frequency first, then today's foreground
+     * usage, then recency and finally lifetime frequency as a stable tie-breaker.
+     */
+    static int comparePrediction(PredictionSignal left, PredictionSignal right) {
+        int byToday = Integer.compare(right.launchesToday, left.launchesToday);
+        if (byToday != 0) return byToday;
+        int by24h = Integer.compare(right.launchesLast24Hours, left.launchesLast24Hours);
+        if (by24h != 0) return by24h;
+        int by7d = Integer.compare(right.launchesLast7Days, left.launchesLast7Days);
+        if (by7d != 0) return by7d;
+        int byForeground = Long.compare(right.foregroundMsToday, left.foregroundMsToday);
+        if (byForeground != 0) return byForeground;
+        int byRecent = Long.compare(right.lastLaunchTime, left.lastLaunchTime);
+        if (byRecent != 0) return byRecent;
+        return Integer.compare(right.totalLaunches, left.totalLaunches);
+    }
+
+
     static int clampMaxApps(int value) {
         return Math.max(1, Math.min(MAX_APPS, value));
     }
