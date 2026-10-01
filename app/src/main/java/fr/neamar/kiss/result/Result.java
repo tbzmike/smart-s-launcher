@@ -73,6 +73,7 @@ import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.AnimatedListView;
 import fr.neamar.kiss.ui.ListPopup;
+import fr.neamar.kiss.ui.SmartTextAppearance;
 import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.utils.ClipboardUtils;
@@ -262,7 +263,8 @@ public abstract class Result<T extends Pojo> {
 
         if (!resultHighlighting.isEmpty()) {
             int primaryColor = UIColors.getPrimaryColor(context);
-            int highlightColor = resolveHighlightColor(prefs, primaryColor);
+            int highlightColor = SmartTextAppearance.applyTextColorInverter(
+                    context, resolveHighlightColor(prefs, primaryColor));
             int sizePercent = readIntPreference(prefs, "smart-highlight-size-percent", 100, 50, 200);
             String customStyle = prefs.getString("smart-highlight-style", "legacy");
             int len = text.length();
