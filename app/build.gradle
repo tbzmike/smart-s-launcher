@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.134 - reliable bottom search and IceBox target icons
-        versionCode 562
-        versionName "3.30.134"
+        // Smart S Launcher 3.30.135 - permanent launch history
+        versionCode 563
+        versionName "3.30.135"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
