@@ -1,6 +1,7 @@
 package fr.neamar.kiss.forwarder;
 
 import android.graphics.Color;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.text.format.DateUtils;
@@ -48,6 +49,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
     // Keep the existing tag so the old partial "Used today" line is upgraded in place.
     private static final String USAGE_VIEW_TAG = "smart-s-used-today";
+    private static final long MIN_LAUNCH_STATS_REFRESH_MS = 60_000L;
 
     private final SmartCardListForwarder smartCardListForwarder;
     private final VerticalCardViewportController viewportController;
@@ -67,6 +69,8 @@ final class VerticalCardUsageForwarder extends Forwarder {
     private Map<String, String> loadedShortcutTargets = Collections.emptyMap();
     private Map<String, String> pendingShortcutTargets = Collections.emptyMap();
     private boolean refreshRequested;
+    private boolean launchStatsLoaded;
+    private long lastLaunchStatsRefreshUptime;
     private boolean paused;
     private volatile boolean destroyed;
     private boolean pendingApplyFromDataSet;
@@ -179,6 +183,8 @@ final class VerticalCardUsageForwarder extends Forwarder {
                 refreshInFlight.set(false);
                 if (destroyed) return;
                 launchStats = freshStats;
+                launchStatsLoaded = true;
+                lastLaunchStatsRefreshUptime = SystemClock.uptimeMillis();
                 snapshot = fresh;
                 shortcutSnapshot = freshShortcuts;
                 loadedShortcutTargets = requestedTargets;
@@ -197,11 +203,16 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private void refreshLaunchStatsAsync() {
-        if (smartCardListForwarder.isScrollInProgress()) {
-            smartCardListForwarder.runWhenScrollIdle(this::refreshLaunchStatsAsync);
+        if (smartCardListForwarder.isScrollInProgress()) return;
+        if (destroyed || !isEnabled()) return;
+
+        long now = SystemClock.uptimeMillis();
+        if (launchStatsLoaded
+                && now - lastLaunchStatsRefreshUptime < MIN_LAUNCH_STATS_REFRESH_MS) {
             return;
         }
-        if (destroyed || !isEnabled() || !statsRefreshInFlight.compareAndSet(false, true)) return;
+        if (!statsRefreshInFlight.compareAndSet(false, true)) return;
+
         final android.content.Context appContext = mainActivity.getApplicationContext();
         usageExecutor.execute(() -> {
             Map<String, LaunchStatsProvider.LaunchStats> freshStats = loadLaunchStats(appContext);
@@ -213,6 +224,8 @@ final class VerticalCardUsageForwarder extends Forwarder {
                 statsRefreshInFlight.set(false);
                 if (destroyed) return;
                 launchStats = freshStats;
+                launchStatsLoaded = true;
+                lastLaunchStatsRefreshUptime = SystemClock.uptimeMillis();
                 postApplySnapshot(false, true);
             });
         });
