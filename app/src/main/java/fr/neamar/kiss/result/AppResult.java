@@ -160,8 +160,10 @@ public class AppResult extends ResultWithTags<AppPojo> {
                 NotificationListener.NotificationSnapshot latest = active.get(0);
                 TileLaunchCounter.recordNotification(context, latest.id, latest.postTime);
             }
-            if (!NotificationListener.openLatestNotification(context, packageKey)) {
-                Toast.makeText(context, "No exact notification destination is available.",
+            if (!NotificationListener.openLatestNotification(context, packageKey)
+                    && !AppLaunchUtils.launchPackage(context, pojo.packageName)) {
+                Toast.makeText(context,
+                        "No exact notification destination is available and the app could not be opened.",
                         Toast.LENGTH_SHORT).show();
             }
         };
