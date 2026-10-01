@@ -511,7 +511,10 @@ public class Favorites extends Forwarder {
         }
 
         List<String> rankedKeys = new ArrayList<>();
-        if (pinnedKeys.size() < max && launchStats != null && !launchStats.isEmpty()) {
+        boolean hasLaunchSignals = launchStats != null && !launchStats.isEmpty();
+        boolean hasUsageSignals = usageSnapshot != null && usageSnapshot.available
+                && !usageSnapshot.foregroundMsByPackage.isEmpty();
+        if (pinnedKeys.size() < max && (hasLaunchSignals || hasUsageSignals)) {
             List<AppPojo> availableApps = dataHandler.getApplicationsWithoutExcluded();
             if (availableApps != null && !availableApps.isEmpty()) {
                 List<AppPojo> rankedApps = new ArrayList<>(availableApps);
@@ -536,8 +539,12 @@ public class Favorites extends Forwarder {
 
                 for (AppPojo app : rankedApps) {
                     if (app == null) continue;
-                    LaunchStatsProvider.LaunchStats stats = launchStats.get(app.getHistoryId());
-                    if (stats == null || stats.totalLaunches <= 0) continue;
+                    LaunchStatsProvider.LaunchStats stats = launchStats == null
+                            ? null : launchStats.get(app.getHistoryId());
+                    long foregroundToday = usageForPackage(usageSnapshot, app.packageName);
+                    if ((stats == null || stats.totalLaunches <= 0) && foregroundToday <= 0L) {
+                        continue;
+                    }
 
                     String key = AppIdentityResolver.canonicalSelectionKey(
                             mainActivity, dataHandler, app);
