@@ -124,8 +124,14 @@ public class DBHelper {
     }
 
     private static Cursor getHistoryByRecency(SQLiteDatabase db, int limit) {
-        return db.query(true, "history", new String[]{"record", "1"}, null, null,
-                null, null, "_id DESC", Integer.toString(limit));
+        // "SELECT DISTINCT record ... ORDER BY _id DESC" does not mean "latest occurrence of
+        // each record first". SQLite is free to choose which duplicate row survives DISTINCT,
+        // so a just-launched app can briefly appear from the warm UI and then disappear again
+        // when the authoritative History query completes. Group by the identity and explicitly
+        // order by its newest row id instead.
+        return db.rawQuery(
+                "SELECT record, 1 FROM history GROUP BY record ORDER BY MAX(_id) DESC LIMIT ?",
+                new String[]{Integer.toString(limit)});
     }
 
     /**
@@ -228,9 +234,11 @@ public class DBHelper {
     public static List<ValuedHistoryRecord> getHistoryByRecency(
             Context context, int limit, CancellationSignal cancellationSignal) {
         return DatabaseRecovery.run(context, recoveryDb -> {
-            Cursor cursor = recoveryDb.query(true, "history", new String[]{"record", "1"},
-                    null, null, null, null, "_id DESC", Integer.toString(limit),
-                    cancellationSignal);
+            // Keep the cancellable Home-timeline read semantically identical to the normal RECENCY
+            // path: one row per history identity, ordered by that identity's newest launch.
+            Cursor cursor = recoveryDb.rawQuery(
+                    "SELECT record, 1 FROM history GROUP BY record ORDER BY MAX(_id) DESC LIMIT ?",
+                    new String[]{Integer.toString(limit)}, cancellationSignal);
             return readCursor(cursor);
         });
     }
