@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.142 - unified icon context menus and resilient notification routes
-        versionCode 570
-        versionName "3.30.142"
+        // Smart S Launcher 3.30.143 - restore bottom-bar taps and frozen Pixel app launches
+        versionCode 571
+        versionName "3.30.143"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
