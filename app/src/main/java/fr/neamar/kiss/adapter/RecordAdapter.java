@@ -58,6 +58,7 @@ import fr.neamar.kiss.ui.AutoScrollPreviewTextView;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationBellStyle;
+import fr.neamar.kiss.ui.SmartTextAppearance;
 import fr.neamar.kiss.ui.TextOverflowMode;
 import fr.neamar.kiss.ui.TileVisualStyle;
 import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
