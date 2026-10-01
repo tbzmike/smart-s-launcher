@@ -61,6 +61,7 @@ import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.TextOverflowMode;
 import fr.neamar.kiss.ui.TileVisualStyle;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
@@ -1071,8 +1072,23 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (isRefresh
                 && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
                 && (TextUtils.isEmpty(query) || "<history>".equals(query))) {
+            // Preserve rows across transient provider gaps, but never use that safety net to defeat
+            // the user's explicit frozen-history policy. When retention is off, an already-visible
+            // disabled app is allowed to leave History on the next authoritative refresh.
+            List<Result<?>> preservable = results;
+            if (!FrozenAppPreferences.keepHistoryAndFavorites(context)) {
+                preservable = new ArrayList<>(results.size());
+                for (Result<?> existingResult : results) {
+                    Pojo existingPojo = existingResult == null ? null : existingResult.getPojo();
+                    if (existingPojo instanceof AppPojo
+                            && ((AppPojo) existingPojo).isDisabled()) {
+                        continue;
+                    }
+                    preservable.add(existingResult);
+                }
+            }
             updatedResults = HistoryRefreshPreserver.preserveMissing(
-                    results, updatedResults,
+                    preservable, updatedResults,
                     result -> result == null || result.getPojo() == null
                             ? null : reuseKey(result.getPojo()));
         }
