@@ -17,6 +17,7 @@ import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.dataprovider.AppProvider;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.UserHandle;
 
@@ -24,6 +25,7 @@ public class PackageAddedRemovedHandler extends BroadcastReceiver {
 
     public static void handleEvent(@NonNull Context ctx, @Nullable String action, @NonNull String[] packageNames, @NonNull UserHandle user, boolean replacing) {
         if (packageNames.length == 1 && packageNames[0].equalsIgnoreCase(ctx.getPackageName())) return;
+        if (!FrozenAppPreferences.monitorPackageChanges(ctx)) return;
 
         // Freeze/unfreeze changes must be reflected immediately. AppLaunchUtils normally caches
         // package enabled state for a short period, which is useful during ordinary rendering but
