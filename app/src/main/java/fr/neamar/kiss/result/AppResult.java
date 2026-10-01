@@ -44,6 +44,7 @@ import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.utils.AppIconMemoryCache;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
