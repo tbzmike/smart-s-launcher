@@ -4,7 +4,6 @@ import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.os.SystemClock;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
 import android.text.format.DateUtils;
@@ -20,18 +19,12 @@ import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.MainActivity;
-import fr.neamar.kiss.db.LaunchHistoryStatsStore;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.notification.NotificationTimelineState;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -59,21 +52,11 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String DETAILS_TOGGLE_DESCRIPTION = "Show card details";
     private static final float BOTTOM_SWIPE_THRESHOLD_DP = 28f;
     private static final float BOTTOM_SWIPE_AXIS_BIAS = 1.15f;
-    private static final long MIN_LAUNCH_STATS_REFRESH_MS = 60_000L;
 
     private final SmartCardListForwarder smartCardListForwarder;
-    private final ExecutorService launchStatsExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "smart-s-card-launch-stats");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
-    private final AtomicBoolean launchStatsRefreshInFlight = new AtomicBoolean(false);
     private final List<AttentionBorder> attentionBorders = new ArrayList<>();
     private ViewGroup column;
     private ScrollView scroller;
-    private Map<String, LaunchHistoryStatsStore.Stats> launchStats = Collections.emptyMap();
-    private boolean launchStatsLoaded;
-    private long lastLaunchStatsRefreshUptime;
     private boolean paused;
     private volatile boolean destroyed;
 
@@ -102,12 +85,10 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     void onDestroy() {
         destroyed = true;
         paused = true;
-        launchStatsExecutor.shutdownNow();
         resetBottomSwipe();
         resetAttentionBorders();
         column = null;
         scroller = null;
-        launchStats = Collections.emptyMap();
     }
 
     private boolean isEnabled() {
@@ -130,42 +111,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         }
         resolveViews();
         if (!paused && column != null) column.post(this::apply);
-        refreshLaunchStatsAsync();
-    }
-
-    private void refreshLaunchStatsAsync() {
-        if (destroyed || paused || !isEnabled() || smartCardListForwarder.isScrollInProgress()) {
-            return;
-        }
-
-        long now = SystemClock.uptimeMillis();
-        if (launchStatsLoaded
-                && now - lastLaunchStatsRefreshUptime < MIN_LAUNCH_STATS_REFRESH_MS) {
-            return;
-        }
-        if (!launchStatsRefreshInFlight.compareAndSet(false, true)) return;
-
-        final android.content.Context appContext = mainActivity.getApplicationContext();
-        launchStatsExecutor.execute(() -> {
-            Map<String, LaunchHistoryStatsStore.Stats> fresh;
-            try {
-                fresh = LaunchHistoryStatsStore.getAll(appContext);
-            } catch (RuntimeException ignored) {
-                fresh = Collections.emptyMap();
-            }
-            final Map<String, LaunchHistoryStatsStore.Stats> result = fresh;
-            mainActivity.runOnUiThread(() -> {
-                launchStatsRefreshInFlight.set(false);
-                if (destroyed) return;
-                launchStats = result;
-                launchStatsLoaded = true;
-                lastLaunchStatsRefreshUptime = SystemClock.uptimeMillis();
-                resolveViews();
-                if (!paused && column != null && !smartCardListForwarder.isScrollInProgress()) {
-                    column.post(this::apply);
-                }
-            });
-        });
     }
 
     private void resolveViews() {
@@ -200,7 +145,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             Result<?> result = resultsByPojoId.get(stableId);
             if (result == null) continue;
 
-            applyLaunchStats(wrapper, result);
             applyEasyIconTap(wrapper, result, stableId);
 
             NotificationPojo notification = result.getPojo() instanceof NotificationPojo
@@ -531,45 +475,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             if (found != null) return found;
         }
         return null;
-    }
-
-    private void applyLaunchStats(View wrapper, Result<?> result) {
-        if (!(wrapper instanceof ViewGroup) || result == null || result.getPojo() == null
-                || result.getPojo() instanceof NotificationPojo) return;
-        ViewGroup group = (ViewGroup) wrapper;
-        AutoMarqueeTextView strip = null;
-
-        for (int i = group.getChildCount() - 1; i >= 0; i--) {
-            View child = group.getChildAt(i);
-            if (child instanceof AutoMarqueeTextView) {
-                strip = (AutoMarqueeTextView) child;
-                break;
-            }
-        }
-        if (strip == null) return;
-
-        String historyId = result.getPojo().getHistoryId();
-        LaunchHistoryStatsStore.Stats stats = launchStats.get(historyId);
-        String currentText = strip.getText() == null ? "" : strip.getText().toString().trim();
-        int marker = currentText.indexOf(STATS_MARKER);
-        String appName = marker > 0 ? currentText.substring(0, marker).trim() : currentText;
-        if (appName.isEmpty()) {
-            appName = result.getPojo().getName();
-            if (appName == null || appName.trim().isEmpty()) appName = "App";
-        }
-
-        String last;
-        int today = 0;
-        if (stats == null || stats.lastLaunchTime <= 0L) {
-            last = "Never";
-        } else {
-            last = DateFormat.getTimeFormat(mainActivity).format(new Date(stats.lastLaunchTime));
-            today = stats.launchesToday;
-        }
-        String times = today == 1 ? "1 time today" : today + " times today";
-        String summary = appName + STATS_MARKER + last + "  •  Launched: " + times;
-        if (!TextUtils.equals(strip.getText(), summary)) strip.setText(summary);
-        strip.setContentDescription(appName + ", last launched " + last + ", launched " + times);
     }
 
     private boolean isDetailsToggle(View view) {
