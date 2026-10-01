@@ -9,6 +9,7 @@ import android.util.AttributeSet;
 import android.widget.TextView;
 
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 
@@ -201,7 +202,7 @@ public class AutoMarqueeTextView extends TextView {
 
     private void scheduleMarqueeRestart() {
         removeCallbacks(deferredMarqueeRestart);
-        if (isNativeVerticalListRow()) {
+        if (isNativeVerticalListRow() || LauncherScrollWorkGate.isScrolling()) {
             setSelected(false);
             return;
         }
@@ -222,7 +223,8 @@ public class AutoMarqueeTextView extends TextView {
     }
 
     private boolean isActuallyVisibleOnScreen() {
-        if (!isShown() || !isAttachedToWindow() || !hasWindowFocus()) return false;
+        if (LauncherScrollWorkGate.isScrolling()
+                || !isShown() || !isAttachedToWindow() || !hasWindowFocus()) return false;
         visibleRect.setEmpty();
         return getLocalVisibleRect(visibleRect)
                 && visibleRect.width() > 0
@@ -231,7 +233,10 @@ public class AutoMarqueeTextView extends TextView {
 
     private void restartMarquee() {
         applyConfiguredBehavior();
-        if (isAutoExpand()) return;
+        if (isAutoExpand() || LauncherScrollWorkGate.isScrolling()) {
+            setSelected(false);
+            return;
+        }
         setSelected(false);
         setSelected(true);
         invalidate();
