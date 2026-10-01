@@ -510,8 +510,6 @@ public class SearchHandler {
                 if (historyId != null) excluded.add(historyId);
             }
         }
-        boolean keepFrozenHistory = FrozenAppPreferences.keepHistoryAndFavorites(activity);
-
         return HomeHistoryWindow.select(
                 seed,
                 RecentLaunchTracker.getMostRecent(),
@@ -523,9 +521,7 @@ public class SearchHandler {
                     if (historyId == null || excluded.contains(historyId) || excluded.contains(pojo.id)) {
                         return false;
                     }
-                    return keepFrozenHistory
-                            || !(pojo instanceof AppPojo)
-                            || !((AppPojo) pojo).isDisabled();
+                    return FrozenAppPreferences.keepInHistoryAndFavorites(activity, pojo);
                 });
     }
 
@@ -559,7 +555,9 @@ public class SearchHandler {
             Pojo pojo = dataHandler.getItemById(record.record);
             if (pojo == null) pojo = RecentLaunchTracker.resolve(record.record);
             if (pojo == null) pojo = dataHandler.resolveRememberedAppHistory(record.record);
-            if (pojo == null || excluded.contains(pojo.id) || !seen.add(pojo.id)) continue;
+            if (pojo == null || excluded.contains(pojo.id)
+                    || !FrozenAppPreferences.keepInHistoryAndFavorites(activity, pojo)
+                    || !seen.add(pojo.id)) continue;
             seed.add(pojo);
             if (seed.size() >= HISTORY_PREVIEW_SEED_LIMIT) break;
         }
