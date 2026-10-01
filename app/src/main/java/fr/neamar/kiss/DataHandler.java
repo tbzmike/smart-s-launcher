@@ -385,7 +385,6 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         List<ValuedHistoryRecord> ids = DBHelper.getHistory(context, extendedItemCount, historyMode);
 
         // Find associated items
-        boolean keepFrozenHistory = FrozenAppPreferences.keepHistoryAndFavorites(context);
         int size = ids.size();
         for (int i = 0; i < ids.size(); i++) {
             // Ask all providers if they know this id
@@ -397,7 +396,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
             if (pojo == null) {
                 continue;
             }
-            if (!keepFrozenHistory && pojo instanceof AppPojo && ((AppPojo) pojo).isDisabled()) {
+            if (!FrozenAppPreferences.keepInHistoryAndFavorites(context, pojo)) {
                 continue;
             }
 
@@ -884,7 +883,6 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
     public List<Pojo> getFavorites() {
         List<String> favoriteIds = getFavoriteIds();
         List<Pojo> favorites = new ArrayList<>(favoriteIds.size());
-        boolean keepFrozenHistory = FrozenAppPreferences.keepHistoryAndFavorites(context);
         // Find associated items. Provider reloads must not make a configured frozen favorite
         // disappear: recover the exact remembered app identity while the provider is rebuilding.
         for (int i = 0; i < favoriteIds.size(); i++) {
@@ -893,8 +891,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
             if (pojo == null) pojo = RecentLaunchTracker.resolve(id);
             if (pojo == null) pojo = resolveRememberedAppHistory(id);
             if (pojo != null
-                    && (keepFrozenHistory || !(pojo instanceof AppPojo)
-                    || !((AppPojo) pojo).isDisabled())) {
+                    && FrozenAppPreferences.keepInHistoryAndFavorites(context, pojo)) {
                 favorites.add(pojo);
             }
         }
