@@ -358,6 +358,18 @@ public class ForwarderManager extends Forwarder {
         experienceTweaks.updateSearchRecords(query);
     }
 
+    /**
+     * A user explicitly launched an existing History row. This is not a passive provider update:
+     * the selected row must physically become the newest/bottom row in every renderer immediately.
+     */
+    public void prepareExplicitHistoryLaunchReorder() {
+        if (!isHistorySearch()) return;
+        if (isVerticalCardsMode()) {
+            smartCardListForwarder.forceHistoryRebuildOnNextDataSetChange();
+            verticalCardViewportController.beginExplicitBottomNavigation();
+        }
+    }
+
     /** Force QUERY -> default HISTORY after a verified successful external search launch. */
     public void prepareDefaultHistoryAfterSearchLaunch() {
         if (!isVerticalCardsMode()) return;
