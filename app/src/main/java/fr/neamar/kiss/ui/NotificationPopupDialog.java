@@ -23,6 +23,7 @@ import fr.neamar.kiss.notification.NotificationIdentityIcon;
 import java.util.List;
 
 import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.utils.AppLaunchUtils;
 
 /**
  * Window-level notification viewer used by launcher timeline rows.
@@ -205,10 +206,14 @@ public final class NotificationPopupDialog {
                 AppNativeDialogStyle.styleButton(open, accent);
                 open.setOnClickListener(v -> {
                     boolean opened = NotificationListener.openNotification(context, snapshot.id);
+                    if (!opened && packageName != null && !packageName.isEmpty()) {
+                        opened = AppLaunchUtils.launchPackage(context, packageName);
+                    }
                     if (opened) {
                         SmartAnimationEngine.dismissDialog(dialog);
                     } else {
-                        Toast.makeText(context, "Unable to open this notification",
+                        Toast.makeText(context,
+                                "Unable to open this notification or its app.",
                                 Toast.LENGTH_SHORT).show();
                     }
                 });
