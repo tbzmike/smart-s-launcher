@@ -283,7 +283,8 @@ public class ForwarderManager extends Forwarder {
     }
 
     private void rebuildDeferredVerticalCardsFromManualBottom() {
-        if (rebuildPendingVerticalCards(true)) {
+        boolean keepBottom = smartCardListForwarder.consumeDeferredKeepBottom();
+        if (rebuildPendingVerticalCards(keepBottom)) {
             lockedHistoryGestureBridge.onDataSetChanged();
         }
     }
