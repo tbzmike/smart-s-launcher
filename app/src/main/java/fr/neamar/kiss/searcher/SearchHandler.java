@@ -536,6 +536,7 @@ public class SearchHandler {
             if (record == null || record.record == null || excluded.contains(record.record)) continue;
             Pojo pojo = dataHandler.getItemById(record.record);
             if (pojo == null) pojo = RecentLaunchTracker.resolve(record.record);
+            if (pojo == null) pojo = dataHandler.resolveRememberedAppHistory(record.record);
             if (pojo == null || excluded.contains(pojo.id) || !seen.add(pojo.id)) continue;
             seed.add(pojo);
             if (seed.size() >= HISTORY_PREVIEW_SEED_LIMIT) break;
