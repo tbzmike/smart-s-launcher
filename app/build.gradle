@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.143 - restore bottom-bar taps and frozen Pixel app launches
-        versionCode 571
-        versionName "3.30.143"
+        // Smart S Launcher 3.30.144 - deterministic single-tap routing and exact message-body opens
+        versionCode 572
+        versionName "3.30.144"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
