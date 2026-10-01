@@ -23,6 +23,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.notification.NotificationListener;
@@ -37,17 +38,13 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
 
 /**
- * Makes notification-history behavior explicit on the custom Vertical Cards renderer and enriches
- * the existing between-card label with launch activity from the KISS history table.
+ * Makes notification-history behavior explicit on the custom Vertical Cards renderer.
  *
- * Decoration is applied only when cards are created/rebuilt. Unread notifications keep the
- * original orange/white flashing attention border, but each border now uses a tiny AnimationDrawable
- * overlay instead of a renderer-wide Handler loop. Card geometry is updated only when layout size
- * actually changes, keeping notification animation out of the scrolling hot path.
+ * Decoration is applied only when cards are created/rebuilt. Unread notifications use a static
+ * attention border; no perpetual animation or launch-stats worker is owned by this forwarder.
  */
 final class VerticalCardNotificationHistoryForwarder extends Forwarder {
     private static final String VERTICAL_CARDS = "vertical_cards";
-    private static final String STATS_MARKER = "  •  Last: ";
     private static final String TIMELINE_PREVIEW_TAG = "smart-notification-timeline-preview";
     private static final String DETAILS_TOGGLE_DESCRIPTION = "Show card details";
     private static final float BOTTOM_SWIPE_THRESHOLD_DP = 28f;
@@ -102,7 +99,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             return;
         }
         if (!isEnabled()) {
-            launchStats = Collections.emptyMap();
             column = null;
             scroller = null;
             resetBottomSwipe();
@@ -320,26 +316,6 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
         if (!(wrapper instanceof ViewGroup)) return null;
         ViewGroup group = (ViewGroup) wrapper;
         return group.getChildCount() > 0 ? group.getChildAt(0) : null;
-    }
-
-    private void clearAttentionFor(String notificationId) {
-        for (int i = attentionBorders.size() - 1; i >= 0; i--) {
-            AttentionBorder binding = attentionBorders.get(i);
-            if (!TextUtils.equals(notificationId, binding.notificationId)) continue;
-            removeAttentionBinding(binding);
-            attentionBorders.remove(i);
-        }
-    }
-
-    private void resetAttentionBorders() {
-        for (AttentionBorder binding : attentionBorders) removeAttentionBinding(binding);
-        attentionBorders.clear();
-    }
-
-    private void removeAttentionBinding(AttentionBorder binding) {
-        binding.border.stop();
-        binding.card.removeOnLayoutChangeListener(binding.layoutListener);
-        binding.card.getOverlay().remove(binding.border);
     }
 
     private void applyBottomSwipeTouchRecursively(View view) {
