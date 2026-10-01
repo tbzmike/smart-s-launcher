@@ -1054,12 +1054,8 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         // explicit history privacy choice.
         if (excludedFromHistory.contains(canonicalId)) return;
 
-        if (!TextUtils.equals(canonicalId, id)) {
-            // Fold any older wrapper rows into the real app before recording this launch. The
-            // original timestamps/queries remain untouched, so frequency, today's count and the
-            // chronological timeline all immediately agree that this was the target app.
-            DBHelper.remapHistoryRecord(this.context, id, canonicalId);
-        }
+        // Write only the canonical identity for this launch. Legacy wrapper rows are merged
+        // read-only by LaunchStatsProvider, avoiding any extra database rewrite on the launch path.
         DBHelper.insertHistory(this.context, currentQuery, canonicalId);
     }
 
