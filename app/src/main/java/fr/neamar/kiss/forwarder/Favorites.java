@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.ContactsContract;
+import android.text.TextUtils;
 import android.util.Pair;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
@@ -547,7 +548,8 @@ public class Favorites extends Forwarder {
                 });
 
                 for (AppPojo app : rankedApps) {
-                    if (app == null) continue;
+                    if (app == null || TextUtils.equals(
+                            app.packageName, mainActivity.getPackageName())) continue;
                     LaunchStatsProvider.LaunchStats stats = launchStats == null
                             ? null : launchStats.get(app.getHistoryId());
                     long foregroundToday = usageForPackage(usageSnapshot, app.packageName);
