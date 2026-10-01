@@ -529,7 +529,7 @@ public class SearchHandler {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
         Set<String> excluded = new HashSet<>(dataHandler.getExcludedFromHistory());
         if (prefs.getBoolean("exclude-favorites-history", false)) {
-            for (Pojo favorite : dataHandler.getFavorites()) {
+            for (Pojo favorite : dataHandler.getFavoritesIncludingDisabled()) {
                 if (favorite != null) excluded.add(favorite.id);
             }
         }
