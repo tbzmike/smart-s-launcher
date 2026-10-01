@@ -7,12 +7,15 @@ import android.content.pm.ShortcutInfo;
 import android.os.Build;
 import android.os.Process;
 import android.os.UserManager;
+import android.text.TextUtils;
 
 import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import fr.neamar.kiss.DataHandler;
@@ -41,8 +44,12 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         Context context = this.context.get();
         if (context == null) return new ArrayList<>();
 
-        List<ShortcutPojo> nonOreoPojos = fetchNonOreoPojos(context);
-        List<ShortcutPojo> oreoPojos = fetchOreoPojos(context);
+        // Read the remembered shortcut catalog once for the whole provider pass. The previous
+        // path queried it separately for legacy and Oreo shortcuts and then issued another SELECT
+        // for every exposed shortcut before deciding whether an UPDATE was needed.
+        List<ShortcutRecord> storedRecords = DBHelper.getShortcuts(context);
+        List<ShortcutPojo> nonOreoPojos = fetchNonOreoPojos(context, storedRecords);
+        List<ShortcutPojo> oreoPojos = fetchOreoPojos(context, storedRecords);
 
         List<ShortcutPojo> allPojos = new ArrayList<>(nonOreoPojos.size() + oreoPojos.size());
         allPojos.addAll(nonOreoPojos);
@@ -53,7 +60,8 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
     // Get Oreo+ shortcuts from Android and, when requested, merge the permanent remembered
     // shortcut catalog. Once a shortcut has been discovered it remains searchable while its app is
     // still installed, even if freezing/disabling the app makes LauncherApps stop exposing it.
-    private List<ShortcutPojo> fetchOreoPojos(Context context) {
+    private List<ShortcutPojo> fetchOreoPojos(
+            Context context, List<ShortcutRecord> storedRecords) {
         List<ShortcutPojo> oreoPojos = new ArrayList<>();
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return oreoPojos;
 
@@ -64,6 +72,13 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
         List<ShortcutInfo> shortcutInfos = ShortcutUtil.getAllShortcuts(context);
         Set<String> liveKeys = new HashSet<>();
+        Map<String, ShortcutRecord> storedByKey = new HashMap<>();
+        if (retainDisabled) {
+            for (ShortcutRecord stored : storedRecords) {
+                if (stored == null || stored.packageName == null || stored.intentUri == null) continue;
+                storedByKey.put(shortcutKey(stored.packageName, stored.intentUri), stored);
+            }
+        }
 
         for (ShortcutInfo shortcutInfo : shortcutInfos) {
             if (isCancelled()) break;
@@ -85,7 +100,20 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
 
             // Permanent catalog: save every exposed shortcut, not only pinned shortcuts. This is
             // what lets the exact shortcut survive a later IceBox/pm disable operation.
-            if (retainDisabled) DBHelper.insertShortcut(context, shortcutRecord);
+            if (retainDisabled) {
+                ShortcutRecord previous = storedByKey.get(key);
+                String previousTarget = previous == null || previous.targetPackage == null
+                        ? "" : previous.targetPackage;
+                String nextTarget = shortcutRecord.targetPackage == null
+                        ? "" : shortcutRecord.targetPackage;
+                boolean changed = previous == null
+                        || !TextUtils.equals(previous.name, shortcutRecord.name)
+                        || !TextUtils.equals(previousTarget, nextTarget);
+                if (changed) {
+                    DBHelper.insertShortcut(context, shortcutRecord);
+                    storedByKey.put(key, shortcutRecord);
+                }
+            }
 
             boolean isSuspended = PackageManagerUtils.isAppSuspended(context, shortcutInfo.getPackage(),
                     new UserHandle(context, shortcutInfo.getUserHandle()));
@@ -108,7 +136,7 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         if (retainDisabled) {
             UserHandle currentUser = new UserHandle(context, Process.myUserHandle());
             TagsHandler tagsHandler = dataHandler.getTagsHandler();
-            for (ShortcutRecord remembered : DBHelper.getShortcuts(context)) {
+            for (ShortcutRecord remembered : new ArrayList<>(storedByKey.values())) {
                 if (isCancelled()) break;
                 if (remembered == null || remembered.packageName == null || remembered.intentUri == null) continue;
                 if (!remembered.intentUri.contains(ShortcutPojo.OREO_PREFIX)) continue;
@@ -138,11 +166,11 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         return oreoPojos;
     }
 
-    private List<ShortcutPojo> fetchNonOreoPojos(Context context) {
+    private List<ShortcutPojo> fetchNonOreoPojos(
+            Context context, List<ShortcutRecord> records) {
         DataHandler dataHandler = KissApplication.getApplication(context).getDataHandler();
         TagsHandler tagsHandler = dataHandler.getTagsHandler();
         List<ShortcutPojo> pojos = new ArrayList<>();
-        List<ShortcutRecord> records = DBHelper.getShortcuts(context);
 
         for (ShortcutRecord shortcutRecord : records) {
             if (isCancelled()) break;
