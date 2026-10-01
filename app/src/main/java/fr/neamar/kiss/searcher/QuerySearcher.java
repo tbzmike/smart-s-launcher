@@ -23,6 +23,8 @@ import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.PojoWithTags;
 import fr.neamar.kiss.pojo.SearchPojo;
 import fr.neamar.kiss.pojo.SearchPojoType;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
+import fr.neamar.kiss.utils.ShortcutUtil;
 
 /**
  * AsyncTask retrieving data from the providers and updating the view.
@@ -88,7 +90,8 @@ public class QuerySearcher extends Searcher {
             int checked = 0;
             for (Pojo pojo : pojos) {
                 if ((checked++ & 31) == 0 && isCancelled()) return false;
-                if (pojo == null || lexicalIds.contains(pojo.id)) continue;
+                if (pojo == null || lexicalIds.contains(pojo.id)
+                        || !isVisibleByFrozenSearchPolicy(pojo)) continue;
                 float score = SemanticEmbeddingScorer.scorePrepared(preparedSemanticQuery, pojo);
                 if (score < semanticThreshold) continue;
 
@@ -105,7 +108,7 @@ public class QuerySearcher extends Searcher {
         }
 
         for (Pojo pojo : pojos) {
-            if (pojo == null) continue;
+            if (pojo == null || !isVisibleByFrozenSearchPolicy(pojo)) continue;
             lexicalIds.add(pojo.id);
 
             int originalRelevance = pojo.relevance;
@@ -190,8 +193,7 @@ public class QuerySearcher extends Searcher {
 
         Set<String> excludedFavoriteIds = KissApplication.getApplication(activity)
                 .getDataHandler().getExcludedFavorites();
-        boolean detectFrozen = prefs.getBoolean("smart-detect-frozen-apps", true);
-        boolean keepFrozenSearchable = prefs.getBoolean("smart-keep-frozen-searchable", true);
+        boolean keepFrozenSearchable = FrozenAppPreferences.keepSearchable(activity);
         boolean enableExcludedApps = prefs.getBoolean("enable-excluded-apps", false);
 
         int checked = 0;
@@ -201,7 +203,12 @@ public class QuerySearcher extends Searcher {
             if (pojo instanceof AppPojo) {
                 AppPojo app = (AppPojo) pojo;
                 if (app.isExcluded() && !enableExcludedApps) continue;
-                if (app.isDisabled() && (!detectFrozen || !keepFrozenSearchable)) continue;
+                if (app.isDisabled() && !keepFrozenSearchable) continue;
+            } else if (pojo instanceof ShortcutPojo) {
+                ShortcutPojo shortcut = (ShortcutPojo) pojo;
+                if (shortcut.isDisabled()
+                        && !ShortcutUtil.isIceBoxPublisher(activity, shortcut.packageName)
+                        && !keepFrozenSearchable) continue;
             }
 
             String name = normalize(pojo.getName());
@@ -228,7 +235,8 @@ public class QuerySearcher extends Searcher {
         int count = historyMatches.size();
         for (int i = 0; i < count; i++) {
             Pojo pojo = historyMatches.get(i);
-            if (pojo == null || lexicalIds.contains(pojo.id)) continue;
+            if (pojo == null || lexicalIds.contains(pojo.id)
+                    || !isVisibleByFrozenSearchPolicy(pojo)) continue;
             pojo.relevance = 180 + Math.round(80f * (i + 1) / Math.max(1, count));
             if (pojo.isDisabled()) pojo.relevance -= 200;
             promoteLaunchTarget(pojo);
@@ -236,6 +244,18 @@ public class QuerySearcher extends Searcher {
             missing.add(pojo);
         }
         if (!missing.isEmpty()) super.addResults(missing);
+    }
+
+    private boolean isVisibleByFrozenSearchPolicy(Pojo pojo) {
+        if (pojo == null || !pojo.isDisabled()) return true;
+        MainActivity activity = activityWeakReference.get();
+        if (activity == null) return false;
+        if (pojo instanceof ShortcutPojo
+                && ShortcutUtil.isIceBoxPublisher(
+                activity, ((ShortcutPojo) pojo).packageName)) {
+            return true;
+        }
+        return FrozenAppPreferences.keepSearchable(activity);
     }
 
     private void configureSemanticSearch() {
