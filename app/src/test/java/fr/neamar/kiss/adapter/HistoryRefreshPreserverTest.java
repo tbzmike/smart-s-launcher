@@ -37,7 +37,7 @@ class HistoryRefreshPreserverTest {
 
     @Test void emptyExistingWindowRemainsEmpty() {
         assertThat(HistoryRefreshPreserver.preserveMissing(
-                Collections.emptyList(), Collections.emptyList(), value -> value),
+                Collections.<String>emptyList(), Collections.<String>emptyList(), value -> value),
                 empty());
     }
 }
