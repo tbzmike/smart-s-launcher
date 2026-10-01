@@ -11,7 +11,6 @@ import androidx.annotation.Nullable;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.NotificationTimelineStore;
-import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 
 /** Visible-user-action relay that replays the exact PendingIntent captured from a notification. */
@@ -41,18 +40,21 @@ public final class NotificationRouteRelayActivity extends Activity {
                     && postTime > 0L) {
                 record = NotificationTimelineStore.findExact(this, notificationId, postTime);
             }
-            NotificationPendingIntentStore.discard(this, routeToken);
-            SmartStateStore.clearNotificationPendingIntentToken(this, routeToken);
-            SavedNotificationDestinationResolver.OpenResult fallback =
-                    SavedNotificationDestinationResolver.openExactResult(this, record);
-            boolean fallbackOpened = fallback.accepted();
-            if (fallback == SavedNotificationDestinationResolver.OpenResult.OPENED
-                    && record != null) {
-                if (record.notificationId != null && !record.notificationId.isEmpty()) {
-                    NotificationUnreadStore.markRead(this, record.notificationId);
-                }
-            } else if (!fallbackOpened) {
-                Toast.makeText(this, "The originating app expired this notification route.",
+
+            // Do NOT discard the retained relay merely because one send failed. A freezer,
+            // package restart or transient Android routing failure can make the original target
+            // temporarily unavailable; deleting the token here permanently severed an otherwise
+            // recoverable deep link. Avoid re-entering the same relay and try only durable exact
+            // routes, then the originating app as the final fallback.
+            boolean exactFallbackOpened = record != null
+                    && SavedNotificationDestinationResolver.openDurableFallback(this, record);
+            if (exactFallbackOpened && record.notificationId != null
+                    && !record.notificationId.isEmpty()) {
+                NotificationUnreadStore.markRead(this, record.notificationId);
+            } else if (!exactFallbackOpened
+                    && !SavedNotificationDestinationResolver.openAppFallback(this, record)) {
+                Toast.makeText(this,
+                        "The exact notification route is unavailable and the app could not be opened.",
                         Toast.LENGTH_SHORT).show();
             }
         }
