@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -80,6 +81,9 @@ public class NotificationListener extends NotificationListenerService {
         return thread;
     });
     private static final AtomicBoolean RECONCILE_RUNNING = new AtomicBoolean(false);
+    private static final long ONGOING_PERSIST_INTERVAL_MS = 15_000L;
+    private static final ConcurrentHashMap<String, Long> LAST_ONGOING_PERSIST =
+            new ConcurrentHashMap<>();
     private static final int RETAINED_CONTENT_INTENT_LIMIT = 256;
     private static final LinkedHashMap<String, RetainedContentIntent> RETAINED_CONTENT_INTENTS =
             new LinkedHashMap<>(32, 0.75f, true);
@@ -236,11 +240,30 @@ public class NotificationListener extends NotificationListenerService {
         boolean visibleContentChanged = !TextUtils.equals(previousTitle, nextTitle)
                 || !TextUtils.equals(previousText, nextText);
 
-        NotificationAvatarSupport.captureAsync(this, id, sbn);
+        // Ongoing notifications can update every second. Do not re-decode avatar imagery or
+        // rewrite the notification-history row for every progress tick.
+        if (newTimelineEvent || (visibleContentChanged && !sbn.isOngoing())) {
+            NotificationAvatarSupport.captureAsync(this, id, sbn);
+        }
 
         boolean historyEnabled = PreferenceManager.getDefaultSharedPreferences(this)
                 .getBoolean("enable-notification-history", false);
-        persistHistoryAsync(sbn, id, newTimelineEvent && historyEnabled);
+        boolean persistThisUpdate = true;
+        if (sbn.isOngoing() && !newTimelineEvent) {
+            long now = SystemClock.elapsedRealtime();
+            Long previousPersist = LAST_ONGOING_PERSIST.get(id);
+            if (previousPersist != null
+                    && now - previousPersist < ONGOING_PERSIST_INTERVAL_MS) {
+                persistThisUpdate = false;
+            } else {
+                LAST_ONGOING_PERSIST.put(id, now);
+            }
+        } else if (sbn.isOngoing()) {
+            LAST_ONGOING_PERSIST.put(id, SystemClock.elapsedRealtime());
+        }
+        if (persistThisUpdate) {
+            persistHistoryAsync(sbn, id, newTimelineEvent && historyEnabled);
+        }
 
         // Updating the same ongoing notification (VPN progress, media status, transfers, etc.)
         // is not a new History event. Re-marking it unread and inserting another launcher-history
@@ -536,6 +559,7 @@ public class NotificationListener extends NotificationListenerService {
         else prefs.edit().putStringSet(packageKey, currentNotifications).apply();
 
         String id = getTimelineId(sbn);
+        LAST_ONGOING_PERSIST.remove(id);
         NotificationUnreadStore.markRemoved(this, id);
         removeVerifiedActiveId(id);
         Set<String> active = new HashSet<>(details.getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet()));
@@ -547,7 +571,10 @@ public class NotificationListener extends NotificationListenerService {
 
         if (currentNotifications.isEmpty()) {
             edit.remove(packageKey + "|text").remove(packageKey + "|key");
-            DBHelper.removeFromHistory(this, getGroupId(packageKey));
+            String obsoleteGroupId = getGroupId(packageKey);
+            Context appContext = getApplicationContext();
+            RECONCILE_EXECUTOR.execute(() ->
+                    DBHelper.removeFromHistory(appContext, obsoleteGroupId));
         } else {
             String latestId = null;
             long latestTime = Long.MIN_VALUE;
@@ -1374,7 +1401,8 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private static synchronized void addVerifiedActiveId(String id) {
-        if (!activeStateVerified || id == null || id.isEmpty()) return;
+        if (!activeStateVerified || id == null || id.isEmpty()
+                || verifiedActiveIds.contains(id)) return;
         Set<String> updated = new HashSet<>(verifiedActiveIds);
         updated.add(id);
         verifiedActiveIds = Collections.unmodifiableSet(updated);
@@ -1382,7 +1410,8 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private static synchronized void removeVerifiedActiveId(String id) {
-        if (!activeStateVerified || id == null || id.isEmpty()) return;
+        if (!activeStateVerified || id == null || id.isEmpty()
+                || !verifiedActiveIds.contains(id)) return;
         Set<String> updated = new HashSet<>(verifiedActiveIds);
         updated.remove(id);
         verifiedActiveIds = Collections.unmodifiableSet(updated);
