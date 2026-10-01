@@ -87,6 +87,10 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
     protected static final int DEFAULT_MAX_RESULTS = 50;
     protected final WeakReference<MainActivity> activityWeakReference;
     private final PriorityQueue<Pojo> processedPojos;
+    // History can supply an already ordered snapshot. Keeping that order outside the mutable
+    // relevance PriorityQueue prevents concurrent query/provider relevance updates from moving a
+    // just-launched app to the wrong end of History.
+    private List<Pojo> finalOrderedPojos;
     private long start;
     private SearchDoneCallback searchDoneCallback;
     private boolean managingLoader;
@@ -118,6 +122,26 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
 
     protected int getMaxResultCount() {
         return DEFAULT_MAX_RESULTS;
+    }
+
+    /**
+     * Supply a final display-ordered result snapshot that must not be re-sorted through the shared
+     * mutable Pojo.relevance queue. The order of this defensive copy is authoritative.
+     */
+    protected final void setFinalOrderedResults(List<? extends Pojo> pojos) {
+        if (isCancelled()) return;
+        int maxResults = Math.max(0, getMaxResultCount());
+        if (pojos == null || pojos.isEmpty() || maxResults == 0) {
+            finalOrderedPojos = new ArrayList<>();
+            return;
+        }
+        int from = Math.max(0, pojos.size() - maxResults);
+        List<Pojo> snapshot = new ArrayList<>(pojos.size() - from);
+        for (int i = from; i < pojos.size(); i++) {
+            Pojo pojo = pojos.get(i);
+            if (pojo != null) snapshot.add(pojo);
+        }
+        finalOrderedPojos = snapshot;
     }
 
     /** Publish a preview list without adding it to the final provider result queue. */
@@ -235,22 +259,26 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         if (activity == null)
             return;
 
-        if (this.processedPojos.isEmpty()) {
-            activity.adapter.clear();
-        } else {
+        List<Pojo> pojos = finalOrderedPojos;
+        finalOrderedPojos = null;
+        if (pojos == null) {
             PriorityQueue<Pojo> queue = this.processedPojos;
             int maxResults = getMaxResultCount();
             while (queue.size() > maxResults) {
                 queue.poll();
             }
-            List<Pojo> pojos = new ArrayList<>(queue.size());
+            pojos = new ArrayList<>(queue.size());
             while (queue.peek() != null) {
                 Pojo pojo = queue.poll();
                 if (pojo != null) {
                     pojos.add(pojo);
                 }
             }
+        }
 
+        if (pojos.isEmpty()) {
+            activity.adapter.clear();
+        } else {
             activity.adapter.updateWithPojos(activity, pojos, isRefresh, query);
         }
 
