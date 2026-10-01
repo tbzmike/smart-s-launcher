@@ -1366,10 +1366,14 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // Query results can publish several times in quick succession as providers finish.
         // Animate none of those publications: show them immediately instead of spending a frame
         // capturing child positions and running move animations.
-        boolean interactiveQuery = SearchHandler.getInstance().getLastSearchType()
-                == Searcher.Type.QUERY;
+        Searcher.Type visibleType = SearchHandler.getInstance().getLastSearchType();
+        boolean continuouslyChangingSurface = visibleType == Searcher.Type.QUERY
+                || visibleType == Searcher.Type.HISTORY;
+        // History recency/notification/provider changes can arrive close to a user fling. Do not
+        // animate those dataset mutations: item property animations keep consuming render frames
+        // after the dataset is already correct and make the next scroll gesture stutter.
         listChangeAnimationPrepared = list != null
-                && !interactiveQuery
+                && !continuouslyChangingSurface
                 && (forwarderManager == null || !forwarderManager.isHistoryScrollInProgress());
         if (listChangeAnimationPrepared) list.prepareChangeAnim();
     }
