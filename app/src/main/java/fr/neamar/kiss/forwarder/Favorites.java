@@ -496,24 +496,6 @@ public class Favorites extends Forwarder {
                                            @Nullable AppUsageTodayStore.Snapshot usageSnapshot) {
         int max = PixelFavoritesPolicy.clampMaxApps(requestedLimit);
 
-        // Wrapper launch routes (for example IceBox's Facebook shortcut) are kept separately from
-        // logical identity. If the real app is frozen, Pixel mode can keep the same Facebook slot
-        // while launching through the working wrapper route.
-        Map<String, ShortcutPojo> aliasByPackage = new HashMap<>();
-        List<ShortcutPojo> shortcuts = dataHandler.getPinnedShortcuts();
-        if (shortcuts != null) {
-            for (ShortcutPojo shortcut : shortcuts) {
-                if (shortcut == null
-                        || !AppIdentityResolver.isAppAliasShortcut(
-                        mainActivity, dataHandler, shortcut)) continue;
-                String packageName = AppIdentityResolver.canonicalPackage(
-                        mainActivity, dataHandler, shortcut);
-                if (packageName != null && !packageName.isEmpty()) {
-                    aliasByPackage.putIfAbsent(packageName, shortcut);
-                }
-            }
-        }
-
         List<String> pinnedKeys = new ArrayList<>(pinnedFavorites.size());
         Map<String, Pojo> pojoByKey = new HashMap<>();
         for (Pojo favorite : pinnedFavorites) {
@@ -522,8 +504,7 @@ public class Favorites extends Forwarder {
                     mainActivity, dataHandler, favorite);
             if (key == null || key.isEmpty() || pojoByKey.containsKey(key)) continue;
 
-            Pojo representative = launchablePixelRepresentative(
-                    dataHandler, favorite, aliasByPackage);
+            Pojo representative = launchablePixelRepresentative(favorite);
             pinnedKeys.add(key);
             pojoByKey.put(key, representative);
             if (pinnedKeys.size() >= max) break;
@@ -585,8 +566,7 @@ public class Favorites extends Forwarder {
                             mainActivity, dataHandler, app);
                     if (key == null || key.isEmpty() || pojoByKey.containsKey(key)) continue;
 
-                    Pojo representative = launchablePixelRepresentative(
-                            dataHandler, app, aliasByPackage);
+                    Pojo representative = launchablePixelRepresentative(app);
                     rankedKeys.add(key);
                     pojoByKey.put(key, representative);
                 }
@@ -625,17 +605,12 @@ public class Favorites extends Forwarder {
         return value == null ? 0L : Math.max(0L, value);
     }
 
-    private Pojo launchablePixelRepresentative(DataHandler dataHandler,
-                                               Pojo logicalItem,
-                                               Map<String, ShortcutPojo> aliasByPackage) {
-        String packageName = AppIdentityResolver.canonicalPackage(
-                mainActivity, dataHandler, logicalItem);
-        if (packageName == null || packageName.isEmpty()) return logicalItem;
-
-        if (logicalItem instanceof AppPojo && ((AppPojo) logicalItem).isDisabled()) {
-            ShortcutPojo alias = aliasByPackage.get(packageName);
-            if (alias != null) return alias;
-        }
+    private Pojo launchablePixelRepresentative(Pojo logicalItem) {
+        // Pixel app slots represent the app itself, even while frozen. AppResult performs a live
+        // package-state check and, when "Auto-enable frozen apps when opened" is enabled, restores
+        // the package before launching it. Replacing a frozen app with an IceBox wrapper here made
+        // the bottom bar bypass Smart S's own enable/open path. Explicit IceBox shortcuts remain
+        // ShortcutPojo items and continue to follow IceBox's route exactly as before.
         return logicalItem;
     }
 
