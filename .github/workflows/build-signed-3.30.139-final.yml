@@ -5,6 +5,8 @@ on:
     branches:
       - fix/history-newest-bottom-3.30.139
     paths:
+      - 'app/**'
+      - 'fastlane/metadata/android/en-US/changelogs/567.txt'
       - '.github/workflows/build-signed-3.30.139-final.yml'
   workflow_dispatch:
 
