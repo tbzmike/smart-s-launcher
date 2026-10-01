@@ -16,7 +16,7 @@ import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 
 /** Loads native-list/wheel history metadata only while the active viewport is idle. */
 final class HistoryVisualEnhancer {
-    private static final long MIN_RELOAD_INTERVAL_MS = 15_000L;
+    private static final long MIN_RELOAD_INTERVAL_MS = 60_000L;
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
@@ -34,6 +34,7 @@ final class HistoryVisualEnhancer {
     private boolean listenerRegistered;
     private boolean destroyed;
     private boolean forceReload = true;
+    private boolean hasLoadedSnapshot;
     private long generation;
     private long lastLoadUptime;
     private Map<String, LaunchStatsProvider.LaunchStats> cachedStats = java.util.Collections.emptyMap();
@@ -52,7 +53,9 @@ final class HistoryVisualEnhancer {
 
     void onDataSetChanged() {
         ensureScrollListener();
-        forceReload = true;
+        // Dataset changes are frequent (launches, notifications, provider publications). They must
+        // not force a full GROUP BY history scan every time. Reuse the latest enrichment snapshot
+        // and refresh it only when the bounded cache window expires.
         requestRefresh();
     }
 
@@ -117,7 +120,7 @@ final class HistoryVisualEnhancer {
         }
 
         long now = SystemClock.uptimeMillis();
-        if (!forceReload && !cachedStats.isEmpty()
+        if (!forceReload && hasLoadedSnapshot
                 && now - lastLoadUptime < MIN_RELOAD_INTERVAL_MS) {
             refreshPending = false;
             UniversalHistoryTimestamp.updateEnrichment(cachedStats, cachedUsage);
@@ -165,6 +168,7 @@ final class HistoryVisualEnhancer {
         cachedUsage = usage;
         lastLoadUptime = SystemClock.uptimeMillis();
         forceReload = false;
+        hasLoadedSnapshot = true;
         // Update only the model/cache. Rewriting visible TextViews here caused the exact
         // after-scroll text jump seen in the supplied video.
         UniversalHistoryTimestamp.updateEnrichment(cachedStats, cachedUsage);
