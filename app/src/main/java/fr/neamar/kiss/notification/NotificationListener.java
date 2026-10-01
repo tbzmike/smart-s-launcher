@@ -161,7 +161,7 @@ public class NotificationListener extends NotificationListenerService {
 
         for (StatusBarNotification sbn : sbns) {
             if (seedTimeline) NotificationAvatarSupport.captureAsync(this, getTimelineId(sbn), sbn);
-            if (seedTimeline) persistHistory(sbn, getTimelineId(sbn));
+            if (seedTimeline) persistHistoryAsync(sbn, getTimelineId(sbn), false);
             if (isNotificationTrivial(sbn)) continue;
             String packageKey = getPackageKey(sbn);
             notificationsByPackage.computeIfAbsent(packageKey, k -> new HashSet<>()).add(Integer.toString(sbn.getId()));
@@ -222,9 +222,30 @@ public class NotificationListener extends NotificationListenerService {
         if (sbn == null) return;
 
         String id = getTimelineId(sbn);
+        Notification notification = sbn.getNotification();
+        long previousPostTime = details.getLong(id + "|post", Long.MIN_VALUE);
+        Set<String> previousActive = details.getStringSet(
+                ACTIVE_NOTIFICATION_IDS, Collections.emptySet());
+        boolean newTimelineEvent = previousPostTime != sbn.getPostTime()
+                || !previousActive.contains(id);
+
+        String previousTitle = details.getString(id + "|title", "");
+        String previousText = details.getString(id + "|text", "");
+        String nextTitle = notification == null ? "" : historyTitle(notification);
+        String nextText = notification == null ? "" : historyBody(notification);
+        boolean visibleContentChanged = !TextUtils.equals(previousTitle, nextTitle)
+                || !TextUtils.equals(previousText, nextText);
+
         NotificationAvatarSupport.captureAsync(this, id, sbn);
-        persistHistory(sbn, id);
-        NotificationUnreadStore.markUnread(this, id);
+
+        boolean historyEnabled = PreferenceManager.getDefaultSharedPreferences(this)
+                .getBoolean("enable-notification-history", false);
+        persistHistoryAsync(sbn, id, newTimelineEvent && historyEnabled);
+
+        // Updating the same ongoing notification (VPN progress, media status, transfers, etc.)
+        // is not a new History event. Re-marking it unread and inserting another launcher-history
+        // row every second caused continuous DB writes, recency churn and UI refreshes.
+        if (newTimelineEvent) NotificationUnreadStore.markUnread(this, id);
         if (isNotificationTrivial(sbn)) return;
 
         String packageKey = getPackageKey(sbn);
@@ -232,7 +253,7 @@ public class NotificationListener extends NotificationListenerService {
         currentNotifications.add(Integer.toString(sbn.getId()));
         prefs.edit().putStringSet(packageKey, currentNotifications).apply();
 
-        Set<String> active = new HashSet<>(details.getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet()));
+        Set<String> active = new HashSet<>(previousActive);
         active.add(id);
         SharedPreferences.Editor detailEditor = details.edit();
         detailEditor.putStringSet(ACTIVE_NOTIFICATION_IDS, active);
@@ -241,11 +262,13 @@ public class NotificationListener extends NotificationListenerService {
         if (activeStateVerified) addVerifiedActiveId(id);
         else refreshAllNotifications(false);
 
-        if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
-            DBHelper.removeFromHistory(this, getGroupId(packageKey));
-            KissApplication.getApplication(this).getDataHandler().addToHistory(id);
+        // A same-event ongoing status update may change text many times per second. Keep its cached
+        // content current but do not rebuild Home for each progress tick. New notification events
+        // and non-ongoing message-content changes still refresh normally.
+        boolean ongoingContentOnly = sbn.isOngoing() && !newTimelineEvent;
+        if (newTimelineEvent || (visibleContentChanged && !ongoingContentOnly)) {
+            sendTimelineRefresh(id, true);
         }
-        sendTimelineRefresh(id, true);
     }
 
     private void sendTimelineRefresh(String notificationId, boolean posted) {
@@ -258,7 +281,37 @@ public class NotificationListener extends NotificationListenerService {
         sendBroadcast(refresh);
     }
 
-    private void persistHistory(StatusBarNotification sbn, String id) {
+    private void persistHistoryAsync(StatusBarNotification sbn, String id,
+                                     boolean addToLauncherHistory) {
+        if (sbn == null || id == null || id.isEmpty()) return;
+
+        // Frequent ongoing status updates are disposable while the user is actively scrolling; the
+        // next update after idle will persist the newest state. Real new events are retained.
+        if (LauncherScrollWorkGate.isScrolling() && sbn.isOngoing() && !addToLauncherHistory) {
+            return;
+        }
+
+        final Context appContext = getApplicationContext();
+        RECONCILE_EXECUTOR.execute(() -> {
+            // Database and route-capture work must never contend with a live launcher fling.
+            while (LauncherScrollWorkGate.isScrolling()
+                    && !Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(40L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+            if (Thread.currentThread().isInterrupted()) return;
+            persistHistoryNow(sbn, id);
+            if (addToLauncherHistory) {
+                KissApplication.getApplication(appContext).getDataHandler().addToHistory(id);
+            }
+        });
+    }
+
+    private void persistHistoryNow(StatusBarNotification sbn, String id) {
         Notification n = sbn.getNotification();
         if (n == null) return;
         rememberContentIntent(id, sbn.getPostTime(), n.contentIntent);
