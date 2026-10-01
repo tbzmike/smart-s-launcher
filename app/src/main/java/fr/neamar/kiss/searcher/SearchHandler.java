@@ -231,7 +231,8 @@ public class SearchHandler {
         for (Result<?> result : homeResultSnapshot) {
             if (generation != searchGeneration.get()) return;
             Pojo pojo = result == null ? null : result.getPojo();
-            if (pojo == null || !quickMatch(pojo.getName(), q)) continue;
+            if (pojo == null || !isVisibleByFrozenSearchPolicy(activity, pojo)
+                    || !quickMatch(pojo.getName(), q)) continue;
             putImmediatePreview(normal, launch, pojo);
         }
 
@@ -294,6 +295,17 @@ public class SearchHandler {
         String key = pojo.getClass().getName() + '|' + pojo.id;
         if (pojo instanceof AppPojo || pojo instanceof ShortcutPojo) launch.put(key, pojo);
         else normal.put(key, pojo);
+    }
+
+    private boolean isVisibleByFrozenSearchPolicy(@NonNull MainActivity activity,
+                                                  @NonNull Pojo pojo) {
+        if (!pojo.isDisabled()) return true;
+        if (pojo instanceof ShortcutPojo
+                && ShortcutUtil.isIceBoxPublisher(
+                activity, ((ShortcutPojo) pojo).packageName)) {
+            return true;
+        }
+        return FrozenAppPreferences.keepSearchable(activity);
     }
 
     private boolean quickMatch(String value, String normalizedQuery) {
