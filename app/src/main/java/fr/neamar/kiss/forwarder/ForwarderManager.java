@@ -176,6 +176,12 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onPause() {
+        // A fling can be interrupted by HOME losing focus before the delayed idle callback fires.
+        // Clear every scroll gate here so the next resume can always load History again.
+        AppProvider.setLauncherScrolling(false);
+        LauncherScrollWorkGate.setScrolling(false);
+        SearchHandler.getInstance().onLauncherPaused();
+
         if (isVerticalCardsMode()) {
             // Capture only when Vertical Cards actually owns the visible history viewport.
             verticalCardViewportController.onLauncherPaused();
