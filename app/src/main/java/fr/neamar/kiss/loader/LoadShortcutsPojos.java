@@ -1,7 +1,6 @@
 package fr.neamar.kiss.loader;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
@@ -10,7 +9,6 @@ import android.os.Process;
 import android.os.UserManager;
 
 import androidx.core.content.ContextCompat;
-import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -24,6 +22,7 @@ import fr.neamar.kiss.activitylauncher.ActivityLauncherStore;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
@@ -55,8 +54,7 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         List<ShortcutPojo> oreoPojos = new ArrayList<>();
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return oreoPojos;
 
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        boolean retainDisabled = prefs.getBoolean(LoadAppPojos.PREF_INDEX_DISABLED_APPS, true);
+        boolean retainDisabled = FrozenAppPreferences.detect(context);
         DataHandler dataHandler = KissApplication.getApplication(context).getDataHandler();
         Set<String> excludedApps = dataHandler.getExcluded();
         Set<String> excludedShortcutApps = dataHandler.getExcludedShortcutApps();
@@ -117,13 +115,18 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
                 if (liveKeys.contains(key)) continue;
 
                 // Keep remembered shortcuts for as long as the owning package remains installed.
-                // If Android is no longer exposing the shortcut, present it as disabled/grey. When
-                // the app is defrosted and Android exposes the shortcut again, the live entry above
-                // replaces this remembered disabled representation automatically.
+                // For a normal shortcut, disabled state follows the shortcut publisher package.
+                // IceBox is different: its shortcut is an external launch route and must keep
+                // following IceBox's own behavior instead of inheriting Smart S's frozen-target
+                // treatment merely because the wrapped app is disabled.
                 if (!isPackageInstalled(context, remembered.packageName)) continue;
+                boolean disabled = !isPackageEnabled(context, remembered.packageName);
+                if (ShortcutUtil.isIceBoxPublisher(context, remembered.packageName)) {
+                    disabled = false;
+                }
 
                 ShortcutPojo pojo = createPojo(currentUser, remembered, tagsHandler,
-                        null, true, false, true);
+                        null, true, false, disabled);
                 oreoPojos.add(pojo);
                 liveKeys.add(key);
             }
