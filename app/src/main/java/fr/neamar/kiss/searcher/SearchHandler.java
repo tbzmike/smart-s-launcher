@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.preference.PreferenceManager;
 
 import java.lang.ref.WeakReference;
@@ -449,14 +450,20 @@ public class SearchHandler {
         }
         Result<?> launched = pendingLaunchedResult;
         pendingLaunchedResult = null;
-        if (launched != null && launched.getPojo() != null) {
-            readyById.put(resultKey(launched.getPojo()), launched);
+        Pojo launchedPojo = launched == null ? null : launched.getPojo();
+        if (launchedPojo != null) {
+            // LinkedHashMap.put() does not move an existing key. Explicit remove + put keeps the
+            // warm snapshot itself oldest-to-newest, and the explicit newest override below makes
+            // the first frame after returning from Search deterministic as well.
+            String launchedKey = resultKey(launchedPojo);
+            readyById.remove(launchedKey);
+            readyById.put(launchedKey, launched);
         }
         if (readyById.isEmpty()) return false;
 
         List<Pojo> seed = new ArrayList<>(readyById.size());
         for (Result<?> result : readyById.values()) seed.add(result.getPojo());
-        List<Pojo> selected = buildHomeHistoryPreview(activity, seed);
+        List<Pojo> selected = buildHomeHistoryPreview(activity, seed, launchedPojo);
         if (selected.isEmpty()) return false;
 
         List<Result<?>> restored = new ArrayList<>(selected.size());
@@ -496,6 +503,13 @@ public class SearchHandler {
     @NonNull
     private List<Pojo> buildHomeHistoryPreview(@NonNull MainActivity activity,
                                                @NonNull List<Pojo> seed) {
+        return buildHomeHistoryPreview(activity, seed, null);
+    }
+
+    @NonNull
+    private List<Pojo> buildHomeHistoryPreview(@NonNull MainActivity activity,
+                                               @NonNull List<Pojo> seed,
+                                               @Nullable Pojo explicitMostRecent) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
         int maxResults = getConfiguredHistoryResultCount(prefs);
         if (maxResults <= 0) return Collections.emptyList();
@@ -512,7 +526,7 @@ public class SearchHandler {
         }
         return HomeHistoryWindow.select(
                 seed,
-                RecentLaunchTracker.getMostRecent(),
+                explicitMostRecent != null ? explicitMostRecent : RecentLaunchTracker.getMostRecent(),
                 maxResults,
                 pojo -> pojo == null ? null : pojo.getHistoryId(),
                 pojo -> {
