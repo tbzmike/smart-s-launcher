@@ -149,9 +149,15 @@ public class HistorySearcher extends Searcher {
     }
 
     private boolean shouldAbort() {
-        return isCancelled()
-                || Thread.currentThread().isInterrupted()
-                || SearchHandler.getInstance().isHistoryScrollActive();
+        if (isCancelled() || Thread.currentThread().isInterrupted()) return true;
+        if (SearchHandler.getInstance().isHistoryScrollActive()) {
+            // A History task can race with the scroll-start callback between scheduling and worker
+            // execution. Mark the AsyncTask cancelled before returning so Searcher.onPostExecute()
+            // cannot interpret the aborted empty worker as a real empty History and clear Home.
+            cancel(false);
+            return true;
+        }
+        return false;
     }
 
     /** Resolve the visible History list from the database's strict newest-first RECENCY chain. */
