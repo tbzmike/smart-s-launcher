@@ -1,6 +1,8 @@
 package fr.neamar.kiss.utils;
 
+import android.content.ComponentName;
 import android.content.Context;
+import android.os.UserManager;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
@@ -9,6 +11,8 @@ import androidx.annotation.Nullable;
 import java.util.List;
 
 import fr.neamar.kiss.DataHandler;
+import fr.neamar.kiss.db.AppCatalogRecord;
+import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.Pojo;
@@ -111,7 +115,38 @@ public final class AppIdentityResolver {
         if (TextUtils.isEmpty(packageName)) return pojo.getHistoryId();
 
         AppPojo app = findApp(dataHandler, packageName);
-        return app == null ? pojo.getHistoryId() : app.getHistoryId();
+        if (app != null) return app.getHistoryId();
+
+        ShortcutPojo shortcut = (ShortcutPojo) pojo;
+        UserHandle user = shortcut.getUserHandle();
+
+        // A freezer can remove the target from LauncherApps immediately after the shortcut is
+        // clicked. Resolve the canonical app identity from Smart S's persistent app catalog before
+        // falling back to the wrapper id, so IceBox launches never become IceBox statistics merely
+        // because the target is frozen at history-write time.
+        UserManager userManager = (UserManager) context.getSystemService(Context.USER_SERVICE);
+        if (userManager != null) {
+            long serial = userManager.getSerialNumberForUser(user.getRealHandle());
+            if (serial >= 0L) {
+                for (AppCatalogRecord record : SmartStateStore.getRememberedApps(context, serial)) {
+                    if (record == null
+                            || !TextUtils.equals(packageName, record.packageName)
+                            || TextUtils.isEmpty(record.activityName)) {
+                        continue;
+                    }
+                    return user.addUserSuffixToString(
+                            "app://" + packageName + "/" + record.activityName, '/');
+                }
+            }
+        }
+
+        ComponentName launcher = PackageManagerUtils.getLaunchingComponent(
+                context, packageName, user);
+        if (launcher != null) {
+            return user.addUserSuffixToString(
+                    "app://" + launcher.getPackageName() + "/" + launcher.getClassName(), '/');
+        }
+        return pojo.getHistoryId();
     }
 
     @Nullable
