@@ -385,10 +385,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                     emptyListView.setVisibility(View.GONE);
                 }
 
-                boolean visibleResultTreeChanged = forwarderManager.onDataSetChanged();
-                if (visibleResultTreeChanged) {
-                    applyGlobalTextScale(findViewById(android.R.id.content));
-                }
+                // Forwarders update/reconcile only the affected result tree. Do not recursively
+                // walk the entire launcher hierarchy after every dataset publication; dynamic rows
+                // are scaled once when they are created/bound.
+                forwarderManager.onDataSetChanged();
 
             }
         });
@@ -802,6 +802,18 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         int clamped = Math.max(70, Math.min(160, percent));
         prefs.edit().putInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, clamped).apply();
         recreate();
+    }
+
+    /**
+     * Scale a newly created result subtree only. This replaces the former whole-window recursive
+     * traversal on every History update.
+     */
+    public void applyGlobalTextScaleToSubtree(View view) {
+        if (view == null) return;
+        int percent = Math.max(70, Math.min(160,
+                prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));
+        if (percent == 100) return;
+        applyGlobalTextScale(view, percent / 100f);
     }
 
     private void applyGlobalTextScale(View view) {
