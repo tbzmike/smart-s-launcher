@@ -844,9 +844,16 @@ final class SmartCardListForwarder extends Forwarder {
         View.OnLongClickListener longPress = v -> {
             int currentPosition = resolveAdapterPosition(result.getPojoId());
             if (currentPosition < 0) return false;
-            mainActivity.adapter.onLongClick(currentPosition, card);
+            mainActivity.adapter.onLongClick(currentPosition, v);
             return true;
         };
+
+        // The icon itself is a first-class context-menu target in every History renderer. This is
+        // especially important for fallback icons created by Vertical Cards, which do not inherit
+        // the adapter row's listener.
+        iconView.setLongClickable(true);
+        iconView.setOnLongClickListener(longPress);
+
         card.setOnClickListener(launchOrExpand);
         cardTitle.setOnClickListener(launchOrExpand);
         card.setOnLongClickListener(longPress);
