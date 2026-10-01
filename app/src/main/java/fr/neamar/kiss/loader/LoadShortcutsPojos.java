@@ -35,6 +35,9 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
 
     @Override
     protected List<ShortcutPojo> doInBackground(Void... params) {
+        // ShortcutManager can return a large binder payload. Run all parsing/database catalog work
+        // at background priority so a provider refresh cannot compete with scroll rendering.
+        Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
         Context context = this.context.get();
         if (context == null) return new ArrayList<>();
 
