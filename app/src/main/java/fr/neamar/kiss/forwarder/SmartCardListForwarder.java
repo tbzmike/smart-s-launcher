@@ -50,6 +50,7 @@ final class SmartCardListForwarder extends Forwarder {
     private static final long ACTIVE_QUERY_REBUILD_DEBOUNCE_MS = 120L;
 
     private final Map<String, String> activeQueryCardSignatures = new HashMap<>();
+    private final Map<String, String> historyCardSignatures = new HashMap<>();
     private final Map<Long, Integer> accentCache =
             new LinkedHashMap<Long, Integer>(MAX_ACCENT_CACHE_SIZE, 0.75f, true) {
                 @Override
@@ -165,6 +166,7 @@ final class SmartCardListForwarder extends Forwarder {
         deferredHistoryRefreshCallback = null;
         userScrollStartedCallback = null;
         activeQueryCardSignatures.clear();
+        historyCardSignatures.clear();
         accentCache.clear();
         container = null;
         scroller = null;
@@ -343,6 +345,7 @@ final class SmartCardListForwarder extends Forwarder {
                 // the user cannot see them.
                 column.removeAllViews();
                 activeQueryCardSignatures.clear();
+                historyCardSignatures.clear();
                 pendingDataSetRefresh = false;
                 forceNextHistoryRebuild = false;
                 renderedActiveQuery = false;
@@ -384,24 +387,31 @@ final class SmartCardListForwarder extends Forwarder {
 
         if (activeQuery && allowActiveQueryReuse && previouslyRenderedActiveQuery) {
             reconcileActiveQueryCards();
+        } else if (!activeQuery && !previouslyRenderedActiveQuery
+                && column.getChildCount() > 0) {
+            // History updates are usually a reorder/insert/remove, not a reason to destroy 50
+            // complex card trees. Reconcile stable identities and keep unchanged Views/drawables.
+            reconcileHistoryCards();
         } else {
-            Map<String, NotificationHistoryRecord> latestNotifications =
-                    !activeQuery && prefs.getBoolean("enable-notification-history", false)
-                            ? SmartStateStore.queryLatestNotificationsByPackage(mainActivity)
-                            : Collections.emptyMap();
+            // Never perform notification-history SQLite enrichment on the UI thread while building
+            // cards. Direct notification rows already contain their preview, and optional metadata
+            // forwarders enrich the tree asynchronously.
+            Map<String, NotificationHistoryRecord> latestNotifications = Collections.emptyMap();
             activeQueryCardSignatures.clear();
+            historyCardSignatures.clear();
             column.removeAllViews();
-                int count = mainActivity.adapter.getCount();
-                for (int position = 0; position < count; position++) {
-                    Result<?> result = mainActivity.adapter.getItem(position);
-                    View source = mainActivity.adapter.getView(position, null, column);
-                    View item = createCardItem(source, result, position, latestNotifications);
-                    column.addView(item);
-                    if (activeQuery) {
-                        activeQueryCardSignatures.put(
-                                result.getPojoId(), activeQueryCardSignature(result));
-                    }
+            int count = mainActivity.adapter.getCount();
+            for (int position = 0; position < count; position++) {
+                Result<?> result = mainActivity.adapter.getItem(position);
+                View source = mainActivity.adapter.getView(position, null, column);
+                View item = createCardItem(source, result, position, latestNotifications);
+                column.addView(item);
+                if (activeQuery) {
+                    activeQueryCardSignatures.put(result.getPojoId(), cardSignature(result));
+                } else {
+                    historyCardSignatures.put(result.getPojoId(), cardSignature(result));
                 }
+            }
         }
 
         if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
@@ -435,7 +445,7 @@ final class SmartCardListForwarder extends Forwarder {
         for (int position = 0; position < targetCount; position++) {
             Result<?> result = mainActivity.adapter.getItem(position);
             String id = result.getPojoId();
-            String signature = activeQueryCardSignature(result);
+            String signature = cardSignature(result);
             nextSignatures.put(id, signature);
 
             View desired = existingById.remove(id);
@@ -449,7 +459,7 @@ final class SmartCardListForwarder extends Forwarder {
                 desired = createCardItem(
                         source, result, position, Collections.emptyMap());
             }
-            placeActiveQueryChild(desired, position);
+            placeCardChild(desired, position);
         }
 
         // Entries left in the map disappeared from the new query result set. Remove those exact
@@ -466,7 +476,61 @@ final class SmartCardListForwarder extends Forwarder {
         column.invalidate();
     }
 
-    private void placeActiveQueryChild(View child, int targetPosition) {
+    /**
+     * Reconcile the idle History card tree in place. Unchanged cards keep their nested text,
+     * drawables, click wiring and icon-accent cache; only genuinely new/changed cards are rebuilt.
+     * This removes the large allocation/layout burst that used to accompany every launch,
+     * notification or provider publication.
+     */
+    private void reconcileHistoryCards() {
+        if (column == null || mainActivity.adapter == null) return;
+
+        Map<String, View> existingById = new HashMap<>();
+        for (int i = 0; i < column.getChildCount(); i++) {
+            View child = column.getChildAt(i);
+            Object tag = child.getTag();
+            if (tag instanceof String && !existingById.containsKey((String) tag)) {
+                existingById.put((String) tag, child);
+            }
+        }
+
+        Map<String, String> nextSignatures = new HashMap<>();
+        int targetCount = mainActivity.adapter.getCount();
+        for (int position = 0; position < targetCount; position++) {
+            Result<?> result = mainActivity.adapter.getItem(position);
+            if (result == null) continue;
+            String id = result.getPojoId();
+            String signature = cardSignature(result);
+            nextSignatures.put(id, signature);
+
+            View desired = existingById.remove(id);
+            if (desired != null
+                    && !TextUtils.equals(historyCardSignatures.get(id), signature)) {
+                if (desired.getParent() == column) column.removeView(desired);
+                desired = null;
+            }
+            if (desired == null) {
+                View source = mainActivity.adapter.getView(position, null, column);
+                desired = createCardItem(source, result, position, Collections.emptyMap());
+            }
+            placeCardChild(desired, position);
+        }
+
+        for (View stale : existingById.values()) {
+            if (stale.getParent() == column) column.removeView(stale);
+        }
+        while (column.getChildCount() > targetCount) {
+            column.removeViewAt(column.getChildCount() - 1);
+        }
+
+        historyCardSignatures.clear();
+        historyCardSignatures.putAll(nextSignatures);
+        activeQueryCardSignatures.clear();
+        forceNextHistoryRebuild = false;
+        column.requestLayout();
+    }
+
+    private void placeCardChild(View child, int targetPosition) {
         if (child.getParent() == column) {
             int currentPosition = column.indexOfChild(child);
             if (currentPosition == targetPosition) return;
@@ -477,8 +541,28 @@ final class SmartCardListForwarder extends Forwarder {
         column.addView(child, Math.min(targetPosition, column.getChildCount()));
     }
 
-    private String activeQueryCardSignature(Result<?> result) {
-        return result.getClass().getName() + "|" + result.getPojoId() + "|" + result.toString();
+    private String cardSignature(Result<?> result) {
+        if (result == null || result.getPojo() == null) return "<null>";
+        fr.neamar.kiss.pojo.Pojo pojo = result.getPojo();
+        StringBuilder signature = new StringBuilder(96)
+                .append(result.getClass().getName()).append('|')
+                .append(result.getPojoId()).append('|')
+                .append(pojo.getName()).append('|')
+                .append(pojo.isDisabled());
+
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo n = (NotificationPojo) pojo;
+            signature.append('|').append(n.postTime)
+                    .append('|').append(n.notificationCount)
+                    .append('|').append(n.latestTitle)
+                    .append('|').append(n.latestText);
+        } else if (pojo instanceof CommunicationPojo) {
+            CommunicationPojo communication = (CommunicationPojo) pojo;
+            signature.append('|').append(communication.timestamp)
+                    .append('|').append(communication.displayName)
+                    .append('|').append(communication.body);
+        }
+        return signature.toString();
     }
 
     private final class StableCardScrollView extends ScrollView {
@@ -1214,14 +1298,20 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     private int prefInt(String key, int fallback, int min, int max) {
-        Object raw = prefs.getAll().get(key);
+        // SharedPreferences.getAll() allocates/copies the complete preference map. createCardItem()
+        // reads several dimensions per card, so getAll() multiplied allocations across the whole
+        // History tree and triggered avoidable GC during rebuilds. Read only the requested key.
         int value = fallback;
-        if (raw instanceof Number) value = Math.round(((Number) raw).floatValue());
-        else if (raw instanceof String) {
-            try {
-                value = Math.round(Float.parseFloat((String) raw));
-            } catch (NumberFormatException ignored) {
-                value = fallback;
+        try {
+            value = Math.round(Float.parseFloat(prefs.getString(key, Integer.toString(fallback))));
+        } catch (ClassCastException | NumberFormatException ignored) {
+            try { value = prefs.getInt(key, fallback); }
+            catch (ClassCastException ignoredInt) {
+                try { value = Math.round(prefs.getFloat(key, fallback)); }
+                catch (ClassCastException ignoredFloat) {
+                    try { value = (int) prefs.getLong(key, fallback); }
+                    catch (ClassCastException ignoredLong) { value = fallback; }
+                }
             }
         }
         return Math.max(min, Math.min(max, value));
