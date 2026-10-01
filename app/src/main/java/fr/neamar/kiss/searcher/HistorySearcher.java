@@ -34,6 +34,7 @@ import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.utils.AppLaunchUtils;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
@@ -90,7 +91,7 @@ public class HistorySearcher extends Searcher {
         // id that was launched, so an app-level history exclusion must not be expanded into every
         // shortcut published by that app. Exact shortcut ids remain independently excludable.
         if (excludeFavorites) {
-            for (Pojo favoritePojo : dataHandler.getFavorites()) {
+            for (Pojo favoritePojo : dataHandler.getFavoritesIncludingDisabled()) {
                 if (shouldAbort()) return null;
                 excludedPojoById.add(favoritePojo.id);
             }
@@ -160,6 +161,11 @@ public class HistorySearcher extends Searcher {
             // warm Home row with a list that temporarily cannot resolve a dynamic shortcut.
             Pojo pojo = resolveHistoryTarget(activity, dataHandler, historyId);
             if (pojo == null || excludedPojoById.contains(pojo.id)) continue;
+            if (pojo instanceof AppPojo
+                    && ((AppPojo) pojo).isDisabled()
+                    && !FrozenAppPreferences.keepHistoryAndFavorites(activity)) {
+                continue;
+            }
 
             pojo.relevance = HistoryRecencyOrder.relevanceForNewestFirstIndex(recordCount, i);
             history.add(pojo);
@@ -264,11 +270,15 @@ public class HistorySearcher extends Searcher {
 
         AppCatalogRecord record = rememberedAppsByHistoryId.get(requestedId);
         UserHandle user = rememberedAppUsersByHistoryId.get(requestedId);
-        if (record == null || user == null) return null;
+        if (record == null || user == null) {
+            return dataHandler.resolveRememberedAppHistory(requestedId);
+        }
 
         boolean excludedFromHistory = dataHandler.getExcludedFromHistory().contains(requestedId);
         boolean disabled = user.isCurrentUser()
                 && !AppLaunchUtils.isPackageEnabled(activity, record.packageName);
+        if (disabled && !FrozenAppPreferences.detect(activity)) return null;
+
         AppPojo app = new AppPojo(requestedId, record.packageName, record.activityName, user,
                 false, excludedFromHistory, false, disabled);
         app.setName(record.label == null ? record.packageName : record.label);
@@ -474,6 +484,11 @@ public class HistorySearcher extends Searcher {
         if (excludedPojoById.contains(pojo.id)) return true;
         if (pojo instanceof AppPojo) {
             AppPojo app = (AppPojo) pojo;
+            MainActivity activity = activityWeakReference.get();
+            if (activity != null && app.isDisabled()
+                    && !FrozenAppPreferences.keepHistoryAndFavorites(activity)) {
+                return true;
+            }
             return app.isExcludedFromHistory() || excludedPackages.contains(app.packageName);
         }
         if (pojo instanceof ShortcutPojo) {
