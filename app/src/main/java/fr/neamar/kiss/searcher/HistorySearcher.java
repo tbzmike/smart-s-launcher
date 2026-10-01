@@ -161,9 +161,7 @@ public class HistorySearcher extends Searcher {
             // warm Home row with a list that temporarily cannot resolve a dynamic shortcut.
             Pojo pojo = resolveHistoryTarget(activity, dataHandler, historyId);
             if (pojo == null || excludedPojoById.contains(pojo.id)) continue;
-            if (pojo instanceof AppPojo
-                    && ((AppPojo) pojo).isDisabled()
-                    && !FrozenAppPreferences.keepHistoryAndFavorites(activity)) {
+            if (!FrozenAppPreferences.keepInHistoryAndFavorites(activity, pojo)) {
                 continue;
             }
 
@@ -344,8 +342,15 @@ public class HistorySearcher extends Searcher {
                 UserHandle user = new UserHandle(activity, profile);
                 if (!requestedId.equals(ShortcutUtil.generateShortcutId(user, record))) continue;
 
+                boolean disabled = !AppLaunchUtils.isPackageEnabled(activity, record.packageName);
+                if (ShortcutUtil.isIceBoxPublisher(activity, record.packageName)) {
+                    disabled = false;
+                }
                 ShortcutPojo pojo = new ShortcutPojo(user, record, null,
-                        true, false, true);
+                        true, false, disabled);
+                if (!FrozenAppPreferences.keepInHistoryAndFavorites(activity, pojo)) {
+                    return null;
+                }
                 pojo.setName(record.name);
                 pojo.setTags(dataHandler.getTagsHandler().getTags(pojo.id));
                 return pojo;
@@ -482,13 +487,12 @@ public class HistorySearcher extends Searcher {
                                          Set<String> excludedPackages) {
         if (pojo == null) return false;
         if (excludedPojoById.contains(pojo.id)) return true;
+        MainActivity activity = activityWeakReference.get();
+        if (activity != null && !FrozenAppPreferences.keepInHistoryAndFavorites(activity, pojo)) {
+            return true;
+        }
         if (pojo instanceof AppPojo) {
             AppPojo app = (AppPojo) pojo;
-            MainActivity activity = activityWeakReference.get();
-            if (activity != null && app.isDisabled()
-                    && !FrozenAppPreferences.keepHistoryAndFavorites(activity)) {
-                return true;
-            }
             return app.isExcludedFromHistory() || excludedPackages.contains(app.packageName);
         }
         if (pojo instanceof ShortcutPojo) {
