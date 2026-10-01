@@ -42,6 +42,8 @@ public class DBHelper {
 
             entry.record = cursor.getString(0);
             entry.value = cursor.getInt(1);
+            if (cursor.getColumnCount() > 2) entry.timestamp = cursor.getLong(2);
+            if (cursor.getColumnCount() > 3) entry.sequence = cursor.getLong(3);
 
             records.add(entry);
             cursor.moveToNext();
@@ -130,7 +132,8 @@ public class DBHelper {
         // when the authoritative History query completes. Group by the identity and explicitly
         // order by its newest row id instead.
         return db.rawQuery(
-                "SELECT record, 1 FROM history GROUP BY record ORDER BY MAX(_id) DESC LIMIT ?",
+                "SELECT record, 1, MAX(timeStamp), MAX(_id) FROM history "
+                        + "GROUP BY record ORDER BY MAX(_id) DESC LIMIT ?",
                 new String[]{Integer.toString(limit)});
     }
 
@@ -237,7 +240,8 @@ public class DBHelper {
             // Keep the cancellable Home-timeline read semantically identical to the normal RECENCY
             // path: one row per history identity, ordered by that identity's newest launch.
             Cursor cursor = recoveryDb.rawQuery(
-                    "SELECT record, 1 FROM history GROUP BY record ORDER BY MAX(_id) DESC LIMIT ?",
+                    "SELECT record, 1, MAX(timeStamp), MAX(_id) FROM history "
+                            + "GROUP BY record ORDER BY MAX(_id) DESC LIMIT ?",
                     new String[]{Integer.toString(limit)}, cancellationSignal);
             return readCursor(cursor);
         });
