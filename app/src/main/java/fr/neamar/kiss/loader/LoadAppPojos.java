@@ -29,6 +29,7 @@ import fr.neamar.kiss.db.AppRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.UserHandle;
@@ -36,7 +37,6 @@ import fr.neamar.kiss.utils.UserHandle;
 public class LoadAppPojos extends LoadPojos<AppPojo> {
 
     public static final String PREF_INDEX_DISABLED_APPS = "index-disabled-apps";
-    public static final String PREF_DETECT_FROZEN_APPS = "smart-detect-frozen-apps";
     private static final String TAG = LoadAppPojos.class.getSimpleName();
     private final TagsHandler tagsHandler;
 
@@ -55,8 +55,7 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         if (ctx == null) return apps;
 
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
-        boolean indexDisabledApps = prefs.getBoolean(PREF_DETECT_FROZEN_APPS,
-                prefs.getBoolean(PREF_INDEX_DISABLED_APPS, true));
+        boolean indexDisabledApps = FrozenAppPreferences.detect(ctx);
         Set<String> excludedAppList = KissApplication.getApplication(ctx).getDataHandler().getExcluded();
         Set<String> excludedFromHistoryAppList = KissApplication.getApplication(ctx).getDataHandler().getExcludedFromHistory();
         Set<String> excludedShortcutsAppList = KissApplication.getApplication(ctx).getDataHandler().getExcludedShortcutApps();
