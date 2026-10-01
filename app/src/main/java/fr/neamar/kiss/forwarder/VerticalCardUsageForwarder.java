@@ -334,11 +334,15 @@ final class VerticalCardUsageForwarder extends Forwarder {
 
             if (!TextUtils.equals(metadataResult.view.getText(), metadataText)) {
                 metadataResult.view.setText(metadataText);
+                metadataResult.view.setContentDescription(metadataText);
                 layoutChanged = true;
             }
-            metadataResult.view.setContentDescription(metadataText);
-            metadataResult.view.setVisibility(View.VISIBLE);
-            SmartTextAppearance.applyHistoryMetadata(metadataResult.view);
+            if (metadataResult.view.getVisibility() != View.VISIBLE) {
+                metadataResult.view.setVisibility(View.VISIBLE);
+            }
+            if (metadataResult.created) {
+                SmartTextAppearance.applyHistoryMetadata(metadataResult.view);
+            }
         }
 
         if (protectViewport && layoutChanged) {
