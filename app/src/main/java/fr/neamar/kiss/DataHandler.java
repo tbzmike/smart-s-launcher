@@ -1053,7 +1053,23 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         // Respect exclusions on either representation. Canonicalization must never bypass a user's
         // explicit history privacy choice.
         if (excludedFromHistory.contains(canonicalId)) return;
+
+        if (!TextUtils.equals(canonicalId, id)) {
+            // Fold any older wrapper rows into the real app before recording this launch. The
+            // original timestamps/queries remain untouched, so frequency, today's count and the
+            // chronological timeline all immediately agree that this was the target app.
+            DBHelper.remapHistoryRecord(this.context, id, canonicalId);
+        }
         DBHelper.insertHistory(this.context, currentQuery, canonicalId);
+
+        // Pixel mode is predictive, not a static favorite row. Re-score it after an explicit
+        // launch; MainActivity already defers this broadcast while HOME is backgrounded, so this
+        // adds no competing work while the launched app owns the screen.
+        SharedPreferences launcherPrefs =
+                PreferenceManager.getDefaultSharedPreferences(this.context);
+        if ("pixel".equals(launcherPrefs.getString("favorites-bar-mode", "standard"))) {
+            refreshFavorites();
+        }
     }
 
     private void rememberLaunchedAppIdentity(@Nullable Pojo pojo) {
