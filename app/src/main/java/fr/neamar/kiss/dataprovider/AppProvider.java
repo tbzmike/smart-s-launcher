@@ -317,6 +317,14 @@ public class AppProvider extends Provider<AppPojo>
             sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         } else if (FrozenAppPreferences.PREF_RECONCILE_INTERVAL.equals(key)) {
             updateFrozenReconcileSchedule(launcherUiVisible);
+        } else if (FrozenAppPreferences.PREF_PACKAGE_MONITORING.equals(key)) {
+            // Turning monitoring back on must synchronize once immediately; otherwise
+            // "Package changes only" could remain stale until the next external event.
+            if (FrozenAppPreferences.monitorPackageChanges(this)) {
+                reload();
+                KissApplication.getApplication(this).getDataHandler().reloadShortcuts();
+                sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
+            }
         } else if (FrozenAppPreferences.PREF_KEEP_SEARCHABLE.equals(key)) {
             // Re-run the visible query/history boundary; provider data itself does not need reload.
             sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
