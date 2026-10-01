@@ -45,6 +45,9 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
 
     @Override
     protected List<AppPojo> doInBackground(Void... params) {
+        // PackageManager/LauncherApps enumeration can take >1s on large installs. Keep it at
+        // background scheduling priority so it cannot steal CPU time from launcher frames.
+        Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
         long start = System.currentTimeMillis();
         List<AppPojo> apps = new ArrayList<>();
         Set<String> seenPackages = new HashSet<>();
@@ -191,8 +194,20 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         String packageKey = packageKey(serial, activity.packageName);
         if (seenPackages.contains(packageKey)) return;
 
-        CharSequence label = resolveInfo.loadLabel(pm);
-        if (label == null || label.length() == 0) label = activity.applicationInfo.loadLabel(pm);
+        CharSequence label = null;
+        try {
+            label = resolveInfo.loadLabel(pm);
+        } catch (RuntimeException ignored) {
+            // Some installed apps advertise a stale/broken label resource. Falling back avoids
+            // repeated Resources$NotFoundException stack construction during every app scan.
+        }
+        if (label == null || label.length() == 0) {
+            try {
+                label = activity.applicationInfo.loadLabel(pm);
+            } catch (RuntimeException ignored) {
+                label = activity.packageName;
+            }
+        }
         boolean disabled = isPackageDisabled(pm, activity.applicationInfo) || !activity.enabled;
         AppPojo app = createPojo(user, activity.packageName, activity.name,
                 label == null ? activity.packageName : label, disabled,
