@@ -281,27 +281,30 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                         return;
                     }
 
+                    fr.neamar.kiss.DataHandler dataHandler =
+                            KissApplication.getApplication(context).getDataHandler();
+                    if (!dataHandler.isAllProvidersLoaded()) {
+                        // AppProvider and ShortcutsProvider often finish close together. Publishing
+                        // an intermediate History for each completion caused two searches, two
+                        // adapter mutations and two card rebuilds. Wait for the provider batch.
+                        displayLoader(true);
+                        return;
+                    }
+
                     boolean forceVisibleRebind =
                             intent.getBooleanExtra(EXTRA_FORCE_VISIBLE_REBIND, false);
                     updateSearchRecords();
                     if (forceVisibleRebind && adapter != null) {
-                        // Preference-only icon presentation (for example grey frozen apps) can
-                        // leave the Pojo list byte-for-byte identical. Force only a visible row
-                        // rebind; do not start another provider scan or background worker.
                         adapter.notifyDataSetChanged();
                     }
-                    if (!KissApplication.getApplication(context).getDataHandler().isAllProvidersLoaded()) {
-                        displayLoader(true);
-                    } else {
-                        Log.v(TAG, "All providers are done loading.");
-                        displayLoader(false);
-                    }
-                    // Provider changes can affect favorites; notification timeline changes cannot.
+                    Log.v(TAG, "All providers are done loading.");
+                    displayLoader(false);
+                    // Refresh favorites once after the complete provider batch, not once per loader.
                     onFavoriteChange();
                 } else if (START_LOAD.equalsIgnoreCase(intent.getAction())) {
+                    // Provider starts are not data changes. Avoid rebuilding favorites while the
+                    // replacement provider snapshot is still incomplete.
                     displayLoader(true);
-                    // New provider might mean new favorites
-                    onFavoriteChange();
                 }
             }
         };
