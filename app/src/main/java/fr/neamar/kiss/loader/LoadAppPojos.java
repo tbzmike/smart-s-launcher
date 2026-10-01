@@ -2,7 +2,6 @@ package fr.neamar.kiss.loader;
 
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherActivityInfo;
@@ -14,7 +13,6 @@ import android.os.Process;
 import android.os.UserManager;
 
 import androidx.core.content.ContextCompat;
-import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -54,7 +52,6 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         Context ctx = context.get();
         if (ctx == null) return apps;
 
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(ctx);
         boolean indexDisabledApps = FrozenAppPreferences.detect(ctx);
         Set<String> excludedAppList = KissApplication.getApplication(ctx).getDataHandler().getExcluded();
         Set<String> excludedFromHistoryAppList = KissApplication.getApplication(ctx).getDataHandler().getExcludedFromHistory();
