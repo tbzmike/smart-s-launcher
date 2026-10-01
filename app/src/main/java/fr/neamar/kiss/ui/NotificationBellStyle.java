@@ -1,6 +1,5 @@
 package fr.neamar.kiss.ui;
 
-import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
@@ -24,7 +23,7 @@ import fr.neamar.kiss.result.Result;
 
 /** One strict notification-event identity rule shared by native and custom result renderers. */
 public final class NotificationBellStyle {
-    private static final WeakHashMap<TextView, ValueAnimator> FLASHERS = new WeakHashMap<>();
+    private static final WeakHashMap<TextView, Boolean> FLASHERS = new WeakHashMap<>();
     private static final WeakHashMap<TextView, Boolean> DETACH_GUARDS = new WeakHashMap<>();
     private static final WeakHashMap<TextView, BellState> STATES = new WeakHashMap<>();
 
@@ -144,7 +143,7 @@ public final class NotificationBellStyle {
         if (flashUnread && !animationSuppressed) startFlashing(textView, bell);
     }
 
-    /** Stop only the expensive frame-by-frame bell animators while a native list is moving. */
+    /** Keep unread bells static while scrolling. */
     public static void pauseFlashingInTree(@NonNull View root) {
         visitTextViews(root, text -> {
             BellState state = STATES.get(text);
@@ -152,7 +151,7 @@ public final class NotificationBellStyle {
         });
     }
 
-    /** Restore unread-bell animation once scrolling is idle. */
+    /** Restore the static unread-bell state once scrolling is idle. */
     public static void resumeFlashingInTree(@NonNull View root) {
         visitTextViews(root, text -> {
             BellState state = STATES.get(text);
@@ -178,22 +177,15 @@ public final class NotificationBellStyle {
     }
 
     private static void startFlashing(@NonNull TextView textView, @NonNull Drawable bell) {
+        // Performance contract: unread bells are highlighted statically, never animated forever.
+        // Vertical Cards build adapter source rows off-screen; the old infinite ValueAnimator could
+        // start on a TextView that was never attached and therefore never receive a detach callback,
+        // leaving orphan animators invalidating at frame rate. Static yellow keeps the unread cue
+        // without any recurring main-thread work.
         stopFlashing(textView);
         ensureDetachGuard(textView);
-        ValueAnimator animator = ValueAnimator.ofInt(255, 55, 255);
-        animator.setDuration(900L);
-        animator.setRepeatCount(ValueAnimator.INFINITE);
-        animator.addUpdateListener(value -> {
-            Drawable[] current = textView.getCompoundDrawablesRelative();
-            if (current.length < 3 || current[2] != bell) {
-                stopFlashing(textView);
-                return;
-            }
-            bell.setAlpha((Integer) value.getAnimatedValue());
-            textView.invalidate();
-        });
-        FLASHERS.put(textView, animator);
-        animator.start();
+        bell.setAlpha(255);
+        FLASHERS.put(textView, Boolean.TRUE);
     }
 
     private static void ensureDetachGuard(@NonNull TextView textView) {
@@ -208,7 +200,8 @@ public final class NotificationBellStyle {
     }
 
     private static void stopFlashing(@NonNull TextView textView) {
-        ValueAnimator previous = FLASHERS.remove(textView);
-        if (previous != null) previous.cancel();
+        FLASHERS.remove(textView);
+        Drawable[] current = textView.getCompoundDrawablesRelative();
+        if (current.length >= 3 && current[2] != null) current[2].setAlpha(255);
     }
 }
