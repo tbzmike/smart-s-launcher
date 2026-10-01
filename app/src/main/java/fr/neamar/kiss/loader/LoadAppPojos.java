@@ -11,11 +11,13 @@ import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.os.Process;
 import android.os.UserManager;
+import android.text.TextUtils;
 
 import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -64,10 +66,17 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         LauncherApps launcherApps = ContextCompat.getSystemService(ctx, LauncherApps.class);
         if (manager == null || launcherApps == null) return apps;
 
+        // Load the persistent catalog once per profile. Provider reloads used to UPDATE/DELETE the
+        // same app_catalog rows for every installed app on every scan even when nothing changed,
+        // creating avoidable SQLite work and allocation/GC pressure.
+        Map<Long, Map<String, AppCatalogRecord>> rememberedBySerial = new LinkedHashMap<>();
+
         for (android.os.UserHandle profile : manager.getUserProfiles()) {
             boolean isPrivateProfile = PackageManagerUtils.isPrivateProfile(launcherApps, profile);
             long serial = manager.getSerialNumberForUser(profile);
             UserHandle user = new UserHandle(serial, profile);
+            Map<String, AppCatalogRecord> rememberedForProfile =
+                    rememberedForProfile(ctx, serial, rememberedBySerial);
             for (LauncherActivityInfo activityInfo : launcherApps.getActivityList(null, profile)) {
                 if (isCancelled()) break;
                 ApplicationInfo appInfo = activityInfo.getApplicationInfo();
@@ -81,7 +90,7 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                             excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
                     apps.add(app);
                     seenPackages.add(packageKey);
-                    SmartStateStore.rememberApp(ctx, appInfo.packageName, activityInfo.getName(), activityInfo.getLabel().toString(), serial);
+                    rememberAppIfChanged(ctx, app, serial, rememberedForProfile);
                 }
             }
         }
@@ -89,6 +98,8 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         android.os.UserHandle currentProfile = Process.myUserHandle();
         long currentSerial = manager.getSerialNumberForUser(currentProfile);
         UserHandle currentUser = new UserHandle(currentSerial, currentProfile);
+        Map<String, AppCatalogRecord> currentRemembered =
+                rememberedForProfile(ctx, currentSerial, rememberedBySerial);
         PackageManager pm = ctx.getPackageManager();
         Intent launcherIntent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         int flags = indexDisabledApps ? PackageManager.MATCH_DISABLED_COMPONENTS : 0;
@@ -98,7 +109,8 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
         for (ResolveInfo resolveInfo : disabledCandidates) {
             if (isCancelled()) break;
             addResolvedLauncherCandidate(ctx, apps, seenPackages, resolveInfo, currentSerial, currentUser,
-                    excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList, pm);
+                    excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList, pm,
+                    currentRemembered);
         }
 
         if (indexDisabledApps) {
@@ -131,7 +143,8 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                 }
                 if (chosen != null) {
                     addResolvedLauncherCandidate(ctx, apps, seenPackages, chosen, currentSerial, currentUser,
-                            excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList, pm);
+                            excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList, pm,
+                            currentRemembered);
                 }
             }
         }
@@ -140,7 +153,7 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
             // Persistent catalog is the final safety net. IceBox can hide a disabled package from both
             // LauncherApps and launcher-intent queries. Installed-but-hidden is a frozen state, never an
             // uninstall: retain the exact remembered app://package/activity identity.
-            for (AppCatalogRecord remembered : SmartStateStore.getRememberedApps(ctx, currentSerial)) {
+            for (AppCatalogRecord remembered : new ArrayList<>(currentRemembered.values())) {
                 String packageKey = packageKey(currentSerial, remembered.packageName);
                 if (seenPackages.contains(packageKey)) continue;
 
@@ -188,7 +201,8 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                                               Set<String> excludedAppList,
                                               Set<String> excludedFromHistoryAppList,
                                               Set<String> excludedShortcutsAppList,
-                                              PackageManager pm) {
+                                              PackageManager pm,
+                                              Map<String, AppCatalogRecord> rememberedForProfile) {
         ActivityInfo activity = resolveInfo == null ? null : resolveInfo.activityInfo;
         if (activity == null || activity.applicationInfo == null || !activity.exported) return;
         String packageKey = packageKey(serial, activity.packageName);
@@ -214,7 +228,47 @@ public class LoadAppPojos extends LoadPojos<AppPojo> {
                 excludedAppList, excludedFromHistoryAppList, excludedShortcutsAppList);
         apps.add(app);
         seenPackages.add(packageKey);
-        SmartStateStore.rememberApp(ctx, activity.packageName, activity.name, app.getName(), serial);
+        rememberAppIfChanged(ctx, app, serial, rememberedForProfile);
+    }
+
+    private Map<String, AppCatalogRecord> rememberedForProfile(
+            Context context, long serial,
+            Map<Long, Map<String, AppCatalogRecord>> rememberedBySerial) {
+        Map<String, AppCatalogRecord> existing = rememberedBySerial.get(serial);
+        if (existing != null) return existing;
+
+        Map<String, AppCatalogRecord> indexed = new LinkedHashMap<>();
+        for (AppCatalogRecord record : SmartStateStore.getRememberedApps(context, serial)) {
+            if (record != null && !TextUtils.isEmpty(record.packageName)) {
+                indexed.put(record.packageName, record);
+            }
+        }
+        rememberedBySerial.put(serial, indexed);
+        return indexed;
+    }
+
+    private void rememberAppIfChanged(Context context, AppPojo app, long serial,
+                                      Map<String, AppCatalogRecord> remembered) {
+        if (app == null || TextUtils.isEmpty(app.packageName)
+                || TextUtils.isEmpty(app.activityName)) return;
+
+        String label = TextUtils.isEmpty(app.getName()) ? app.packageName : app.getName();
+        AppCatalogRecord previous = remembered.get(app.packageName);
+        if (previous != null
+                && TextUtils.equals(previous.activityName, app.activityName)
+                && TextUtils.equals(previous.label, label)
+                && previous.userSerial == serial) {
+            return;
+        }
+
+        SmartStateStore.rememberApp(
+                context, app.packageName, app.activityName, label, serial);
+        AppCatalogRecord updated = new AppCatalogRecord();
+        updated.packageName = app.packageName;
+        updated.activityName = app.activityName;
+        updated.label = label;
+        updated.userSerial = serial;
+        remembered.put(app.packageName, updated);
     }
 
     private boolean isPackageDisabled(PackageManager pm, ApplicationInfo info) {
