@@ -59,11 +59,13 @@ public final class SavedNotificationDestinationResolver {
         APP_NOT_INSTALLED,
         APP_DISABLED_CANNOT_ENABLE,
         LISTENER_RETRY_STARTED,
+        APP_FALLBACK_OPENED,
         NO_EXACT_TARGET;
 
         public boolean accepted() {
             return this == OPENED || this == ENABLE_RETRY_STARTED
-                    || this == LISTENER_RETRY_STARTED;
+                    || this == LISTENER_RETRY_STARTED
+                    || this == APP_FALLBACK_OPENED;
         }
     }
 
@@ -139,6 +141,30 @@ public final class SavedNotificationDestinationResolver {
                 ? OpenResult.LISTENER_RETRY_STARTED : OpenResult.NO_EXACT_TARGET;
     }
 
+    /**
+     * User-facing open policy: exact notification/message destination first, application main
+     * activity only when there is genuinely no exact target to open.
+     */
+    @NonNull
+    public static OpenResult openExactOrAppResult(@NonNull Context context,
+                                                  @Nullable NotificationHistoryRecord record) {
+        OpenResult exact = openExactResult(context, record);
+        if (exact != OpenResult.NO_EXACT_TARGET) return exact;
+        return openAppFallback(context, record)
+                ? OpenResult.APP_FALLBACK_OPENED : OpenResult.NO_EXACT_TARGET;
+    }
+
+    public static boolean openAppFallback(@NonNull Context context,
+                                          @Nullable NotificationHistoryRecord record) {
+        return record != null && openAppFallback(context, record.packageName);
+    }
+
+    public static boolean openAppFallback(@NonNull Context context,
+                                          @Nullable String packageName) {
+        return !TextUtils.isEmpty(packageName)
+                && AppLaunchUtils.launchPackage(context, packageName);
+    }
+
     private static boolean openExactNow(@NonNull Context context,
                                         @NonNull NotificationHistoryRecord record) {
         // The posting application's original notification tap route is authoritative. Reuse its
@@ -201,7 +227,7 @@ public final class SavedNotificationDestinationResolver {
             if (NotificationListener.isReadyForExactNotificationLookup()) {
                 boolean opened = openExactNow(context, record);
                 finishListenerRetry(retryKey);
-                if (!opened) showListenerRecoveryFailure(context);
+                if (!opened) showListenerRecoveryFailure(context, record);
                 return;
             }
             if (attempt + 1 < LISTENER_RETRY_COUNT) {
@@ -210,12 +236,15 @@ public final class SavedNotificationDestinationResolver {
                 return;
             }
             finishListenerRetry(retryKey);
-            showListenerRecoveryFailure(context);
+            showListenerRecoveryFailure(context, record);
         }, LISTENER_RETRY_DELAY_MS);
     }
 
-    private static void showListenerRecoveryFailure(@NonNull Context context) {
-        Toast.makeText(context, "Exact notification/message link could not be restored.",
+    private static void showListenerRecoveryFailure(@NonNull Context context,
+                                                    @NonNull NotificationHistoryRecord record) {
+        if (openAppFallback(context, record)) return;
+        Toast.makeText(context,
+                "Exact notification/message link could not be restored and the app could not be opened.",
                 Toast.LENGTH_SHORT).show();
     }
 
@@ -324,6 +353,7 @@ public final class SavedNotificationDestinationResolver {
                                 EXACT_RETRY_DELAY_MS);
                     } else {
                         Log.w(TAG, "Posting app did not become enabled in time for exact notification route");
+                        openAppFallback(context, record);
                     }
                     return;
                 }
@@ -336,6 +366,7 @@ public final class SavedNotificationDestinationResolver {
                         EXACT_RETRY_DELAY_MS);
             } else {
                 Log.w(TAG, "Exact notification route remained unavailable after app unfreeze");
+                openAppFallback(context, record);
             }
         }, delayMs);
     }
