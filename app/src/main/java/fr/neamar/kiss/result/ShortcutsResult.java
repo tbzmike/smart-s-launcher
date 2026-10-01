@@ -45,6 +45,7 @@ import fr.neamar.kiss.ui.TileLaunchCounter;
 import fr.neamar.kiss.utils.AppIdentityResolver;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
@@ -292,7 +293,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 }
             }
         }
-        DrawableUtils.setDisabled(appDrawable, this.pojo.isDisabled());
+        DrawableUtils.setDisabled(appDrawable, shouldGreyShortcut(context));
         return appDrawable;
     }
 
@@ -332,8 +333,20 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 }
             }
         }
-        DrawableUtils.setDisabled(icon, this.pojo.isDisabled());
+        DrawableUtils.setDisabled(icon, shouldGreyShortcut(context));
         return icon;
+    }
+
+    private boolean shouldGreyShortcut(@NonNull Context context) {
+        if (ShortcutUtil.isIceBoxPublisher(context, pojo.packageName)) return false;
+        return pojo.isDisabled() && FrozenAppPreferences.grey(context);
+    }
+
+    private boolean canAutoEnableShortcutPublisher(@NonNull Context context) {
+        // IceBox owns the shortcut launch route. Smart S must not second-guess IceBox by
+        // enabling/freezing the wrapped target package itself.
+        return ShortcutUtil.isIceBoxPublisher(context, pojo.packageName)
+                || FrozenAppPreferences.autoEnable(context);
     }
 
     @Override
@@ -349,7 +362,19 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 if (TextUtils.isEmpty(packageName) && intent.getComponent() != null) {
                     packageName = intent.getComponent().getPackageName();
                 }
-                if (!TextUtils.isEmpty(packageName)) AppLaunchUtils.ensurePackageEnabled(context, packageName);
+                if (!TextUtils.isEmpty(packageName)
+                        && !ShortcutUtil.isIceBoxPublisher(context, packageName)
+                        && !AppLaunchUtils.isPackageEnabled(context, packageName)) {
+                    if (!canAutoEnableShortcutPublisher(context)) {
+                        Toast.makeText(context, "Shortcut app is frozen. Auto-enable frozen apps is off.",
+                                Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    if (!AppLaunchUtils.ensurePackageEnabled(context, packageName)) {
+                        Toast.makeText(context, "Unable to enable shortcut app.", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                }
                 setSourceBounds(intent, v);
                 context.startActivity(intent);
                 launchSucceeded = true;
@@ -372,8 +397,17 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             return;
         }
 
-        boolean wasDisabled = !AppLaunchUtils.isPackageEnabled(context, pojo.packageName);
-        boolean enabledNow = !wasDisabled || AppLaunchUtils.ensurePackageEnabled(context, pojo.packageName);
+        boolean iceBoxRoute = ShortcutUtil.isIceBoxPublisher(context, pojo.packageName);
+        boolean wasDisabled = !iceBoxRoute
+                && !AppLaunchUtils.isPackageEnabled(context, pojo.packageName);
+        if (wasDisabled && !canAutoEnableShortcutPublisher(context)) {
+            Toast.makeText(context, "Shortcut app is frozen. Auto-enable frozen apps is off.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        boolean enabledNow = iceBoxRoute
+                || !wasDisabled
+                || AppLaunchUtils.ensurePackageEnabled(context, pojo.packageName);
         Rect sourceBounds = getViewBounds(v);
 
         if (enabledNow && tryExactShortcutLaunch(context, launcherApps, sourceBounds)) {
