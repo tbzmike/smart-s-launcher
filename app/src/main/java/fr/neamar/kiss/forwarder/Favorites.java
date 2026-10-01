@@ -58,6 +58,7 @@ import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
+import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
 
 public class Favorites extends Forwarder {
@@ -526,6 +527,14 @@ public class Favorites extends Forwarder {
 
                     long leftForeground = usageForPackage(usageSnapshot, left.packageName);
                     long rightForeground = usageForPackage(usageSnapshot, right.packageName);
+                    if (ShortcutUtil.isIceBoxPublisher(mainActivity, left.packageName)
+                            && (leftStats == null || leftStats.totalLaunches <= 0)) {
+                        leftForeground = 0L;
+                    }
+                    if (ShortcutUtil.isIceBoxPublisher(mainActivity, right.packageName)
+                            && (rightStats == null || rightStats.totalLaunches <= 0)) {
+                        rightForeground = 0L;
+                    }
                     PixelFavoritesPolicy.PredictionSignal leftSignal =
                             predictionSignal(leftStats, leftForeground);
                     PixelFavoritesPolicy.PredictionSignal rightSignal =
@@ -542,6 +551,13 @@ public class Favorites extends Forwarder {
                     LaunchStatsProvider.LaunchStats stats = launchStats == null
                             ? null : launchStats.get(app.getHistoryId());
                     long foregroundToday = usageForPackage(usageSnapshot, app.packageName);
+                    if (ShortcutUtil.isIceBoxPublisher(mainActivity, app.packageName)
+                            && (stats == null || stats.totalLaunches <= 0)) {
+                        // Android can briefly foreground IceBox while it routes another app. That
+                        // must not make IceBox itself a predicted app; only an explicit IceBox app
+                        // launch gives it launch history of its own.
+                        foregroundToday = 0L;
+                    }
                     if ((stats == null || stats.totalLaunches <= 0) && foregroundToday <= 0L) {
                         continue;
                     }
