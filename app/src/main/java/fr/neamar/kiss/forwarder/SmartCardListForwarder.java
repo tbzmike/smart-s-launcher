@@ -848,24 +848,39 @@ final class SmartCardListForwarder extends Forwarder {
             return true;
         };
 
-        // The icon itself is a first-class context-menu target in every History renderer. This is
-        // especially important for fallback icons created by Vertical Cards, which do not inherit
-        // the adapter row's listener.
+        // The icon itself is a first-class launch + context-menu target in every History renderer.
+        // 3.30.142 added only the long-click side, which made the child consume normal taps. Bind
+        // both actions to the same physical icon so one tap always launches immediately.
+        iconView.setClickable(true);
         iconView.setLongClickable(true);
+        iconView.setOnClickListener(v -> {
+            int currentPosition = resolveAdapterPosition(result.getPojoId());
+            if (currentPosition < 0) return;
+            if (directNotification) {
+                mainActivity.adapter.openNotificationApp(currentPosition, v);
+            } else {
+                mainActivity.adapter.onClick(currentPosition, v);
+            }
+        });
         iconView.setOnLongClickListener(longPress);
 
         card.setOnClickListener(launchOrExpand);
         cardTitle.setOnClickListener(launchOrExpand);
         card.setOnLongClickListener(longPress);
         cardTitle.setOnLongClickListener(longPress);
-        if (directShortcut && expandableMessage != null) {
-            // Shortcut notification previews are informational content inside the shortcut card.
-            // The source adapter TextView can carry an exact-notification click listener; overwrite
-            // it after re-parenting so tapping any shortcut-body text follows the same launch path
-            // as the icon/title and cannot produce an unrelated notification-destination error.
-            expandableMessage.setOnClickListener(launchOrExpand);
+        if (expandableMessage != null) {
+            // Notification/message bodies must keep their exact linked destination. AppResult and
+            // ShortcutsResult attach that listener before the TextView is re-parented here, so do
+            // not overwrite it with the surrounding app/shortcut launch action. Direct notification
+            // cards created from lightweight text get the exact notification row action explicitly.
+            if (directNotification) {
+                expandableMessage.setOnClickListener(v -> {
+                    int currentPosition = resolveAdapterPosition(result.getPojoId());
+                    if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, v);
+                });
+                expandableMessage.setClickable(true);
+            }
             expandableMessage.setOnLongClickListener(longPress);
-            expandableMessage.setClickable(true);
             expandableMessage.setFocusable(false);
             expandableMessage.setFocusableInTouchMode(false);
         }
