@@ -193,19 +193,26 @@ public class Favorites extends Forwarder {
         public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
             Result<?> result = getItem(position);
             holder.inflateFavorite(result);
-            holder.itemView.setOnClickListener(v -> {
+
+            // Keep click + long-click on the same physical touch target. In 3.30.142 the icon
+            // received a direct long-click listener while its click listener remained only on the
+            // parent FrameLayout. Android then let the long-clickable ImageView consume taps, so
+            // neither Pixel nor Standard icons reached the parent's launch callback.
+            View.OnClickListener launchClick = v -> {
                 if (mOnItemClickListener != null) mOnItemClickListener.onClick(v, result);
-            });
+            };
             View.OnLongClickListener contextLongPress = v ->
                     mOnItemLongClickListener == null
                             || mOnItemLongClickListener.onLongClick(v, result);
+
+            holder.itemView.setOnClickListener(launchClick);
             holder.itemView.setOnLongClickListener(contextLongPress);
 
-            // A bottom-bar icon is the user's primary touch target. Bind the exact same menu
-            // directly to the icon so RecyclerView/ItemTouchHelper cannot swallow the gesture.
             View favoriteIcon = holder.itemView.findViewById(R.id.favorite);
             if (favoriteIcon != null) {
+                favoriteIcon.setClickable(true);
                 favoriteIcon.setLongClickable(true);
+                favoriteIcon.setOnClickListener(launchClick);
                 favoriteIcon.setOnLongClickListener(contextLongPress);
             }
 
