@@ -1030,6 +1030,22 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         // that already writes the history row.
         rememberLaunchedAppIdentity(launchedPojo);
 
+        // If an IceBox/wrapper shortcut is being recorded under the real app:// identity, also keep
+        // that canonical AppPojo warm and persist its app catalog entry. Previously only the wrapper
+        // shortcut itself was remembered. As soon as IceBox froze the target package, the provider
+        // could stop resolving the canonical app id and the authoritative refresh could drop it.
+        if (!TextUtils.equals(canonicalId, id)) {
+            Pojo canonicalPojo = getPojo(canonicalId);
+            if (canonicalPojo == null) canonicalPojo = RecentLaunchTracker.resolve(canonicalId);
+            if (canonicalPojo == null && canonicalId.startsWith("app://")) {
+                canonicalPojo = resolveRememberedAppHistory(canonicalId);
+            }
+            if (canonicalPojo != null) {
+                RecentLaunchTracker.remember(canonicalPojo);
+                rememberLaunchedAppIdentity(canonicalPojo);
+            }
+        }
+
         // Respect exclusions on either representation. Canonicalization must never bypass a user's
         // explicit history privacy choice.
         if (excludedFromHistory.contains(canonicalId)) return;
