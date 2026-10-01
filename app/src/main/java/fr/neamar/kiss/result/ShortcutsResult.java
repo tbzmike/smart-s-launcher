@@ -42,6 +42,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.TileLaunchCounter;
+import fr.neamar.kiss.utils.AppIdentityResolver;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
@@ -208,11 +209,15 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     @Nullable
     public String resolveTargetPackageName(Context context) {
+        DataHandler dataHandler = KissApplication.getApplication(context).getDataHandler();
+        String canonicalPackage = AppIdentityResolver.canonicalPackage(context, dataHandler, pojo);
+        if (!TextUtils.isEmpty(canonicalPackage)) return canonicalPackage;
         if (!TextUtils.isEmpty(pojo.targetPackage)) return pojo.targetPackage;
 
         if (pojo.isOreoShortcut() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ShortcutInfo shortcutInfo = getShortCut(context);
-            if (shortcutInfo != null && shortcutInfo.getActivity() != null) {
+            if (shortcutInfo != null && shortcutInfo.getActivity() != null
+                    && !ShortcutUtil.isIceBoxPublisher(context, pojo.packageName)) {
                 String packageName = shortcutInfo.getActivity().getPackageName();
                 if (!TextUtils.isEmpty(packageName)) return packageName;
             }
@@ -305,8 +310,25 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         if (icon == null) {
             synchronized (this) {
                 if (icon == null) {
-                    IconsHandler iconsHandler = KissApplication.getApplication(context).getIconsHandler();
-                    icon = iconsHandler.getDrawableIconForShortcut(this.pojo, getShortCut(context));
+                    KissApplication application = KissApplication.getApplication(context);
+                    IconsHandler iconsHandler = application.getIconsHandler();
+
+                    // IceBox is a launch route, not the visual identity of the frozen app. Resolve
+                    // the canonical app package first (including old shortcuts whose targetPackage
+                    // was not persisted yet), then use the same icon-pack pipeline as a normal app.
+                    if (ShortcutUtil.isIceBoxPublisher(context, pojo.packageName)) {
+                        String targetPackage = AppIdentityResolver.canonicalPackage(
+                                context, application.getDataHandler(), pojo);
+                        if (!TextUtils.isEmpty(targetPackage)
+                                && !TextUtils.equals(targetPackage, pojo.packageName)) {
+                            icon = iconsHandler.getDrawableIconForPackageName(
+                                    targetPackage, pojo.getUserHandle());
+                        }
+                    }
+
+                    if (icon == null) {
+                        icon = iconsHandler.getDrawableIconForShortcut(this.pojo, getShortCut(context));
+                    }
                 }
             }
         }
