@@ -89,16 +89,34 @@ public class PackageAddedRemovedHandler extends BroadcastReceiver {
             }
         } else {
             KissApplication.getApplication(ctx).resetIconsHandler();
-            // Package changed/available events include freeze/unfreeze transitions. When HOME is
-            // already visible, keep the warm provider snapshot for the first frame and coalesce the
-            // expensive canonical-app + shortcut reload into one delayed pass. The logcat showed
-            // duplicate ShortcutsProvider restarts and a 7.6s AppProvider/ShortcutsProvider load
-            // during HOME, which starved the main thread and produced the black screen.
-            if (!AppProvider.deferPackageReloadWhileHomeVisible(true)) {
-                KissApplication.getApplication(ctx).getDataHandler().reloadApps();
-                KissApplication.getApplication(ctx).getDataHandler().reloadShortcuts();
+            DataHandler dataHandler = KissApplication.getApplication(ctx).getDataHandler();
+            boolean reloadShortcuts = hasKnownShortcuts(dataHandler, packageNames);
+
+            // Package changed/available events include freeze/unfreeze transitions. Keep the warm
+            // provider snapshot while HOME is visible and reload shortcuts only when the affected
+            // package actually owns launcher shortcuts. This avoids an otherwise unrelated full
+            // ShortcutManager snapshot for ordinary app-state changes.
+            if (!AppProvider.deferPackageReloadWhileHomeVisible(reloadShortcuts)) {
+                dataHandler.reloadApps();
+                if (reloadShortcuts) dataHandler.reloadShortcuts();
             }
         }
+    }
+
+    private static boolean hasKnownShortcuts(
+            DataHandler dataHandler, String[] packageNames) {
+        if (dataHandler == null || packageNames == null || packageNames.length == 0) return false;
+        fr.neamar.kiss.dataprovider.ShortcutsProvider shortcuts =
+                dataHandler.getShortcutsProvider();
+        if (shortcuts == null) return false;
+
+        for (ShortcutPojo shortcut : shortcuts.getPojos()) {
+            if (shortcut == null || shortcut.packageName == null) continue;
+            for (String packageName : packageNames) {
+                if (shortcut.packageName.equals(packageName)) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isLauncherRelevantPackage(
