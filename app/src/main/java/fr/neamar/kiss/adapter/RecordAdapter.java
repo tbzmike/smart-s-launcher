@@ -1039,6 +1039,15 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
         parent.beforeListChange();
         HistoryRecencyPolicy.moveSelectedToNewest(results, position);
+
+        // Vertical Cards normally defers passive History dataset changes so a notification or
+        // provider refresh cannot move content under the user's finger. An explicit launch is
+        // different: this recency move is intentional and must be materialized now. Arm the
+        // renderer before notifyDataSetChanged(), because BaseAdapter observers run synchronously.
+        if (parent instanceof MainActivity) {
+            ((MainActivity) parent).prepareExplicitHistoryLaunchReorder();
+        }
+
         notifyDataSetChanged();
         // Leave transcript mode enabled: this deliberate recency change should reveal the
         // selected item at the final/bottom position rather than preserving the old viewport.
