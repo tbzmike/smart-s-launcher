@@ -53,6 +53,33 @@ class PixelFavoritesPolicyTest {
         assertThat(result, contains("fav-a", "used-a", "used-b"));
     }
 
+
+    @Test
+    void recentFrequencyBeatsOldLifetimePopularity() {
+        PixelFavoritesPolicy.PredictionSignal frequentlyUsedNow =
+                new PixelFavoritesPolicy.PredictionSignal(
+                        4, 7, 12, 20 * 60_000L, 10_000L, 40);
+        PixelFavoritesPolicy.PredictionSignal oldLifetimeHeavy =
+                new PixelFavoritesPolicy.PredictionSignal(
+                        0, 1, 3, 5 * 60_000L, 9_000L, 500);
+
+        assertThat(PixelFavoritesPolicy.comparePrediction(
+                frequentlyUsedNow, oldLifetimeHeavy) < 0, is(true));
+    }
+
+    @Test
+    void foregroundUsageBreaksEqualRecentFrequencyTies() {
+        PixelFavoritesPolicy.PredictionSignal longUsed =
+                new PixelFavoritesPolicy.PredictionSignal(
+                        2, 3, 5, 90 * 60_000L, 8_000L, 20);
+        PixelFavoritesPolicy.PredictionSignal brieflyUsed =
+                new PixelFavoritesPolicy.PredictionSignal(
+                        2, 3, 5, 5 * 60_000L, 9_000L, 30);
+
+        assertThat(PixelFavoritesPolicy.comparePrediction(
+                longUsed, brieflyUsed) < 0, is(true));
+    }
+
     @Test
     void minimumPixelSlotCountIsOne() {
         assertThat(PixelFavoritesPolicy.clampMaxApps(0), is(1));
