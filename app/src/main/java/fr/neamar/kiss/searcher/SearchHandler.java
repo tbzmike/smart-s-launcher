@@ -129,9 +129,13 @@ public class SearchHandler {
         cancelRunningSearch();
 
         if (type == Searcher.Type.HISTORY && historyScrollActive) {
-            // HARD scroll freeze: History work requested during a fling is dropped, not queued.
+            // Never lose an authoritative History load. While a fling is active we still defer the
+            // expensive DB/provider work, but remember one coalesced request and run it as soon as
+            // the viewport becomes idle. Dropping this request could leave Home permanently showing
+            // main_empty until some unrelated event happened to trigger another refresh.
             lastSearchType = Searcher.Type.HISTORY;
             lastSearchQuery = query;
+            rememberHistoryAfterScroll(activity, isRefresh);
             return;
         }
 
@@ -188,6 +192,7 @@ public class SearchHandler {
                              String query, boolean isRefresh, long generation) {
         if (generation != searchGeneration.get()) return;
         if (type == Searcher.Type.HISTORY && historyScrollActive) {
+            rememberHistoryAfterScroll(activity, isRefresh);
             return;
         }
 
@@ -607,12 +612,12 @@ public class SearchHandler {
         historyScrollActive = true;
 
         // HARD scroll freeze: kill every History helper and the full History search immediately.
-        // Nothing is remembered for idle, because an idle replay caused the visible post-scroll
-        // text/list jump the user reported.
+        // If the cancelled task was the authoritative load for Home, remember one refresh for idle
+        // rather than losing it. Existing visible rows remain untouched during the gesture.
         stopHistoryAuxWorkers();
-        clearPendingHistoryAfterScroll();
 
         if (runningSearch instanceof HistorySearcher) {
+            rememberHistoryAfterScroll(activity, true);
             searchGeneration.incrementAndGet();
             ((HistorySearcher) runningSearch).cancelDatabaseWork();
             runningSearch.cancel(true);
@@ -623,6 +628,28 @@ public class SearchHandler {
 
     public void onHistoryScrollIdle(@NonNull MainActivity activity) {
         if (!historyScrollActive) return;
+        historyScrollActive = false;
+
+        boolean replay = pendingHistoryAfterScroll;
+        boolean refresh = pendingHistoryRefreshAfterScroll;
+        MainActivity replayActivity = pendingHistoryActivity.get();
+        clearPendingHistoryAfterScroll();
+
+        if (!replay) return;
+        MainActivity target = replayActivity != null ? replayActivity : activity;
+        mainHandler.post(() -> {
+            if (historyScrollActive || target.isFinishing() || target.isDestroyed()) return;
+            if (lastSearchType != Searcher.Type.HISTORY) return;
+            search(Searcher.Type.HISTORY, target, lastSearchQuery, refresh);
+        });
+    }
+
+    /**
+     * Lifecycle escape hatch for the case where Android pauses Home while a fling is still marked
+     * active. The matching idle callback is not guaranteed once the window loses focus; leaving the
+     * singleton flag true made every later History load get deferred forever.
+     */
+    public void onLauncherPaused() {
         historyScrollActive = false;
         clearPendingHistoryAfterScroll();
     }
