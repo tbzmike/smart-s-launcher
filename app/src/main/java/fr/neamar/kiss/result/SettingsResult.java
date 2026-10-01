@@ -40,6 +40,7 @@ import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.ui.CompactNotificationFrame;
 import fr.neamar.kiss.ui.MediaNotificationRow;
 import fr.neamar.kiss.utils.AppReinstallSupport;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.NotificationHistoryResolver;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
@@ -268,7 +269,10 @@ public class SettingsResult extends Result<SettingPojo> {
                 DisabledAppPojo disabled = (DisabledAppPojo) pojo;
                 Drawable disabledIcon = icons.getDrawableIconForPackageName(
                         disabled.targetPackage, UserHandle.OWNER);
-                if (disabledIcon != null) disabledIcon.setAlpha(140);
+                if (disabledIcon != null) {
+                    disabledIcon = disabledIcon.mutate();
+                    disabledIcon.setAlpha(FrozenAppPreferences.grey(context) ? 140 : 255);
+                }
                 icon = disabledIcon;
                 return disabledIcon;
             }
@@ -413,6 +417,11 @@ public class SettingsResult extends Result<SettingPojo> {
     }
 
     private void enableAndLaunch(Context context, DisabledAppPojo disabled) {
+        if (!FrozenAppPreferences.autoEnable(context)) {
+            Toast.makeText(context, "App is frozen. Auto-enable frozen apps is off.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()) {
             Toast.makeText(context, "Enable Root mode in Smart S Launcher settings first.", Toast.LENGTH_LONG).show();
             return;
