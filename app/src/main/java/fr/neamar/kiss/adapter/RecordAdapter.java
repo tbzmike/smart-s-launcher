@@ -60,6 +60,7 @@ import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.TextOverflowMode;
 import fr.neamar.kiss.ui.TileVisualStyle;
+import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.Log;
@@ -201,6 +202,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                     verticalStyleSignatures.put(view, signature);
                 }
                 applyVerticalHistoryWidth(view, parent, context, cachedHistoryWidthPercent);
+                UniversalHistoryTimestamp.bind(view, result, context);
             } else {
                 restoreVerticalHistoryAppearance(view);
                 verticalStyleSignatures.remove(view);
