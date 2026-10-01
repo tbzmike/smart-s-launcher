@@ -102,15 +102,17 @@ public class HistorySearcher extends Searcher {
 
         // One authoritative history read per pass. The previous implementation read the same
         // history window three times and then retried every unresolved entry immediately.
+        // Keep enough launch candidates to merge active notifications into the same chronological
+        // window without notifications crowding newer launches out before the final sort.
         List<ValuedHistoryRecord> historyRecords = DBHelper.getHistoryByRecency(
-                activity, max + excludedPojoById.size(), databaseCancellation);
+                activity, (max * 2) + excludedPojoById.size(), databaseCancellation);
         if (shouldAbort()) return null;
 
         List<Pojo> pojos = getStrictRecencyHistory(
                 activity, dataHandler, excludedPojoById, historyRecords, max);
         if (shouldAbort()) return null;
 
-        pinActiveNotificationTimeline(activity, pojos, excludedPojoById, excludedPackages);
+        mergeActiveNotifications(activity, pojos, excludedPojoById, excludedPackages);
         if (shouldAbort()) return null;
 
         pinMostRecentPersistedLaunch(
@@ -126,12 +128,19 @@ public class HistorySearcher extends Searcher {
         collapseDuplicateNotifications(activity, pojos);
         if (shouldAbort()) return null;
 
-        // Freeze the fully resolved History order before handing it back to the UI.
-        // Query search runs on a separate worker and may mutate provider-owned Pojo.relevance
-        // fields while History is finishing. Passing History through Searcher's PriorityQueue
-        // therefore made its order nondeterministic: the latest launched app could surface at the
-        // top. A defensive list snapshot makes oldest -> newest (bottom) the permanent contract.
-        setFinalOrderedResults(HistoryRecencyOrder.freezeOldestToNewest(pojos));
+        Map<String, Long> launchTimes = new HashMap<>();
+        Map<String, Long> launchSequences = new HashMap<>();
+        for (ValuedHistoryRecord record : historyRecords) {
+            if (record == null || record.record == null) continue;
+            launchTimes.put(record.record, record.timestamp);
+            launchSequences.put(record.record, record.sequence);
+        }
+
+        // One invariant for the entire visible History: sort every row by its real event time.
+        // Apps/shortcuts use their last launch time; notifications use postTime. Search relevance,
+        // item type and provider insertion order are not allowed to create separate bands.
+        setFinalOrderedResults(HistoryRecencyOrder.sortTimelineOldestToNewest(
+                pojos, launchTimes, launchSequences));
         return null;
     }
 
@@ -205,15 +214,9 @@ public class HistorySearcher extends Searcher {
         }
         if (recentPojo == null || excludedPojoById.contains(recentPojo.id)) return;
 
-        if (existingIndex < 0 && pojos.size() >= max && !pojos.isEmpty()) {
-            int removeIndex = indexOfLowestRelevance(pojos, recentPojo.id);
-            if (removeIndex >= 0) pojos.remove(removeIndex);
-        }
-
-        // RelevanceComparator emits lower relevance first, so MAX_VALUE guarantees the newest
-        // persisted launch is the final/bottom row. Once another item is persisted, normal DB
-        // relevance moves this item upward one position at a time.
-        recentPojo.relevance = Integer.MAX_VALUE;
+        // Do not trim or rank here. The recovered newest launch participates in the same timestamp
+        // sort as every other row, and the final ordered-result boundary keeps only the newest
+        // configured window.
         pojos.add(recentPojo);
     }
 
@@ -365,75 +368,44 @@ public class HistorySearcher extends Searcher {
     }
 
     /**
-     * Active notifications form a dedicated chronological band near the bottom of history. The
-     * newest persisted user launch is pinned after this band and therefore remains the final item.
+     * Merge active notification events into the same candidate set as launches.
+     *
+     * No relevance band is assigned here. The final timeline sorter compares Android postTime
+     * directly with app/shortcut launch timestamps, so type can never override chronology.
      */
-    private void pinActiveNotificationTimeline(MainActivity activity, List<Pojo> pojos,
-                                               Set<String> excludedPojoById,
-                                               Set<String> excludedPackages) {
+    private void mergeActiveNotifications(MainActivity activity, List<Pojo> pojos,
+                                          Set<String> excludedPojoById,
+                                          Set<String> excludedPackages) {
         if (!prefs.getBoolean("enable-notification-history", false)) return;
-
-        int max = getMaxResultCount();
-        if (max <= 0) return;
 
         pojos.removeIf(pojo -> pojo instanceof NotificationPojo
                 && pojo.id.startsWith(NotificationListener.NOTIFICATION_GROUP_SCHEME));
 
         if (shouldAbort()) return;
-        List<NotificationPojo> newestFirst = new ArrayList<>(
-                notificationProvider(activity).getPojos());
-        newestFirst.removeIf(notification -> NotificationTimelineState.isHiddenFromHistory(
-                activity, notification.exactNotificationId, notification.postTime));
-        if (newestFirst.isEmpty()) return;
-        if (newestFirst.size() > max) {
-            newestFirst = new ArrayList<>(newestFirst.subList(0, max));
-        }
-        newestFirst.sort(Comparator.comparingLong(p -> p.postTime));
-
-        Set<String> activeIds = new HashSet<>();
-        for (NotificationPojo notification : newestFirst) {
+        List<NotificationPojo> active = new ArrayList<>(notificationProvider(activity).getPojos());
+        for (NotificationPojo notification : active) {
             if (shouldAbort()) return;
-            activeIds.add(notification.id);
-        }
-
-        int base = Integer.MAX_VALUE - newestFirst.size() - 2;
-        for (Pojo pojo : pojos) {
-            if (shouldAbort()) return;
-            if (!(pojo instanceof NotificationPojo) && pojo.relevance > base) {
-                pojo.relevance = base;
+            if (notification == null
+                    || excludedPojoById.contains(notification.id)
+                    || excludedPackages.contains(notification.packageName)
+                    || NotificationTimelineState.isHiddenFromHistory(
+                    activity, notification.exactNotificationId, notification.postTime)) {
+                continue;
             }
-        }
 
-        int order = 0;
-        for (NotificationPojo notification : newestFirst) {
-            if (shouldAbort()) return;
-            if (excludedPojoById.contains(notification.id)
-                    || excludedPackages.contains(notification.packageName)) continue;
-            Pojo existing = null;
-            for (Pojo pojo : pojos) {
-                if (notification.id.equals(pojo.id)) {
-                    existing = pojo;
+            int existingIndex = -1;
+            for (int i = 0; i < pojos.size(); i++) {
+                Pojo existing = pojos.get(i);
+                if (existing != null && notification.id.equals(existing.id)) {
+                    existingIndex = i;
                     break;
                 }
             }
-
-            if (existing == null) {
-                while (pojos.size() >= max && !pojos.isEmpty()) {
-                    int removeIndex = -1;
-                    for (int i = 0; i < pojos.size(); i++) {
-                        if (!activeIds.contains(pojos.get(i).id)) {
-                            removeIndex = i;
-                            break;
-                        }
-                    }
-                    if (removeIndex < 0) removeIndex = 0;
-                    pojos.remove(removeIndex);
-                }
+            if (existingIndex >= 0) {
+                pojos.set(existingIndex, notification);
+            } else {
                 pojos.add(notification);
-                existing = notification;
             }
-
-            existing.relevance = base + 1 + order++;
         }
     }
 
