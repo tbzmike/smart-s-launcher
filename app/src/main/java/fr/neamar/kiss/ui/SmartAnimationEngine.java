@@ -16,6 +16,8 @@ import android.view.animation.OvershootInterpolator;
 
 import androidx.preference.PreferenceManager;
 
+import fr.neamar.kiss.utils.LauncherScrollWorkGate;
+
 /**
  * Launcher-owned animation helpers. These animations run on Smart S views directly instead of
  * depending on OEM/system window animation policies.
@@ -41,6 +43,10 @@ public final class SmartAnimationEngine {
     }
 
     public static boolean isEnabled(Context context) {
+        // Scrolling has a hard frame budget. Never start launcher-owned property animations while
+        // a History gesture/fling is active; they compete with ScrollView/ListView traversal and
+        // were visible in logcat as repeated main-thread skipped-frame bursts.
+        if (LauncherScrollWorkGate.isScrolling()) return false;
         if (!prefs(context).getBoolean("smart-animations-enabled", true)) return false;
         // Respect Android's global "remove animations" / animator-duration-scale setting.
         try {
