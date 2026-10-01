@@ -188,6 +188,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             overflowConfigured.put(view, overflowMode);
         }
         if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
+        configurePrimaryIconLongPress(view, result);
         if (parent instanceof AbsListView) {
             Context context = renderContext;
             TileVisualStyle.apply(view, result, context);
@@ -270,6 +271,28 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private boolean isGenericNotificationCount(String text) {
         String value = text == null ? "" : text.trim().toLowerCase(java.util.Locale.ROOT);
         return value.matches("\\d+ notifications?");
+    }
+
+    private void configurePrimaryIconLongPress(View row, Result<?> result) {
+        if (row == null || result == null) return;
+        ImageView icon = findPrimaryIcon(row);
+        if (icon == null) return;
+
+        icon.setLongClickable(true);
+        icon.setOnLongClickListener(v -> {
+            Context context = v.getContext();
+            int position = results.indexOf(result);
+            if (position < 0) return false;
+
+            if (UiEditLock.isLocked(context)) {
+                if (NotificationHistoryResolver.showForPojo(context, result.getPojo())) return true;
+                UiEditLock.allowEdit(context);
+                return true;
+            }
+
+            onLongClick(position, v);
+            return true;
+        });
     }
 
     private void configureNotificationTileClick(View view, Result<?> result) {
