@@ -333,7 +333,9 @@ public class AppProvider extends Provider<AppPojo>
             // These are presentation/history policies, not provider data. Rebind History and
             // favorites without clearing icons or starting a package scan.
             KissApplication.getApplication(this).getDataHandler().refreshFavorites();
-            sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
+            Intent refresh = MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER)
+                    .putExtra(MainActivity.EXTRA_FORCE_VISIBLE_REBIND, true);
+            sendBroadcast(refresh);
         }
     }
 
