@@ -11,14 +11,17 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.WeakHashMap;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
+import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.db.AppUsageTodayStore;
@@ -30,6 +33,7 @@ import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.utils.AppIdentityResolver;
 
 /**
  * Guarantees that every record rendered on the launcher history/home list has a dedicated
@@ -38,9 +42,8 @@ import fr.neamar.kiss.result.Result;
  */
 public final class UniversalHistoryTimestamp {
     private static final String VIEW_TAG = "smart_s_universal_history_timestamp";
-    private static final int MAX_FIRST_SEEN_ENTRIES = 512;
-    private static final ConcurrentHashMap<String, Long> FIRST_SEEN = new ConcurrentHashMap<>();
     private static final LruCache<String, CharSequence> FORMATTED_CACHE = new LruCache<>(512);
+    private static final AtomicLong STATS_GENERATION = new AtomicLong();
     private static final WeakHashMap<TextView, Boolean> STYLED_VIEWS = new WeakHashMap<>();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
     private static volatile AppUsageTodayStore.Snapshot usageSnapshot;
@@ -108,25 +111,20 @@ public final class UniversalHistoryTimestamp {
             long eventTime = ((CommunicationPojo) pojo).timestamp;
             if (eventTime > 0L) return eventTime;
         }
-
-        if (stats != null && stats.lastLaunchTime > 0L) return stats.lastLaunchTime;
-
-        String historyId = pojo.getHistoryId();
-        String key = TextUtils.isEmpty(historyId)
-                ? pojo.getClass().getName() + '@' + System.identityHashCode(pojo)
-                : historyId;
-        if (FIRST_SEEN.size() >= MAX_FIRST_SEEN_ENTRIES && !FIRST_SEEN.containsKey(key)) {
-            FIRST_SEEN.clear();
-        }
-        return FIRST_SEEN.computeIfAbsent(key, ignored -> System.currentTimeMillis());
+        return stats == null ? 0L : Math.max(0L, stats.lastLaunchTime);
     }
 
     public static void invalidateStats() {
+        STATS_GENERATION.incrementAndGet();
         launchStats = null;
         usageSnapshot = null;
         synchronized (FORMATTED_CACHE) {
             FORMATTED_CACHE.evictAll();
         }
+    }
+
+    public static long statsGeneration() {
+        return STATS_GENERATION.get();
     }
 
     /** Supplies one bulk enrichment snapshot without forcing already-visible rows to re-layout. */
@@ -149,11 +147,18 @@ public final class UniversalHistoryTimestamp {
     private static CharSequence formatTimestampCached(
             Context context, Pojo pojo, long timestamp, LaunchStatsProvider.LaunchStats stats,
             AppUsageTodayStore.Snapshot usage) {
-        int interactionsToday = stats == null ? 0 : Math.max(0, stats.launchesToday);
-        long lastOpened = stats == null ? 0L : Math.max(0L, stats.lastLaunchTime);
+        boolean notification = pojo instanceof NotificationPojo;
+        long interactionsToday = notification
+                ? TileLaunchCounter.getToday(context, pojo)
+                : stats == null ? 0L : Math.max(0, stats.launchesToday);
+        long totalInteractions = notification
+                ? TileLaunchCounter.getTotal(context, pojo)
+                : stats == null ? 0L : Math.max(0, stats.totalLaunches);
+
         long foregroundMs = 0L;
-        String usagePackage = usagePackage(pojo);
-        if (!TextUtils.isEmpty(usagePackage) && usage != null && usage.available) {
+        boolean usageAvailable = usage != null && usage.available;
+        String usagePackage = usagePackage(context, pojo);
+        if (!TextUtils.isEmpty(usagePackage) && usageAvailable) {
             Long value = usage.foregroundMsByPackage.get(usagePackage);
             foregroundMs = value == null ? 0L : Math.max(0L, value);
         }
@@ -162,7 +167,7 @@ public final class UniversalHistoryTimestamp {
         if (TextUtils.isEmpty(historyId)) historyId = pojo.id;
         String locale = context.getResources().getConfiguration().locale.toLanguageTag();
         String key = historyId + '|' + timestamp + '|' + interactionsToday + '|'
-                + lastOpened + '|' + foregroundMs + '|'
+                + totalInteractions + '|' + foregroundMs + '|' + usageAvailable + '|'
                 + DateFormat.is24HourFormat(context) + '|' + locale + '|'
                 + TimeZone.getDefault().getID();
         synchronized (FORMATTED_CACHE) {
@@ -170,7 +175,8 @@ public final class UniversalHistoryTimestamp {
             if (cached != null) return cached;
         }
         CharSequence formatted = formatTimestamp(
-                context, pojo, timestamp, interactionsToday, lastOpened, foregroundMs);
+                context, pojo, timestamp, interactionsToday, totalInteractions,
+                foregroundMs, usageAvailable);
         synchronized (FORMATTED_CACHE) {
             FORMATTED_CACHE.put(key, formatted);
         }
@@ -178,44 +184,54 @@ public final class UniversalHistoryTimestamp {
     }
 
     private static CharSequence formatTimestamp(Context context, Pojo pojo, long timestamp,
-                                                int interactionsToday, long lastOpened,
-                                                long foregroundMs) {
-        Date date = new Date(timestamp);
-        java.text.DateFormat dateFormat = DateFormat.getMediumDateFormat(context);
-        java.text.DateFormat timeFormat = DateFormat.getTimeFormat(context);
-        StringBuilder text = new StringBuilder()
-                .append(dateFormat.format(date))
-                .append("  •  ")
-                .append(timeFormat.format(date))
-                .append("  •  ")
-                .append(interactionsToday)
-                .append(interactionsToday == 1 ? " interaction today" : " interactions today");
+                                                long interactionsToday, long totalInteractions,
+                                                long foregroundMs, boolean usageAvailable) {
+        StringBuilder text = new StringBuilder();
+        if (timestamp > 0L) {
+            text.append(pojo instanceof NotificationPojo ? "Received " : "History time ")
+                    .append(formatFullTimestamp(context, timestamp));
+        } else {
+            text.append("History time unavailable");
+        }
 
-        if (!TextUtils.isEmpty(usagePackage(pojo))) {
-            if (foregroundMs > 0L) {
-                text.append("  •  Used today ").append(formatDuration(foregroundMs));
-            }
-        } else if (lastOpened > 0L) {
-            text.append("  •  Last opened ")
-                    .append(timeFormat.format(new Date(lastOpened)));
+        if (pojo instanceof NotificationPojo) {
+            text.append("  •  Opened today ").append(interactionsToday)
+                    .append("  •  Opened total ").append(totalInteractions);
+        } else {
+            text.append("  •  Launched today ").append(interactionsToday)
+                    .append("  •  Total launches ").append(totalInteractions);
+        }
+
+        if (!TextUtils.isEmpty(usagePackage(context, pojo))) {
+            text.append("  •  Used today ")
+                    .append(usageAvailable ? formatDuration(foregroundMs) : "unavailable");
         }
         return text;
+    }
+
+    private static String formatFullTimestamp(Context context, long timestamp) {
+        Date date = new Date(timestamp);
+        java.text.DateFormat dateFormat = DateFormat.getMediumDateFormat(context);
+        String timePattern = DateFormat.is24HourFormat(context) ? "HH:mm:ss" : "h:mm:ss a";
+        java.text.DateFormat timeFormat = new SimpleDateFormat(
+                timePattern, context.getResources().getConfiguration().locale);
+        return dateFormat.format(date) + " " + timeFormat.format(date);
     }
 
     /**
      * App-backed wrapper shortcuts share Android's package usage total with the real app. Ordinary
      * in-app shortcuts remain independent and therefore return no package here.
      */
-    private static String usagePackage(Pojo pojo) {
+    private static String usagePackage(Context context, Pojo pojo) {
+        try {
+            String canonical = AppIdentityResolver.canonicalPackage(
+                    context, KissApplication.getApplication(context).getDataHandler(), pojo);
+            if (!TextUtils.isEmpty(canonical)) return canonical;
+        } catch (RuntimeException ignored) {
+            // Rendering metadata must never fail because a provider is being replaced.
+        }
         if (pojo instanceof AppPojo) return ((AppPojo) pojo).packageName;
         if (pojo instanceof DisabledAppPojo) return ((DisabledAppPojo) pojo).targetPackage;
-        if (pojo instanceof ShortcutPojo) {
-            ShortcutPojo shortcut = (ShortcutPojo) pojo;
-            if (!TextUtils.isEmpty(shortcut.targetPackage)
-                    && !TextUtils.equals(shortcut.targetPackage, shortcut.packageName)) {
-                return shortcut.targetPackage;
-            }
-        }
         return null;
     }
 
