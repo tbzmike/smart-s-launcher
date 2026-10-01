@@ -8,9 +8,12 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 
 import fr.neamar.kiss.db.HistoryMode;
+import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 
 class HistoryRecencyOrderTest {
@@ -66,6 +69,36 @@ class HistoryRecencyOrderTest {
         assertThat(Arrays.asList(
                 frozen.get(0).id, frozen.get(1).id, frozen.get(2).id),
                 is(Arrays.asList("oldest", "middle", "newest")));
+    }
+
+    @Test
+    void appsShortcutsAndNotificationsShareOneTimestampOrder() {
+        Pojo app = new Pojo("app://instagram/Main") { };
+        app.setName("Instagram");
+        Pojo shortcut = new Pojo("shortcut://maps/search") { };
+        shortcut.setName("Maps shortcut");
+        NotificationPojo notification = new NotificationPojo(
+                "notification://fnb", "za.co.fnb", "FNB", "fnb",
+                "notification://fnb", 1, "Payment", "R99 paid", 6_300L);
+
+        Map<String, Long> times = new HashMap<>();
+        times.put(app.getHistoryId(), 6_320L);
+        times.put(shortcut.getHistoryId(), 6_310L);
+
+        // Deliberately scramble relevance and input order. Neither may influence History.
+        app.relevance = -100;
+        shortcut.relevance = 9999;
+        notification.relevance = 500;
+
+        List<Pojo> ordered = HistoryRecencyOrder.sortTimelineOldestToNewest(
+                Arrays.asList(app, notification, shortcut), times, new HashMap<>());
+
+        assertThat(Arrays.asList(
+                ordered.get(0).id, ordered.get(1).id, ordered.get(2).id),
+                is(Arrays.asList(
+                        "notification://fnb",
+                        "shortcut://maps/search",
+                        "app://instagram/Main")));
     }
 
     private static List<String> toVisibleOldestToNewest(List<String> newestFirst) {
