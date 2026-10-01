@@ -218,10 +218,12 @@ public class Favorites extends Forwarder {
 
             // ItemTouchHelper's built-in long-press drag used to win the gesture before the normal
             // Smart S popup could remain visible. Keep a stationary long press for the standard
-            // result menu, while preserving Standard-mode reordering as hold-then-drag.
+            // result menu, while preserving Standard-mode reordering as hold-then-drag. The same
+            // passive listener is installed on the icon because the icon is now a real clickable
+            // child and therefore owns its own pointer stream.
             final int touchSlop = ViewConfiguration.get(holder.itemView.getContext())
                     .getScaledTouchSlop();
-            holder.itemView.setOnTouchListener(new View.OnTouchListener() {
+            View.OnTouchListener reorderTouch = new View.OnTouchListener() {
                 float downX;
                 float downY;
                 long downTime;
@@ -263,7 +265,9 @@ public class Favorites extends Forwarder {
                     }
                     return false;
                 }
-            });
+            };
+            holder.itemView.setOnTouchListener(reorderTouch);
+            if (favoriteIcon != null) favoriteIcon.setOnTouchListener(reorderTouch);
         }
 
         @Override public int getItemCount() {
