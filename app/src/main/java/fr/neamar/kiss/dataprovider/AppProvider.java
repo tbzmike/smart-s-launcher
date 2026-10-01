@@ -46,11 +46,22 @@ public class AppProvider extends Provider<AppPojo>
     // Package/freezer callbacks can arrive while Android is bringing HOME to the foreground.
     // Never restart the expensive canonical app scan in that critical window. Coalesce it and run
     // once after the first Home frame has had time to render.
-    private static final long HOME_RELOAD_GRACE_MS = 900L;
+    private static final long HOME_RELOAD_GRACE_MS = 1400L;
+    private static final long POST_SCROLL_RELOAD_GRACE_MS = 1200L;
     private boolean deferredPackageReload;
     private boolean deferredShortcutReload;
     private final Runnable deferredPackageReloadRunnable = () -> {
         if (!launcherUiVisible) return;
+
+        // A full canonical app scan and ShortcutManager snapshot are expensive (the supplied
+        // logcat measured roughly 1.1s and 715ms respectively). Never start either while a
+        // History gesture/fling owns the frame budget. Keep the flags and wait for a quiet idle
+        // window instead of repeatedly cancelling/restarting provider loaders.
+        if (launcherScrolling) {
+            scheduleDeferredPackageReload(POST_SCROLL_RELOAD_GRACE_MS);
+            return;
+        }
+
         boolean apps = deferredPackageReload;
         boolean shortcuts = deferredShortcutReload;
         deferredPackageReload = false;
@@ -213,6 +224,11 @@ public class AppProvider extends Provider<AppPojo>
         });
     };
 
+    private void scheduleDeferredPackageReload(long delayMs) {
+        stateHandler.removeCallbacks(deferredPackageReloadRunnable);
+        stateHandler.postDelayed(deferredPackageReloadRunnable, Math.max(0L, delayMs));
+    }
+
     /**
      * Keep fallback frozen-app reconciliation active only while its results can be seen.
      * LauncherApps callbacks remain registered continuously. The fallback starts after Home has had
@@ -227,8 +243,7 @@ public class AppProvider extends Provider<AppPojo>
             if (!visible) {
                 provider.stateHandler.removeCallbacks(provider.deferredPackageReloadRunnable);
             } else if (changed && (provider.deferredPackageReload || provider.deferredShortcutReload)) {
-                provider.stateHandler.removeCallbacks(provider.deferredPackageReloadRunnable);
-                provider.stateHandler.postDelayed(provider.deferredPackageReloadRunnable, HOME_RELOAD_GRACE_MS);
+                provider.scheduleDeferredPackageReload(HOME_RELOAD_GRACE_MS);
             }
             if (changed) provider.updateFrozenReconcileSchedule(visible);
         }
@@ -245,8 +260,7 @@ public class AppProvider extends Provider<AppPojo>
         if (provider == null || !launcherUiVisible) return false;
         provider.deferredPackageReload = true;
         provider.deferredShortcutReload |= reloadShortcuts;
-        provider.stateHandler.removeCallbacks(provider.deferredPackageReloadRunnable);
-        provider.stateHandler.postDelayed(provider.deferredPackageReloadRunnable, HOME_RELOAD_GRACE_MS);
+        provider.scheduleDeferredPackageReload(HOME_RELOAD_GRACE_MS);
         return true;
     }
 
@@ -261,9 +275,14 @@ public class AppProvider extends Provider<AppPojo>
             provider.reconcileFuture = null;
             provider.reconcileRunning.set(false);
         }
-        // Deliberately do not schedule a reconciliation when scrolling ends. Scrolling itself must
-        // not create deferred background work. LauncherApps callbacks, lifecycle and the normal
-        // provider schedule remain the sources for future state refreshes.
+        if (!scrolling && (provider.deferredPackageReload || provider.deferredShortcutReload)) {
+            // A package callback may have arrived during a fling. Apply exactly one coalesced
+            // provider refresh after a quiet post-scroll window.
+            provider.scheduleDeferredPackageReload(POST_SCROLL_RELOAD_GRACE_MS);
+        }
+
+        // Deliberately do not start frozen-state reconciliation merely because scrolling ended.
+        // LauncherApps callbacks, lifecycle and the normal schedule remain its sources.
     }
 
     @Override
