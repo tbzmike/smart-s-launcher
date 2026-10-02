@@ -1198,11 +1198,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         invalidateRenderConfig();
         if (sameVisibleState(updatedResults, normalizedQuery)) return;
 
-        if (parent instanceof MainActivity
+        if (!results.isEmpty()
+                && parent instanceof MainActivity
                 && ((MainActivity) parent).shouldDeferHistoryAdapterUpdate(normalizedQuery)) {
-            // HARD scroll freeze: never queue a dataset replacement to fire at idle. The current
-            // rows remain untouched for the whole gesture and after it; a later real History event
-            // or lifecycle refresh can publish fresh data.
+            // Preserve an already-visible viewport during a fling. If the adapter is empty, however,
+            // this guard must not discard the first real History snapshot or Home can remain stuck
+            // on main_empty forever.
             clearPendingScrollUpdate();
             return;
         }
