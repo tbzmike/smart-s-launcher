@@ -98,6 +98,18 @@ public final class SmartAnimationEngine {
         return "fade";
     }
 
+    /**
+     * Stable identity of the current History/list animation configuration. Renderers use this to
+     * detect a style/speed/master-toggle change even when their existing row/card Views are reused.
+     */
+    public static String listAnimationSignature(Context context) {
+        SharedPreferences preferences = prefs(context);
+        boolean enabled = preferences.getBoolean("smart-animations-enabled", true);
+        String style = getStyle(context, "smart-animation-scroll", "classic");
+        long resolvedDuration = duration(context);
+        return (enabled ? "1" : "0") + "|" + style + "|" + resolvedDuration;
+    }
+
     public static long duration(Context context) {
         int base = context.getResources().getInteger(android.R.integer.config_shortAnimTime);
         SharedPreferences preferences = prefs(context);
