@@ -308,8 +308,18 @@ final class SmartCardListForwarder extends Forwarder {
     }
 
     void onScrollIdleAnimations() {
-        if (!isEnabled() || scroller == null || column == null
-                || isScrollInProgress() || !SmartAnimationEngine.isEnabled(mainActivity)) {
+        if (!isEnabled() || scroller == null || column == null || isScrollInProgress()) {
+            return;
+        }
+
+        if (!SmartAnimationEngine.isEnabled(mainActivity)) {
+            int top = scroller.getScrollY();
+            int bottom = top + scroller.getHeight();
+            for (int i = 0; i < column.getChildCount(); i++) {
+                View child = column.getChildAt(i);
+                if (child.getBottom() < top || child.getTop() > bottom) continue;
+                SmartAnimationEngine.reset(child);
+            }
             return;
         }
 
