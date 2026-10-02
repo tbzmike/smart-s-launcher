@@ -1098,10 +1098,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     protected void updateSearchRecords(boolean isRefresh, String query) {
         String normalizedQuery = query == null ? "" : query;
 
-        // HARD scroll freeze: a refresh that arrives while History is moving is discarded.
-        // Older builds queued one refresh for idle, which meant background work and a visible list
-        // adjustment were deliberately triggered as soon as the fling stopped.
+        // HARD scroll freeze: never mutate History while the user is moving it, but also never
+        // lose the authoritative refresh. A single coalesced reload is replayed after idle. This is
+        // especially important when the adapter is empty during resume/provider replacement.
         if (isRefresh && shouldDeferHistoryAdapterUpdate(normalizedQuery)) {
+            SearchHandler.getInstance().deferHistoryUntilIdle(this, true);
             return;
         }
 
