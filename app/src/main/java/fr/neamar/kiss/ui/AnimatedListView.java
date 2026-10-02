@@ -74,6 +74,9 @@ public class AnimatedListView extends BlockableListView {
     public void prepareChangeAnim() {
         cancelPendingChangeAnimation();
         mItemMap.clear();
+        // Never capture list-animation geometry during a touch scroll/fling. The selected
+        // decorative style must not compete with the scroll frame budget.
+        if (isScrollInProgress()) return;
 
         int firstVisiblePosition = this.getFirstVisiblePosition();
         int nCount = Math.min(this.getChildCount(), getAdapter().getCount() - firstVisiblePosition);
@@ -88,6 +91,11 @@ public class AnimatedListView extends BlockableListView {
 
     public void animateChange() {
         if (mItemMap.isEmpty()) return;
+        if (isScrollInProgress()) {
+            cancelPendingChangeAnimation();
+            mItemMap.clear();
+            return;
+        }
 
         cancelPendingChangeAnimation();
 
