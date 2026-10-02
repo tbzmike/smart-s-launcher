@@ -39,8 +39,10 @@ final class HistoryDisplayForwarder extends Forwarder {
     private long lastWheelPriorityId = Long.MIN_VALUE;
     private final Set<Long> animatedVerticalItems = new HashSet<>();
     private String lastVerticalAnimationQuery = null;
+    private String lastVerticalAnimationStyle = null;
     private final Runnable animateVerticalRowsWhenIdle = this::animateVisibleVerticalRows;
     private final Set<Long> animatedWheelItems = new HashSet<>();
+    private String lastWheelAnimationStyle = null;
 
     HistoryDisplayForwarder(MainActivity mainActivity) {
         super(mainActivity);
@@ -190,6 +192,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (!TextUtils.equals(previousMode, activeMode)) {
             animatedVerticalItems.clear();
             lastVerticalAnimationQuery = null;
+            lastVerticalAnimationStyle = null;
             View incoming = vertical ? mainActivity.list : (wheel ? wheelScroller : null);
             if (incoming != null) {
                 SmartAnimationEngine.animateWindowSwitch(null, incoming);
@@ -203,6 +206,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (wheelColumn.getChildCount() > 0) wheelColumn.removeAllViews();
         wheelViewTypes.clear();
         animatedWheelItems.clear();
+        lastWheelAnimationStyle = null;
         wheelHasBeenEntered = false;
         lastWheelQuery = "";
         lastWheelPriorityId = Long.MIN_VALUE;
@@ -233,8 +237,12 @@ final class HistoryDisplayForwarder extends Forwarder {
         boolean refocusFront = !wheelHasBeenEntered
                 || !currentQuery.equals(lastWheelQuery)
                 || currentPriorityId != lastWheelPriorityId;
-        if (!TextUtils.equals(currentQuery, lastWheelQuery)) {
+        String wheelAnimationStyle = SmartAnimationEngine.getStyle(
+                mainActivity, "smart-animation-scroll", "classic");
+        if (!TextUtils.equals(currentQuery, lastWheelQuery)
+                || !TextUtils.equals(lastWheelAnimationStyle, wheelAnimationStyle)) {
             animatedWheelItems.clear();
+            lastWheelAnimationStyle = wheelAnimationStyle;
         }
 
         for (int position = 0; position < count; position++) {
@@ -382,9 +390,13 @@ final class HistoryDisplayForwarder extends Forwarder {
 
         String query = mainActivity.searchEditText == null
                 ? "" : mainActivity.searchEditText.getText().toString();
-        if (!TextUtils.equals(lastVerticalAnimationQuery, query)) {
+        String animationStyle = SmartAnimationEngine.getStyle(
+                mainActivity, "smart-animation-scroll", "classic");
+        if (!TextUtils.equals(lastVerticalAnimationQuery, query)
+                || !TextUtils.equals(lastVerticalAnimationStyle, animationStyle)) {
             animatedVerticalItems.clear();
             lastVerticalAnimationQuery = query;
+            lastVerticalAnimationStyle = animationStyle;
         }
 
         int first = mainActivity.list.getFirstVisiblePosition();
