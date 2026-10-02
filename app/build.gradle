@@ -18,7 +18,7 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.146 - recover History loads that race with scrolling/lifecycle
+        // Smart S Launcher 3.30.146 - History recovery and complete history-layout animation wiring
         versionCode 574
         versionName "3.30.146"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
