@@ -52,6 +52,12 @@ public class ForwarderManager extends Forwarder {
         AppProvider.setLauncherScrolling(false);
         LauncherScrollWorkGate.setScrolling(false);
         SearchHandler.getInstance().onHistoryScrollIdle(mainActivity);
+
+        // The selected scroll style is applied only after motion settles. This keeps every
+        // Vertical List / Vertical Cards / 3D Wheel style wired without putting property animators
+        // on the active fling frame budget.
+        historyDisplayForwarder.onScrollIdleAnimations();
+        smartCardListForwarder.onScrollIdleAnimations();
         historyVisualEnhancer.onScrollIdle();
     }
 
