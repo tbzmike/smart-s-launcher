@@ -658,6 +658,12 @@ public class SearchHandler {
         return historyScrollActive;
     }
 
+    public void deferHistoryUntilIdle(@NonNull MainActivity activity, boolean isRefresh) {
+        lastSearchType = Searcher.Type.HISTORY;
+        lastSearchQuery = null;
+        rememberHistoryAfterScroll(activity, isRefresh);
+    }
+
     private void rememberHistoryAfterScroll(@NonNull MainActivity activity, boolean isRefresh) {
         pendingHistoryAfterScroll = true;
         pendingHistoryRefreshAfterScroll |= isRefresh;
