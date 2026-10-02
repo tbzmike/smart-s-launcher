@@ -134,7 +134,11 @@ final class SmartCardListForwarder extends Forwarder {
         // A hidden card tree is deliberately discarded when another renderer owns History.
         // Re-entering Vertical Cards must therefore rebuild from the current adapter, never reuse
         // stale cards from an earlier mode.
-        if (isEnabled() && column != null && (!wasVisible || column.getChildCount() == 0)) rebuild();
+        if (isEnabled() && column != null && (!wasVisible || column.getChildCount() == 0)) {
+            rebuild();
+        } else if (isEnabled() && column != null && column.getChildCount() > 0) {
+            replayVisibleCardsIfAnimationConfigChanged();
+        }
     }
 
     boolean onDataSetChanged() {
@@ -392,6 +396,23 @@ final class SmartCardListForwarder extends Forwarder {
         }
     }
 
+    private String animationScope(boolean activeQuery) {
+        String queryScope = activeQuery && mainActivity.searchEditText != null
+                ? "query:" + mainActivity.searchEditText.getText().toString()
+                : "history";
+        return queryScope + "|anim:" + SmartAnimationEngine.listAnimationSignature(mainActivity);
+    }
+
+    private void replayVisibleCardsIfAnimationConfigChanged() {
+        boolean activeQuery = isActiveQuery();
+        String currentScope = animationScope(activeQuery);
+        if (TextUtils.equals(lastAnimationScope, currentScope)) return;
+
+        animatedCardIds.clear();
+        lastAnimationScope = currentScope;
+        if (scroller != null) scroller.post(this::onScrollIdleAnimations);
+    }
+
     private void rebuild() {
         rebuild(false);
     }
@@ -411,11 +432,7 @@ final class SmartCardListForwarder extends Forwarder {
         cancelDeferredRefreshIdleProbe();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
-        String animationStyle = SmartAnimationEngine.getStyle(
-                mainActivity, "smart-animation-scroll", "classic");
-        String animationScope = (activeQuery && mainActivity.searchEditText != null
-                ? "query:" + mainActivity.searchEditText.getText().toString()
-                : "history") + "|style:" + animationStyle;
+        String animationScope = animationScope(activeQuery);
         if (!TextUtils.equals(lastAnimationScope, animationScope)) {
             animatedCardIds.clear();
             lastAnimationScope = animationScope;
