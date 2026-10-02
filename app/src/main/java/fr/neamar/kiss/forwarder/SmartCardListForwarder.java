@@ -18,8 +18,10 @@ import android.widget.TextView;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
@@ -70,6 +72,8 @@ final class SmartCardListForwarder extends Forwarder {
     private boolean deferredRefreshIdleScheduled;
     private boolean rebuildQueued;
     private boolean rebuildQueuedAllowActiveQueryReuse;
+    private final Set<String> animatedCardIds = new HashSet<>();
+    private String lastAnimationScope = null;
     private final Runnable rebuildAfterIdle = () -> {
         rebuildQueued = false;
         boolean allowReuse = rebuildQueuedAllowActiveQueryReuse;
@@ -167,6 +171,7 @@ final class SmartCardListForwarder extends Forwarder {
         userScrollStartedCallback = null;
         activeQueryCardSignatures.clear();
         historyCardSignatures.clear();
+        animatedCardIds.clear();
         accentCache.clear();
         container = null;
         scroller = null;
@@ -298,6 +303,27 @@ final class SmartCardListForwarder extends Forwarder {
                 && ((StableCardScrollView) scroller).scrollIdleGate.isScrolling();
     }
 
+    void onScrollIdleAnimations() {
+        if (!isEnabled() || scroller == null || column == null
+                || isScrollInProgress() || !SmartAnimationEngine.isEnabled(mainActivity)) {
+            return;
+        }
+
+        int viewportTop = scroller.getScrollY();
+        int viewportBottom = viewportTop + scroller.getHeight();
+        int visibleIndex = 0;
+        for (int i = 0; i < column.getChildCount(); i++) {
+            View child = column.getChildAt(i);
+            if (child.getBottom() < viewportTop || child.getTop() > viewportBottom) continue;
+            Object tag = child.getTag();
+            String id = tag instanceof String ? (String) tag : null;
+            if (id != null && animatedCardIds.add(id)) {
+                SmartAnimationEngine.animateTileListItem(child, visibleIndex);
+            }
+            visibleIndex++;
+        }
+    }
+
     void runWhenScrollIdle(Runnable work) {
         if (scroller instanceof StableCardScrollView) {
             ((StableCardScrollView) scroller).scrollIdleGate.runWhenIdle(work);
@@ -337,6 +363,8 @@ final class SmartCardListForwarder extends Forwarder {
             if (edgeEffect != null) edgeEffect.setVisibility(View.GONE);
             scroller.setVisibility(View.VISIBLE);
             if (!wasVisible) {
+                animatedCardIds.clear();
+                lastAnimationScope = null;
                 SmartAnimationEngine.animateWindowSwitch(null, scroller);
             }
             if (force) rebuild();
@@ -350,6 +378,8 @@ final class SmartCardListForwarder extends Forwarder {
                 column.removeAllViews();
                 activeQueryCardSignatures.clear();
                 historyCardSignatures.clear();
+                animatedCardIds.clear();
+                lastAnimationScope = null;
                 pendingDataSetRefresh = false;
                 forceNextHistoryRebuild = false;
                 renderedActiveQuery = false;
@@ -381,6 +411,13 @@ final class SmartCardListForwarder extends Forwarder {
         cancelDeferredRefreshIdleProbe();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
+        String animationScope = activeQuery && mainActivity.searchEditText != null
+                ? "query:" + mainActivity.searchEditText.getText().toString()
+                : "history";
+        if (!TextUtils.equals(lastAnimationScope, animationScope)) {
+            animatedCardIds.clear();
+            lastAnimationScope = animationScope;
+        }
         boolean previouslyRenderedActiveQuery = renderedActiveQuery;
         if (!activeQuery) forceNextHistoryRebuild = false;
         renderedActiveQuery = activeQuery;
@@ -411,7 +448,9 @@ final class SmartCardListForwarder extends Forwarder {
                 View item = createCardItem(source, result, position, latestNotifications);
                 column.addView(item);
                 int animationIndex = Math.max(0, count - 1 - position);
-                SmartAnimationEngine.animateTileListItem(item, animationIndex);
+                if (animatedCardIds.add(result.getPojoId())) {
+                    SmartAnimationEngine.animateTileListItem(item, animationIndex);
+                }
                 if (activeQuery) {
                     activeQueryCardSignatures.put(result.getPojoId(), cardSignature(result));
                 } else {
@@ -467,7 +506,7 @@ final class SmartCardListForwarder extends Forwarder {
                         source, result, position, Collections.emptyMap());
             }
             placeCardChild(desired, position);
-            if (created) {
+            if (created && animatedCardIds.add(id)) {
                 SmartAnimationEngine.animateTileListItem(
                         desired, Math.max(0, targetCount - 1 - position));
             }
@@ -526,7 +565,7 @@ final class SmartCardListForwarder extends Forwarder {
                 desired = createCardItem(source, result, position, Collections.emptyMap());
             }
             placeCardChild(desired, position);
-            if (created) {
+            if (created && animatedCardIds.add(id)) {
                 SmartAnimationEngine.animateTileListItem(
                         desired, Math.max(0, targetCount - 1 - position));
             }
