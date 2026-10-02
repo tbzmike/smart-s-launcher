@@ -40,6 +40,7 @@ final class HistoryDisplayForwarder extends Forwarder {
     private final Set<Long> animatedVerticalItems = new HashSet<>();
     private String lastVerticalAnimationQuery = null;
     private final Runnable animateVerticalRowsWhenIdle = this::animateVisibleVerticalRows;
+    private final Set<Long> animatedWheelItems = new HashSet<>();
 
     HistoryDisplayForwarder(MainActivity mainActivity) {
         super(mainActivity);
@@ -72,6 +73,7 @@ final class HistoryDisplayForwarder extends Forwarder {
             wheelScroller.scrollIdleGate.destroy();
         }
         animatedVerticalItems.clear();
+        animatedWheelItems.clear();
         container = null;
         wheelScroller = null;
         wheelColumn = null;
@@ -200,6 +202,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         resetWheelTransforms();
         if (wheelColumn.getChildCount() > 0) wheelColumn.removeAllViews();
         wheelViewTypes.clear();
+        animatedWheelItems.clear();
         wheelHasBeenEntered = false;
         lastWheelQuery = "";
         lastWheelPriorityId = Long.MIN_VALUE;
@@ -230,6 +233,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         boolean refocusFront = !wheelHasBeenEntered
                 || !currentQuery.equals(lastWheelQuery)
                 || currentPriorityId != lastWheelPriorityId;
+        if (!TextUtils.equals(currentQuery, lastWheelQuery)) {
+            animatedWheelItems.clear();
+        }
 
         for (int position = 0; position < count; position++) {
             int viewType = mainActivity.adapter.getItemViewType(position);
@@ -277,7 +283,8 @@ final class HistoryDisplayForwarder extends Forwarder {
                     mainActivity.getResources().getDisplayMetrics().density * 8000f);
             bindResultInteraction(shell, position);
 
-            if (newVisual) {
+            long uniqueId = mainActivity.adapter.getItem(position).getUniqueId();
+            if (newVisual && animatedWheelItems.add(uniqueId)) {
                 SmartAnimationEngine.reset(source);
                 final View animatedSource = source;
                 final int animationIndex = Math.max(0, count - 1 - position);
@@ -320,6 +327,39 @@ final class HistoryDisplayForwarder extends Forwarder {
             super(mainActivity);
             setClipChildren(false);
             setClipToPadding(false);
+        }
+    }
+
+    void onScrollIdleAnimations() {
+        if (VERTICAL.equals(activeMode)) {
+            animateVisibleVerticalRows();
+        } else if (WHEEL_3D.equals(activeMode)) {
+            animateVisibleWheelRows();
+        }
+    }
+
+    private void animateVisibleWheelRows() {
+        if (!WHEEL_3D.equals(activeMode) || wheelScroller == null || wheelColumn == null
+                || mainActivity.adapter == null || wheelScroller.scrollIdleGate.isScrolling()
+                || !SmartAnimationEngine.isEnabled(mainActivity)) {
+            return;
+        }
+
+        int viewportTop = wheelScroller.getScrollY();
+        int viewportBottom = viewportTop + wheelScroller.getHeight();
+        int visibleIndex = 0;
+        int count = Math.min(wheelColumn.getChildCount(), mainActivity.adapter.getCount());
+        for (int position = 0; position < count; position++) {
+            View shell = wheelColumn.getChildAt(position);
+            if (shell.getBottom() < viewportTop || shell.getTop() > viewportBottom) continue;
+            long uniqueId = mainActivity.adapter.getItem(position).getUniqueId();
+            if (animatedWheelItems.add(uniqueId)) {
+                View content = wheelContent(shell);
+                if (content != null) {
+                    SmartAnimationEngine.animateTileListItem(content, visibleIndex);
+                }
+            }
+            visibleIndex++;
         }
     }
 
