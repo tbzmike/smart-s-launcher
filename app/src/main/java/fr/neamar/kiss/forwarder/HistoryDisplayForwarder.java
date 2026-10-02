@@ -355,8 +355,12 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void animateVisibleWheelRows() {
         if (!WHEEL_3D.equals(activeMode) || wheelScroller == null || wheelColumn == null
-                || mainActivity.adapter == null || wheelScroller.scrollIdleGate.isScrolling()
-                || !SmartAnimationEngine.isEnabled(mainActivity)) {
+                || mainActivity.adapter == null || wheelScroller.scrollIdleGate.isScrolling()) {
+            return;
+        }
+
+        if (!SmartAnimationEngine.isEnabled(mainActivity)) {
+            resetVisibleWheelContentAnimations();
             return;
         }
 
@@ -389,8 +393,12 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void animateVisibleVerticalRows() {
         if (!VERTICAL.equals(activeMode) || mainActivity.list == null
-                || mainActivity.adapter == null || mainActivity.list.isScrollInProgress()
-                || !SmartAnimationEngine.isEnabled(mainActivity)) {
+                || mainActivity.adapter == null || mainActivity.list.isScrollInProgress()) {
+            return;
+        }
+
+        if (!SmartAnimationEngine.isEnabled(mainActivity)) {
+            resetVisibleVerticalAnimations();
             return;
         }
 
@@ -416,6 +424,27 @@ final class HistoryDisplayForwarder extends Forwarder {
             if (child == null) continue;
             int animationIndex = Math.max(0, childCount - 1 - i);
             SmartAnimationEngine.animateTileListItem(child, animationIndex);
+        }
+    }
+
+    private void resetVisibleVerticalAnimations() {
+        if (mainActivity.list == null) return;
+        int childCount = mainActivity.list.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            View child = mainActivity.list.getChildAt(i);
+            if (child != null) SmartAnimationEngine.reset(child);
+        }
+    }
+
+    private void resetVisibleWheelContentAnimations() {
+        if (wheelScroller == null || wheelColumn == null) return;
+        int viewportTop = wheelScroller.getScrollY();
+        int viewportBottom = viewportTop + wheelScroller.getHeight();
+        for (int i = 0; i < wheelColumn.getChildCount(); i++) {
+            View shell = wheelColumn.getChildAt(i);
+            if (shell.getBottom() < viewportTop || shell.getTop() > viewportBottom) continue;
+            View content = wheelContent(shell);
+            if (content != null) SmartAnimationEngine.reset(content);
         }
     }
 
