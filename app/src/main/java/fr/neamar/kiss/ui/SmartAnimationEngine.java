@@ -644,6 +644,10 @@ public final class SmartAnimationEngine {
         }
     }
 
+    public static boolean canAnimateTileListIndex(int index) {
+        return index >= 0 && index < MAX_STAGGERED_CHILDREN;
+    }
+
     /** Entrance animation for tile/card lists, controlled by the global scroll-animation setting. */
     public static void animateTileListItem(View child, int index) {
         if (child == null) return;
