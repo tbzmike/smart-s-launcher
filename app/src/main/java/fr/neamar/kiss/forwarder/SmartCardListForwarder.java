@@ -448,7 +448,8 @@ final class SmartCardListForwarder extends Forwarder {
                 View item = createCardItem(source, result, position, latestNotifications);
                 column.addView(item);
                 int animationIndex = Math.max(0, count - 1 - position);
-                if (animatedCardIds.add(result.getPojoId())) {
+                if (SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
+                        && animatedCardIds.add(result.getPojoId())) {
                     SmartAnimationEngine.animateTileListItem(item, animationIndex);
                 }
                 if (activeQuery) {
@@ -506,9 +507,10 @@ final class SmartCardListForwarder extends Forwarder {
                         source, result, position, Collections.emptyMap());
             }
             placeCardChild(desired, position);
-            if (created && animatedCardIds.add(id)) {
-                SmartAnimationEngine.animateTileListItem(
-                        desired, Math.max(0, targetCount - 1 - position));
+            int animationIndex = Math.max(0, targetCount - 1 - position);
+            if (created && SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
+                    && animatedCardIds.add(id)) {
+                SmartAnimationEngine.animateTileListItem(desired, animationIndex);
             }
         }
 
