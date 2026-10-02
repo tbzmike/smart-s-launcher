@@ -567,9 +567,10 @@ final class SmartCardListForwarder extends Forwarder {
                 desired = createCardItem(source, result, position, Collections.emptyMap());
             }
             placeCardChild(desired, position);
-            if (created && animatedCardIds.add(id)) {
-                SmartAnimationEngine.animateTileListItem(
-                        desired, Math.max(0, targetCount - 1 - position));
+            int animationIndex = Math.max(0, targetCount - 1 - position);
+            if (created && SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
+                    && animatedCardIds.add(id)) {
+                SmartAnimationEngine.animateTileListItem(desired, animationIndex);
             }
         }
 
