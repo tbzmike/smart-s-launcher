@@ -284,10 +284,11 @@ final class HistoryDisplayForwarder extends Forwarder {
             bindResultInteraction(shell, position);
 
             long uniqueId = mainActivity.adapter.getItem(position).getUniqueId();
-            if (newVisual && animatedWheelItems.add(uniqueId)) {
+            final int animationIndex = Math.max(0, count - 1 - position);
+            if (newVisual && SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
+                    && animatedWheelItems.add(uniqueId)) {
                 SmartAnimationEngine.reset(source);
                 final View animatedSource = source;
-                final int animationIndex = Math.max(0, count - 1 - position);
                 source.post(() -> {
                     if (animatedSource.getParent() instanceof WheelItemShell
                             && WHEEL_3D.equals(activeMode)) {
