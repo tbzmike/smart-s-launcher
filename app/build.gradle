@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.145 - complete Appearance text-setting wiring
-        versionCode 573
-        versionName "3.30.145"
+        // Smart S Launcher 3.30.146 - recover History loads that race with scrolling/lifecycle
+        versionCode 574
+        versionName "3.30.146"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
