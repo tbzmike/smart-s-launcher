@@ -307,6 +307,10 @@ public final class UiLivePreviewPreference extends Preference
                     case "tilt": rot = -14f + phase * 28f; break;
                     case "stack": x += (phase - .5f) * dp(34); scale = .88f + phase * .12f; break;
                     case "cascade": y += (1f - phase) * dp(32); alpha = .55f + phase * .45f; break;
+                    case "flip": scale = .82f + phase * .18f; alpha = .62f + phase * .38f; break;
+                    case "helix": x += (phase - .5f) * dp(54); scale = .82f + phase * .18f; alpha = .62f + phase * .38f; break;
+                    case "fan": x += (phase - .5f) * dp(46); rot = -10f + phase * 20f; scale = .90f + phase * .10f; break;
+                    case "bounce": y += (1f - phase) * dp(46); scale = .72f + phase * .28f; break;
                     case "parallax": x += (phase - .5f) * dp(110); y += (1f - phase) * dp(10); break;
                     case "swing": x += (phase - .5f) * dp(48); rot = -14f + phase * 28f; break;
                     case "accordion": scale = .72f + phase * .28f; y += (1f - phase) * dp(24); break;
