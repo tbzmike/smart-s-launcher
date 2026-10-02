@@ -332,9 +332,13 @@ final class SmartCardListForwarder extends Forwarder {
         if (scroller == null) return;
         boolean enabled = isEnabled();
         if (enabled) {
+            boolean wasVisible = scroller.getVisibility() == View.VISIBLE;
             mainActivity.list.setVisibility(View.GONE);
             if (edgeEffect != null) edgeEffect.setVisibility(View.GONE);
             scroller.setVisibility(View.VISIBLE);
+            if (!wasVisible) {
+                SmartAnimationEngine.animateWindowSwitch(null, scroller);
+            }
             if (force) rebuild();
         } else {
             boolean wasVisible = scroller.getVisibility() == View.VISIBLE;
@@ -406,6 +410,8 @@ final class SmartCardListForwarder extends Forwarder {
                 View source = mainActivity.adapter.getView(position, null, column);
                 View item = createCardItem(source, result, position, latestNotifications);
                 column.addView(item);
+                int animationIndex = Math.max(0, count - 1 - position);
+                SmartAnimationEngine.animateTileListItem(item, animationIndex);
                 if (activeQuery) {
                     activeQueryCardSignatures.put(result.getPojoId(), cardSignature(result));
                 } else {
@@ -454,12 +460,17 @@ final class SmartCardListForwarder extends Forwarder {
                 if (desired.getParent() == column) column.removeView(desired);
                 desired = null;
             }
-            if (desired == null) {
+            boolean created = desired == null;
+            if (created) {
                 View source = mainActivity.adapter.getView(position, null, column);
                 desired = createCardItem(
                         source, result, position, Collections.emptyMap());
             }
             placeCardChild(desired, position);
+            if (created) {
+                SmartAnimationEngine.animateTileListItem(
+                        desired, Math.max(0, targetCount - 1 - position));
+            }
         }
 
         // Entries left in the map disappeared from the new query result set. Remove those exact
@@ -509,11 +520,16 @@ final class SmartCardListForwarder extends Forwarder {
                 if (desired.getParent() == column) column.removeView(desired);
                 desired = null;
             }
-            if (desired == null) {
+            boolean created = desired == null;
+            if (created) {
                 View source = mainActivity.adapter.getView(position, null, column);
                 desired = createCardItem(source, result, position, Collections.emptyMap());
             }
             placeCardChild(desired, position);
+            if (created) {
+                SmartAnimationEngine.animateTileListItem(
+                        desired, Math.max(0, targetCount - 1 - position));
+            }
         }
 
         for (View stale : existingById.values()) {
