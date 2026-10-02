@@ -39,10 +39,10 @@ final class HistoryDisplayForwarder extends Forwarder {
     private long lastWheelPriorityId = Long.MIN_VALUE;
     private final Set<Long> animatedVerticalItems = new HashSet<>();
     private String lastVerticalAnimationQuery = null;
-    private String lastVerticalAnimationStyle = null;
+    private String lastVerticalAnimationSignature = null;
     private final Runnable animateVerticalRowsWhenIdle = this::animateVisibleVerticalRows;
     private final Set<Long> animatedWheelItems = new HashSet<>();
-    private String lastWheelAnimationStyle = null;
+    private String lastWheelAnimationSignature = null;
 
     HistoryDisplayForwarder(MainActivity mainActivity) {
         super(mainActivity);
@@ -192,7 +192,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (!TextUtils.equals(previousMode, activeMode)) {
             animatedVerticalItems.clear();
             lastVerticalAnimationQuery = null;
-            lastVerticalAnimationStyle = null;
+            lastVerticalAnimationSignature = null;
             View incoming = vertical ? mainActivity.list : (wheel ? wheelScroller : null);
             if (incoming != null) {
                 SmartAnimationEngine.animateWindowSwitch(null, incoming);
@@ -206,7 +206,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (wheelColumn.getChildCount() > 0) wheelColumn.removeAllViews();
         wheelViewTypes.clear();
         animatedWheelItems.clear();
-        lastWheelAnimationStyle = null;
+        lastWheelAnimationSignature = null;
         wheelHasBeenEntered = false;
         lastWheelQuery = "";
         lastWheelPriorityId = Long.MIN_VALUE;
@@ -237,12 +237,13 @@ final class HistoryDisplayForwarder extends Forwarder {
         boolean refocusFront = !wheelHasBeenEntered
                 || !currentQuery.equals(lastWheelQuery)
                 || currentPriorityId != lastWheelPriorityId;
-        String wheelAnimationStyle = SmartAnimationEngine.getStyle(
-                mainActivity, "smart-animation-scroll", "classic");
-        if (!TextUtils.equals(currentQuery, lastWheelQuery)
-                || !TextUtils.equals(lastWheelAnimationStyle, wheelAnimationStyle)) {
+        String wheelAnimationSignature =
+                SmartAnimationEngine.listAnimationSignature(mainActivity);
+        boolean animationConfigChanged =
+                !TextUtils.equals(lastWheelAnimationSignature, wheelAnimationSignature);
+        if (!TextUtils.equals(currentQuery, lastWheelQuery) || animationConfigChanged) {
             animatedWheelItems.clear();
-            lastWheelAnimationStyle = wheelAnimationStyle;
+            lastWheelAnimationSignature = wheelAnimationSignature;
         }
 
         for (int position = 0; position < count; position++) {
@@ -320,6 +321,11 @@ final class HistoryDisplayForwarder extends Forwarder {
         wheelScroller.post(() -> {
             if (refocusFront && count > 0) centerWheelItem(count - 1);
             scheduleWheelTransforms();
+
+            // Reused wheel rows are not "newVisual". When the user changes animation style, speed
+            // or the master animation toggle in Settings, explicitly replay the visible wheel rows
+            // so the selected setting takes effect immediately on return to Home.
+            if (animationConfigChanged) animateVisibleWheelRows();
         });
     }
 
@@ -390,13 +396,13 @@ final class HistoryDisplayForwarder extends Forwarder {
 
         String query = mainActivity.searchEditText == null
                 ? "" : mainActivity.searchEditText.getText().toString();
-        String animationStyle = SmartAnimationEngine.getStyle(
-                mainActivity, "smart-animation-scroll", "classic");
+        String animationSignature =
+                SmartAnimationEngine.listAnimationSignature(mainActivity);
         if (!TextUtils.equals(lastVerticalAnimationQuery, query)
-                || !TextUtils.equals(lastVerticalAnimationStyle, animationStyle)) {
+                || !TextUtils.equals(lastVerticalAnimationSignature, animationSignature)) {
             animatedVerticalItems.clear();
             lastVerticalAnimationQuery = query;
-            lastVerticalAnimationStyle = animationStyle;
+            lastVerticalAnimationSignature = animationSignature;
         }
 
         int first = mainActivity.list.getFirstVisiblePosition();
