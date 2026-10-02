@@ -411,9 +411,11 @@ final class SmartCardListForwarder extends Forwarder {
         cancelDeferredRefreshIdleProbe();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
-        String animationScope = activeQuery && mainActivity.searchEditText != null
+        String animationStyle = SmartAnimationEngine.getStyle(
+                mainActivity, "smart-animation-scroll", "classic");
+        String animationScope = (activeQuery && mainActivity.searchEditText != null
                 ? "query:" + mainActivity.searchEditText.getText().toString()
-                : "history";
+                : "history") + "|style:" + animationStyle;
         if (!TextUtils.equals(lastAnimationScope, animationScope)) {
             animatedCardIds.clear();
             lastAnimationScope = animationScope;
