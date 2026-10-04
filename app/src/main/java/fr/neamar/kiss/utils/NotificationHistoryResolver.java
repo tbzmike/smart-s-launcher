@@ -18,7 +18,6 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
-import fr.neamar.kiss.ui.LockedNotificationHistoryDialog;
 import fr.neamar.kiss.ui.NotificationHistoryStartIndex;
 import fr.neamar.kiss.ui.NotificationPopupDialog;
 import fr.neamar.kiss.ui.RichNotificationHistoryDialog;
@@ -57,9 +56,9 @@ public final class NotificationHistoryResolver {
     }
 
     /**
-     * Read-only long-press behavior used while the launcher UI is locked.
-     * Notification History rows are resolved by their exact notification id + post time, so a
-     * long press can never jump to a different/newer row merely because it belongs to the same app.
+     * Locked-UI long press still targets the exact History item, but "locked" only prevents launcher
+     * layout/appearance editing. The History popup itself remains fully functional: expanded text,
+     * captured imagery, native notification content, inline reply, mark-read and exact-open actions.
      */
     public static boolean showLockedForPojo(Context context, Pojo pojo) {
         if (context == null || pojo == null) return false;
@@ -69,7 +68,7 @@ public final class NotificationHistoryResolver {
 
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;
-            if (LockedNotificationHistoryDialog.showSelected(
+            if (RichNotificationHistoryDialog.showSelected(
                     context,
                     packageName,
                     notification.exactNotificationId,
@@ -79,7 +78,7 @@ public final class NotificationHistoryResolver {
 
             // A freshly posted notification can be visible before its SQLite row is persisted.
             // In that narrow window open only the exact active child represented by this History
-            // tile; never fall back to another notification from the same group/application.
+            // tile; never substitute a different notification from the same application.
             return NotificationListener.isNotificationActive(
                     context, notification.exactNotificationId, notification.postTime)
                     && NotificationPopupDialog.showExact(
@@ -89,9 +88,10 @@ public final class NotificationHistoryResolver {
                     notification.postTime);
         }
 
-        // Non-notification app/shortcut rows do not have a persisted per-row notification identity.
-        // Retain the established package-scoped read-only history behavior for those rows only.
-        return LockedNotificationHistoryDialog.showLatest(context, packageName);
+        // App and ordinary shortcut History rows use that application's newest stored notification
+        // content. This is package-scoped by design because those rows do not carry an exact
+        // notification id/post-time identity.
+        return RichNotificationHistoryDialog.showLatest(context, packageName);
     }
 
     public static boolean showForPojo(Context context, Pojo pojo) {
