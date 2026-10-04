@@ -18,6 +18,7 @@ import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.ui.LockedNotificationHistoryDialog;
 import fr.neamar.kiss.ui.NotificationHistoryStartIndex;
 import fr.neamar.kiss.ui.NotificationPopupDialog;
 import fr.neamar.kiss.ui.RichNotificationHistoryDialog;
@@ -53,6 +54,31 @@ public final class NotificationHistoryResolver {
             return SavedNotificationDestinationResolver.OpenResult.NO_EXACT_TARGET;
         }
         return SavedNotificationDestinationResolver.openExactResult(context, records.get(index));
+    }
+
+    /**
+     * Read-only long-press behavior used while the launcher UI is locked.
+     * Notification History rows are resolved by their exact notification id + post time, so a
+     * long press can never jump to a different/newer row merely because it belongs to the same app.
+     */
+    public static boolean showLockedForPojo(Context context, Pojo pojo) {
+        if (context == null || pojo == null) return false;
+
+        String packageName = resolvePackage(context, pojo);
+        if (packageName == null) return false;
+
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            return LockedNotificationHistoryDialog.showSelected(
+                    context,
+                    packageName,
+                    notification.exactNotificationId,
+                    notification.postTime);
+        }
+
+        // Non-notification app/shortcut rows do not have a persisted per-row notification identity.
+        // Retain the established package-scoped read-only history behavior for those rows only.
+        return LockedNotificationHistoryDialog.showLatest(context, packageName);
     }
 
     public static boolean showForPojo(Context context, Pojo pojo) {
