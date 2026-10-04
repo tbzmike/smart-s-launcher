@@ -24,15 +24,21 @@ public final class NotificationHistoryStartIndex {
             }
         }
 
-        // Group notification pojos identify their newest child by post time rather than child id.
-        if (postTime > 0L) {
+        // Only a legacy/group pojo is allowed to resolve by child post time alone. For an
+        // individual notification row, a failed exact id+time match must stay failed; otherwise a
+        // different notification posted in the same millisecond (or a reused id at another time)
+        // could be opened under the user's finger.
+        if (postTime > 0L
+                && notificationId != null
+                && notificationId.startsWith("notification-group://")) {
             for (int i = 0; i < records.size(); i++) {
                 NotificationHistoryRecord record = records.get(i);
                 if (record != null && postTime == record.postTime) return i;
             }
         }
 
-        if (notificationId != null && !notificationId.isEmpty()) {
+        // Id-only matching is intentionally limited to old callers that have no usable event time.
+        if (postTime <= 0L && notificationId != null && !notificationId.isEmpty()) {
             for (int i = 0; i < records.size(); i++) {
                 NotificationHistoryRecord record = records.get(i);
                 if (record != null && notificationId.equals(record.notificationId)) return i;
