@@ -41,7 +41,28 @@ public final class LockedNotificationHistoryDialog {
         List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
                 context, packageName, null, 0);
         if (records.isEmpty()) return false;
-        new Session(context, packageName, records).show();
+        new Session(context, packageName, records, 0).show();
+        return true;
+    }
+
+    /**
+     * Open the exact persisted notification represented by the long-pressed History row.
+     * Never silently substitute the newest item from the same application.
+     */
+    public static boolean showSelected(Context context,
+                                       String packageName,
+                                       String notificationId,
+                                       long postTime) {
+        if (context == null || packageName == null || packageName.isEmpty()) return false;
+        List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
+                context, packageName, null, 0);
+        if (records.isEmpty()) return false;
+
+        int startIndex = NotificationHistoryStartIndex.resolve(
+                records, notificationId, postTime);
+        if (startIndex < 0 || startIndex >= records.size()) return false;
+
+        new Session(context, packageName, records, startIndex).show();
         return true;
     }
 
@@ -69,10 +90,12 @@ public final class LockedNotificationHistoryDialog {
         private float downX;
         private float downY;
 
-        Session(Context context, String packageName, List<NotificationHistoryRecord> records) {
+        Session(Context context, String packageName, List<NotificationHistoryRecord> records,
+                int startIndex) {
             this.context = context;
             this.packageName = packageName;
             this.records = records;
+            this.index = Math.max(0, Math.min(startIndex, records.size() - 1));
             this.accent = AppNativeDialogStyle.accentForPackage(context, packageName);
 
             int pad = dp(14);
