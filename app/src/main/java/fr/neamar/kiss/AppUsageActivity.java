@@ -1,6 +1,7 @@
 package fr.neamar.kiss;
 
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -72,6 +73,11 @@ import fr.neamar.kiss.ui.AutoMarqueeTextView;
  * usage sync is only requested on Activity resume or explicit refresh.
  */
 public final class AppUsageActivity extends AppCompatActivity {
+    public static final String EXTRA_PACKAGE_FILTER =
+            "fr.neamar.kiss.extra.APP_USAGE_PACKAGE_FILTER";
+    public static final String EXTRA_APP_LABEL =
+            "fr.neamar.kiss.extra.APP_USAGE_APP_LABEL";
+
     private static final String KIND_PHONE_DAILY = "PHONE_DAILY";
     private static final String KIND_APP_DAILY = "APP_DAILY_USAGE";
     private static final String KIND_DEVICE_BOOT = "DEVICE_BOOT";
@@ -117,8 +123,21 @@ public final class AppUsageActivity extends AppCompatActivity {
     private boolean showInteractionEvents = false;
     private boolean showPackageEvents = true;
     private String appFilter = "";
+    @Nullable private String launchAppLabel;
 
     @Nullable private Snapshot snapshot;
+
+    public static void openForPackage(Context context, String packageName,
+                                      @Nullable String appLabel) {
+        if (context == null || TextUtils.isEmpty(packageName)) return;
+        Intent intent = new Intent(context, AppUsageActivity.class);
+        intent.putExtra(EXTRA_PACKAGE_FILTER, packageName);
+        if (!TextUtils.isEmpty(appLabel)) intent.putExtra(EXTRA_APP_LABEL, appLabel);
+        if (!(context instanceof android.app.Activity)) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        }
+        context.startActivity(intent);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -127,6 +146,16 @@ public final class AppUsageActivity extends AppCompatActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
+
+        Intent launchIntent = getIntent();
+        if (launchIntent != null) {
+            String packageFilter = launchIntent.getStringExtra(EXTRA_PACKAGE_FILTER);
+            if (!TextUtils.isEmpty(packageFilter)) {
+                appFilter = packageFilter.trim();
+                launchAppLabel = launchIntent.getStringExtra(EXTRA_APP_LABEL);
+                activeView = VIEW_TIMELINE;
+            }
+        }
         buildUi();
     }
 
@@ -227,7 +256,7 @@ public final class AppUsageActivity extends AppCompatActivity {
         title.setSingleLine(true);
         titles.addView(title);
         subtitle = new TextView(this);
-        subtitle.setText("Daily");
+        subtitle.setText(TextUtils.isEmpty(launchAppLabel) ? "Daily" : launchAppLabel);
         subtitle.setTextColor(TEXT_SECONDARY);
         subtitle.setTextSize(12f);
         titles.addView(subtitle);
