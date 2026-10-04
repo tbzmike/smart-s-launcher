@@ -1016,7 +1016,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     public boolean showNotificationHistoryIfAvailable(final int pos, View v) {
         if (pos < 0 || pos >= getCount() || v == null) return false;
-        return NotificationHistoryResolver.showForPojo(v.getContext(), getItem(pos).getPojo());
+        Context context = v.getContext();
+        Pojo pojo = getItem(pos).getPojo();
+        return UiEditLock.isLocked(context)
+                ? NotificationHistoryResolver.showLockedForPojo(context, pojo)
+                : NotificationHistoryResolver.showForPojo(context, pojo);
     }
 
     public void onLongClick(final int pos, View v) {
