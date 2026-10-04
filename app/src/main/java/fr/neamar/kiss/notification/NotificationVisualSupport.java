@@ -123,6 +123,39 @@ public final class NotificationVisualSupport {
         return new Snapshot(image, uri, mime, media);
     }
 
+    /**
+     * Return persisted History artwork when available, otherwise read the exact currently-active
+     * notification directly. This makes a just-opened popup show its picture immediately even when
+     * the background persistence worker has not finished writing the lossless History copy yet.
+     */
+    @Nullable
+    public static Snapshot snapshot(Context context, String notificationId,
+                                    @Nullable String packageName, long postTime) {
+        Snapshot persisted = snapshot(context, notificationId);
+        if (persisted != null) return persisted;
+        StatusBarNotification[] active = NotificationListener.activeNotificationsSnapshot();
+        if (active == null) return null;
+
+        for (StatusBarNotification sbn : active) {
+            if (sbn == null || sbn.getNotification() == null) continue;
+            if (!TextUtils.isEmpty(packageName)
+                    && !TextUtils.equals(packageName, sbn.getPackageName())) continue;
+            if (postTime > 0L && sbn.getPostTime() != postTime) continue;
+            if (!TextUtils.equals(notificationId, NotificationListener.getTimelineId(sbn))) continue;
+
+            Notification notification = sbn.getNotification();
+            MediaReference reference = findMessagingMedia(notification);
+            Drawable visual = extractVisual(context, notification, reference);
+            boolean media = isMediaNotification(notification);
+            String uri = reference == null || reference.uri == null
+                    ? null : reference.uri.toString();
+            String mime = reference == null ? null : reference.mime;
+            if (visual == null && TextUtils.isEmpty(uri) && !media) return null;
+            return new Snapshot(visual, uri, mime, media);
+        }
+        return null;
+    }
+
     public static boolean openMedia(Context context, Snapshot snapshot) {
         if (context == null || snapshot == null || TextUtils.isEmpty(snapshot.mediaUri)) return false;
         try {
