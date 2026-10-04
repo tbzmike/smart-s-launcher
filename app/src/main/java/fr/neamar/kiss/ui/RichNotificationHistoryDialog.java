@@ -241,7 +241,7 @@ public final class RichNotificationHistoryDialog {
             actionArea.removeAllViews();
             if (active && !media) {
                 View nativeView = NotificationListener.createNativeNotificationView(
-                        context, record.notificationId, nativeArea, true);
+                        context, record.notificationId, record.postTime, nativeArea, true);
                 if (nativeView != null) {
                     AppNativeDialogStyle.styleNotificationContent(nativeView, packageName);
                     nativeArea.addView(nativeView, new LinearLayout.LayoutParams(
@@ -258,7 +258,8 @@ public final class RichNotificationHistoryDialog {
 
         private void addActiveActions(NotificationHistoryRecord record) {
             int pad = dp(8);
-            if (NotificationListener.hasReplyAction(context, record.notificationId)) {
+            if (NotificationListener.hasReplyAction(
+                    context, record.notificationId, record.postTime)) {
                 LinearLayout replyRow = new LinearLayout(context);
                 replyRow.setOrientation(LinearLayout.HORIZONTAL);
                 replyRow.setPadding(0, pad, 0, 0);
@@ -277,7 +278,7 @@ public final class RichNotificationHistoryDialog {
                     String message = reply.getText().toString();
                     if (message.trim().isEmpty()) return;
                     if (NotificationListener.replyToNotification(
-                            context, record.notificationId, message)) {
+                            context, record.notificationId, record.postTime, message)) {
                         reply.setText("");
                     } else {
                         Toast.makeText(context, "Unable to send reply",
@@ -371,7 +372,7 @@ public final class RichNotificationHistoryDialog {
             AppNativeDialogStyle.styleButton(markRead, accent);
             markRead.setOnClickListener(v -> {
                 boolean systemMarked = active && NotificationListener.markNotificationRead(
-                        context, record.notificationId);
+                        context, record.notificationId, record.postTime);
                 if (!systemMarked && record.notificationId != null
                         && !record.notificationId.isEmpty()) {
                     // Saved notifications no longer have an Android panel action to invoke, but
