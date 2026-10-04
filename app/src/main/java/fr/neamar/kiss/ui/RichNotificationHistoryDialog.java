@@ -59,36 +59,56 @@ public final class RichNotificationHistoryDialog {
         if (context == null || packageName == null || packageName.isEmpty()) return false;
 
         // Notification History is the authority for long-press inspection. Resolve the exact
-        // persisted event first, then locate that immutable DB row in the package timeline. This
-        // prevents a reused Android notification key or a refreshed live notification from making
-        // the popup drift to a different event.
+        // persisted event first, then display that immutable database row.
         NotificationHistoryRecord selected = NotificationTimelineStore.findExact(
                 context, notificationId, postTime);
-
-        List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
-                context, packageName, null, 0);
-        if (records.isEmpty()) return false;
-
-        int startIndex = -1;
         if (selected != null && packageName.equals(selected.packageName)) {
-            for (int i = 0; i < records.size(); i++) {
-                NotificationHistoryRecord candidate = records.get(i);
-                if (candidate != null && candidate.dbId == selected.dbId) {
-                    startIndex = i;
-                    break;
-                }
-            }
+            return showRecord(context, selected);
         }
 
         // Keep compatibility with legacy/group notification rows that predate exact DB identity,
         // but never fall back to "latest from the app" for a normal notification.
-        if (startIndex < 0) {
-            startIndex = NotificationHistoryStartIndex.resolve(
-                    records, notificationId, postTime);
-        }
+        List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
+                context, packageName, null, 0);
+        if (records.isEmpty()) return false;
+        int startIndex = NotificationHistoryStartIndex.resolve(
+                records, notificationId, postTime);
         if (startIndex < 0) return false;
-
         new Session(context, packageName, records, startIndex).show();
+        return true;
+    }
+
+    /**
+     * Display one exact row already resolved from Smart S Notification History. The surrounding
+     * package timeline is loaded only to preserve older/newer swipe navigation; the selected row
+     * itself is anchored by its database id, never by list position or "latest" heuristics.
+     */
+    public static boolean showRecord(Context context, NotificationHistoryRecord selected) {
+        if (context == null || selected == null || selected.dbId <= 0L
+                || selected.packageName == null || selected.packageName.isEmpty()) {
+            return false;
+        }
+
+        List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
+                context, selected.packageName, null, 0);
+        int startIndex = -1;
+        for (int i = 0; i < records.size(); i++) {
+            NotificationHistoryRecord candidate = records.get(i);
+            if (candidate != null && candidate.dbId == selected.dbId) {
+                startIndex = i;
+                break;
+            }
+        }
+
+        // A retention/cleanup pass can race the package query after the exact row was read. Show the
+        // already-resolved record rather than silently switching to another notification.
+        if (startIndex < 0) {
+            records = new java.util.ArrayList<>();
+            records.add(selected);
+            startIndex = 0;
+        }
+
+        new Session(context, selected.packageName, records, startIndex).show();
         return true;
     }
 
