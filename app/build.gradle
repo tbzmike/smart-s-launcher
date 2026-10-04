@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.146 - History recovery and complete history-layout animation wiring
-        versionCode 574
-        versionName "3.30.146"
+        // Smart S Launcher 3.30.147 - exact locked-History long press targeting
+        versionCode 575
+        versionName "3.30.147"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
