@@ -87,6 +87,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         Intent intent = new Intent(context, NotificationHistoryActivity.class)
                 .putExtra(EXTRA_HISTORY_DB_ID, record.dbId)
                 .putExtra(EXTRA_HISTORY_PACKAGE, record.packageName)
+                .putExtra(EXTRA_PERMANENT, record.permanent)
                 .putExtra(EXTRA_OPEN_DETAIL, true);
         if (!(context instanceof Activity)) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         context.startActivity(intent);
