@@ -1,5 +1,6 @@
 package fr.neamar.kiss;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -57,6 +58,8 @@ import fr.neamar.kiss.utils.SemanticHints;
 
 public class NotificationHistoryActivity extends AppCompatActivity {
     public static final String EXTRA_HISTORY_DB_ID = "notification-history-db-id";
+    public static final String EXTRA_HISTORY_PACKAGE = "notification-history-package";
+    public static final String EXTRA_OPEN_DETAIL = "notification-history-open-detail";
     public static final String EXTRA_SEARCH_QUERY = "notification-history-search-query";
     public static final String EXTRA_PERMANENT = "notification-history-permanent";
 
@@ -70,7 +73,23 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     private int lastFirstVisible = -1;
     private long targetDbId = -1L;
     private String targetQuery = "";
+    private boolean openTargetDetail;
     private boolean suppressSearchRefresh;
+
+    /**
+     * Open the built-in Notification History at one exact persisted row. The package filter keeps
+     * the requested row in the visible query even on very large histories, and open-detail makes
+     * the record itself appear immediately instead of merely navigating to the general list.
+     */
+    public static void openExactHistoryRecord(@NonNull Context context,
+                                              @NonNull NotificationHistoryRecord record) {
+        Intent intent = new Intent(context, NotificationHistoryActivity.class)
+                .putExtra(EXTRA_HISTORY_DB_ID, record.dbId)
+                .putExtra(EXTRA_HISTORY_PACKAGE, record.packageName)
+                .putExtra(EXTRA_OPEN_DETAIL, true);
+        if (!(context instanceof Activity)) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        context.startActivity(intent);
+    }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -78,6 +97,9 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         setTitle("Notification history");
         targetDbId = getIntent().getLongExtra(EXTRA_HISTORY_DB_ID, -1L);
         targetQuery = safe(getIntent().getStringExtra(EXTRA_SEARCH_QUERY));
+        selectedPackage = safe(getIntent().getStringExtra(EXTRA_HISTORY_PACKAGE));
+        if (selectedPackage.isEmpty()) selectedPackage = null;
+        openTargetDetail = getIntent().getBooleanExtra(EXTRA_OPEN_DETAIL, false);
         selectedPermanent = getIntent().getBooleanExtra(EXTRA_PERMANENT, false);
         configureWallpaperBackground();
         buildUi();
@@ -247,12 +269,16 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     private void focusTarget() {
         if (targetDbId <= 0L || list == null) return;
         for (int i = 0; i < records.size(); i++) {
-            if (records.get(i).dbId == targetDbId) {
+            NotificationHistoryRecord target = records.get(i);
+            if (target.dbId == targetDbId) {
                 final int position = i;
+                final boolean showDetailNow = openTargetDetail;
+                openTargetDetail = false;
                 list.post(() -> {
                     list.setSelection(Math.max(0, position - 1));
                     View child = list.getChildAt(position - list.getFirstVisiblePosition());
                     if (child != null) SmartAnimationEngine.animateTileListItem(child, 0);
+                    if (showDetailNow) showRecordDetail(target, "");
                 });
                 return;
             }
