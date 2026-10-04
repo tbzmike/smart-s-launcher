@@ -816,11 +816,16 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     public static boolean markNotificationRead(Context context, String notificationId) {
-        String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(notificationId + "|key", null);
+        return markNotificationRead(context, notificationId, 0L);
+    }
+
+    public static boolean markNotificationRead(Context context, String notificationId,
+                                               long postTime) {
         NotificationListener listener = instance;
-        if (listener == null || key == null) return false;
-        StatusBarNotification sbn = listener.findActiveByKey(key);
+        if (listener == null) return false;
+        StatusBarNotification sbn = findActiveNotification(context, notificationId, postTime);
         if (sbn == null) return false;
+        String key = sbn.getKey();
 
         Notification.Action[] actions = sbn.getNotification().actions;
         if (actions != null) {
@@ -1215,13 +1220,23 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     public static boolean hasReplyAction(Context context, String notificationId) {
-        StatusBarNotification sbn = findActiveNotification(context, notificationId);
+        return hasReplyAction(context, notificationId, 0L);
+    }
+
+    public static boolean hasReplyAction(Context context, String notificationId, long postTime) {
+        StatusBarNotification sbn = findActiveNotification(context, notificationId, postTime);
         return sbn != null && findReplyAction(sbn.getNotification()) != null;
     }
 
-    public static boolean replyToNotification(Context context, String notificationId, String replyText) {
+    public static boolean replyToNotification(Context context, String notificationId,
+                                              String replyText) {
+        return replyToNotification(context, notificationId, 0L, replyText);
+    }
+
+    public static boolean replyToNotification(Context context, String notificationId,
+                                              long postTime, String replyText) {
         if (replyText == null || replyText.trim().isEmpty()) return false;
-        StatusBarNotification sbn = findActiveNotification(context, notificationId);
+        StatusBarNotification sbn = findActiveNotification(context, notificationId, postTime);
         if (sbn == null) return false;
 
         String packageName = sbn.getPackageName();
@@ -1252,12 +1267,22 @@ public class NotificationListener extends NotificationListenerService {
         }
     }
 
-    private static StatusBarNotification findActiveNotification(Context context, String notificationId) {
+    private static StatusBarNotification findActiveNotification(Context context,
+                                                                  String notificationId) {
+        return findActiveNotification(context, notificationId, 0L);
+    }
+
+    private static StatusBarNotification findActiveNotification(Context context,
+                                                                  String notificationId,
+                                                                  long postTime) {
         String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE)
                 .getString(notificationId + "|key", null);
         NotificationListener listener = instance;
         if (listener == null || key == null) return null;
-        return listener.findActiveByKey(key);
+        StatusBarNotification sbn = listener.findActiveByKey(key);
+        if (sbn == null) return null;
+        if (postTime > 0L && sbn.getPostTime() != postTime) return null;
+        return sbn;
     }
 
     private static Notification.Action findReplyAction(Notification notification) {
@@ -1287,12 +1312,17 @@ public class NotificationListener extends NotificationListenerService {
         return latest == null ? null : createNativeView(context, latest.getNotification(), parent, expanded);
     }
 
-    public static View createNativeNotificationView(Context context, String notificationId, ViewGroup parent, boolean expanded) {
-        String key = context.getSharedPreferences(DETAIL_PREFERENCES_NAME, Context.MODE_PRIVATE).getString(notificationId + "|key", null);
-        NotificationListener listener = instance;
-        if (listener == null || key == null) return null;
-        StatusBarNotification sbn = listener.findActiveByKey(key);
-        return sbn == null ? null : createNativeView(context, sbn.getNotification(), parent, expanded);
+    public static View createNativeNotificationView(Context context, String notificationId,
+                                                    ViewGroup parent, boolean expanded) {
+        return createNativeNotificationView(context, notificationId, 0L, parent, expanded);
+    }
+
+    public static View createNativeNotificationView(Context context, String notificationId,
+                                                    long postTime, ViewGroup parent,
+                                                    boolean expanded) {
+        StatusBarNotification sbn = findActiveNotification(context, notificationId, postTime);
+        return sbn == null ? null
+                : createNativeView(context, sbn.getNotification(), parent, expanded);
     }
 
     private static View createNativeView(Context context, Notification notification, ViewGroup parent, boolean expanded) {
