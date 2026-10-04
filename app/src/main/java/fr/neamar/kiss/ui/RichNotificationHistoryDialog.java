@@ -24,8 +24,10 @@ import fr.neamar.kiss.notification.NotificationIdentityIcon;
 import java.util.Date;
 import java.util.List;
 
+import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
+import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.notification.NotificationUnreadStore;
 import fr.neamar.kiss.utils.AppReinstallSupport;
@@ -55,11 +57,37 @@ public final class RichNotificationHistoryDialog {
                                        String notificationId,
                                        long postTime) {
         if (context == null || packageName == null || packageName.isEmpty()) return false;
+
+        // Notification History is the authority for long-press inspection. Resolve the exact
+        // persisted event first, then locate that immutable DB row in the package timeline. This
+        // prevents a reused Android notification key or a refreshed live notification from making
+        // the popup drift to a different event.
+        NotificationHistoryRecord selected = NotificationTimelineStore.findExact(
+                context, notificationId, postTime);
+
         List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
                 context, packageName, null, 0);
         if (records.isEmpty()) return false;
-        int startIndex = NotificationHistoryStartIndex.resolve(records, notificationId, postTime);
+
+        int startIndex = -1;
+        if (selected != null && packageName.equals(selected.packageName)) {
+            for (int i = 0; i < records.size(); i++) {
+                NotificationHistoryRecord candidate = records.get(i);
+                if (candidate != null && candidate.dbId == selected.dbId) {
+                    startIndex = i;
+                    break;
+                }
+            }
+        }
+
+        // Keep compatibility with legacy/group notification rows that predate exact DB identity,
+        // but never fall back to "latest from the app" for a normal notification.
+        if (startIndex < 0) {
+            startIndex = NotificationHistoryStartIndex.resolve(
+                    records, notificationId, postTime);
+        }
         if (startIndex < 0) return false;
+
         new Session(context, packageName, records, startIndex).show();
         return true;
     }
@@ -253,6 +281,8 @@ public final class RichNotificationHistoryDialog {
                 addSavedOpenAction(record);
             }
 
+            addOpenInHistoryAction(record);
+
             if (dialog.isShowing()) AppNativeDialogStyle.styleDialog(dialog, packageName);
         }
 
@@ -364,6 +394,24 @@ public final class RichNotificationHistoryDialog {
             });
             buttons.addView(open);
             actionArea.addView(buttons);
+        }
+
+        private void addOpenInHistoryAction(NotificationHistoryRecord record) {
+            if (record == null || record.dbId <= 0L) return;
+
+            LinearLayout row = new LinearLayout(context);
+            row.setGravity(Gravity.END);
+            row.setPadding(0, dp(8), 0, 0);
+
+            Button openHistory = new Button(context);
+            openHistory.setText("Open in notification history");
+            AppNativeDialogStyle.styleButton(openHistory, accent);
+            openHistory.setOnClickListener(v -> {
+                SmartAnimationEngine.dismissDialog(dialog);
+                NotificationHistoryActivity.openExactHistoryRecord(context, record);
+            });
+            row.addView(openHistory);
+            actionArea.addView(row);
         }
 
         private Button markReadButton(NotificationHistoryRecord record, boolean active) {
