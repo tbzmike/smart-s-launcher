@@ -40,7 +40,10 @@ public final class NotificationVisualSupport {
     private static final String TAG = NotificationVisualSupport.class.getSimpleName();
     private static final String PREFS = "notification-visual-history";
     private static final String DIR = "notification_visuals";
-    private static final int MAX_EDGE = 768;
+    // Android already limits bitmap payloads that can travel inside notifications. Preserve the
+    // pixels Android actually exposes instead of downscaling every saved picture to 768px.
+    // Non-bitmap drawables still use this generous safety bound when they must be rasterized.
+    private static final int MAX_RASTER_EDGE = 4096;
     private static final long MAX_AGE_MS = 45L * 24L * 60L * 60L * 1000L;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "smart-s-notification-visual");
@@ -242,16 +245,21 @@ public final class NotificationVisualSupport {
     private static File visualFile(Context context, String notificationId) {
         File dir = new File(context.getFilesDir(), DIR);
         if (!dir.exists() && !dir.mkdirs()) Log.w(TAG, "Unable to create notification visual directory");
-        return new File(dir, digest(notificationId) + ".jpg");
+        return new File(dir, digest(notificationId) + ".png");
     }
 
     private static Bitmap drawableToBitmap(Drawable drawable) {
         if (drawable instanceof BitmapDrawable && ((BitmapDrawable) drawable).getBitmap() != null) {
-            return scale(((BitmapDrawable) drawable).getBitmap());
+            // Preserve the exact Android-exposed bitmap. Re-scaling here was the main quality loss
+            // in saved notification pictures.
+            return ((BitmapDrawable) drawable).getBitmap();
         }
-        int width = Math.max(1, drawable.getIntrinsicWidth() > 0 ? drawable.getIntrinsicWidth() : MAX_EDGE);
-        int height = Math.max(1, drawable.getIntrinsicHeight() > 0 ? drawable.getIntrinsicHeight() : MAX_EDGE);
-        float factor = Math.min(1f, MAX_EDGE / (float) Math.max(width, height));
+        int intrinsicWidth = drawable.getIntrinsicWidth();
+        int intrinsicHeight = drawable.getIntrinsicHeight();
+        int width = Math.max(1, intrinsicWidth > 0 ? intrinsicWidth : MAX_RASTER_EDGE);
+        int height = Math.max(1, intrinsicHeight > 0 ? intrinsicHeight : MAX_RASTER_EDGE);
+        float factor = Math.min(1f,
+                MAX_RASTER_EDGE / (float) Math.max(width, height));
         width = Math.max(1, Math.round(width * factor));
         height = Math.max(1, Math.round(height * factor));
         Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
@@ -261,19 +269,12 @@ public final class NotificationVisualSupport {
         return bitmap;
     }
 
-    private static Bitmap scale(Bitmap source) {
-        int longest = Math.max(source.getWidth(), source.getHeight());
-        if (longest <= MAX_EDGE) return source;
-        float factor = MAX_EDGE / (float) longest;
-        return Bitmap.createScaledBitmap(source,
-                Math.max(1, Math.round(source.getWidth() * factor)),
-                Math.max(1, Math.round(source.getHeight() * factor)), true);
-    }
-
     private static boolean writeBitmap(File file, Bitmap bitmap) {
         if (bitmap == null) return false;
         try (FileOutputStream out = new FileOutputStream(file)) {
-            return bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out);
+            // PNG is lossless. Saved notification visuals therefore keep the full pixel quality
+            // Android exposed instead of adding another JPEG compression pass.
+            return bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
         } catch (IOException | RuntimeException e) {
             Log.w(TAG, "Unable to persist notification visual", e);
             return false;
