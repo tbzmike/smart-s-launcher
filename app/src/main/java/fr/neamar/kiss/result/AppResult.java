@@ -32,6 +32,7 @@ import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
+import fr.neamar.kiss.AppUsageActivity;
 import fr.neamar.kiss.IconsHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
@@ -199,6 +200,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
     protected void buildPopupMenu(Context context, ArrayAdapter<ListPopup.Item> adapter) {
         refreshLiveDisabledState(context);
         super.buildPopupMenu(context, adapter);
+        adapter.add(new ListPopup.Item(context, R.string.menu_app_usage_history));
         adapter.add(new ListPopup.Item(context, R.string.menu_exclude));
         adapter.add(new ListPopup.Item(context, R.string.menu_app_rename));
         if (!pojo.isDisabled()) adapter.add(new ListPopup.Item(context, R.string.menu_app_details));
@@ -226,6 +228,10 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
     @Override
     protected boolean popupMenuClickHandler(final Context context, final RecordAdapter parent, int stringId, View parentView) {
+        if (stringId == R.string.menu_app_usage_history) {
+            AppUsageActivity.openForPackage(context, pojo.packageName, pojo.getName());
+            return true;
+        }
         if (stringId == R.string.menu_app_details) { launchAppDetails(context); return true; }
         if (stringId == R.string.menu_app_store) { launchAppStore(context); return true; }
         if (stringId == R.string.menu_app_uninstall) { launchUninstall(context); return true; }
