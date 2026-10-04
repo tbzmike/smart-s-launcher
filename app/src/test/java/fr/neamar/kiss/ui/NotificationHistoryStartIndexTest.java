@@ -31,6 +31,27 @@ class NotificationHistoryStartIndexTest {
     }
 
     @Test
+    void individualSelectionNeverFallsBackToAnotherRowWithSamePostTime() {
+        NotificationHistoryRecord wrong = record(31L, "notification://wrong", 200L);
+        NotificationHistoryRecord selectedAtOtherTime =
+                record(22L, "notification://selected", 150L);
+
+        assertThat(NotificationHistoryStartIndex.resolve(
+                Arrays.asList(wrong, selectedAtOtherTime),
+                "notification://selected", 200L), is(-1));
+    }
+
+    @Test
+    void individualSelectionWithTimeNeverFallsBackToReusedIdAtAnotherTime() {
+        NotificationHistoryRecord reused =
+                record(31L, "notification://same", 300L);
+
+        assertThat(NotificationHistoryStartIndex.resolve(
+                Collections.singletonList(reused),
+                "notification://same", 200L), is(-1));
+    }
+
+    @Test
     void reusedNotificationIdWithoutUsableTimeSelectsNewestMatchingOccurrence() {
         NotificationHistoryRecord newest = record(31L, "notification://same", 300L);
         NotificationHistoryRecord older = record(22L, "notification://same", 200L);
