@@ -32,6 +32,20 @@ import fr.neamar.kiss.utils.AppLaunchUtils;
 public final class NotificationPopupDialog {
     private NotificationPopupDialog() {}
 
+    public static boolean showExact(Context context, String groupKey,
+                                    String notificationId, long postTime) {
+        if (context == null || notificationId == null || notificationId.isEmpty()) return false;
+        List<NotificationListener.NotificationSnapshot> notifications =
+                NotificationListener.getGroupNotifications(context, groupKey);
+        for (NotificationListener.NotificationSnapshot snapshot : notifications) {
+            if (snapshot == null || !notificationId.equals(snapshot.id)) continue;
+            if (postTime > 0L && snapshot.postTime != postTime) continue;
+            showNotification(context, groupKey, snapshot);
+            return true;
+        }
+        return false;
+    }
+
     public static void showGroup(Context context, String groupKey) {
         List<NotificationListener.NotificationSnapshot> notifications =
                 NotificationListener.getGroupNotifications(context, groupKey);
