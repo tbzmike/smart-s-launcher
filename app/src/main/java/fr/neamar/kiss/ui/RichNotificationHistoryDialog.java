@@ -27,12 +27,16 @@ import java.util.List;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.notification.NotificationUnreadStore;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 
 /**
- * Rich read-only history browser. Media entries use an artwork-first transport layout; ordinary
- * notifications keep their expanded/native content and actions and gain persisted image previews.
+ * Full-fidelity History browser used by both locked and unlocked launcher UI. Launcher UI locking
+ * only prevents layout/appearance editing; notification actions remain usable here.
+ *
+ * The popup keeps the exact selected History identity, shows complete text/native content, retained
+ * imagery/media, inline reply when Android exposes RemoteInput, mark-read and exact-open actions.
  */
 public final class RichNotificationHistoryDialog {
     private RichNotificationHistoryDialog() {}
@@ -222,19 +226,16 @@ public final class RichNotificationHistoryDialog {
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
 
-            if (media) {
-                body.setVisibility(View.GONE);
-                body.setText("");
+            String title = record.title == null ? "" : record.title.trim();
+            String text = expanded == null ? "" : expanded.trim();
+            String fullText;
+            if (!title.isEmpty() && !text.startsWith(title)) {
+                fullText = text.isEmpty() ? title : title + "\n" + text;
             } else {
-                body.setVisibility(View.VISIBLE);
-                String title = record.title == null ? "" : record.title.trim();
-                String text = expanded == null ? "" : expanded.trim();
-                if (!title.isEmpty() && !text.startsWith(title)) {
-                    body.setText(text.isEmpty() ? title : title + "\n" + text);
-                } else {
-                    body.setText(text.isEmpty() ? title : text);
-                }
+                fullText = text.isEmpty() ? title : text;
             }
+            body.setText(fullText);
+            body.setVisibility(fullText.isEmpty() ? View.GONE : View.VISIBLE);
 
             nativeArea.removeAllViews();
             actionArea.removeAllViews();
@@ -291,18 +292,7 @@ public final class RichNotificationHistoryDialog {
             buttons.setGravity(Gravity.END);
             buttons.setPadding(0, pad, 0, 0);
 
-            Button markRead = new Button(context);
-            markRead.setText("Mark read");
-            AppNativeDialogStyle.styleButton(markRead, accent);
-            markRead.setOnClickListener(v -> {
-                if (NotificationListener.markNotificationRead(context, record.notificationId)) {
-                    render();
-                } else {
-                    Toast.makeText(context, "Unable to mark notification as read",
-                            Toast.LENGTH_SHORT).show();
-                }
-            });
-            buttons.addView(markRead);
+            buttons.addView(markReadButton(record, true));
 
             Button open = new Button(context);
             open.setText("Open notification");
@@ -330,6 +320,7 @@ public final class RichNotificationHistoryDialog {
         private void addSavedOpenAction(NotificationHistoryRecord record) {
             LinearLayout buttons = new LinearLayout(context);
             buttons.setGravity(Gravity.END);
+            buttons.addView(markReadButton(record, false));
             if (!SavedNotificationDestinationResolver.hasExactTarget(context, record)) {
                 Button fix = new Button(context);
                 fix.setText("Fix notification link");
@@ -352,7 +343,7 @@ public final class RichNotificationHistoryDialog {
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
                 SavedNotificationDestinationResolver.OpenResult result =
-                        SavedNotificationDestinationResolver.openExactResult(context, record);
+                        SavedNotificationDestinationResolver.openExactOrAppResult(context, record);
                 if (result == SavedNotificationDestinationResolver.OpenResult.APP_NOT_INSTALLED) {
                     AppReinstallSupport.showUninstalledDialog(
                             context, packageName, record.appName);
@@ -372,6 +363,24 @@ public final class RichNotificationHistoryDialog {
             });
             buttons.addView(open);
             actionArea.addView(buttons);
+        }
+
+        private Button markReadButton(NotificationHistoryRecord record, boolean active) {
+            Button markRead = new Button(context);
+            markRead.setText("Mark read");
+            AppNativeDialogStyle.styleButton(markRead, accent);
+            markRead.setOnClickListener(v -> {
+                boolean systemMarked = active && NotificationListener.markNotificationRead(
+                        context, record.notificationId);
+                if (!systemMarked && record.notificationId != null
+                        && !record.notificationId.isEmpty()) {
+                    // Saved notifications no longer have an Android panel action to invoke, but
+                    // Smart S still owns unread state for their History identity.
+                    NotificationUnreadStore.markRead(context, record.notificationId);
+                }
+                render();
+            });
+            return markRead;
         }
 
         private boolean handleSwipeEvent(MotionEvent event) {
