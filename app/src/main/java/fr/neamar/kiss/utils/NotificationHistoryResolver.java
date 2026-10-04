@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Set;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
+import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -68,6 +69,17 @@ public final class NotificationHistoryResolver {
 
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;
+
+            NotificationHistoryRecord stored = NotificationTimelineStore.findExact(
+                    context, notification.exactNotificationId, notification.postTime);
+            if (stored != null
+                    && packageName.equals(stored.packageName)
+                    && RichNotificationHistoryDialog.showRecord(context, stored)) {
+                return true;
+            }
+
+            // Legacy/group rows can predate exact DB identity. Keep the old strict id+time resolver
+            // for those records only; it never substitutes the newest notification from the app.
             if (RichNotificationHistoryDialog.showSelected(
                     context,
                     packageName,
@@ -76,9 +88,8 @@ public final class NotificationHistoryResolver {
                 return true;
             }
 
-            // A freshly posted notification can be visible before its SQLite row is persisted.
-            // In that narrow window open only the exact active child represented by this History
-            // tile; never substitute a different notification from the same application.
+            // A brand-new live event can briefly beat the asynchronous history write. The fallback
+            // remains exact-id + exact-post-time only, so it cannot show another notification.
             return NotificationListener.isNotificationActive(
                     context, notification.exactNotificationId, notification.postTime)
                     && NotificationPopupDialog.showExact(
@@ -103,6 +114,13 @@ public final class NotificationHistoryResolver {
         if (packageName != null) {
             if (pojo instanceof NotificationPojo) {
                 NotificationPojo notification = (NotificationPojo) pojo;
+                NotificationHistoryRecord stored = NotificationTimelineStore.findExact(
+                        context, notification.exactNotificationId, notification.postTime);
+                if (stored != null
+                        && packageName.equals(stored.packageName)
+                        && RichNotificationHistoryDialog.showRecord(context, stored)) {
+                    return true;
+                }
                 if (RichNotificationHistoryDialog.showSelected(
                         context, packageName, notification.exactNotificationId,
                         notification.postTime)) {
