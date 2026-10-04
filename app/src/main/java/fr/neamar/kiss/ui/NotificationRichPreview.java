@@ -59,7 +59,8 @@ public final class NotificationRichPreview {
         Notification notification = active == null ? null : active.getNotification();
         boolean media = isMedia(notification);
         NotificationVisualSupport.Snapshot visual =
-                NotificationVisualSupport.snapshot(context, notificationId);
+                NotificationVisualSupport.snapshot(
+                        context, notificationId, packageName, postTime);
 
         if (media) {
             return new Preview(createMediaPanel(context, notificationId, packageName, postTime,
