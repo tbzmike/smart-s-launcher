@@ -24,6 +24,7 @@ import fr.neamar.kiss.notification.NotificationIdentityIcon;
 import java.util.Date;
 import java.util.List;
 
+import fr.neamar.kiss.AppUsageActivity;
 import fr.neamar.kiss.NotificationHistoryActivity;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
@@ -312,6 +313,7 @@ public final class RichNotificationHistoryDialog {
                     context, record.notificationId, record.postTime)) {
                 LinearLayout replyRow = new LinearLayout(context);
                 replyRow.setOrientation(LinearLayout.HORIZONTAL);
+                replyRow.setGravity(Gravity.CENTER_VERTICAL);
                 replyRow.setPadding(0, pad, 0, 0);
 
                 EditText reply = new EditText(context);
@@ -323,6 +325,7 @@ public final class RichNotificationHistoryDialog {
 
                 Button send = new Button(context);
                 send.setText("Reply");
+                configureActionButton(send);
                 AppNativeDialogStyle.styleButton(send, accent);
                 send.setOnClickListener(v -> {
                     String message = reply.getText().toString();
@@ -335,15 +338,15 @@ public final class RichNotificationHistoryDialog {
                                 Toast.LENGTH_SHORT).show();
                     }
                 });
-                replyRow.addView(send);
+                LinearLayout.LayoutParams sendParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                sendParams.setMargins(dp(8), 0, 0, 0);
+                replyRow.addView(send, sendParams);
                 actionArea.addView(replyRow);
             }
 
-            LinearLayout buttons = new LinearLayout(context);
-            buttons.setGravity(Gravity.END);
-            buttons.setPadding(0, pad, 0, 0);
-
-            buttons.addView(markReadButton(record, true));
+            LinearLayout buttons = newActionRow(pad);
+            addActionButton(buttons, markReadButton(record, true), false);
 
             Button open = new Button(context);
             open.setText("Open notification");
@@ -364,31 +367,14 @@ public final class RichNotificationHistoryDialog {
                             Toast.LENGTH_SHORT).show();
                 }
             });
-            buttons.addView(open);
+            addActionButton(buttons, open, true);
             actionArea.addView(buttons);
         }
 
         private void addSavedOpenAction(NotificationHistoryRecord record) {
-            LinearLayout buttons = new LinearLayout(context);
-            buttons.setGravity(Gravity.END);
-            buttons.addView(markReadButton(record, false));
-            if (!SavedNotificationDestinationResolver.hasExactTarget(context, record)) {
-                Button fix = new Button(context);
-                fix.setText("Fix notification link");
-                AppNativeDialogStyle.styleButton(fix, accent);
-                fix.setOnClickListener(v -> {
-                    if (NotificationListener.rebindStaleNotification(context, record)) {
-                        Toast.makeText(context, "Notification link restored",
-                                Toast.LENGTH_SHORT).show();
-                        render();
-                    } else {
-                        Toast.makeText(context,
-                                "No matching notification found to fix this link",
-                                Toast.LENGTH_SHORT).show();
-                    }
-                });
-                buttons.addView(fix);
-            }
+            LinearLayout buttons = newActionRow(dp(8));
+            addActionButton(buttons, markReadButton(record, false), false);
+
             Button open = new Button(context);
             open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);
@@ -412,26 +398,83 @@ public final class RichNotificationHistoryDialog {
                 }
                 SmartAnimationEngine.dismissDialog(dialog);
             });
-            buttons.addView(open);
+            addActionButton(buttons, open, true);
             actionArea.addView(buttons);
+
+            if (!SavedNotificationDestinationResolver.hasExactTarget(context, record)) {
+                LinearLayout fixRow = newActionRow(dp(6));
+                Button fix = new Button(context);
+                fix.setText("Fix notification link");
+                AppNativeDialogStyle.styleButton(fix, accent);
+                fix.setOnClickListener(v -> {
+                    if (NotificationListener.rebindStaleNotification(context, record)) {
+                        Toast.makeText(context, "Notification link restored",
+                                Toast.LENGTH_SHORT).show();
+                        render();
+                    } else {
+                        Toast.makeText(context,
+                                "No matching notification found to fix this link",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+                addActionButton(fixRow, fix, false);
+                actionArea.addView(fixRow);
+            }
         }
 
         private void addOpenInHistoryAction(NotificationHistoryRecord record) {
-            if (record == null || record.dbId <= 0L) return;
+            if (record == null) return;
 
-            LinearLayout row = new LinearLayout(context);
-            row.setGravity(Gravity.END);
-            row.setPadding(0, dp(8), 0, 0);
+            LinearLayout row = newActionRow(dp(8));
 
-            Button openHistory = new Button(context);
-            openHistory.setText("Open in notification history");
-            AppNativeDialogStyle.styleButton(openHistory, accent);
-            openHistory.setOnClickListener(v -> {
+            Button usage = new Button(context);
+            usage.setText("App usage history");
+            AppNativeDialogStyle.styleButton(usage, accent);
+            usage.setOnClickListener(v -> {
                 SmartAnimationEngine.dismissDialog(dialog);
-                NotificationHistoryActivity.openExactHistoryRecord(context, record);
+                AppUsageActivity.openForPackage(
+                        context, record.packageName, record.appName);
             });
-            row.addView(openHistory);
+            addActionButton(row, usage, false);
+
+            if (record.dbId > 0L) {
+                Button openHistory = new Button(context);
+                openHistory.setText("Notification history");
+                AppNativeDialogStyle.styleButton(openHistory, accent);
+                openHistory.setOnClickListener(v -> {
+                    SmartAnimationEngine.dismissDialog(dialog);
+                    NotificationHistoryActivity.openExactHistoryRecord(context, record);
+                });
+                addActionButton(row, openHistory, true);
+            }
             actionArea.addView(row);
+        }
+
+        private LinearLayout newActionRow(int topPadding) {
+            LinearLayout row = new LinearLayout(context);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, topPadding, 0, 0);
+            return row;
+        }
+
+        private void addActionButton(LinearLayout row, Button button, boolean addLeadingGap) {
+            configureActionButton(button);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            if (addLeadingGap) params.setMargins(dp(8), 0, 0, 0);
+            row.addView(button, params);
+        }
+
+        private void configureActionButton(Button button) {
+            if (button == null) return;
+            button.setAllCaps(false);
+            button.setMinWidth(0);
+            button.setMinimumWidth(0);
+            button.setMaxLines(2);
+            button.setGravity(Gravity.CENTER);
+            button.setPadding(dp(8), dp(6), dp(8), dp(6));
+            button.setMinimumHeight(dp(40));
         }
 
         private Button markReadButton(NotificationHistoryRecord record, boolean active) {
