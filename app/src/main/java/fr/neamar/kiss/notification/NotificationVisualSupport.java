@@ -75,11 +75,22 @@ public final class NotificationVisualSupport {
     private NotificationVisualSupport() {}
 
     public static void captureAsync(Context context, String notificationId, StatusBarNotification sbn) {
-        if (context == null || TextUtils.isEmpty(notificationId) || sbn == null
-                || LauncherScrollWorkGate.isScrolling()) return;
+        if (context == null || TextUtils.isEmpty(notificationId) || sbn == null) return;
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> {
-            if (!LauncherScrollWorkGate.isScrolling()) captureNow(app, notificationId, sbn);
+            // Preserve the visual instead of dropping it when the notification happens during a
+            // fling. The low-priority worker sleeps until the frame budget is idle, so image
+            // persistence cannot reintroduce the scrolling jank fixed in 3.30.140.
+            while (LauncherScrollWorkGate.isScrolling()
+                    && !Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(40L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+            if (!Thread.currentThread().isInterrupted()) captureNow(app, notificationId, sbn);
         });
     }
 
