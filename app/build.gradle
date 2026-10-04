@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.147 - exact locked-History long press targeting
-        versionCode 575
-        versionName "3.30.147"
+        // Smart S Launcher 3.30.148 - full-fidelity locked History popup
+        versionCode 576
+        versionName "3.30.148"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
