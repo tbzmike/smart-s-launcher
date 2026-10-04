@@ -69,9 +69,22 @@ public final class NotificationHistoryResolver {
 
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;
-            return LockedNotificationHistoryDialog.showSelected(
+            if (LockedNotificationHistoryDialog.showSelected(
                     context,
                     packageName,
+                    notification.exactNotificationId,
+                    notification.postTime)) {
+                return true;
+            }
+
+            // A freshly posted notification can be visible before its SQLite row is persisted.
+            // In that narrow window open only the exact active child represented by this History
+            // tile; never fall back to another notification from the same group/application.
+            return NotificationListener.isNotificationActive(
+                    context, notification.exactNotificationId, notification.postTime)
+                    && NotificationPopupDialog.showExact(
+                    context,
+                    notification.groupKey,
                     notification.exactNotificationId,
                     notification.postTime);
         }
