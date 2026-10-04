@@ -225,15 +225,33 @@ public final class NotificationRichPreview {
         int top = dp(context, 10);
         FrameLayout frame = new FrameLayout(context);
         frame.setPadding(0, top, 0, dp(context, 4));
-        int height = dp(context, 230);
+
+        int screenWidth = context.getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = context.getResources().getDisplayMetrics().heightPixels;
+        int availableWidth = Math.max(dp(context, 220), screenWidth - dp(context, 64));
+        int maxHeight = Math.max(dp(context, 260), Math.round(screenHeight * 0.58f));
+        int fallbackHeight = dp(context, 260);
+
         if (visual.image != null) {
             ImageView image = new ImageView(context);
             image.setImageDrawable(visual.image);
-            image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            // Never crop saved notification pictures. Fit the complete Android-exposed image into
+            // the popup while keeping the original high-resolution drawable behind the ImageView.
+            image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            image.setAdjustViewBounds(true);
             image.setClipToOutline(true);
             image.setBackground(rounded(Color.argb(30, 255, 255, 255), dp(context, 18)));
+
+            int width = visual.image.getIntrinsicWidth();
+            int height = visual.image.getIntrinsicHeight();
+            int targetHeight = fallbackHeight;
+            if (width > 0 && height > 0) {
+                targetHeight = Math.round(availableWidth * (height / (float) width));
+                targetHeight = Math.max(dp(context, 160), Math.min(maxHeight, targetHeight));
+            }
             frame.addView(image, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, height));
+                    ViewGroup.LayoutParams.MATCH_PARENT, targetHeight));
+            frame.setMinimumHeight(targetHeight);
         }
         if (visual.hasPlayableVideo()) {
             TextView play = videoPlayBadge(context);
@@ -244,7 +262,7 @@ public final class NotificationRichPreview {
             frame.setOnClickListener(v -> openVideo(context, visual, null));
             if (visual.image == null) {
                 frame.setBackground(rounded(Color.argb(80, 0, 0, 0), dp(context, 18)));
-                frame.setMinimumHeight(height);
+                frame.setMinimumHeight(fallbackHeight);
             }
         }
         return frame;
