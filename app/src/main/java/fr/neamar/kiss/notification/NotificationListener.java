@@ -164,8 +164,12 @@ public class NotificationListener extends NotificationListenerService {
         SharedPreferences.Editor detailEditor = details.edit().clear();
 
         for (StatusBarNotification sbn : sbns) {
-            if (seedTimeline) NotificationAvatarSupport.captureAsync(this, getTimelineId(sbn), sbn);
-            if (seedTimeline) persistHistoryAsync(sbn, getTimelineId(sbn), false);
+            if (seedTimeline) {
+                String timelineId = getTimelineId(sbn);
+                NotificationAvatarSupport.captureAsync(this, timelineId, sbn);
+                NotificationVisualSupport.captureAsync(this, timelineId, sbn);
+                persistHistoryAsync(sbn, timelineId, false);
+            }
             if (isNotificationTrivial(sbn)) continue;
             String packageKey = getPackageKey(sbn);
             notificationsByPackage.computeIfAbsent(packageKey, k -> new HashSet<>()).add(Integer.toString(sbn.getId()));
@@ -236,7 +240,7 @@ public class NotificationListener extends NotificationListenerService {
         String previousTitle = details.getString(id + "|title", "");
         String previousText = details.getString(id + "|text", "");
         String nextTitle = notification == null ? "" : historyTitle(notification);
-        String nextText = notification == null ? "" : historyBody(notification);
+        String nextText = notification == null ? "" : extractExpandedText(notification);
         boolean visibleContentChanged = !TextUtils.equals(previousTitle, nextTitle)
                 || !TextUtils.equals(previousText, nextText);
 
@@ -244,6 +248,7 @@ public class NotificationListener extends NotificationListenerService {
         // rewrite the notification-history row for every progress tick.
         if (newTimelineEvent || (visibleContentChanged && !sbn.isOngoing())) {
             NotificationAvatarSupport.captureAsync(this, id, sbn);
+            NotificationVisualSupport.captureAsync(this, id, sbn);
         }
 
         boolean historyEnabled = PreferenceManager.getDefaultSharedPreferences(this)
@@ -339,7 +344,7 @@ public class NotificationListener extends NotificationListenerService {
         if (n == null) return;
         rememberContentIntent(id, sbn.getPostTime(), n.contentIntent);
         String title = historyTitle(n);
-        String text = historyBody(n);
+        String text = extractExpandedText(n);
         String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? n.getShortcutId() : null;
         String locusId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && n.getLocusId() != null
                 ? n.getLocusId().getId() : null;
@@ -533,7 +538,7 @@ public class NotificationListener extends NotificationListenerService {
         if (n == null) return;
         rememberContentIntent(id, sbn.getPostTime(), n.contentIntent);
         String titleString = historyTitle(n);
-        String textString = historyBody(n);
+        String textString = extractExpandedText(n);
         editor.putString(id + "|package", sbn.getPackageName());
         editor.putString(id + "|group", packageKey);
         editor.putString(id + "|key", sbn.getKey());
