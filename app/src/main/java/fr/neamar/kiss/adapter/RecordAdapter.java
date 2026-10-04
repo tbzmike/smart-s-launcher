@@ -292,7 +292,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
             Context context = v.getContext();
             if (UiEditLock.isLocked(context)) {
-                if (NotificationHistoryResolver.showForPojo(context, result.getPojo())) return true;
+                if (NotificationHistoryResolver.showLockedForPojo(
+                        context, result.getPojo())) return true;
                 UiEditLock.allowEdit(context);
                 return true;
             }
@@ -1022,12 +1023,18 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (pos < 0 || pos >= getCount()) return;
         Result<?> result = getItem(pos);
         Context context = v.getContext();
-        recordExplicitSelection(context, result.getPojo());
-        promoteHistoryResult(result);
+
         if (UiEditLock.isLocked(context)) {
-            NotificationHistoryResolver.showForPojo(context, result.getPojo());
+            // Read-only long press is inspection, not a launch/selection event. Do not write a new
+            // History row or move anything to the chronological bottom before resolving the popup;
+            // doing so could make the view/adapter position drift underneath the user's finger.
+            NotificationHistoryResolver.showLockedForPojo(context, result.getPojo());
             return;
         }
+
+        // Unlocked behavior remains the existing editable context menu.
+        recordExplicitSelection(context, result.getPojo());
+        promoteHistoryResult(result);
         ListPopup menu = result.getPopupMenu(context, this, v);
         if (menu.getAdapter().getCount() > 0) {
             parent.registerPopup(menu);
