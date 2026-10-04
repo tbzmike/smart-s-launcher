@@ -2,6 +2,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <!-- Smart S-specific strings currently use the English fallback until translations are added. -->
     <string name="menu_app_usage">App usage</string>
+    <string name="menu_app_usage_history">App usage history</string>
     <string name="menu_notification_history">Notification history</string>
     <string name="menu_battery_monitor">Battery monitor</string>
 </resources>
