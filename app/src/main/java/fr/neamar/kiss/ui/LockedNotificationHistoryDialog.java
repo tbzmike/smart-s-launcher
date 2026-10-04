@@ -346,11 +346,13 @@ public final class LockedNotificationHistoryDialog {
             open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                boolean opened = SavedNotificationDestinationResolver.openExact(context, record);
-                if (opened) {
+                SavedNotificationDestinationResolver.OpenResult result =
+                        SavedNotificationDestinationResolver.openExactOrAppResult(context, record);
+                if (result.accepted()) {
                     SmartAnimationEngine.dismissDialog(dialog);
                 } else {
-                    Toast.makeText(context, "Unable to open this exact notification",
+                    Toast.makeText(context,
+                            "Unable to open this notification or its app.",
                             Toast.LENGTH_SHORT).show();
                 }
             });
@@ -365,9 +367,11 @@ public final class LockedNotificationHistoryDialog {
             open.setText("Open notification");
             AppNativeDialogStyle.styleButton(open, accent);
             open.setOnClickListener(v -> {
-                boolean opened = SavedNotificationDestinationResolver.openExact(context, record);
-                if (!opened) {
-                    Toast.makeText(context, "Direct notification/message link is unavailable.",
+                SavedNotificationDestinationResolver.OpenResult result =
+                        SavedNotificationDestinationResolver.openExactOrAppResult(context, record);
+                if (!result.accepted()) {
+                    Toast.makeText(context,
+                            "Direct notification/message link and app are unavailable.",
                             Toast.LENGTH_SHORT).show();
                     return;
                 }
