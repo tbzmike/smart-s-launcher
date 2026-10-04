@@ -248,6 +248,11 @@ public class NotificationListener extends NotificationListenerService {
         // rewrite the notification-history row for every progress tick.
         if (newTimelineEvent || (visibleContentChanged && !sbn.isOngoing())) {
             NotificationAvatarSupport.captureAsync(this, id, sbn);
+        }
+        // Non-ongoing notifications may replace an attached picture without changing their text.
+        // Capture those visual updates too. Ongoing notifications remain limited to new timeline
+        // events so media/progress updates do not flood the image worker.
+        if (newTimelineEvent || !sbn.isOngoing()) {
             NotificationVisualSupport.captureAsync(this, id, sbn);
         }
 
