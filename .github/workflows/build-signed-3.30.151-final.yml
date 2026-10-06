@@ -1,0 +1,93 @@
+name: Build signed Smart S Launcher 3.30.151 final
+
+on:
+  push:
+    branches:
+      - build/3.30.151
+    paths:
+      - 'app/**'
+      - '.github/workflows/build-signed-3.30.151-final.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify version and ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode 579' app/build.gradle
+          grep -q 'versionName "3.30.151"' app/build.gradle
+          git merge-base --is-ancestor b5bbca7c9074f37c248990c0d8a5c3f57fab2357 HEAD
+
+      - name: Full verification and release build
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew lint testDebugUnitTest assembleRelease --stacktrace
+
+      - name: Sign production APK
+        shell: bash
+        env:
+          SMART_S_SIGNING_KEY_B64: ${{ secrets.SMART_S_SIGNING_KEY_B64 }}
+          SMART_S_SIGNING_STORE_PASSWORD: ${{ secrets.SMART_S_SIGNING_STORE_PASSWORD }}
+          SMART_S_SIGNING_KEY_ALIAS: ${{ secrets.SMART_S_SIGNING_KEY_ALIAS }}
+          SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/smart-s-launcher-release.p12"
+          OUT="Smart-S-Launcher-3.30.151.apk"
+          EXPECTED_CERT="9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+
+          "$SDKMANAGER" "build-tools;34.0.0" >/dev/null
+          printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE" \
+            --ks-type PKCS12 \
+            --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
+            --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
+            --key-pass env:SMART_S_SIGNING_KEY_PASSWORD \
+            --out "$OUT" \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$OUT"
+          ACTUAL_CERT="$("$BUILD_TOOLS/apksigner" verify --print-certs "$OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test "$ACTUAL_CERT" = "$EXPECTED_CERT"
+
+          BADGING="$("$BUILD_TOOLS/aapt" dump badging "$OUT" | head -n 1)"
+          grep -F "name='com.tbzmike.smartslauncher'" <<<"$BADGING"
+          grep -F "versionCode='579'" <<<"$BADGING"
+          grep -F "versionName='3.30.151'" <<<"$BADGING"
+
+          sha256sum "$OUT" | tee Smart-S-Launcher-3.30.151.sha256
+          rm -f "$KEYSTORE"
+
+      - name: Upload signed production APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.151-signed
+          path: |
+            Smart-S-Launcher-3.30.151.apk
+            Smart-S-Launcher-3.30.151.sha256
+          if-no-files-found: error
+          archive: true
+          retention-days: 90
