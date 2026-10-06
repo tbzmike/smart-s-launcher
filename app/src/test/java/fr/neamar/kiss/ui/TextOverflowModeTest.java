@@ -27,12 +27,12 @@ class TextOverflowModeTest {
     }
 
     @Test
-    void collapsedPreviewUsesApproximatelyHalfOfWrappedLines() {
+    void autoExpandKeepsEveryWrappedLineVisible() {
         assertEquals(0, TextOverflowMode.collapsedPreviewLineCount(0));
         assertEquals(1, TextOverflowMode.collapsedPreviewLineCount(1));
-        assertEquals(1, TextOverflowMode.collapsedPreviewLineCount(2));
-        assertEquals(2, TextOverflowMode.collapsedPreviewLineCount(3));
-        assertEquals(2, TextOverflowMode.collapsedPreviewLineCount(4));
-        assertEquals(3, TextOverflowMode.collapsedPreviewLineCount(5));
+        assertEquals(2, TextOverflowMode.collapsedPreviewLineCount(2));
+        assertEquals(3, TextOverflowMode.collapsedPreviewLineCount(3));
+        assertEquals(4, TextOverflowMode.collapsedPreviewLineCount(4));
+        assertEquals(5, TextOverflowMode.collapsedPreviewLineCount(5));
     }
 }
