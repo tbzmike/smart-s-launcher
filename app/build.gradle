@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.150 - app usage history in compact app popups
-        versionCode 578
-        versionName "3.30.150"
+        // Smart S Launcher 3.30.151 - fix Long text display Auto Expand wiring
+        versionCode 579
+        versionName "3.30.151"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
