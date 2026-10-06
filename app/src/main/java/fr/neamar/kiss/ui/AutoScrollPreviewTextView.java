@@ -193,21 +193,12 @@ public class AutoScrollPreviewTextView extends TextView {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
         Layout layout = getLayout();
-        if (isAutoExpand() && !isNativeVerticalListRow()) {
-            int totalLines = layout == null ? 0 : layout.getLineCount();
-            int collapsedLines = TextOverflowMode.collapsedPreviewLineCount(totalLines);
-            expandable = totalLines > collapsedLines && collapsedLines > 0;
-            if (!expandable) expanded = false;
-
-            if (expandable && !expanded && layout != null) {
-                int contentHeight = layout.getLineBottom(collapsedLines - 1);
-                int desiredHeight = getCompoundPaddingTop() + getCompoundPaddingBottom() + contentHeight;
-                int mode = View.MeasureSpec.getMode(heightMeasureSpec);
-                int size = View.MeasureSpec.getSize(heightMeasureSpec);
-                if (mode == View.MeasureSpec.EXACTLY) desiredHeight = size;
-                else if (mode == View.MeasureSpec.AT_MOST) desiredHeight = Math.min(desiredHeight, size);
-                setMeasuredDimension(getMeasuredWidth(), desiredHeight);
-            }
+        if (isAutoExpand()) {
+            // Auto Expand must expose 100% of the wrapped text immediately. Do not impose the
+            // two-line preview cap or the old half-text collapsed height in either Vertical List
+            // or Vertical Cards. super.onMeasure() above already measured the full wrapped height.
+            expandable = false;
+            expanded = false;
             return;
         }
 
@@ -315,12 +306,11 @@ public class AutoScrollPreviewTextView extends TextView {
         super.setHorizontallyScrolling(false);
         setHorizontalFadingEdgeEnabled(false);
 
-        // A notification preview in Vertical List must never move on its own. Keep a stable
-        // two-line END-ellipsized preview; Cards/3D Wheel may still use the existing stepping
-        // preview behavior.
+        // A notification preview in Vertical List must never move on its own. Auto Scroll keeps
+        // the stable two-line END preview; Auto Expand instead exposes every wrapped line.
         if (isNativeVerticalListRow()) {
-            super.setMaxLines(VISIBLE_LINES);
-            super.setEllipsize(TextUtils.TruncateAt.END);
+            super.setMaxLines(isAutoExpand() ? Integer.MAX_VALUE : VISIBLE_LINES);
+            super.setEllipsize(isAutoExpand() ? null : TextUtils.TruncateAt.END);
             setVerticalFadingEdgeEnabled(false);
             firstVisibleLine = 0;
             expanded = false;
