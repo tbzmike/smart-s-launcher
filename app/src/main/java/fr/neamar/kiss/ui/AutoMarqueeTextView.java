@@ -160,19 +160,23 @@ public class AutoMarqueeTextView extends TextView {
         if (appliedBehaviorMode == mode) return;
         appliedBehaviorMode = mode;
 
-        // Native Vertical List rows are recycled during a fling. Keep their text geometry and
-        // horizontal position completely static: no marquee, no selected-state restart, no
-        // after-scroll animation. Vertical Cards/3D Wheel retain the configured behavior.
+        // Native Vertical List keeps marquee work disabled while still honoring Auto Expand.
+        // In Auto Expand the row is allowed to grow to the complete wrapped text; in Auto Scroll
+        // we keep the existing fixed one-line END preview for smooth recycled-list scrolling.
         if (isNativeVerticalListRow()) {
-            // Vertical List is deliberately fixed-geometry. Auto Expand and marquee are disabled
-            // here because either can change row measurement/position during or after a fling.
             setMarqueeRepeatLimit(0);
             setHorizontalFadingEdgeEnabled(false);
             setSelected(false);
-            super.setSingleLine(true);
-            super.setMaxLines(1);
-            super.setEllipsize(TextUtils.TruncateAt.END);
             super.setHorizontallyScrolling(false);
+            if (isAutoExpand()) {
+                super.setSingleLine(false);
+                super.setMaxLines(Integer.MAX_VALUE);
+                super.setEllipsize(null);
+            } else {
+                super.setSingleLine(true);
+                super.setMaxLines(1);
+                super.setEllipsize(TextUtils.TruncateAt.END);
+            }
             return;
         }
 
