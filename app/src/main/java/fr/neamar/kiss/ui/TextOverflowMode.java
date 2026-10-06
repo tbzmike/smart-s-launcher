@@ -40,13 +40,11 @@ public final class TextOverflowMode {
     }
 
     /**
-     * Auto-expand now starts collapsed instead of measuring the complete message into History.
-     * Use the wrapped line count, not string length, so words/emoji/Unicode are never cut in half.
+     * Auto-expand means exactly that: every wrapped line is visible immediately.
+     * Keep this helper explicit so renderers and tests cannot silently regress to a partial preview.
      */
     static int collapsedPreviewLineCount(int totalLines) {
-        if (totalLines <= 0) return 0;
-        if (totalLines == 1) return 1;
-        return Math.max(1, (totalLines + 1) / 2);
+        return Math.max(0, totalLines);
     }
 
     private static String readString(SharedPreferences prefs, String key, String fallback) {
