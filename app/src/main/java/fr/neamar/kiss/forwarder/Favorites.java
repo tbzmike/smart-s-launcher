@@ -65,6 +65,8 @@ import fr.neamar.kiss.utils.UserHandle;
 public class Favorites extends Forwarder {
     private static final String TAG = Favorites.class.getSimpleName();
     private static final String DEFAULT_RESOLVER = "com.android.internal.app.ResolverActivity";
+    private static final long PIXEL_PREDICTION_DELAY_MS = 250L;
+    private static final long PIXEL_PREDICTION_RETRY_MS = 320L;
 
     static final String PREF_BAR_MODE = "favorites-bar-mode";
     static final String MODE_STANDARD = "standard";
@@ -87,6 +89,7 @@ public class Favorites extends Forwarder {
     @Nullable private Future<?> pixelFuture;
     @Nullable private CancellationSignal pixelCancellation;
     private int pixelGeneration;
+    private boolean resumed;
 
     private static class ViewHolder extends RecyclerView.ViewHolder {
         private ViewHolder(@NonNull View itemView) { super(itemView); }
@@ -371,6 +374,7 @@ public class Favorites extends Forwarder {
      * Standard mode does not execute the prediction query or any Pixel-mode worker.
      */
     void onResume() {
+        resumed = true;
         String mode = currentMode();
         int pixelLimit = getPixelLimit();
 
@@ -426,12 +430,28 @@ public class Favorites extends Forwarder {
                                          List<Pojo> pinnedFavorites,
                                          int pixelLimit) {
         cancelPixelPrediction();
+        if (!resumed) return;
         final int generation = ++pixelGeneration;
         final List<Pojo> pinnedSnapshot = new ArrayList<>(pinnedFavorites);
+        schedulePixelPredictionAttempt(
+                dataHandler, pinnedSnapshot, pixelLimit, generation, PIXEL_PREDICTION_DELAY_MS);
+    }
 
+    private void schedulePixelPredictionAttempt(DataHandler dataHandler,
+                                                List<Pojo> pinnedSnapshot,
+                                                int pixelLimit,
+                                                int generation,
+                                                long delayMs) {
         pixelHandler.postDelayed(() -> {
-            if (generation != pixelGeneration || !MODE_PIXEL.equals(currentMode())
-                    || LauncherScrollWorkGate.isScrolling()) {
+            if (!pixelPredictionStillCurrent(generation)) return;
+
+            if (LauncherScrollWorkGate.isScrolling()) {
+                // The old implementation simply returned here, leaving Pixel mode with only pinned
+                // favorites until another HOME press happened to schedule a new worker. Keep the
+                // generation alive and retry after the render-critical scroll window instead.
+                schedulePixelPredictionAttempt(
+                        dataHandler, pinnedSnapshot, pixelLimit, generation,
+                        PIXEL_PREDICTION_RETRY_MS);
                 return;
             }
 
@@ -441,36 +461,77 @@ public class Favorites extends Forwarder {
                 android.os.Process.setThreadPriority(
                         android.os.Process.THREAD_PRIORITY_BACKGROUND);
                 try {
-                    if (signal.isCanceled() || generation != pixelGeneration
-                            || LauncherScrollWorkGate.isScrolling()) return;
+                    if (!pixelPredictionWorkerCanContinue(signal, generation)) return;
 
                     Map<String, LaunchStatsProvider.LaunchStats> launchStats =
                             LaunchStatsProvider.loadAll(
                                     mainActivity.getApplicationContext(), signal);
-                    if (signal.isCanceled() || generation != pixelGeneration
-                            || LauncherScrollWorkGate.isScrolling()) return;
+                    if (!pixelPredictionWorkerCanContinue(signal, generation)) {
+                        retryPixelPredictionAfterScroll(
+                                dataHandler, pinnedSnapshot, pixelLimit, generation);
+                        return;
+                    }
 
                     AppUsageTodayStore.Snapshot usage =
                             AppUsageTodayStore.getToday(mainActivity.getApplicationContext());
-                    if (signal.isCanceled() || generation != pixelGeneration
-                            || LauncherScrollWorkGate.isScrolling()) return;
+                    if (!pixelPredictionWorkerCanContinue(signal, generation)) {
+                        retryPixelPredictionAfterScroll(
+                                dataHandler, pinnedSnapshot, pixelLimit, generation);
+                        return;
+                    }
 
                     List<Pojo> predicted = buildPixelFavorites(
                             dataHandler, pinnedSnapshot, pixelLimit, launchStats, usage);
                     pixelHandler.post(() -> {
-                        if (signal.isCanceled() || generation != pixelGeneration
-                                || !MODE_PIXEL.equals(currentMode())
+                        if (!pixelPredictionStillCurrent(generation)
+                                || signal.isCanceled()
                                 || LauncherScrollWorkGate.isScrolling()
                                 || mainActivity.isFinishing()) {
+                            if (!signal.isCanceled() && generation == pixelGeneration
+                                    && resumed && MODE_PIXEL.equals(currentMode())) {
+                                schedulePixelPredictionAttempt(
+                                        dataHandler, pinnedSnapshot, pixelLimit, generation,
+                                        PIXEL_PREDICTION_RETRY_MS);
+                            }
                             return;
                         }
                         applyFavorites(predicted, MODE_PIXEL, pixelLimit);
                     });
                 } catch (RuntimeException ignored) {
-                    // Cancellation/provider reload races are expected; keep the immediate bar.
+                    // Provider reload races are transient. Keep pinned icons visible and retry
+                    // while this exact Pixel generation still owns the resumed launcher.
+                    retryPixelPredictionAfterScroll(
+                            dataHandler, pinnedSnapshot, pixelLimit, generation);
                 }
             });
-        }, 250L);
+        }, Math.max(0L, delayMs));
+    }
+
+    private boolean pixelPredictionStillCurrent(int generation) {
+        return resumed
+                && generation == pixelGeneration
+                && MODE_PIXEL.equals(currentMode())
+                && !mainActivity.isFinishing()
+                && !mainActivity.isDestroyed();
+    }
+
+    private boolean pixelPredictionWorkerCanContinue(CancellationSignal signal, int generation) {
+        return !signal.isCanceled()
+                && pixelPredictionStillCurrent(generation)
+                && !LauncherScrollWorkGate.isScrolling();
+    }
+
+    private void retryPixelPredictionAfterScroll(DataHandler dataHandler,
+                                                 List<Pojo> pinnedSnapshot,
+                                                 int pixelLimit,
+                                                 int generation) {
+        if (!pixelPredictionStillCurrent(generation)) return;
+        pixelHandler.post(() -> {
+            if (!pixelPredictionStillCurrent(generation)) return;
+            schedulePixelPredictionAttempt(
+                    dataHandler, pinnedSnapshot, pixelLimit, generation,
+                    PIXEL_PREDICTION_RETRY_MS);
+        });
     }
 
     private void cancelPixelPrediction() {
@@ -484,7 +545,13 @@ public class Favorites extends Forwarder {
         pixelFuture = null;
     }
 
+    void onPause() {
+        resumed = false;
+        cancelPixelPrediction();
+    }
+
     void onDestroy() {
+        resumed = false;
         cancelPixelPrediction();
         if (favoriteTouchHelper != null) {
             favoriteTouchHelper.attachToRecyclerView(null);
