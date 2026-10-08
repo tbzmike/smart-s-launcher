@@ -193,11 +193,16 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             new LauncherHomeLifecycleState();
     private final SearchLaunchReturnState searchLaunchReturnState =
             new SearchLaunchReturnState();
+    private static final int HOME_RECOVERY_MAX_ATTEMPTS = 12;
+    private static final long HOME_RECOVERY_RETRY_MS = 400L;
+
     private boolean launcherUiResumed;
     private boolean pendingBackgroundRefresh;
     private boolean pendingBackgroundFavoriteRefresh;
     @Nullable private String pendingNotificationTargetId;
     private boolean listChangeAnimationPrepared;
+    private int homeSurfaceRecoveryAttempt;
+    private final Runnable homeSurfaceRecovery = this::recoverHomeSurface;
 
     /**
      * Called when the activity is first created.
@@ -301,6 +306,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                     displayLoader(false);
                     // Refresh favorites once after the complete provider batch, not once per loader.
                     onFavoriteChange();
+                    // A provider completion can arrive after onResume's first Home request. Repair
+                    // any stale empty-history or hidden-control state without requiring Force stop.
+                    scheduleHomeSurfaceRecovery();
                 } else if (START_LOAD.equalsIgnoreCase(intent.getAction())) {
                     // Provider starts are not data changes. Avoid rebuilding favorites while the
                     // replacement provider snapshot is still incomplete.
@@ -591,6 +599,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
         super.onResume();
         homeLifecycleState.onResumeCompleted();
+        scheduleHomeSurfaceRecovery();
         // Window animation is launcher-owned and starts only after Home has resumed.
         SmartAnimationEngine.animateWindowEnter(findViewById(android.R.id.content));
     }
@@ -601,6 +610,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // Do not delay external launches: animate our own decor while Android transfers focus.
         SmartAnimationEngine.animateWindowExit(findViewById(android.R.id.content));
         launcherUiResumed = false;
+        if (searchEditText != null) searchEditText.removeCallbacks(homeSurfaceRecovery);
+        homeSurfaceRecoveryAttempt = 0;
         forwarderManager.onPause();
         super.onPause();
     }
@@ -664,6 +675,56 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // Route the exact HOME event only after clearing search/favorites state. The viewport owner
         // applies the first-return/second-press contract using launcherWasForeground.
         forwarderManager.onNewIntent(intent, launcherWasForeground);
+    }
+
+    private void scheduleHomeSurfaceRecovery() {
+        if (!launcherUiResumed || searchEditText == null || isFinishing() || isDestroyed()) return;
+        searchEditText.removeCallbacks(homeSurfaceRecovery);
+        homeSurfaceRecoveryAttempt = 0;
+        searchEditText.postOnAnimation(homeSurfaceRecovery);
+    }
+
+    /**
+     * Self-heal the two Home surfaces that previously needed a Force stop or repeated HOME press:
+     * the normal History result set and the bottom search controls. Recovery is bounded and
+     * idempotent; SearchHandler will never restart an authoritative History worker already running.
+     */
+    private void recoverHomeSurface() {
+        if (!launcherUiResumed || searchEditText == null || isFinishing() || isDestroyed()) return;
+
+        fr.neamar.kiss.DataHandler dataHandler =
+                KissApplication.getApplication(this).getDataHandler();
+        boolean providersLoaded = dataHandler.isAllProvidersLoaded();
+
+        if (providersLoaded) {
+            displayLoader(false);
+            displayClearOnInput();
+        }
+
+        boolean emptyQuery = TextUtils.isEmpty(searchEditText.getText());
+        boolean adapterEmpty = adapter == null || adapter.isEmpty();
+        Searcher.Type lastSearchType = SearchHandler.getInstance().getLastSearchType();
+
+        if (HomeHistoryRecoveryPolicy.shouldRecover(
+                providersLoaded,
+                isViewingSearchResults(),
+                isMinimalisticModeEnabled(),
+                emptyQuery,
+                adapterEmpty,
+                lastSearchType)) {
+            SearchHandler.getInstance().ensureHomeHistory(this);
+        }
+
+        homeSurfaceRecoveryAttempt++;
+        boolean stillEmptyNormalHome = isViewingSearchResults()
+                && !isMinimalisticModeEnabled()
+                && emptyQuery
+                && (adapter == null || adapter.isEmpty());
+
+        if (homeSurfaceRecoveryAttempt < HOME_RECOVERY_MAX_ATTEMPTS
+                && (!providersLoaded || stillEmptyNormalHome)) {
+            searchEditText.postDelayed(homeSurfaceRecovery, HOME_RECOVERY_RETRY_MS);
+        }
     }
 
     public void clearSearchText() {
@@ -944,17 +1005,27 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     public void displayLoader(boolean display) {
         if (!display) {
-            // Do not display animation if launcher button is already visible
-            if (launcherButton.getVisibility() != View.VISIBLE) {
-                launcherButton.setVisibility(View.VISIBLE);
+            // A provider/lifecycle race can leave the launcher button VISIBLE but alpha=0 after an
+            // interrupted loader transition. Repair both visibility and alpha every time loading
+            // finishes; otherwise repeated HOME presses appear to "bring back" Pixel mode buttons.
+            int animationDuration = getResources().getInteger(android.R.integer.config_longAnimTime);
+            boolean launcherNeedsFade = launcherButton.getVisibility() != View.VISIBLE
+                    || launcherButton.getAlpha() < 0.99f;
 
-                int animationDuration = getResources().getInteger(android.R.integer.config_longAnimTime);
-
-                // Animate transition from loader to launch button
+            launcherButton.animate().cancel();
+            launcherButton.setVisibility(View.VISIBLE);
+            if (launcherNeedsFade) {
                 launcherButton.animate()
                         .alpha(1f)
                         .setDuration(animationDuration)
-                        .setListener(null);
+                        .setListener(null)
+                        .start();
+            } else {
+                launcherButton.setAlpha(1f);
+            }
+
+            loaderSpinner.animate().cancel();
+            if (loaderSpinner.getVisibility() != View.GONE || loaderSpinner.getAlpha() > 0f) {
                 loaderSpinner.animate()
                         .alpha(0f)
                         .setDuration(animationDuration)
@@ -962,16 +1033,22 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                             @Override
                             public void onAnimationEnd(Animator animation) {
                                 loaderSpinner.setVisibility(View.GONE);
+                                loaderSpinner.animate().setListener(null);
                             }
-                        });
+                        })
+                        .start();
+            } else {
+                loaderSpinner.setAlpha(0f);
+                loaderSpinner.setVisibility(View.GONE);
             }
         } else {
             launcherButton.animate().cancel();
-            launcherButton.setAlpha(0);
+            launcherButton.setAlpha(0f);
             launcherButton.setVisibility(View.INVISIBLE);
 
             loaderSpinner.animate().cancel();
-            loaderSpinner.setAlpha(1);
+            loaderSpinner.animate().setListener(null);
+            loaderSpinner.setAlpha(1f);
             loaderSpinner.setVisibility(View.VISIBLE);
         }
     }
@@ -1275,7 +1352,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         systemUiVisibilityHelper.onWindowFocusChanged(hasFocus);
-        if (hasFocus && searchEditText != null) searchEditText.syncKeyboardMode();
+        if (hasFocus && searchEditText != null) {
+            searchEditText.syncKeyboardMode();
+            scheduleHomeSurfaceRecovery();
+        }
         if (showKeyboardOnFocus != null) {
             if (showKeyboardOnFocus) {
                 showKeyboard();
