@@ -20,6 +20,7 @@ import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceManager;
+import androidx.preference.SeekBarPreference;
 import androidx.preference.SwitchPreference;
 
 import java.util.Arrays;
@@ -47,6 +48,7 @@ import fr.neamar.kiss.preference.LaunchPojoSelectPreference;
 import fr.neamar.kiss.preference.SelectCustomSearchProvidersPreference;
 import fr.neamar.kiss.searcher.QuerySearcher;
 import fr.neamar.kiss.searcher.SemanticEmbeddingScorer;
+import fr.neamar.kiss.ui.BuiltInKeyboardSizing;
 import fr.neamar.kiss.ui.SearchEditText;
 import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.utils.DrawableUtils;
@@ -221,6 +223,42 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         mode.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
         keyboardOptions.addPreference(mode);
 
+        addKeyboardSeekBar(
+                keyboardOptions,
+                BuiltInKeyboardSizing.PREF_HEIGHT_PERCENT,
+                "Built-in keyboard height (% of screen)",
+                "Resize only the keyboard height. Hard maximum is 50% of the available screen height.",
+                BuiltInKeyboardSizing.MIN_HEIGHT_PERCENT,
+                BuiltInKeyboardSizing.MAX_HEIGHT_PERCENT,
+                BuiltInKeyboardSizing.DEFAULT_HEIGHT_PERCENT);
+
+        addKeyboardSeekBar(
+                keyboardOptions,
+                BuiltInKeyboardSizing.PREF_WIDTH_PERCENT,
+                "Built-in keyboard width (% of screen)",
+                "Resize the whole keyboard horizontally without changing its height, buttons or letter size.",
+                BuiltInKeyboardSizing.MIN_WIDTH_PERCENT,
+                BuiltInKeyboardSizing.MAX_WIDTH_PERCENT,
+                BuiltInKeyboardSizing.DEFAULT_WIDTH_PERCENT);
+
+        addKeyboardSeekBar(
+                keyboardOptions,
+                BuiltInKeyboardSizing.PREF_BUTTON_PERCENT,
+                "Built-in keyboard button size (%)",
+                "Resize key/button surfaces independently from keyboard width, height and letter size.",
+                BuiltInKeyboardSizing.MIN_BUTTON_PERCENT,
+                BuiltInKeyboardSizing.MAX_BUTTON_PERCENT,
+                BuiltInKeyboardSizing.DEFAULT_BUTTON_PERCENT);
+
+        addKeyboardSeekBar(
+                keyboardOptions,
+                BuiltInKeyboardSizing.PREF_LABEL_SIZE_SP,
+                "Built-in keyboard letter size (sp)",
+                "Resize letters and key labels independently from the physical button size.",
+                BuiltInKeyboardSizing.MIN_LABEL_SIZE_SP,
+                BuiltInKeyboardSizing.MAX_LABEL_SIZE_SP,
+                BuiltInKeyboardSizing.DEFAULT_LABEL_SIZE_SP);
+
         Preference chooser = new Preference(requireContext());
         chooser.setKey(PREF_CHOOSE_SYSTEM_KEYBOARD);
         chooser.setTitle("Choose installed system keyboard");
@@ -234,16 +272,51 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         refreshSearchKeyboardPicker();
     }
 
+    private void addKeyboardSeekBar(PreferenceGroup parent,
+                                    String key,
+                                    String title,
+                                    String summary,
+                                    int min,
+                                    int max,
+                                    int defaultValue) {
+        if (parent.findPreference(key) != null) return;
+
+        SeekBarPreference slider = new SeekBarPreference(requireContext());
+        slider.setKey(key);
+        slider.setTitle(title);
+        slider.setSummary(summary);
+        slider.setMin(min);
+        slider.setMax(max);
+        slider.setSeekBarIncrement(1);
+        slider.setShowSeekBarValue(true);
+        slider.setUpdatesContinuously(true);
+        slider.setDefaultValue(defaultValue);
+        parent.addPreference(slider);
+    }
+
     private void refreshSearchKeyboardPicker() {
         Preference chooser = findPreference(PREF_CHOOSE_SYSTEM_KEYBOARD);
         if (chooser == null) return;
         boolean useSystem = SearchEditText.KEYBOARD_MODE_SYSTEM.equals(
                 prefs.getString(SearchEditText.PREF_SEARCH_KEYBOARD_MODE,
                         SearchEditText.KEYBOARD_MODE_BUILT_IN));
+        boolean useBuiltIn = !useSystem;
+
         chooser.setEnabled(useSystem);
         chooser.setSummary(useSystem
                 ? "Tap to switch between keyboards installed and enabled in Android."
                 : "Select System keyboard above to use an installed Android keyboard.");
+
+        String[] builtInSizingKeys = {
+                BuiltInKeyboardSizing.PREF_HEIGHT_PERCENT,
+                BuiltInKeyboardSizing.PREF_WIDTH_PERCENT,
+                BuiltInKeyboardSizing.PREF_BUTTON_PERCENT,
+                BuiltInKeyboardSizing.PREF_LABEL_SIZE_SP
+        };
+        for (String key : builtInSizingKeys) {
+            Preference sizing = findPreference(key);
+            if (sizing != null) sizing.setEnabled(useBuiltIn);
+        }
     }
 
     private void addSemanticSearchPreferences(@Nullable String rootKey) {
