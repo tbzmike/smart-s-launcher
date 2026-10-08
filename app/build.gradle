@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.151 - fix Long text display Auto Expand wiring
-        versionCode 579
-        versionName "3.30.151"
+        // Smart S Launcher 3.30.152 - Home recovery, Pixel prediction and Auto Scroll fixes
+        versionCode 580
+        versionName "3.30.152"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
