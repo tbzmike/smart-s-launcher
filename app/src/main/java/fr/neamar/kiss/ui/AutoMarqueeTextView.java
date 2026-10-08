@@ -20,6 +20,8 @@ import fr.neamar.kiss.searcher.Searcher;
  */
 @SuppressLint("AppCompatCustomView")
 public class AutoMarqueeTextView extends TextView {
+    private static final long SCROLL_IDLE_RETRY_MS = 320L;
+
     private boolean behaviorLocked;
     private boolean autoExpand;
     private int appliedBehaviorMode = -1;
@@ -160,22 +162,24 @@ public class AutoMarqueeTextView extends TextView {
         if (appliedBehaviorMode == mode) return;
         appliedBehaviorMode = mode;
 
-        // Native Vertical List keeps marquee work disabled while still honoring Auto Expand.
-        // In Auto Expand the row is allowed to grow to the complete wrapped text; in Auto Scroll
-        // we keep the existing fixed one-line END preview for smooth recycled-list scrolling.
+        // Native Vertical List still avoids marquee work during an active fling, but Auto Scroll
+        // must actually scroll once the list is idle. Auto Expand remains full wrapped text.
         if (isNativeVerticalListRow()) {
-            setMarqueeRepeatLimit(0);
-            setHorizontalFadingEdgeEnabled(false);
             setSelected(false);
-            super.setHorizontallyScrolling(false);
             if (isAutoExpand()) {
+                setMarqueeRepeatLimit(0);
+                setHorizontalFadingEdgeEnabled(false);
                 super.setSingleLine(false);
                 super.setMaxLines(Integer.MAX_VALUE);
                 super.setEllipsize(null);
+                super.setHorizontallyScrolling(false);
             } else {
                 super.setSingleLine(true);
                 super.setMaxLines(1);
-                super.setEllipsize(TextUtils.TruncateAt.END);
+                super.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+                setMarqueeRepeatLimit(-1);
+                super.setHorizontallyScrolling(true);
+                setHorizontalFadingEdgeEnabled(true);
             }
             return;
         }
@@ -209,8 +213,15 @@ public class AutoMarqueeTextView extends TextView {
 
     private void scheduleMarqueeRestart() {
         removeCallbacks(deferredMarqueeRestart);
-        if (isNativeVerticalListRow() || LauncherScrollWorkGate.isScrolling()) {
+        if (isAutoExpand()) {
             setSelected(false);
+            return;
+        }
+        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+            // Never animate text inside an active fling. Keep one cheap delayed retry so native
+            // Vertical List marquee starts automatically as soon as motion has really settled.
+            setSelected(false);
+            postDelayed(deferredMarqueeRestart, SCROLL_IDLE_RETRY_MS);
             return;
         }
         postOnAnimation(deferredMarqueeRestart);
@@ -230,7 +241,7 @@ public class AutoMarqueeTextView extends TextView {
     }
 
     private boolean isActuallyVisibleOnScreen() {
-        if (LauncherScrollWorkGate.isScrolling()
+        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()
                 || !isShown() || !isAttachedToWindow() || !hasWindowFocus()) return false;
         visibleRect.setEmpty();
         return getLocalVisibleRect(visibleRect)
@@ -238,9 +249,23 @@ public class AutoMarqueeTextView extends TextView {
                 && visibleRect.height() > 0;
     }
 
+    private boolean isNativeListScrolling() {
+        AnimatedListView list = findNativeListAncestor();
+        return list != null && list.isScrollInProgress();
+    }
+
     private void restartMarquee() {
+        refreshOverflowMode();
         applyConfiguredBehavior();
-        if (isAutoExpand() || LauncherScrollWorkGate.isScrolling()) {
+        if (isAutoExpand()) {
+            setSelected(false);
+            return;
+        }
+        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+            scheduleMarqueeRestart();
+            return;
+        }
+        if (!isActuallyVisibleOnScreen()) {
             setSelected(false);
             return;
         }
@@ -251,15 +276,13 @@ public class AutoMarqueeTextView extends TextView {
 
     @Override
     public boolean isFocused() {
-        if (isNativeVerticalListRow()) return false;
-        // ScrollView keeps off-screen cards attached. isShown() alone therefore marked every row as
-        // marquee-active and continuously invalidated text that was nowhere near the viewport.
+        // Marquee activation follows actual on-screen visibility. This includes native Vertical List
+        // when idle, but remains false during list movement and for off-screen retained cards.
         return isAutoExpand() ? super.isFocused() : isActuallyVisibleOnScreen();
     }
 
     @Override
     public boolean isSelected() {
-        if (isNativeVerticalListRow()) return false;
         return isAutoExpand() ? super.isSelected() : isActuallyVisibleOnScreen();
     }
 
