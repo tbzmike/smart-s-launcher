@@ -27,6 +27,7 @@ public class AutoScrollPreviewTextView extends TextView {
     private static final int VISIBLE_LINES = 2;
     private static final long STEP_DELAY_MS = 2400L;
     private static final long RESET_DELAY_MS = 3200L;
+    private static final long SCROLL_IDLE_RETRY_MS = 320L;
 
     private int firstVisibleLine;
     private boolean attached;
@@ -222,11 +223,9 @@ public class AutoScrollPreviewTextView extends TextView {
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        if (isNativeVerticalListRow()) {
-            // Native Vertical List has no preview timer, arrow animation, auto-step or expansion.
-            return;
-        }
         if (!isAutoExpand()) {
+            // Both Vertical List and Vertical Cards use the same compact stepping preview.
+            // Scroll movement pauses the timer; the retry path below restarts it after idle.
             scheduleScrollStep(STEP_DELAY_MS);
             return;
         }
@@ -306,16 +305,18 @@ public class AutoScrollPreviewTextView extends TextView {
         super.setHorizontallyScrolling(false);
         setHorizontalFadingEdgeEnabled(false);
 
-        // A notification preview in Vertical List must never move on its own. Auto Scroll keeps
-        // the stable two-line END preview; Auto Expand instead exposes every wrapped line.
+        // Native Vertical List uses exactly the same long-text semantics as Vertical Cards:
+        // Auto Expand shows every line; Auto Scroll keeps a two-line measured viewport over the
+        // complete wrapped layout so advancePreview() can step through all lines after idle.
         if (isNativeVerticalListRow()) {
-            super.setMaxLines(isAutoExpand() ? Integer.MAX_VALUE : VISIBLE_LINES);
-            super.setEllipsize(isAutoExpand() ? null : TextUtils.TruncateAt.END);
-            setVerticalFadingEdgeEnabled(false);
+            super.setMaxLines(Integer.MAX_VALUE);
+            super.setEllipsize(null);
+            setVerticalFadingEdgeEnabled(!isAutoExpand());
+            if (!isAutoExpand()) setFadingEdgeLength(dp(8));
             firstVisibleLine = 0;
             expanded = false;
             expandable = false;
-            scrollTo(0, 0);
+            if (isAutoExpand()) scrollTo(0, 0);
             return;
         }
 
@@ -333,10 +334,15 @@ public class AutoScrollPreviewTextView extends TextView {
 
     private void schedulePreviewRestart() {
         removeCallbacks(deferredPreviewRestart);
-        if (isNativeVerticalListRow()) {
+        if (isAutoExpand()) {
             cancelScrollStep();
             firstVisibleLine = 0;
             scrollTo(0, 0);
+            return;
+        }
+        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+            cancelScrollStep();
+            postDelayed(deferredPreviewRestart, SCROLL_IDLE_RETRY_MS);
             return;
         }
         postOnAnimation(deferredPreviewRestart);
@@ -375,26 +381,45 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private void scheduleScrollStep(long delayMs) {
-        if (LauncherScrollWorkGate.isScrolling() || isNativeVerticalListRow()
-                || scrollStepScheduled || isAutoExpand() || !isActuallyVisibleOnScreen()) {
+        if (scrollStepScheduled || !attached || isAutoExpand()) return;
+        if (!isShown() || !hasWindowFocus()) {
             cancelScrollStep();
             return;
         }
+        long effectiveDelay = (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling())
+                ? SCROLL_IDLE_RETRY_MS : delayMs;
         scrollStepScheduled = true;
-        postDelayed(scrollStep, delayMs);
+        postDelayed(scrollStep, effectiveDelay);
     }
 
     private void restartAutoScroll() {
         cancelScrollStep();
+        refreshOverflowMode();
         applyConfiguredBehavior();
+        if (isAutoExpand()) {
+            firstVisibleLine = 0;
+            scrollTo(0, 0);
+            return;
+        }
+        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+            scheduleScrollStep(SCROLL_IDLE_RETRY_MS);
+            return;
+        }
         firstVisibleLine = 0;
         scrollTo(0, 0);
-        if (!isNativeVerticalListRow()) scheduleScrollStep(STEP_DELAY_MS);
+        if (isActuallyVisibleOnScreen()) scheduleScrollStep(STEP_DELAY_MS);
     }
 
     private void advancePreview() {
-        if (LauncherScrollWorkGate.isScrolling() || isNativeVerticalListRow()
-                || !attached || isAutoExpand() || !isActuallyVisibleOnScreen()) {
+        if (!attached || isAutoExpand()) {
+            cancelScrollStep();
+            return;
+        }
+        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+            scheduleScrollStep(SCROLL_IDLE_RETRY_MS);
+            return;
+        }
+        if (!isActuallyVisibleOnScreen()) {
             cancelScrollStep();
             return;
         }
