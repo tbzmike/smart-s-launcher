@@ -195,6 +195,7 @@ public class ForwarderManager extends Forwarder {
             verticalCardNotificationHistoryForwarder.onPause();
             verticalCardUsageForwarder.onPause();
         }
+        favoritesForwarder.onPause();
         experienceTweaks.onPause();
         notificationForwarder.onPause();
     }
