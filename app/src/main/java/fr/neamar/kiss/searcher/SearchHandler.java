@@ -158,6 +158,31 @@ public class SearchHandler {
     }
 
     /**
+     * Recover a genuinely empty normal Home without restarting the process.
+     *
+     * This is deliberately idempotent: if the authoritative History worker is already running we
+     * leave it alone instead of repeatedly cancelling/restarting it. If a scroll owns the render
+     * critical section, remember one replay for idle just like a normal History request.
+     */
+    public void ensureHomeHistory(@NonNull MainActivity activity) {
+        if (activity.adapter != null && !activity.adapter.isEmpty()) return;
+
+        lastSearchType = Searcher.Type.HISTORY;
+        lastSearchQuery = null;
+
+        if (historyScrollActive) {
+            rememberHistoryAfterScroll(activity, true);
+            return;
+        }
+
+        if (runningSearch instanceof HistorySearcher && !runningSearch.isCancelled()) {
+            return;
+        }
+
+        restoreHomeHistory(activity);
+    }
+
+    /**
      * Return from an externally launched QUERY to Home without waiting for the cancelled provider
      * scan to release the single full-search worker. Full provider/history scans remain serialized;
      * only an already-resolved History snapshot is published immediately.
