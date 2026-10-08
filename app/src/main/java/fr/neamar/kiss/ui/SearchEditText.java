@@ -75,9 +75,10 @@ public class SearchEditText extends AppCompatEditText {
         }
     }
 
-    /** Re-read the persisted keyboard mode before focus/lifecycle transitions. */
+    /** Re-read persisted keyboard mode and independent built-in sizing before lifecycle changes. */
     public void syncKeyboardMode() {
         applyKeyboardMode();
+        refreshBuiltInKeyboardSizing();
     }
 
     /** Built-in mode owns input completely; never leave Android IME visible behind it. */
@@ -142,10 +143,10 @@ public class SearchEditText extends AppCompatEditText {
         RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.addRule(RelativeLayout.ALIGN_PARENT_START, RelativeLayout.TRUE);
-        params.addRule(RelativeLayout.ALIGN_PARENT_END, RelativeLayout.TRUE);
+        params.addRule(RelativeLayout.CENTER_HORIZONTAL, RelativeLayout.TRUE);
         params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM, RelativeLayout.TRUE);
         keyboardRoot.addView(builtInKeyboard, params);
+        refreshBuiltInKeyboardSizing();
     }
 
     @Override
@@ -166,6 +167,7 @@ public class SearchEditText extends AppCompatEditText {
 
         hideSystemKeyboard();
         setCursorVisible(true);
+        refreshBuiltInKeyboardSizing();
         builtInKeyboard.setVisibility(VISIBLE);
         placeSearchAreaAboveBuiltInKeyboard(true);
         builtInKeyboard.bringToFront();
@@ -180,6 +182,47 @@ public class SearchEditText extends AppCompatEditText {
         placeSearchAreaAboveBuiltInKeyboard(false);
         setCursorVisible(false);
         requestLayout();
+    }
+
+    /**
+     * Apply keyboard width/height without coupling them to key or label size.
+     * Height is always clamped to at most half of the available launcher surface.
+     */
+    private void refreshBuiltInKeyboardSizing() {
+        if (builtInKeyboard == null || keyboardRoot == null) return;
+
+        builtInKeyboard.refreshSizingFromPreferences();
+
+        SharedPreferences prefs = prefs();
+        int heightPercent = BuiltInKeyboardSizing.clampHeightPercent(
+                prefs.getInt(BuiltInKeyboardSizing.PREF_HEIGHT_PERCENT,
+                        BuiltInKeyboardSizing.DEFAULT_HEIGHT_PERCENT));
+        int widthPercent = BuiltInKeyboardSizing.clampWidthPercent(
+                prefs.getInt(BuiltInKeyboardSizing.PREF_WIDTH_PERCENT,
+                        BuiltInKeyboardSizing.DEFAULT_WIDTH_PERCENT));
+
+        int availableWidth = keyboardRoot.getWidth() > 0
+                ? keyboardRoot.getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        int availableHeight = keyboardRoot.getHeight() > 0
+                ? keyboardRoot.getHeight()
+                : getResources().getDisplayMetrics().heightPixels;
+
+        ViewGroup.LayoutParams rawParams = builtInKeyboard.getLayoutParams();
+        RelativeLayout.LayoutParams params = rawParams instanceof RelativeLayout.LayoutParams
+                ? (RelativeLayout.LayoutParams) rawParams
+                : new RelativeLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+
+        params.width = BuiltInKeyboardSizing.widthPx(availableWidth, widthPercent);
+        params.height = BuiltInKeyboardSizing.heightPx(availableHeight, heightPercent);
+        params.removeRule(RelativeLayout.ALIGN_PARENT_START);
+        params.removeRule(RelativeLayout.ALIGN_PARENT_END);
+        params.addRule(RelativeLayout.CENTER_HORIZONTAL, RelativeLayout.TRUE);
+        params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM, RelativeLayout.TRUE);
+        builtInKeyboard.setLayoutParams(params);
+        keyboardRoot.requestLayout();
     }
 
     private void placeSearchAreaAboveBuiltInKeyboard(boolean visible) {
