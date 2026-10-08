@@ -1,6 +1,7 @@
 package fr.neamar.kiss.ui;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Rect;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
@@ -13,6 +14,7 @@ import android.widget.PopupWindow;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.preference.PreferenceManager;
 
 /**
  * Launcher-owned QWERTY keyboard used by {@link SearchEditText}.
@@ -21,13 +23,14 @@ import androidx.annotation.NonNull;
  * are therefore controlled by Smart S itself and are not affected by IME inset/focus changes.</p>
  */
 public final class BuiltInQwertyKeyboard extends LinearLayout {
-    private static final int KEY_HEIGHT_DP = 48;
     private static final int KEY_GAP_DP = 2;
     private static final int PREVIEW_SIZE_DP = 58;
 
     private final SearchEditText target;
     private boolean shifted;
     private PopupWindow previewWindow;
+    private int buttonSizePercent = BuiltInKeyboardSizing.DEFAULT_BUTTON_PERCENT;
+    private int labelSizeSp = BuiltInKeyboardSizing.DEFAULT_LABEL_SIZE_SP;
 
     public BuiltInQwertyKeyboard(@NonNull Context context, @NonNull SearchEditText target) {
         super(context);
@@ -39,7 +42,32 @@ public final class BuiltInQwertyKeyboard extends LinearLayout {
         setClipToPadding(false);
         setFocusable(false);
         setFocusableInTouchMode(false);
+        readSizingPreferences();
         buildKeys();
+    }
+
+    public void refreshSizingFromPreferences() {
+        int previousButtonSize = buttonSizePercent;
+        int previousLabelSize = labelSizeSp;
+        readSizingPreferences();
+
+        if (previousButtonSize != buttonSizePercent || previousLabelSize != labelSizeSp) {
+            dismissPreview();
+            buildKeys();
+        } else {
+            requestLayout();
+            invalidate();
+        }
+    }
+
+    private void readSizingPreferences() {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getContext());
+        buttonSizePercent = BuiltInKeyboardSizing.clampButtonPercent(
+                prefs.getInt(BuiltInKeyboardSizing.PREF_BUTTON_PERCENT,
+                        BuiltInKeyboardSizing.DEFAULT_BUTTON_PERCENT));
+        labelSizeSp = BuiltInKeyboardSizing.clampLabelSizeSp(
+                prefs.getInt(BuiltInKeyboardSizing.PREF_LABEL_SIZE_SP,
+                        BuiltInKeyboardSizing.DEFAULT_LABEL_SIZE_SP));
     }
 
     private void buildKeys() {
@@ -83,7 +111,9 @@ public final class BuiltInQwertyKeyboard extends LinearLayout {
         row.setGravity(Gravity.CENTER);
         row.setClipChildren(false);
         row.setClipToPadding(false);
-        row.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, dp(KEY_HEIGHT_DP)));
+        // Five rows divide the configured keyboard height equally. The outer keyboard height is
+        // controlled independently by SearchEditText and can grow up to half the screen.
+        row.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         return row;
     }
 
@@ -107,7 +137,7 @@ public final class BuiltInQwertyKeyboard extends LinearLayout {
     private void addKey(LinearLayout row, String label, float weight, boolean showPreview, Runnable action) {
         TextView key = new TextView(getContext());
         key.setText(label);
-        key.setTextSize(18);
+        key.setTextSize(labelSizeSp);
         key.setGravity(Gravity.CENTER);
         key.setClickable(true);
         key.setFocusable(false);
@@ -120,7 +150,9 @@ public final class BuiltInQwertyKeyboard extends LinearLayout {
         key.setBackground(background);
 
         LayoutParams params = new LayoutParams(0, LayoutParams.MATCH_PARENT, weight);
-        params.setMargins(dp(KEY_GAP_DP), dp(KEY_GAP_DP), dp(KEY_GAP_DP), dp(KEY_GAP_DP));
+        int keyInset = dp(KEY_GAP_DP
+                + BuiltInKeyboardSizing.extraButtonInsetDp(buttonSizePercent));
+        params.setMargins(keyInset, keyInset, keyInset, keyInset);
         row.addView(key, params);
 
         key.setOnTouchListener((v, event) -> {
@@ -163,7 +195,7 @@ public final class BuiltInQwertyKeyboard extends LinearLayout {
 
         TextView preview = new TextView(getContext());
         preview.setText(text);
-        preview.setTextSize(28);
+        preview.setTextSize(Math.min(52f, labelSizeSp * 1.55f));
         preview.setGravity(Gravity.CENTER);
 
         GradientDrawable background = new GradientDrawable();
@@ -172,7 +204,9 @@ public final class BuiltInQwertyKeyboard extends LinearLayout {
         preview.setBackground(background);
         preview.setElevation(dp(8));
 
-        previewWindow = new PopupWindow(preview, dp(PREVIEW_SIZE_DP), dp(PREVIEW_SIZE_DP), false);
+        int previewSizeDp = Math.max(PREVIEW_SIZE_DP,
+                Math.min(104, Math.round(labelSizeSp * 3.2f)));
+        previewWindow = new PopupWindow(preview, dp(previewSizeDp), dp(previewSizeDp), false);
         previewWindow.setClippingEnabled(false);
         previewWindow.setOutsideTouchable(false);
         previewWindow.setTouchable(false);
@@ -180,8 +214,9 @@ public final class BuiltInQwertyKeyboard extends LinearLayout {
 
         int[] location = new int[2];
         anchor.getLocationOnScreen(location);
-        int x = location[0] + (anchor.getWidth() - dp(PREVIEW_SIZE_DP)) / 2;
-        int y = location[1] - dp(PREVIEW_SIZE_DP) - dp(6);
+        int previewPx = dp(previewSizeDp);
+        int x = location[0] + (anchor.getWidth() - previewPx) / 2;
+        int y = location[1] - previewPx - dp(6);
         previewWindow.showAtLocation(anchor.getRootView(), Gravity.NO_GRAVITY, x, y);
     }
 
