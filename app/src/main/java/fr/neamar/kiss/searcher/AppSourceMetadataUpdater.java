@@ -71,6 +71,7 @@ public final class AppSourceMetadataUpdater {
     private static final int FETCH_WORKERS = 3;
 
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
+    private static final AtomicBoolean AUTO_RUNNING = new AtomicBoolean(false);
     private static final ExecutorService COORDINATOR =
             Executors.newSingleThreadExecutor(runnable -> {
                 Thread thread = new Thread(runnable, "smart-s-app-source-update");
@@ -113,7 +114,7 @@ public final class AppSourceMetadataUpdater {
                                      @NonNull DataHandler dataHandler,
                                      @NonNull SharedPreferences prefs,
                                      @Nullable Runnable finishedCallback) {
-        if (!RUNNING.compareAndSet(false, true)) return false;
+        if (AUTO_RUNNING.get() || !RUNNING.compareAndSet(false, true)) return false;
 
         final Context appContext = context.getApplicationContext();
         // Pressing "Update apps metadata" means the downloaded descriptions are intended to be
@@ -247,6 +248,7 @@ public final class AppSourceMetadataUpdater {
         prefs.edit().putBoolean(PREF_USE_SOURCE_DESCRIPTIONS, true).apply();
 
         COORDINATOR.execute(() -> {
+            AUTO_RUNNING.set(true);
             ExecutorService fetchPool = Executors.newFixedThreadPool(
                     Math.max(1, Math.min(FETCH_WORKERS, requested.size())),
                     runnable -> {
@@ -326,6 +328,7 @@ public final class AppSourceMetadataUpdater {
                 }
             } finally {
                 fetchPool.shutdownNow();
+                AUTO_RUNNING.set(false);
                 if (finishedCallback != null) {
                     new Handler(Looper.getMainLooper()).post(finishedCallback);
                 }
@@ -334,7 +337,11 @@ public final class AppSourceMetadataUpdater {
     }
 
     public static boolean isRunning() {
-        return RUNNING.get();
+        return RUNNING.get() || AUTO_RUNNING.get();
+    }
+
+    public static boolean isAutomaticRunning() {
+        return AUTO_RUNNING.get();
     }
 
     @NonNull
