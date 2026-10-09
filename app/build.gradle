@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.158 - transparent metadata and HNSW activity viewer
-        versionCode 586
-        versionName "3.30.158"
+        // Smart S Launcher 3.30.159 - reliable app descriptions and readable metadata transparency
+        versionCode 587
+        versionName "3.30.159"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
