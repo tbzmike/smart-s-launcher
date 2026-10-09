@@ -41,9 +41,14 @@ public final class SemanticHnswIndex {
 
     public static final String PREF_HNSW_ENABLED = "semantic-hnsw-enabled";
     public static final String PREF_HNSW_EF_SEARCH = "semantic-hnsw-ef-search";
+    public static final String PREF_EMBEDDING_DIMENSIONS = "semantic-embedding-dimensions";
 
-    private static final int M = 12;
-    private static final int EF_CONSTRUCTION = 72;
+    public static final int DEFAULT_DIMENSIONS = 384;
+    private static final int MIN_DIMENSIONS = 256;
+    private static final int MAX_DIMENSIONS = 400;
+    private static final String PREF_DIMENSION_UPGRADE_DONE =
+            "semantic-embedding-dimensions-384-upgrade-done";
+
     private static final int MAX_LEVEL = 8;
     private static final int DEFAULT_EF_SEARCH = 96;
     private static final int MIN_EF_SEARCH = 24;
@@ -127,7 +132,11 @@ public final class SemanticHnswIndex {
                             "HNSW",
                             "Started semantic HNSW build from " + source.size()
                                     + " records · " + dimensions
-                                    + " dimensions · metadata descriptions "
+                                    + " dimensions · graph M "
+                                    + connectionsForDimensions(dimensions)
+                                    + " · construction ef "
+                                    + constructionEfForDimensions(dimensions)
+                                    + " · metadata descriptions "
                                     + sourceTextByPackage.size() + "."));
                 } catch (RuntimeException logError) {
                     Log.w(TAG, "Unable to record HNSW build start", logError);
@@ -157,8 +166,9 @@ public final class SemanticHnswIndex {
                         "",
                         "HNSW",
                         "Committed " + built.nodes.size() + " vectors from " + source.size()
-                                + " source records · " + dimensions + " dimensions · "
-                                + elapsedMs + " ms."));
+                                + " source records · " + dimensions + " dimensions · graph M "
+                                + built.maxConnections + " · construction ef "
+                                + built.constructionEf + " · " + elapsedMs + " ms."));
                 try {
                     dataHandler.logSemanticActivities(indexEvents);
                 } catch (RuntimeException logError) {
@@ -280,7 +290,9 @@ public final class SemanticHnswIndex {
             return "HNSW index not ready yet";
         }
         return "Ready · " + current.nodes.size() + " vectors · "
-                + current.dimensions + " dimensions · build " + lastBuildMs
+                + current.dimensions + " dimensions · graph M " + current.maxConnections
+                + " · construction ef " + current.constructionEf
+                + " · build " + lastBuildMs
                 + " ms · last lookup " + lastLookupMs + " ms";
     }
 
@@ -393,10 +405,14 @@ public final class SemanticHnswIndex {
         int connectFrom = Math.min(level, graph.maxLevel);
         for (int currentLevel = connectFrom; currentLevel >= 0; currentLevel--) {
             List<Candidate> candidates = searchLayer(
-                    graph, vector, Collections.singletonList(entry), EF_CONSTRUCTION, currentLevel);
+                    graph,
+                    vector,
+                    Collections.singletonList(entry),
+                    graph.constructionEf,
+                    currentLevel);
             candidates.sort((left, right) -> Float.compare(right.score, left.score));
 
-            int links = Math.min(M, candidates.size());
+            int links = Math.min(graph.maxConnections, candidates.size());
             for (int i = 0; i < links; i++) {
                 int neighbor = candidates.get(i).index;
                 if (neighbor == newIndex) continue;
@@ -434,13 +450,24 @@ public final class SemanticHnswIndex {
 
     private static void trimNeighbors(MutableGraph graph, int nodeIndex, int level) {
         List<Integer> neighbors = graph.nodes.get(nodeIndex).neighbors.get(level);
-        if (neighbors.size() <= M) return;
+        if (neighbors.size() <= graph.maxConnections) return;
 
+        // Cache scores once. Comparator-based dot products recalculated the same 384-float
+        // similarities many times while trimming every HNSW edge.
         float[] base = graph.nodes.get(nodeIndex).vector;
-        neighbors.sort((left, right) -> Float.compare(
-                dot(base, graph.nodes.get(right).vector),
-                dot(base, graph.nodes.get(left).vector)));
-        while (neighbors.size() > M) neighbors.remove(neighbors.size() - 1);
+        List<Candidate> ranked = new ArrayList<>(neighbors.size());
+        for (int neighbor : neighbors) {
+            ranked.add(new Candidate(
+                    neighbor,
+                    dot(base, graph.nodes.get(neighbor).vector)));
+        }
+        ranked.sort((left, right) -> Float.compare(right.score, left.score));
+
+        neighbors.clear();
+        int keep = Math.min(graph.maxConnections, ranked.size());
+        for (int i = 0; i < keep; i++) {
+            neighbors.add(ranked.get(i).index);
+        }
     }
 
     private static Candidate greedyClosest(GraphAccess graph,
@@ -478,10 +505,13 @@ public final class SemanticHnswIndex {
         PriorityQueue<Candidate> best = new PriorityQueue<>(
                 Math.max(11, ef),
                 Comparator.comparingDouble(value -> value.score));
-        Set<Integer> visited = new HashSet<>(Math.max(32, ef * 3));
+        // Node ids are dense indexes. A boolean array avoids Integer boxing/hash-table traffic
+        // on every graph hop, which matters more once vectors grow from 128 to 384 dimensions.
+        boolean[] visited = new boolean[graph.size()];
 
         for (int entry : entryPoints) {
-            if (entry < 0 || entry >= graph.size() || !visited.add(entry)) continue;
+            if (entry < 0 || entry >= graph.size() || visited[entry]) continue;
+            visited[entry] = true;
             float score = dot(query, graph.vector(entry));
             Candidate candidate = new Candidate(entry, score);
             candidates.offer(candidate);
@@ -496,7 +526,8 @@ public final class SemanticHnswIndex {
             }
 
             for (int neighbor : graph.neighbors(current.index, level)) {
-                if (!visited.add(neighbor)) continue;
+                if (neighbor < 0 || neighbor >= visited.length || visited[neighbor]) continue;
+                visited[neighbor] = true;
                 float score = dot(query, graph.vector(neighbor));
                 Candidate worst = best.peek();
 
@@ -534,7 +565,23 @@ public final class SemanticHnswIndex {
     private static float dot(float[] left, float[] right) {
         int count = Math.min(left.length, right.length);
         float sum = 0f;
-        for (int i = 0; i < count; i++) sum += left[i] * right[i];
+        int i = 0;
+
+        // Eight-wide unrolling reduces loop/control overhead in the hottest HNSW operation.
+        // Vectors are already normalized, so no per-comparison norm work is required.
+        for (; i + 7 < count; i += 8) {
+            sum += left[i] * right[i]
+                    + left[i + 1] * right[i + 1]
+                    + left[i + 2] * right[i + 2]
+                    + left[i + 3] * right[i + 3]
+                    + left[i + 4] * right[i + 4]
+                    + left[i + 5] * right[i + 5]
+                    + left[i + 6] * right[i + 6]
+                    + left[i + 7] * right[i + 7];
+        }
+        for (; i < count; i++) {
+            sum += left[i] * right[i];
+        }
         return Math.max(0f, sum);
     }
 
@@ -556,12 +603,41 @@ public final class SemanticHnswIndex {
     }
 
     public static int parseDimensions(SharedPreferences prefs) {
+        int parsed = DEFAULT_DIMENSIONS;
         try {
-            return clamp(Integer.parseInt(
-                    prefs.getString("semantic-embedding-dimensions", "128")), 32, 512);
-        } catch (NumberFormatException | ClassCastException e) {
-            return 128;
+            parsed = Integer.parseInt(
+                    prefs.getString(
+                            PREF_EMBEDDING_DIMENSIONS,
+                            Integer.toString(DEFAULT_DIMENSIONS)));
+        } catch (NumberFormatException | ClassCastException ignored) {
+            parsed = DEFAULT_DIMENSIONS;
         }
+
+        // 3.30.160 used 128 by default. Upgrade that legacy low-dimensional setting once so an
+        // existing installation actually receives the new semantic representation instead of
+        // silently staying on 128 forever. Explicit 256+ choices remain untouched.
+        if (!prefs.getBoolean(PREF_DIMENSION_UPGRADE_DONE, false)) {
+            if (parsed < MIN_DIMENSIONS) parsed = DEFAULT_DIMENSIONS;
+            parsed = clamp(parsed, MIN_DIMENSIONS, MAX_DIMENSIONS);
+            prefs.edit()
+                    .putString(PREF_EMBEDDING_DIMENSIONS, Integer.toString(parsed))
+                    .putBoolean(PREF_DIMENSION_UPGRADE_DONE, true)
+                    .apply();
+        }
+
+        return clamp(parsed, MIN_DIMENSIONS, MAX_DIMENSIONS);
+    }
+
+    static int connectionsForDimensions(int dimensions) {
+        if (dimensions >= 384) return 16;
+        if (dimensions >= 320) return 15;
+        return 14;
+    }
+
+    static int constructionEfForDimensions(int dimensions) {
+        if (dimensions >= 384) return 80;
+        if (dimensions >= 320) return 76;
+        return 72;
     }
 
     private static int clamp(int value, int min, int max) {
@@ -600,12 +676,16 @@ public final class SemanticHnswIndex {
 
     private static final class MutableGraph implements GraphAccess {
         final int dimensions;
+        final int maxConnections;
+        final int constructionEf;
         final List<MutableNode> nodes = new ArrayList<>();
         int entryPoint = -1;
         int maxLevel;
 
         MutableGraph(int dimensions) {
             this.dimensions = dimensions;
+            this.maxConnections = connectionsForDimensions(dimensions);
+            this.constructionEf = constructionEfForDimensions(dimensions);
         }
 
         @Override public int size() {
@@ -641,7 +721,9 @@ public final class SemanticHnswIndex {
                     dimensions,
                     Collections.unmodifiableList(frozen),
                     entryPoint,
-                    maxLevel);
+                    maxLevel,
+                    maxConnections,
+                    constructionEf);
         }
     }
 
@@ -679,16 +761,25 @@ public final class SemanticHnswIndex {
         final List<Node> nodes;
         final int entryPoint;
         final int maxLevel;
+        final int maxConnections;
+        final int constructionEf;
 
-        Snapshot(int dimensions, List<Node> nodes, int entryPoint, int maxLevel) {
+        Snapshot(int dimensions,
+                 List<Node> nodes,
+                 int entryPoint,
+                 int maxLevel,
+                 int maxConnections,
+                 int constructionEf) {
             this.dimensions = dimensions;
             this.nodes = nodes;
             this.entryPoint = entryPoint;
             this.maxLevel = maxLevel;
+            this.maxConnections = maxConnections;
+            this.constructionEf = constructionEf;
         }
 
         static Snapshot empty() {
-            return new Snapshot(0, Collections.emptyList(), -1, 0);
+            return new Snapshot(0, Collections.emptyList(), -1, 0, 0, 0);
         }
 
         @Override public int size() {
