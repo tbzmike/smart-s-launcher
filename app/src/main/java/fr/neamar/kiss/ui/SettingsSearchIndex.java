@@ -224,27 +224,27 @@ public final class SettingsSearchIndex {
                 "frozen", null, Destination.SMART_SECTION, "frozen");
 
         dynamic(out, "Semantic search & HNSW", "On-device semantic retrieval, HNSW indexing and app-description context", 
-                "semantic-search-enabled", "providers", Destination.STANDARD, null);
+                "semantic-search-enabled", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "HNSW fast semantic retrieval", "Nearest-neighbour semantic search without scanning every record",
-                SemanticHnswIndex.PREF_HNSW_ENABLED, "providers", Destination.STANDARD, null);
+                SemanticHnswIndex.PREF_HNSW_ENABLED, "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "HNSW search depth", "Balance semantic lookup speed and recall",
-                SemanticHnswIndex.PREF_HNSW_EF_SEARCH, "providers", Destination.STANDARD, null);
+                SemanticHnswIndex.PREF_HNSW_EF_SEARCH, "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Use app-store descriptions for semantic search", "Include cached installation-source app descriptions in semantic vectors",
-                AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, "providers", Destination.STANDARD, null);
+                AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "App source data", "Cached Play Store, F-Droid, Aptoide and catalog descriptions",
-                "semantic-app-source-status", "providers", Destination.STANDARD, null);
+                "semantic-app-source-status", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Update all apps source data", "Refresh installed app descriptions from their source catalogs",
-                "semantic-update-all-app-source-data", "providers", Destination.STANDARD, null);
+                "semantic-update-all-app-source-data", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Semantic index status", "Indexed vectors, dimensions and HNSW timing",
-                "semantic-hnsw-status", "providers", Destination.STANDARD, null);
+                "semantic-hnsw-status", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Rebuild semantic HNSW index", "Recompute semantic vectors and graph",
-                "semantic-hnsw-rebuild", "providers", Destination.STANDARD, null);
+                "semantic-hnsw-rebuild", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Embedding model", "Choose the semantic embedding model", 
-                "semantic-model", "providers", Destination.STANDARD, null);
+                "semantic-model", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Embedding dimensions", "Semantic vector dimensions", 
-                "semantic-embedding-dimensions", "providers", Destination.STANDARD, null);
+                "semantic-embedding-dimensions", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Semantic similarity threshold", "Broad, balanced or strict semantic matching", 
-                "semantic-threshold", "providers", Destination.STANDARD, null);
+                "semantic-threshold", "semantic-search-screen", Destination.STANDARD, null);
 
         out.add(new Entry("Battery monitor", "Battery, charging and power monitoring settings",
                 null, null, Destination.BATTERY_MONITOR, null, false));
