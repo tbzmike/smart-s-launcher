@@ -48,10 +48,13 @@ public final class SemanticEmbeddingScorer {
                 "youtube", "netflix", "plex", "disney", "prime video", "showmax");
         addConcept("camera", "camera", "photo", "photos", "picture", "pictures",
                 "gcam", "lens", "gallery", "snapseed");
-        addConcept("code_scan", "scan", "scanner", "barcode", "bar code", "barcode scanner",
+        addConcept("code_scan", "barcode", "bar code", "barcode scanner",
                 "barcode reader", "scan barcode", "scan bar code", "qr", "qr code",
                 "qr scanner", "qr reader", "scan qr", "scan code", "code scanner",
                 "code reader", "ean", "upc", "data matrix", "datamatrix");
+        addConcept("document_scan", "scan document", "document scanner", "scan paper",
+                "scan receipt", "receipt scanner", "pdf scanner", "digitize document",
+                "document capture", "ocr", "optical character recognition");
         addConcept("files", "file", "files", "folder", "folders", "storage", "explorer", "manager",
                 "solid explorer", "xplore", "downloads", "documents");
         addConcept("settings", "settings", "system", "android", "configuration", "preferences",
