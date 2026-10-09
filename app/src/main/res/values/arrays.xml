@@ -29,6 +29,61 @@
         <item>6</item><item>7</item><item>8</item><item>9</item><item>10</item>
     </string-array>
 
+    <string-array name="smartSearchKeyboardModeEntries" translatable="false">
+        <item>Built-in Smart S keyboard</item>
+        <item>System keyboard</item>
+    </string-array>
+    <string-array name="smartSearchKeyboardModeValues" translatable="false">
+        <item>built-in</item>
+        <item>system</item>
+    </string-array>
+
+    <string-array name="smartHnswDepthEntries" translatable="false">
+        <item>48 · fastest</item>
+        <item>96 · balanced</item>
+        <item>160 · higher recall</item>
+        <item>224 · maximum recall</item>
+    </string-array>
+    <string-array name="smartHnswDepthValues" translatable="false">
+        <item>48</item><item>96</item><item>160</item><item>224</item>
+    </string-array>
+
+    <string-array name="smartSemanticModelEntries" translatable="false">
+        <item>Smart S Semantic v2 + HNSW</item>
+    </string-array>
+    <string-array name="smartSemanticModelValues" translatable="false">
+        <item>smart-s-mini-v1</item>
+    </string-array>
+
+    <string-array name="smartSemanticDimensionEntries" translatable="false">
+        <item>64 · fastest</item>
+        <item>128 · balanced</item>
+        <item>256 · higher accuracy</item>
+    </string-array>
+    <string-array name="smartSemanticDimensionValues" translatable="false">
+        <item>64</item><item>128</item><item>256</item>
+    </string-array>
+
+    <string-array name="smartSemanticThresholdEntries" translatable="false">
+        <item>0.26 · broad</item>
+        <item>0.34 · balanced</item>
+        <item>0.42 · strict</item>
+        <item>0.52 · very strict</item>
+    </string-array>
+    <string-array name="smartSemanticThresholdValues" translatable="false">
+        <item>0.26</item><item>0.34</item><item>0.42</item><item>0.52</item>
+    </string-array>
+
+    <string-array name="smartSemanticWeightEntries" translatable="false">
+        <item>0.35 · lexical-first</item>
+        <item>0.50 · balanced</item>
+        <item>0.58 · semantic balanced</item>
+        <item>0.70 · semantic-first</item>
+    </string-array>
+    <string-array name="smartSemanticWeightValues" translatable="false">
+        <item>0.35</item><item>0.50</item><item>0.58</item><item>0.70</item>
+    </string-array>
+
     <string-array name="historyModeEntries">
         <item>@string/history_recency</item><item>@string/history_frecency</item><item>@string/history_frequency</item><item>@string/history_adaptive</item><item>@string/history_time</item><item>@string/history_alphabetically</item>
     </string-array>
