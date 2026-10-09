@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.searcher.SemanticHnswIndex;
 
 /** Builds a searchable index across legacy settings, Smart S settings and dynamic settings. */
 public final class SettingsSearchIndex {
@@ -223,6 +224,14 @@ public final class SettingsSearchIndex {
 
         dynamic(out, "Semantic search", "On-device embeddings and similarity settings", 
                 "semantic-search-enabled", "providers", Destination.STANDARD, null);
+        dynamic(out, "HNSW fast semantic retrieval", "Nearest-neighbour semantic search without scanning every record",
+                SemanticHnswIndex.PREF_HNSW_ENABLED, "providers", Destination.STANDARD, null);
+        dynamic(out, "HNSW search depth", "Balance semantic lookup speed and recall",
+                SemanticHnswIndex.PREF_HNSW_EF_SEARCH, "providers", Destination.STANDARD, null);
+        dynamic(out, "Semantic index status", "Indexed vectors, dimensions and HNSW timing",
+                "semantic-hnsw-status", "providers", Destination.STANDARD, null);
+        dynamic(out, "Rebuild semantic HNSW index", "Recompute semantic vectors and graph",
+                "semantic-hnsw-rebuild", "providers", Destination.STANDARD, null);
         dynamic(out, "Embedding model", "Choose the semantic embedding model", 
                 "semantic-model", "providers", Destination.STANDARD, null);
         dynamic(out, "Embedding dimensions", "Semantic vector dimensions", 
