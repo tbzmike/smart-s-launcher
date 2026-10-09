@@ -291,7 +291,9 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                         + " apps · Local fallback: " + localCount
                         + " · Missing: " + missingCount
                         + "\nMetadata updater: "
-                        + (AppSourceMetadataUpdater.isRunning() ? "RUNNING" : "idle")
+                        + (AppSourceMetadataUpdater.isRunning() ? "FULL REFRESH RUNNING" : "idle")
+                        + " · Automatic app refreshes queued: "
+                        + AppSourceMetadataUpdater.pendingPackageRefreshCount()
                         + " · Technical events: " + technicalCount
                         + "\nNetwork: " + AppSourceMetadataUpdater.networkStatusSummary()
                         + "\nHNSW: " + hnsw);
