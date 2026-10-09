@@ -104,8 +104,20 @@ public final class SemanticEmbeddingScorer {
 
     /** Prepare a candidate once for HNSW indexing. */
     public static float[] prepareCandidate(Pojo pojo, int dimensions) {
+        return prepareCandidate(pojo, dimensions, null);
+    }
+
+    /**
+     * Prepare a candidate with optional cached catalog/source text. This is only used while the
+     * background semantic index is built; the interactive query path never reads the metadata DB.
+     */
+    public static float[] prepareCandidate(Pojo pojo, int dimensions, String extraSemanticText) {
         if (pojo == null) return new float[Math.max(32, Math.min(512, dimensions))];
-        return embed(candidateText(pojo), dimensions, false);
+        String base = candidateText(pojo);
+        if (extraSemanticText != null && !extraSemanticText.trim().isEmpty()) {
+            base = base + " " + extraSemanticText;
+        }
+        return embed(base, dimensions, false);
     }
 
     /** Score a candidate without rebuilding the query vector. Kept for lexical-only reranking. */
