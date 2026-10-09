@@ -13,10 +13,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.text.TextUtils;
 
-import androidx.preference.PreferenceManager;
-
-import fr.neamar.kiss.KissApplication;
-import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
+import fr.neamar.kiss.searcher.AppMetadataRefreshJobService;
 
 public final class AppUsagePackageReceiver extends BroadcastReceiver {
     @Override
@@ -74,16 +71,7 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
     private static void queueMetadataRefresh(Context context,
                                              String packageName,
                                              String reason) {
-        try {
-            AppSourceMetadataUpdater.refreshPackage(
-                    context,
-                    KissApplication.getApplication(context).getDataHandler(),
-                    PreferenceManager.getDefaultSharedPreferences(context),
-                    packageName,
-                    reason);
-        } catch (RuntimeException ignored) {
-            // Package/update history must remain safe even if metadata services are unavailable.
-        }
+        AppMetadataRefreshJobService.schedule(context, packageName, reason);
     }
 
     private static boolean recordCurrentPackage(Context context, String packageName,
