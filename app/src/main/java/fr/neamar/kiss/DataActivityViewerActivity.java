@@ -52,7 +52,8 @@ import fr.neamar.kiss.searcher.SemanticHnswIndex;
  */
 public final class DataActivityViewerActivity extends AppCompatActivity {
     private static final int LOAD_LIMIT = 5000;
-    private static final String TYPE_DESCRIPTION_READY = "APP_DESCRIPTION_READY";
+    private static final String TYPE_DESCRIPTION_DOWNLOADED = "APP_DESCRIPTION_DOWNLOADED";
+    private static final String TYPE_DESCRIPTION_LOCAL = "APP_DESCRIPTION_LOCAL";
     private static final String TYPE_DESCRIPTION_MISSING = "APP_DESCRIPTION_MISSING";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
@@ -130,7 +131,8 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
 
         filter = new Spinner(this);
         String[] choices = {
-                "Apps with descriptions",
+                "Downloaded app descriptions",
+                "Local fallback descriptions",
                 "Apps missing descriptions",
                 "Metadata refresh history",
                 "Apps indexed in HNSW",
@@ -231,12 +233,16 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
             Map<String, AppSourceMetadataRecord> metadata =
                     DBHelper.getAppSourceMetadata(this);
 
-            int ready = 0;
+            int downloadedReady = 0;
+            int localReady = 0;
             int missing = 0;
             for (AppSourceMetadataRecord record : metadata.values()) {
                 if (record == null || TextUtils.isEmpty(record.packageName)) continue;
                 boolean hasDescription = !TextUtils.isEmpty(record.description);
-                if (hasDescription) ready++;
+                boolean localDescription = hasDescription
+                        && "Android app manifest".equals(record.source);
+                if (hasDescription && localDescription) localReady++;
+                else if (hasDescription) downloadedReady++;
                 else missing++;
 
                 StringBuilder details = new StringBuilder();
@@ -255,9 +261,14 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                     details.append("\nLast fetch result: ").append(record.lastError);
                 }
 
+                String snapshotType = !hasDescription
+                        ? TYPE_DESCRIPTION_MISSING
+                        : (localDescription
+                                ? TYPE_DESCRIPTION_LOCAL
+                                : TYPE_DESCRIPTION_DOWNLOADED);
                 loaded.add(new SemanticActivityRecord(
                         record.fetchedAt,
-                        hasDescription ? TYPE_DESCRIPTION_READY : TYPE_DESCRIPTION_MISSING,
+                        snapshotType,
                         "current-cache",
                         record.packageName,
                         TextUtils.isEmpty(record.title) ? record.packageName : record.title,
@@ -266,17 +277,19 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
             }
 
             loaded.sort((left, right) -> Long.compare(right.eventTime, left.eventTime));
-            final int readyCount = ready;
+            final int downloadedCount = downloadedReady;
+            final int localCount = localReady;
             final int missingCount = missing;
-            final int packageCount = ready + missing;
+            final int packageCount = downloadedReady + localReady + missing;
             final int technicalCount = loaded.size() - packageCount;
             final String hnsw = SemanticHnswIndex.getInstance().statusSummary();
 
             runOnUiThread(() -> {
                 all.clear();
                 all.addAll(loaded);
-                status.setText("Descriptions ready: " + readyCount + " / " + packageCount
-                        + " apps · Missing: " + missingCount
+                status.setText("Online descriptions: " + downloadedCount + " / " + packageCount
+                        + " apps · Local fallback: " + localCount
+                        + " · Missing: " + missingCount
                         + "\nMetadata updater: "
                         + (AppSourceMetadataUpdater.isRunning() ? "RUNNING" : "idle")
                         + " · Technical events: " + technicalCount
@@ -308,17 +321,20 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
         String type = safe(record.eventType);
         switch (mode) {
             case 0:
-                return TYPE_DESCRIPTION_READY.equals(type);
+                return TYPE_DESCRIPTION_DOWNLOADED.equals(type);
             case 1:
-                return TYPE_DESCRIPTION_MISSING.equals(type);
+                return TYPE_DESCRIPTION_LOCAL.equals(type);
             case 2:
-                return type.startsWith("METADATA_");
+                return TYPE_DESCRIPTION_MISSING.equals(type);
             case 3:
-                return "HNSW_APP_INDEXED".equals(type);
+                return type.startsWith("METADATA_");
             case 4:
+                return "HNSW_APP_INDEXED".equals(type);
+            case 5:
                 return type.startsWith("HNSW_BUILD");
             default:
-                return !TYPE_DESCRIPTION_READY.equals(type)
+                return !TYPE_DESCRIPTION_DOWNLOADED.equals(type)
+                        && !TYPE_DESCRIPTION_LOCAL.equals(type)
                         && !TYPE_DESCRIPTION_MISSING.equals(type);
         }
     }
@@ -347,7 +363,9 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
     }
 
     private void showDetails(SemanticActivityRecord record) {
-        boolean descriptionReady = TYPE_DESCRIPTION_READY.equals(record.eventType);
+        boolean descriptionDownloaded =
+                TYPE_DESCRIPTION_DOWNLOADED.equals(record.eventType);
+        boolean descriptionLocal = TYPE_DESCRIPTION_LOCAL.equals(record.eventType);
         boolean descriptionMissing = TYPE_DESCRIPTION_MISSING.equals(record.eventType);
 
         TextView body = new TextView(this);
@@ -365,8 +383,12 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                 .append("\nSource: ").append(emptyDash(record.source))
                 .append("\nDownloaded / recorded: ").append(formatTime(record.eventTime));
 
-        if (descriptionReady) {
-            text.append("\n\nAPP DESCRIPTION\n\n").append(safe(record.details));
+        if (descriptionDownloaded) {
+            text.append("\n\nDOWNLOADED APP DESCRIPTION\n\n")
+                    .append(safe(record.details));
+        } else if (descriptionLocal) {
+            text.append("\n\nLOCAL FALLBACK DESCRIPTION\n\n")
+                    .append(safe(record.details));
         } else if (descriptionMissing) {
             text.append("\n\nDESCRIPTION STATUS\n\n").append(safe(record.details));
         } else {
@@ -416,8 +438,14 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
             String app = TextUtils.isEmpty(record.appName)
                     ? prettyType(record.eventType) : record.appName;
 
-            if (TYPE_DESCRIPTION_READY.equals(record.eventType)) {
-                holder.title.setText(app + "  ✓ Description ready");
+            if (TYPE_DESCRIPTION_DOWNLOADED.equals(record.eventType)) {
+                holder.title.setText(app + "  ✓ Downloaded description");
+                holder.secondary.setText(emptyDash(record.source)
+                        + " · " + formatTime(record.eventTime)
+                        + "\n" + emptyDash(record.packageName));
+                holder.details.setText(descriptionPreview(record.details));
+            } else if (TYPE_DESCRIPTION_LOCAL.equals(record.eventType)) {
+                holder.title.setText(app + "  ◇ Local fallback description");
                 holder.secondary.setText(emptyDash(record.source)
                         + " · " + formatTime(record.eventTime)
                         + "\n" + emptyDash(record.packageName));
