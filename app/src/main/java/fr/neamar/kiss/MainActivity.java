@@ -1339,6 +1339,13 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
      * the adapter's new oldest-to-newest order instead of deferring that recency move as if it were
      * a passive background update.
      */
+    /** Refresh the fixed/fast-scroll date labels after background History stats arrive. */
+    public void onHistoryDateMetadataLoaded() {
+        if (historyDateNavigator != null) {
+            historyDateNavigator.onDataChanged();
+        }
+    }
+
     public void prepareExplicitHistoryLaunchReorder() {
         if (forwarderManager != null) {
             forwarderManager.prepareExplicitHistoryLaunchReorder();
