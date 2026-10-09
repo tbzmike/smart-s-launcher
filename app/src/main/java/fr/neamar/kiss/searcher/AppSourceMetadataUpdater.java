@@ -10,11 +10,14 @@ import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.UserManager;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -40,9 +43,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import fr.neamar.kiss.DataHandler;
+import fr.neamar.kiss.db.AppCatalogRecord;
 import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.SemanticActivityRecord;
+import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.utils.Log;
@@ -85,6 +90,18 @@ public final class AppSourceMetadataUpdater {
             "<meta\\b[^>]*>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     private static final Pattern TITLE_PATTERN = Pattern.compile(
             "<title[^>]*>(.*?)</title>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern JSON_LD_PATTERN = Pattern.compile(
+            "<script\\b[^>]*type=[\\\"']application/ld\\+json[\\\"'][^>]*>(.*?)</script>",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern PLAY_DESCRIPTION_PATTERN = Pattern.compile(
+            "<div\\b[^>]*data-g-id=[\\\"']description[\\\"'][^>]*>(.*?)</div>",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern ITEMPROP_DESCRIPTION_PATTERN = Pattern.compile(
+            "<(?:div|span|p)\\b[^>]*itemprop=[\\\"']description[\\\"'][^>]*>(.*?)</(?:div|span|p)>",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern ITEMPROP_NAME_PATTERN = Pattern.compile(
+            "<h1\\b[^>]*itemprop=[\\\"']name[\\\"'][^>]*>.*?<span[^>]*>(.*?)</span>",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private AppSourceMetadataUpdater() { }
 
@@ -241,6 +258,7 @@ public final class AppSourceMetadataUpdater {
     private static Set<String> installedPackages(Context context, DataHandler dataHandler) {
         Set<String> packages = new HashSet<>();
 
+        // 1) Anything already represented by Smart S providers.
         for (Pojo pojo : dataHandler.getSemanticIndexSnapshot()) {
             if (pojo instanceof AppPojo) {
                 String packageName = ((AppPojo) pojo).packageName;
@@ -249,6 +267,8 @@ public final class AppSourceMetadataUpdater {
         }
 
         PackageManager packageManager = context.getPackageManager();
+
+        // 2) Normal and disabled launcher activities.
         Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
         launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
         try {
@@ -261,6 +281,46 @@ public final class AppSourceMetadataUpdater {
             }
         } catch (RuntimeException e) {
             Log.w(TAG, "Unable to enumerate launcher activities for metadata update", e);
+        }
+
+        // 3) Installed applications themselves. This is the important frozen/disabled path:
+        // LauncherApps and ACTION_MAIN queries can hide an IceBox-disabled package, but Android
+        // still exposes its installed ApplicationInfo when QUERY_ALL_PACKAGES is granted.
+        try {
+            List<ApplicationInfo> installed = packageManager.getInstalledApplications(
+                    PackageManager.MATCH_DISABLED_COMPONENTS);
+            for (ApplicationInfo info : installed) {
+                if (info == null || TextUtils.isEmpty(info.packageName)) continue;
+                if (context.getPackageName().equals(info.packageName)) continue;
+
+                boolean userInstalled = (info.flags & ApplicationInfo.FLAG_SYSTEM) == 0
+                        || (info.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
+                if (userInstalled || packages.contains(info.packageName)) {
+                    packages.add(info.packageName);
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to enumerate installed packages for metadata update", e);
+        }
+
+        // 4) Smart S's persistent app catalog. A frozen package can be intentionally hidden by
+        // PackageManager/LauncherApps on some ROMs, but the package identity remains remembered.
+        UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
+        if (userManager != null) {
+            try {
+                for (android.os.UserHandle profile : userManager.getUserProfiles()) {
+                    long serial = userManager.getSerialNumberForUser(profile);
+                    if (serial < 0L) continue;
+                    for (AppCatalogRecord remembered
+                            : SmartStateStore.getRememberedApps(context, serial)) {
+                        if (remembered != null && !TextUtils.isEmpty(remembered.packageName)) {
+                            packages.add(remembered.packageName);
+                        }
+                    }
+                }
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Unable to enumerate remembered packages for metadata update", e);
+            }
         }
 
         return packages;
@@ -285,8 +345,11 @@ public final class AppSourceMetadataUpdater {
                 if (fetched == null || TextUtils.isEmpty(fetched.description)) continue;
 
                 record.source = target.source;
-                record.title = TextUtils.isEmpty(fetched.title)
-                        ? local.title : cleanText(fetched.title);
+                String fetchedTitle = cleanText(fetched.title);
+                record.title = TextUtils.isEmpty(local.title)
+                        || packageName.equals(local.title)
+                        ? fetchedTitle : local.title;
+                if (TextUtils.isEmpty(record.title)) record.title = packageName;
                 record.description = cleanText(fetched.description);
                 record.sourceUrl = target.url;
                 record.fetchedAt = System.currentTimeMillis();
@@ -445,7 +508,7 @@ public final class AppSourceMetadataUpdater {
     private static void addPlay(List<CatalogTarget> targets, String packageName) {
         String url = "https://play.google.com/store/apps/details?id="
                 + encode(packageName) + "&hl=en&gl=ZA";
-        targets.add(new CatalogTarget("Google Play", url, () -> fetchHtmlMetadata(url)));
+        targets.add(new CatalogTarget("Google Play", url, () -> fetchPlayMetadata(url)));
     }
 
     private static void addFdroid(List<CatalogTarget> targets, String packageName) {
@@ -465,14 +528,99 @@ public final class AppSourceMetadataUpdater {
     }
 
     @Nullable
+    private static CatalogResult fetchPlayMetadata(String url) throws Exception {
+        String body = httpGet(url);
+        if (TextUtils.isEmpty(body)) return null;
+
+        CatalogResult structured = extractJsonLdMetadata(body);
+        if (structured != null && isUsefulDescription(structured.description)) {
+            return structured;
+        }
+
+        String title = cleanText(firstGroup(ITEMPROP_NAME_PATTERN, body));
+        if (TextUtils.isEmpty(title)) title = cleanText(firstGroup(TITLE_PATTERN, body));
+
+        String description = cleanText(firstGroup(PLAY_DESCRIPTION_PATTERN, body));
+        if (!isUsefulDescription(description)) {
+            description = cleanText(firstGroup(ITEMPROP_DESCRIPTION_PATTERN, body));
+        }
+        if (!isUsefulDescription(description)) {
+            description = cleanText(extractMetaDescription(body));
+        }
+        return isUsefulDescription(description)
+                ? new CatalogResult(title, description)
+                : null;
+    }
+
+    @Nullable
+    private static CatalogResult extractJsonLdMetadata(String html) {
+        Matcher scripts = JSON_LD_PATTERN.matcher(html);
+        while (scripts.find()) {
+            String raw = scripts.group(1);
+            if (TextUtils.isEmpty(raw)) continue;
+            try {
+                String trimmed = raw.trim();
+                if (trimmed.startsWith("[")) {
+                    JSONArray array = new JSONArray(trimmed);
+                    for (int i = 0; i < array.length(); i++) {
+                        CatalogResult result = jsonLdResult(array.opt(i));
+                        if (result != null) return result;
+                    }
+                } else {
+                    CatalogResult result = jsonLdResult(new JSONObject(trimmed));
+                    if (result != null) return result;
+                }
+            } catch (Exception ignored) {
+                // Google occasionally changes structured-data layout; continue with HTML fallbacks.
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static CatalogResult jsonLdResult(Object value) {
+        if (!(value instanceof JSONObject)) return null;
+        JSONObject object = (JSONObject) value;
+
+        Object graph = object.opt("@graph");
+        if (graph instanceof JSONArray) {
+            JSONArray array = (JSONArray) graph;
+            for (int i = 0; i < array.length(); i++) {
+                CatalogResult nested = jsonLdResult(array.opt(i));
+                if (nested != null) return nested;
+            }
+        }
+
+        String description = cleanText(object.optString("description", ""));
+        if (!isUsefulDescription(description)) return null;
+        String title = cleanText(object.optString("name", ""));
+        return new CatalogResult(title, description);
+    }
+
+    private static boolean isUsefulDescription(@Nullable String description) {
+        if (TextUtils.isEmpty(description)) return false;
+        String cleaned = cleanText(description);
+        if (cleaned.length() < 24) return false;
+        String lower = cleaned.toLowerCase(Locale.ROOT);
+        return !lower.equals("apps on google play")
+                && !lower.startsWith("enjoy millions of the latest android apps")
+                && !lower.startsWith("find and download");
+    }
+
+    @Nullable
     private static CatalogResult fetchHtmlMetadata(String url) throws IOException {
         String body = httpGet(url);
         if (TextUtils.isEmpty(body)) return null;
 
-        String description = extractMetaDescription(body);
-        if (TextUtils.isEmpty(description)) return null;
+        CatalogResult structured = extractJsonLdMetadata(body);
+        if (structured != null && isUsefulDescription(structured.description)) {
+            return structured;
+        }
 
-        String title = firstGroup(TITLE_PATTERN, body);
+        String description = cleanText(extractMetaDescription(body));
+        if (!isUsefulDescription(description)) return null;
+
+        String title = cleanText(firstGroup(TITLE_PATTERN, body));
         return new CatalogResult(title, description);
     }
 
@@ -542,6 +690,8 @@ public final class AppSourceMetadataUpdater {
                         + "(KHTML, like Gecko) Chrome/140 Mobile Safari/537.36");
         connection.setRequestProperty("Accept-Language", "en-ZA,en;q=0.9");
         connection.setRequestProperty("Accept", "text/html,application/json;q=0.9,*/*;q=0.8");
+        connection.setRequestProperty("Accept-Encoding", "identity");
+        connection.setRequestProperty("Cache-Control", "no-cache");
 
         try {
             int status = connection.getResponseCode();
