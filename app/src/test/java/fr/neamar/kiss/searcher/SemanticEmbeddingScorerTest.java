@@ -47,6 +47,21 @@ class SemanticEmbeddingScorerTest {
         assertTrue(bible > unrelated);
     }
 
+    @Test void cachedStoreDescriptionWidensSemanticContext() {
+        float[] prepared = SemanticEmbeddingScorer.prepareQuery("scan a document", 256);
+        Pojo opaqueName = pojo("Utility Pro");
+
+        float withoutDescription =
+                SemanticEmbeddingScorer.scorePrepared(prepared, opaqueName);
+        float withDescription =
+                SemanticEmbeddingScorer.scorePrepared(
+                        prepared,
+                        opaqueName,
+                        "Scan documents, receipts and photos, then save them as PDF files.");
+
+        assertTrue(withDescription > withoutDescription);
+    }
+
     private static Pojo pojo(String name) {
         Pojo pojo = new Pojo("test://" + name) { };
         pojo.setName(name, false);
