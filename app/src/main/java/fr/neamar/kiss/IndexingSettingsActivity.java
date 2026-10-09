@@ -94,6 +94,12 @@ public final class IndexingSettingsActivity extends AppCompatActivity {
         semanticNote.setText("Hybrid reranking combines exact/name matching, semantic similarity, fuzzy/provider relevance and previous-query history. Exact app-name matches stay protected while strong concept matches can move above weak fuzzy matches. Model: " + SemanticEmbeddingScorer.MODEL_NAME + ".");
         root.addView(semanticNote);
 
+        Button dataActivity = new Button(this);
+        dataActivity.setText("Open Data Activity Viewer");
+        dataActivity.setOnClickListener(v ->
+                startActivity(new android.content.Intent(this, DataActivityViewerActivity.class)));
+        root.addView(dataActivity);
+
         TextView weightLabel = body();
         float semanticWeight = getFloatPreference(QuerySearcher.PREF_SEMANTIC_WEIGHT, 0.58f, 0.20f, 0.85f);
         weightLabel.setText("Semantic weight: " + Math.round(semanticWeight * 100f) + "%");
