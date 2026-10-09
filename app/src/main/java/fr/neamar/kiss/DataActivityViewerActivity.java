@@ -41,6 +41,7 @@ import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.SemanticActivityRecord;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
+import fr.neamar.kiss.searcher.AppMetadataSyncScheduler;
 import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
 import fr.neamar.kiss.searcher.SemanticHnswIndex;
 
@@ -282,6 +283,8 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
             final int missingCount = missing;
             final int packageCount = downloadedReady + localReady + missing;
             final int technicalCount = loaded.size() - packageCount;
+            final int pendingAutomatic =
+                    AppMetadataSyncScheduler.pendingPackages(this).size();
             final String hnsw = SemanticHnswIndex.getInstance().statusSummary();
 
             runOnUiThread(() -> {
@@ -292,6 +295,7 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                         + " · Missing: " + missingCount
                         + "\nMetadata updater: "
                         + (AppSourceMetadataUpdater.isRunning() ? "RUNNING" : "idle")
+                        + " · Auto-update queue: " + pendingAutomatic
                         + " · Technical events: " + technicalCount
                         + "\nHNSW: " + hnsw);
                 if (updateDescriptions != null) {
@@ -327,7 +331,8 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
             case 2:
                 return TYPE_DESCRIPTION_MISSING.equals(type);
             case 3:
-                return type.startsWith("METADATA_");
+                return type.startsWith("METADATA_")
+                        || "APP_METADATA_AUTO_QUEUED".equals(type);
             case 4:
                 return "HNSW_APP_INDEXED".equals(type);
             case 5:
