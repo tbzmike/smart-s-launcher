@@ -368,6 +368,55 @@
                 app:defaultValue="false"
                 app:key="hide-keyboard"
                 app:title="@string/keyboard_hide" />
+
+            <ListPreference
+                app:defaultValue="built-in"
+                app:entries="@array/smartSearchKeyboardModeEntries"
+                app:entryValues="@array/smartSearchKeyboardModeValues"
+                app:key="search-keyboard-mode"
+                app:title="Search keyboard"
+                app:useSimpleSummaryProvider="true" />
+
+            <SeekBarPreference
+                android:max="50"
+                app:defaultValue="30"
+                app:key="built-in-keyboard-height-percent"
+                app:min="20"
+                app:showSeekBarValue="true"
+                app:title="Built-in keyboard height (% of screen)"
+                app:summary="Resize only the keyboard height. Hard maximum is 50% of the available screen height." />
+
+            <SeekBarPreference
+                android:max="100"
+                app:defaultValue="100"
+                app:key="built-in-keyboard-width-percent"
+                app:min="45"
+                app:showSeekBarValue="true"
+                app:title="Built-in keyboard width (% of screen)"
+                app:summary="Resize the whole keyboard horizontally without changing its height, buttons or letter size." />
+
+            <SeekBarPreference
+                android:max="100"
+                app:defaultValue="100"
+                app:key="built-in-keyboard-button-size-percent"
+                app:min="55"
+                app:showSeekBarValue="true"
+                app:title="Built-in keyboard button size (%)"
+                app:summary="Resize key/button surfaces independently from keyboard width, height and letter size." />
+
+            <SeekBarPreference
+                android:max="36"
+                app:defaultValue="18"
+                app:key="built-in-keyboard-label-size-sp"
+                app:min="10"
+                app:showSeekBarValue="true"
+                app:title="Built-in keyboard letter size (sp)"
+                app:summary="Resize letters and key labels independently from the physical button size." />
+
+            <Preference
+                app:key="choose-system-keyboard"
+                app:title="Choose installed system keyboard"
+                app:summary="Available when System keyboard is selected above." />
         </PreferenceCategory>
         <PreferenceCategory
             app:key="history-hide-section"
@@ -592,6 +641,107 @@
                 app:key="enable-excluded-apps"
                 app:title="@string/excluded_apps_toggle" />
         </PreferenceCategory>
+        <PreferenceScreen
+            app:key="semantic-search-screen"
+            app:title="Semantic search &amp; app metadata"
+            app:summary="HNSW semantic search, app descriptions, metadata updates and accuracy controls">
+
+            <PreferenceCategory
+                app:key="semantic-search-category"
+                app:title="Semantic search &amp; HNSW">
+                <SwitchPreference
+                    app:defaultValue="false"
+                    app:key="semantic-search-enabled"
+                    app:title="Enable semantic search"
+                    app:summary="Use on-device semantic matching together with normal lexical and fuzzy search." />
+                <SwitchPreference
+                    app:defaultValue="true"
+                    app:dependency="semantic-search-enabled"
+                    app:key="semantic-hnsw-enabled"
+                    app:title="HNSW fast semantic retrieval"
+                    app:summary="Use the background HNSW index instead of scanning every searchable record while you type." />
+                <ListPreference
+                    app:defaultValue="96"
+                    app:dependency="semantic-hnsw-enabled"
+                    app:entries="@array/smartHnswDepthEntries"
+                    app:entryValues="@array/smartHnswDepthValues"
+                    app:key="semantic-hnsw-ef-search"
+                    app:title="HNSW search depth"
+                    app:useSimpleSummaryProvider="true" />
+                <ListPreference
+                    app:defaultValue="smart-s-mini-v1"
+                    app:dependency="semantic-search-enabled"
+                    app:entries="@array/smartSemanticModelEntries"
+                    app:entryValues="@array/smartSemanticModelValues"
+                    app:key="semantic-model"
+                    app:title="Embedding model"
+                    app:useSimpleSummaryProvider="true" />
+                <ListPreference
+                    app:defaultValue="128"
+                    app:dependency="semantic-search-enabled"
+                    app:entries="@array/smartSemanticDimensionEntries"
+                    app:entryValues="@array/smartSemanticDimensionValues"
+                    app:key="semantic-embedding-dimensions"
+                    app:title="Embedding dimensions"
+                    app:useSimpleSummaryProvider="true" />
+                <ListPreference
+                    app:defaultValue="0.34"
+                    app:dependency="semantic-search-enabled"
+                    app:entries="@array/smartSemanticThresholdEntries"
+                    app:entryValues="@array/smartSemanticThresholdValues"
+                    app:key="semantic-threshold"
+                    app:title="Semantic similarity threshold"
+                    app:useSimpleSummaryProvider="true" />
+                <SwitchPreference
+                    app:defaultValue="true"
+                    app:dependency="semantic-search-enabled"
+                    app:key="semantic-rerank-enabled"
+                    app:title="Semantic reranking"
+                    app:summary="Blend semantic similarity with exact, prefix, fuzzy and history relevance." />
+                <ListPreference
+                    app:defaultValue="0.58"
+                    app:dependency="semantic-rerank-enabled"
+                    app:entries="@array/smartSemanticWeightEntries"
+                    app:entryValues="@array/smartSemanticWeightValues"
+                    app:key="semantic-rerank-weight"
+                    app:title="Semantic reranking weight"
+                    app:useSimpleSummaryProvider="true" />
+                <Preference
+                    app:key="semantic-hnsw-status"
+                    app:title="Semantic index status"
+                    app:summary="HNSW index status and timing" />
+                <Preference
+                    app:dependency="semantic-search-enabled"
+                    app:key="semantic-hnsw-rebuild"
+                    app:title="Rebuild semantic HNSW index"
+                    app:summary="Recompute semantic vectors and the HNSW graph now." />
+                <Preference
+                    app:key="semantic-model-info"
+                    app:title="Embedding engine details"
+                    app:summary="On-device semantic engine; HNSW candidate vectors are precomputed in the background." />
+            </PreferenceCategory>
+
+            <PreferenceCategory
+                app:key="semantic-app-metadata-category"
+                app:title="App metadata &amp; descriptions">
+                <SwitchPreference
+                    app:defaultValue="true"
+                    app:dependency="semantic-search-enabled"
+                    app:key="semantic-use-app-source-descriptions"
+                    app:title="Use app-store descriptions for semantic search"
+                    app:summary="Include locally cached descriptions from Play Store, F-Droid, Aptoide and compatible catalog sources in each app's semantic context." />
+                <Preference
+                    app:key="semantic-app-source-status"
+                    app:title="App metadata status"
+                    app:summary="Shows how many app descriptions are cached locally." />
+                <Preference
+                    app:dependency="semantic-search-enabled"
+                    app:key="semantic-update-all-app-source-data"
+                    app:title="Update all apps metadata &amp; descriptions"
+                    app:summary="Refresh installed-app descriptions from each detected installation source, then rebuild semantic context." />
+            </PreferenceCategory>
+        </PreferenceScreen>
+
         <PreferenceCategory
             app:key="web-providers"
             app:title="@string/search_name">
