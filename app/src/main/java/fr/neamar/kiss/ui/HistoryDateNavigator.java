@@ -16,6 +16,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.R;
@@ -372,7 +373,7 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         if (!context.getTheme().resolveAttribute(attr, value, true)) return fallback;
         if (value.resourceId != 0) {
             try {
-                return context.getColor(value.resourceId);
+                return ContextCompat.getColor(context, value.resourceId);
             } catch (RuntimeException ignored) { }
         }
         return value.type >= TypedValue.TYPE_FIRST_COLOR_INT
