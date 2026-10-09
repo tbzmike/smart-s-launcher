@@ -29,7 +29,7 @@ class SemanticEmbeddingScorerTest {
     }
 
     @Test void genericIntentFindsBrandSpecificBankingCandidate() {
-        float[] prepared = SemanticEmbeddingScorer.prepareQuery("send money", 256);
+        float[] prepared = SemanticEmbeddingScorer.prepareQuery("send money", 384);
 
         float banking = SemanticEmbeddingScorer.scorePrepared(prepared, pojo("FNB Banking"));
         float calculator = SemanticEmbeddingScorer.scorePrepared(prepared, pojo("Calculator"));
@@ -39,7 +39,7 @@ class SemanticEmbeddingScorerTest {
     }
 
     @Test void scriptureIntentFindsJwLibraryWithoutExactWordOverlap() {
-        float[] prepared = SemanticEmbeddingScorer.prepareQuery("read scripture", 256);
+        float[] prepared = SemanticEmbeddingScorer.prepareQuery("read scripture", 384);
 
         float bible = SemanticEmbeddingScorer.scorePrepared(prepared, pojo("JW Library"));
         float unrelated = SemanticEmbeddingScorer.scorePrepared(prepared, pojo("Spotify"));
@@ -48,7 +48,7 @@ class SemanticEmbeddingScorerTest {
     }
 
     @Test void cachedStoreDescriptionWidensSemanticContext() {
-        float[] prepared = SemanticEmbeddingScorer.prepareQuery("scan a document", 256);
+        float[] prepared = SemanticEmbeddingScorer.prepareQuery("scan a document", 384);
         Pojo opaqueName = pojo("Utility Pro");
 
         float withoutDescription =
@@ -63,7 +63,7 @@ class SemanticEmbeddingScorerTest {
     }
 
     @Test void barcodeIntentPrefersBarcodeCapabilityOverGenericCamera() {
-        float[] prepared = SemanticEmbeddingScorer.prepareQuery("scan bar code", 256);
+        float[] prepared = SemanticEmbeddingScorer.prepareQuery("scan bar code", 384);
         Pojo opaqueScanner = pojo("Utility Pro");
         Pojo camera = pojo("Camera");
 
@@ -78,6 +78,25 @@ class SemanticEmbeddingScorerTest {
 
         assertTrue(scannerScore > cameraScore);
         assertTrue(scannerScore > 0.34f);
+    }
+
+    @Test void highDimensionPresetsPreserveBarcodeCapabilitySignal() {
+        Pojo scanner = pojo("Utility Pro");
+        Pojo camera = pojo("Camera");
+        String scannerDescription =
+                "Scan QR codes, barcodes, EAN and UPC product codes with the camera.";
+        String cameraDescription =
+                "Take photos and videos with manual camera controls.";
+
+        for (int dimensions : new int[]{256, 320, 384, 400}) {
+            float[] prepared = SemanticEmbeddingScorer.prepareQuery("scan barcode", dimensions);
+            float scannerScore = SemanticEmbeddingScorer.scorePrepared(
+                    prepared, scanner, scannerDescription);
+            float cameraScore = SemanticEmbeddingScorer.scorePrepared(
+                    prepared, camera, cameraDescription);
+            assertTrue(scannerScore > cameraScore,
+                    "barcode-capable app should win at " + dimensions + "D");
+        }
     }
 
     private static Pojo pojo(String name) {
