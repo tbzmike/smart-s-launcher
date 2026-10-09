@@ -228,7 +228,7 @@ public final class SettingsSearchIndex {
                 "semantic-search-enabled", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "HNSW fast semantic retrieval", "Nearest-neighbour semantic search without scanning every record",
                 SemanticHnswIndex.PREF_HNSW_ENABLED, "semantic-search-screen", Destination.STANDARD, null);
-        dynamic(out, "HNSW search depth", "Balance semantic lookup speed and recall",
+        dynamic(out, "HNSW search depth", "Optimized balance of semantic lookup speed and recall",
                 SemanticHnswIndex.PREF_HNSW_EF_SEARCH, "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Use app-store descriptions for semantic search", "Include cached installation-source app descriptions in semantic vectors",
                 AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, "semantic-search-screen", Destination.STANDARD, null);
@@ -242,8 +242,9 @@ public final class SettingsSearchIndex {
                 "semantic-hnsw-rebuild", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Embedding model", "Choose the semantic embedding model", 
                 "semantic-model", "semantic-search-screen", Destination.STANDARD, null);
-        dynamic(out, "Embedding dimensions", "Semantic vector dimensions", 
-                "semantic-embedding-dimensions", "semantic-search-screen", Destination.STANDARD, null);
+        dynamic(out, "Embedding dimensions", "256-400 dimensions; 384 recommended", 
+                SemanticHnswIndex.PREF_EMBEDDING_DIMENSIONS,
+                "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Semantic similarity threshold", "Broad, balanced or strict semantic matching", 
                 "semantic-threshold", "semantic-search-screen", Destination.STANDARD, null);
 
