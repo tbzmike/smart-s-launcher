@@ -130,7 +130,7 @@ public final class SemanticEmbeddingScorer {
 
         float[] sourceContext = embed(extraSemanticText, dims, false);
         for (int i = 0; i < identity.length; i++) {
-            identity[i] = identity[i] * 0.78f + sourceContext[i] * 0.52f;
+            identity[i] = identity[i] * 0.78f + sourceContext[i] * 0.68f;
         }
         normalizeVector(identity);
         return identity;
@@ -199,7 +199,16 @@ public final class SemanticEmbeddingScorer {
         // Concept features carry most of the cross-word semantic signal. Give query-side concepts a
         // slight lift so generic intents such as "send money" can find a brand-labelled banking app.
         float conceptWeight = querySide ? 3.15f : 2.85f;
-        for (String concept : conceptTokens) addFeature(vector, concept, conceptWeight);
+        for (String concept : conceptTokens) {
+            float weight = conceptWeight;
+            if ("concept:code_scan".equals(concept)
+                    || "concept:document_scan".equals(concept)) {
+                // Capability intents must remain strong even when the app has an opaque brand
+                // name and the useful words only exist in downloaded store metadata.
+                weight *= 3.0f;
+            }
+            addFeature(vector, concept, weight);
+        }
 
         for (int i = 0; i + 1 < tokens.size(); i++) {
             addFeature(vector, "bi:" + tokens.get(i) + "_" + tokens.get(i + 1), 1.10f);
