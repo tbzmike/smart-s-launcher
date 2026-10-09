@@ -36,6 +36,10 @@
         android:title="Search keyboard"
         app:showAsAction="never" />
     <item
+        android:id="@+id/update_apps_metadata"
+        android:title="Update apps metadata"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/load_avatars"
         android:title="Load avatars"
         app:showAsAction="never" />
