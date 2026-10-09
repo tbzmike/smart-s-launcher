@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -23,9 +25,17 @@ class ResilientDnsLiveConnectionTest {
     @Test
     void forcedFallbackDnsCanReachGooglePlayOverHttps() throws Exception {
         Dns forcedFallback = hostname -> {
-            List<InetAddress> resolved = ResilientDns.lookupFallbackForTest(hostname);
-            assertTrue(!resolved.isEmpty(), "Fallback resolver returned no addresses for " + hostname);
-            return resolved;
+            try {
+                List<InetAddress> resolved = ResilientDns.lookupFallbackForTest(hostname);
+                assertTrue(!resolved.isEmpty(),
+                        "Fallback resolver returned no addresses for " + hostname);
+                return resolved;
+            } catch (IOException e) {
+                UnknownHostException failure = new UnknownHostException(
+                        "Forced fallback DNS failed for " + hostname + ": " + e.getMessage());
+                failure.initCause(e);
+                throw failure;
+            }
         };
 
         OkHttpClient client = new OkHttpClient.Builder()
