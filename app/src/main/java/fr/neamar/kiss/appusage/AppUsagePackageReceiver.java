@@ -31,11 +31,17 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
         if (action == null) return;
 
         // Updates normally emit REMOVED(replacing), ADDED(replacing), then REPLACED. Ignore the
-        // two intermediate broadcasts so one update produces one detailed history event.
+        // removal phase. The ADDED(replacing) phase is already a usable installed package, so it
+        // may queue metadata early; the per-package queue deduplicates the later REPLACED event.
         if (Intent.ACTION_PACKAGE_REMOVED.equals(action) && replacing) return;
-        if (Intent.ACTION_PACKAGE_ADDED.equals(action) && replacing) return;
 
         Context appContext = context.getApplicationContext();
+        if (Intent.ACTION_PACKAGE_ADDED.equals(action) && replacing) {
+            queueMetadataRefresh(
+                    appContext, packageName, "App Usage detected package replacement");
+            return;
+        }
+
         boolean usageEnabled = AppUsageTracker.isEnabled(appContext);
 
         if (Intent.ACTION_PACKAGE_ADDED.equals(action)) {
