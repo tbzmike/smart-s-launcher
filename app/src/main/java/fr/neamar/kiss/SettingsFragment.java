@@ -48,6 +48,7 @@ import fr.neamar.kiss.preference.LaunchPojoSelectPreference;
 import fr.neamar.kiss.preference.SelectCustomSearchProvidersPreference;
 import fr.neamar.kiss.searcher.QuerySearcher;
 import fr.neamar.kiss.searcher.SemanticEmbeddingScorer;
+import fr.neamar.kiss.searcher.SemanticHnswIndex;
 import fr.neamar.kiss.ui.BuiltInKeyboardSizing;
 import fr.neamar.kiss.ui.SearchEditText;
 import fr.neamar.kiss.update.AppUpdater;
@@ -332,9 +333,32 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         SwitchPreference enabled = new SwitchPreference(requireContext());
         enabled.setKey("semantic-search-enabled");
         enabled.setTitle("Enable semantic search");
-        enabled.setSummary("Use on-device embeddings as a fallback when literal/fuzzy matching is not enough.");
+        enabled.setSummary("Use on-device semantic embeddings together with normal lexical/fuzzy search.");
         enabled.setDefaultValue(false);
         category.addPreference(enabled);
+
+        SwitchPreference hnsw = new SwitchPreference(requireContext());
+        hnsw.setKey(SemanticHnswIndex.PREF_HNSW_ENABLED);
+        hnsw.setTitle("HNSW fast semantic retrieval");
+        hnsw.setSummary("Pre-index searchable records in the background and retrieve only nearest semantic candidates instead of scanning every record while you type.");
+        hnsw.setDefaultValue(true);
+        hnsw.setDependency("semantic-search-enabled");
+        category.addPreference(hnsw);
+
+        ListPreference hnswDepth = new ListPreference(requireContext());
+        hnswDepth.setKey(SemanticHnswIndex.PREF_HNSW_EF_SEARCH);
+        hnswDepth.setTitle("HNSW search depth");
+        hnswDepth.setEntries(new CharSequence[]{
+                "48 · fastest",
+                "96 · balanced",
+                "160 · higher recall",
+                "224 · maximum recall"
+        });
+        hnswDepth.setEntryValues(new CharSequence[]{"48", "96", "160", "224"});
+        hnswDepth.setDefaultValue("96");
+        hnswDepth.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        hnswDepth.setDependency(SemanticHnswIndex.PREF_HNSW_ENABLED);
+        category.addPreference(hnswDepth);
 
         ListPreference model = new ListPreference(requireContext());
         model.setKey("semantic-model");
@@ -349,7 +373,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         ListPreference dimensions = new ListPreference(requireContext());
         dimensions.setKey("semantic-embedding-dimensions");
         dimensions.setTitle("Embedding dimensions");
-        dimensions.setEntries(new CharSequence[]{"64 · fastest", "128 · balanced", "256 · richer"});
+        dimensions.setEntries(new CharSequence[]{"64 · fastest", "128 · balanced", "256 · higher accuracy"});
         dimensions.setEntryValues(new CharSequence[]{"64", "128", "256"});
         dimensions.setDefaultValue("128");
         dimensions.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
@@ -366,10 +390,33 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         threshold.setDependency("semantic-search-enabled");
         category.addPreference(threshold);
 
+        Preference status = new Preference(requireContext());
+        status.setKey("semantic-hnsw-status");
+        status.setTitle("Semantic index status");
+        status.setSummary(SemanticHnswIndex.getInstance().statusSummary());
+        status.setSelectable(false);
+        category.addPreference(status);
+
+        Preference rebuild = new Preference(requireContext());
+        rebuild.setKey("semantic-hnsw-rebuild");
+        rebuild.setTitle("Rebuild semantic HNSW index");
+        rebuild.setSummary("Recompute candidate vectors and the HNSW graph now. Normal search remains available while the replacement index builds.");
+        rebuild.setDependency("semantic-search-enabled");
+        rebuild.setOnPreferenceClickListener(preference -> {
+            SemanticHnswIndex.getInstance().scheduleRebuild(getDataHandler(), prefs);
+            Preference currentStatus = findPreference("semantic-hnsw-status");
+            if (currentStatus != null) {
+                currentStatus.setSummary(SemanticHnswIndex.getInstance().statusSummary());
+            }
+            return true;
+        });
+        category.addPreference(rebuild);
+
         Preference info = new Preference(requireContext());
         info.setKey("semantic-model-info");
         info.setTitle("Embedding engine details");
-        info.setSummary(SemanticEmbeddingScorer.MODEL_NAME + " · on-device · no network · vectors computed at search time");
+        info.setSummary(SemanticEmbeddingScorer.MODEL_NAME
+                + " · on-device · no network · candidate vectors are precomputed for HNSW");
         info.setSelectable(false);
         category.addPreference(info);
     }
@@ -407,6 +454,14 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         super.onResume();
         prefs.registerOnSharedPreferenceChangeListener(this);
         refreshSearchKeyboardPicker();
+        refreshSemanticIndexStatus();
+    }
+
+    private void refreshSemanticIndexStatus() {
+        Preference status = findPreference("semantic-hnsw-status");
+        if (status != null) {
+            status.setSummary(SemanticHnswIndex.getInstance().statusSummary());
+        }
     }
 
     @Override
@@ -416,6 +471,16 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
 
             if (SearchEditText.PREF_SEARCH_KEYBOARD_MODE.equals(key)) {
                 refreshSearchKeyboardPicker();
+            }
+
+            if ("semantic-search-enabled".equals(key)
+                    || "semantic-model".equals(key)
+                    || "semantic-embedding-dimensions".equals(key)
+                    || SemanticHnswIndex.PREF_HNSW_ENABLED.equals(key)) {
+                SemanticHnswIndex.getInstance().scheduleRebuild(getDataHandler(), sharedPreferences);
+                refreshSemanticIndexStatus();
+            } else if (SemanticHnswIndex.PREF_HNSW_EF_SEARCH.equals(key)) {
+                refreshSemanticIndexStatus();
             }
 
             if (PREF_LISTS_WITH_DEPENDENCY.contains(key)) {
