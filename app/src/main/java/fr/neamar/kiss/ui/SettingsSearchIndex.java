@@ -242,7 +242,8 @@ public final class SettingsSearchIndex {
                 "semantic-hnsw-rebuild", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Embedding model", "Choose the semantic embedding model", 
                 "semantic-model", "semantic-search-screen", Destination.STANDARD, null);
-        dynamic(out, "Embedding dimensions", "Semantic vector dimensions", 
+        dynamic(out, "Embedding dimensions",
+                "256-400D semantic vectors; 384D recommended with compact HNSW navigation",
                 "semantic-embedding-dimensions", "semantic-search-screen", Destination.STANDARD, null);
         dynamic(out, "Semantic similarity threshold", "Broad, balanced or strict semantic matching", 
                 "semantic-threshold", "semantic-search-screen", Destination.STANDARD, null);
