@@ -362,6 +362,31 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
     }
 
     /**
+     * Stable provider snapshot for background semantic indexing.
+     *
+     * <p>Unlike requestAllRecords(), this does not route every record through the active query or
+     * mutate relevance. The HNSW builder reads this copy on its own low-priority worker, so typing
+     * never performs a whole-provider semantic scan.</p>
+     */
+    @NonNull
+    public List<Pojo> getSemanticIndexSnapshot() {
+        List<Pojo> snapshot = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+
+        for (ProviderEntry entry : this.providers.values()) {
+            if (entry.provider == null || !entry.provider.isLoaded()) continue;
+            List<? extends Pojo> pojos = entry.provider.getPojos();
+            if (pojos == null || pojos.isEmpty()) continue;
+
+            for (Pojo pojo : pojos) {
+                if (pojo == null || pojo.id == null || !seen.add(pojo.id)) continue;
+                snapshot.add(pojo);
+            }
+        }
+        return snapshot;
+    }
+
+    /**
      * Return previously selected items.<br />
      * May return null if no items were ever selected (app first use)<br />
      * May return an empty set if the providers are not done building records,
