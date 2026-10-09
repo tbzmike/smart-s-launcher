@@ -342,6 +342,13 @@ public final class AppSourceMetadataUpdater {
                                          String eventType,
                                          AppSourceMetadataRecord record,
                                          String details) {
+        String transparentDetails = details;
+        if (!TextUtils.isEmpty(record.sourceUrl)) {
+            transparentDetails += "\nSource URL: " + record.sourceUrl;
+        }
+        if (!TextUtils.isEmpty(record.installerPackage)) {
+            transparentDetails += "\nInstaller package: " + record.installerPackage;
+        }
         DBHelper.insertSemanticActivity(context, new SemanticActivityRecord(
                 System.currentTimeMillis(),
                 eventType,
@@ -349,7 +356,7 @@ public final class AppSourceMetadataUpdater {
                 record.packageName,
                 record.title,
                 record.source,
-                details));
+                transparentDetails));
     }
 
     @NonNull
