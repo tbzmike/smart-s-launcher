@@ -253,6 +253,10 @@ public final class AppSourceMetadataUpdater {
                 && PENDING_PACKAGE_REFRESHES.contains(packageName);
     }
 
+    public static int pendingPackageRefreshCount() {
+        return PENDING_PACKAGE_REFRESHES.size();
+    }
+
     /**
      * Refresh exactly one app after Android/App Usage reports an install or package update.
      *
