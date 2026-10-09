@@ -42,6 +42,7 @@ import java.util.regex.Pattern;
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.db.SemanticActivityRecord;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.utils.Log;
@@ -118,6 +119,15 @@ public final class AppSourceMetadataUpdater {
             try {
                 Set<String> packages = installedPackages(appContext, dataHandler);
                 total = packages.size();
+                final String sessionId = "metadata-" + System.currentTimeMillis();
+                DBHelper.insertSemanticActivity(appContext, new SemanticActivityRecord(
+                        System.currentTimeMillis(),
+                        "METADATA_REFRESH_STARTED",
+                        sessionId,
+                        "",
+                        "",
+                        "App metadata updater",
+                        "Started metadata refresh for " + total + " installed/searchable app packages."));
 
                 // Never erase a good cache just because Android temporarily reports no apps while
                 // providers/profiles are being restored.
@@ -132,7 +142,8 @@ public final class AppSourceMetadataUpdater {
                         new ExecutorCompletionService<>(fetchPool);
                 for (String packageName : packages) {
                     AppSourceMetadataRecord old = previous.get(packageName);
-                    completionService.submit(() -> refreshOne(appContext, packageName, old));
+                    completionService.submit(() -> refreshOne(
+                            appContext, packageName, old, sessionId));
                 }
 
                 for (int i = 0; i < packages.size(); i++) {
@@ -158,6 +169,24 @@ public final class AppSourceMetadataUpdater {
                         && prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true)) {
                     SemanticHnswIndex.getInstance().scheduleRebuild(dataHandler, prefs);
                 }
+
+                List<SemanticActivityRecord> finishEvents = new ArrayList<>();
+                finishEvents.add(new SemanticActivityRecord(
+                        System.currentTimeMillis(),
+                        "METADATA_REFRESH_COMPLETED",
+                        sessionId,
+                        "",
+                        "",
+                        "App metadata updater",
+                        "Completed " + total + " packages · downloaded " + downloaded
+                                + " · retained " + retained
+                                + " · local " + localFallback
+                                + " · missing " + missing
+                                + ". HNSW rebuild "
+                                + (prefs.getBoolean("semantic-search-enabled", false)
+                                        && prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true)
+                                        ? "scheduled." : "deferred until semantic HNSW is enabled.")));
+                DBHelper.insertSemanticActivities(appContext, finishEvents);
             } finally {
                 fetchPool.shutdownNow();
                 lastFinishedAt = System.currentTimeMillis();
@@ -230,7 +259,8 @@ public final class AppSourceMetadataUpdater {
 
     private static RefreshResult refreshOne(Context context,
                                             String packageName,
-                                            @Nullable AppSourceMetadataRecord previous) {
+                                            @Nullable AppSourceMetadataRecord previous,
+                                            String sessionId) {
         AppSourceMetadataRecord record = new AppSourceMetadataRecord();
         record.packageName = packageName;
         record.installerPackage = installerPackage(context, packageName);
@@ -253,6 +283,9 @@ public final class AppSourceMetadataUpdater {
                 record.fetchedAt = System.currentTimeMillis();
                 record.lastError = "";
                 DBHelper.upsertAppSourceMetadata(context, record);
+                logMetadataEvent(context, sessionId, "METADATA_DOWNLOADED", record,
+                        "Downloaded " + record.description.length() + " description characters. "
+                                + "Description: " + record.description);
                 return RefreshResult.DOWNLOADED;
             } catch (Exception e) {
                 lastError = e.getClass().getSimpleName() + ": "
@@ -272,6 +305,10 @@ public final class AppSourceMetadataUpdater {
                     ? "No newer public description found; retained cached description"
                     : lastError;
             DBHelper.upsertAppSourceMetadata(context, record);
+            logMetadataEvent(context, sessionId, "METADATA_RETAINED", record,
+                    "Retained previously downloaded description because this refresh failed. "
+                            + "Last error: " + record.lastError
+                            + ". Description: " + record.description);
             return RefreshResult.RETAINED;
         }
 
@@ -284,6 +321,9 @@ public final class AppSourceMetadataUpdater {
             record.fetchedAt = System.currentTimeMillis();
             record.lastError = lastError;
             DBHelper.upsertAppSourceMetadata(context, record);
+            logMetadataEvent(context, sessionId, "METADATA_LOCAL_FALLBACK", record,
+                    "No supported public catalog description was available. "
+                            + "Used Android manifest description: " + record.description);
             return RefreshResult.LOCAL_FALLBACK;
         }
 
@@ -292,7 +332,24 @@ public final class AppSourceMetadataUpdater {
         record.fetchedAt = System.currentTimeMillis();
         record.lastError = lastError.isEmpty() ? "No public description found" : lastError;
         DBHelper.upsertAppSourceMetadata(context, record);
+        logMetadataEvent(context, sessionId, "METADATA_MISSING", record,
+                "No usable description found. " + record.lastError);
         return RefreshResult.MISSING;
+    }
+
+    private static void logMetadataEvent(Context context,
+                                         String sessionId,
+                                         String eventType,
+                                         AppSourceMetadataRecord record,
+                                         String details) {
+        DBHelper.insertSemanticActivity(context, new SemanticActivityRecord(
+                System.currentTimeMillis(),
+                eventType,
+                sessionId,
+                record.packageName,
+                record.title,
+                record.source,
+                details));
     }
 
     @NonNull
