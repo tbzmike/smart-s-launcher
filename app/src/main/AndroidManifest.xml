@@ -105,6 +105,12 @@
             android:excludeFromRecents="true"
             android:parentActivityName=".SettingsActivity"
             android:theme="@style/SettingTheme" />
+        <activity
+            android:name=".DataActivityViewerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".SettingsActivity"
+            android:theme="@style/SettingTheme" />
 
         <activity
             android:name=".NotificationHistoryActivity"
