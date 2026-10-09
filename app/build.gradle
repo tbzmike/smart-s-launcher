@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.153 - fully resizable built-in keyboard
-        versionCode 581
-        versionName "3.30.153"
+        // Smart S Launcher 3.30.154 - HNSW semantic retrieval and Semantic v2
+        versionCode 582
+        versionName "3.30.154"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
