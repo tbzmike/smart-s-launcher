@@ -24,8 +24,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -38,6 +36,7 @@ import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -51,6 +50,11 @@ import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.utils.Log;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 /**
  * Explicit user-triggered refresh of app descriptions used by semantic HNSW search.
@@ -69,6 +73,15 @@ public final class AppSourceMetadataUpdater {
     private static final int READ_TIMEOUT_MS = 9000;
     private static final int MAX_BODY_CHARS = 3_500_000;
     private static final int FETCH_WORKERS = 3;
+
+    private static final OkHttpClient HTTP_CLIENT = new OkHttpClient.Builder()
+            .dns(ResilientDns.INSTANCE)
+            .connectTimeout(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .readTimeout(READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .retryOnConnectionFailure(true)
+            .build();
 
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
     private static final ExecutorService COORDINATOR =
@@ -227,6 +240,11 @@ public final class AppSourceMetadataUpdater {
 
     public static boolean isRunning() {
         return RUNNING.get();
+    }
+
+    @NonNull
+    public static String networkStatusSummary() {
+        return ResilientDns.INSTANCE.statusSummary();
     }
 
     @NonNull
@@ -731,38 +749,38 @@ public final class AppSourceMetadataUpdater {
     }
 
     private static String httpGet(String urlValue) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(urlValue).openConnection();
-        connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        connection.setReadTimeout(READ_TIMEOUT_MS);
-        connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty(
-                "User-Agent",
-                "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 "
-                        + "(KHTML, like Gecko) Chrome/140 Mobile Safari/537.36");
-        connection.setRequestProperty("Accept-Language", "en-ZA,en;q=0.9");
-        connection.setRequestProperty("Accept", "text/html,application/json;q=0.9,*/*;q=0.8");
-        connection.setRequestProperty("Accept-Encoding", "identity");
-        connection.setRequestProperty("Cache-Control", "no-cache");
+        Request request = new Request.Builder()
+                .url(urlValue)
+                .header(
+                        "User-Agent",
+                        "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 "
+                                + "(KHTML, like Gecko) Chrome/140 Mobile Safari/537.36")
+                .header("Accept-Language", "en-ZA,en;q=0.9")
+                .header("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
+                .header("Cache-Control", "no-cache")
+                .build();
 
-        try {
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) throw new IOException("HTTP " + status);
+        try (Response response = HTTP_CLIENT.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("HTTP " + response.code());
+            }
 
-            try (InputStream input = connection.getInputStream();
+            ResponseBody body = response.body();
+            if (body == null) return "";
+
+            try (InputStream input = body.byteStream();
                  BufferedReader reader = new BufferedReader(
                          new InputStreamReader(input, StandardCharsets.UTF_8))) {
-                StringBuilder body = new StringBuilder();
+                StringBuilder text = new StringBuilder();
                 char[] buffer = new char[8192];
                 int read;
                 while ((read = reader.read(buffer)) >= 0
-                        && body.length() < MAX_BODY_CHARS) {
-                    int allowed = Math.min(read, MAX_BODY_CHARS - body.length());
-                    body.append(buffer, 0, allowed);
+                        && text.length() < MAX_BODY_CHARS) {
+                    int allowed = Math.min(read, MAX_BODY_CHARS - text.length());
+                    text.append(buffer, 0, allowed);
                 }
-                return body.toString();
+                return text.toString();
             }
-        } finally {
-            connection.disconnect();
         }
     }
 
