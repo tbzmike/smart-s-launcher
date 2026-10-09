@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.155 - preserve 3.30.153 behavior around HNSW
-        versionCode 583
-        versionName "3.30.155"
+        // Smart S Launcher 3.30.156 - visible semantic settings, metadata menu and search pulse
+        versionCode 584
+        versionName "3.30.156"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
