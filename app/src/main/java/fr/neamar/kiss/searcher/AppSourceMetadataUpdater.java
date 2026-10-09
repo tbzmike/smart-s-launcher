@@ -1,9 +1,12 @@
 package fr.neamar.kiss.searcher;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.InstallSourceInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -26,6 +29,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
@@ -43,10 +47,11 @@ import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.utils.Log;
 
 /**
- * Explicit, user-triggered refresh of public app catalog descriptions.
+ * Explicit user-triggered refresh of app descriptions used by semantic HNSW search.
  *
- * <p>Search never calls the network. This updater runs only when requested from Settings, stores
- * one row per installed package locally, then rebuilds the semantic HNSW graph from the cache.</p>
+ * <p>Network work never runs while typing. Every resolved description is stored by package name in
+ * the local metadata DB. After the complete refresh, one HNSW rebuild consumes that cache so the
+ * description widens app-search context without adding network latency to queries.</p>
  */
 public final class AppSourceMetadataUpdater {
     private static final String TAG = AppSourceMetadataUpdater.class.getSimpleName();
@@ -54,8 +59,8 @@ public final class AppSourceMetadataUpdater {
     public static final String PREF_USE_SOURCE_DESCRIPTIONS =
             "semantic-use-app-source-descriptions";
 
-    private static final int CONNECT_TIMEOUT_MS = 6500;
-    private static final int READ_TIMEOUT_MS = 8000;
+    private static final int CONNECT_TIMEOUT_MS = 7000;
+    private static final int READ_TIMEOUT_MS = 9000;
     private static final int MAX_BODY_CHARS = 1_500_000;
     private static final int FETCH_WORKERS = 3;
 
@@ -69,19 +74,14 @@ public final class AppSourceMetadataUpdater {
 
     private static volatile int total;
     private static volatile int completed;
-    private static volatile int updated;
-    private static volatile int failed;
+    private static volatile int downloaded;
+    private static volatile int retained;
+    private static volatile int localFallback;
+    private static volatile int missing;
     private static volatile long lastFinishedAt;
 
-    private static final Pattern META_NAME_DESCRIPTION = Pattern.compile(
-            "<meta\\s+[^>]*name=[\\\"']description[\\\"'][^>]*content=[\\\"']([^\\\"']*)[\\\"'][^>]*>",
-            Pattern.CASE_INSENSITIVE);
-    private static final Pattern META_PROPERTY_DESCRIPTION = Pattern.compile(
-            "<meta\\s+[^>]*property=[\\\"'](?:og:description|twitter:description)[\\\"'][^>]*content=[\\\"']([^\\\"']*)[\\\"'][^>]*>",
-            Pattern.CASE_INSENSITIVE);
-    private static final Pattern META_REVERSED_DESCRIPTION = Pattern.compile(
-            "<meta\\s+[^>]*content=[\\\"']([^\\\"']*)[\\\"'][^>]*(?:name|property)=[\\\"'](?:description|og:description|twitter:description)[\\\"'][^>]*>",
-            Pattern.CASE_INSENSITIVE);
+    private static final Pattern META_TAG_PATTERN = Pattern.compile(
+            "<meta\\b[^>]*>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
     private static final Pattern TITLE_PATTERN = Pattern.compile(
             "<title[^>]*>(.*?)</title>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
@@ -94,10 +94,17 @@ public final class AppSourceMetadataUpdater {
         if (!RUNNING.compareAndSet(false, true)) return false;
 
         final Context appContext = context.getApplicationContext();
+        // Pressing "Update apps metadata" means the downloaded descriptions are intended to be
+        // part of semantic context. Keep this on; semantic search itself remains independently
+        // controlled by its own switch.
+        prefs.edit().putBoolean(PREF_USE_SOURCE_DESCRIPTIONS, true).apply();
+
         total = 0;
         completed = 0;
-        updated = 0;
-        failed = 0;
+        downloaded = 0;
+        retained = 0;
+        localFallback = 0;
+        missing = 0;
 
         COORDINATOR.execute(() -> {
             ExecutorService fetchPool = Executors.newFixedThreadPool(
@@ -109,31 +116,45 @@ public final class AppSourceMetadataUpdater {
                     });
 
             try {
-                Set<String> packages = installedPackages(dataHandler);
+                Set<String> packages = installedPackages(appContext, dataHandler);
                 total = packages.size();
-                DBHelper.pruneAppSourceMetadata(appContext, packages);
 
-                ExecutorCompletionService<Boolean> completion =
+                // Never erase a good cache just because Android temporarily reports no apps while
+                // providers/profiles are being restored.
+                if (!packages.isEmpty()) {
+                    DBHelper.pruneAppSourceMetadata(appContext, packages);
+                }
+
+                Map<String, AppSourceMetadataRecord> previous =
+                        DBHelper.getAppSourceMetadata(appContext);
+
+                ExecutorCompletionService<RefreshResult> completionService =
                         new ExecutorCompletionService<>(fetchPool);
                 for (String packageName : packages) {
-                    completion.submit(() -> refreshOne(appContext, packageName));
+                    AppSourceMetadataRecord old = previous.get(packageName);
+                    completionService.submit(() -> refreshOne(appContext, packageName, old));
                 }
 
                 for (int i = 0; i < packages.size(); i++) {
                     try {
-                        Future<Boolean> result = completion.take();
-                        if (Boolean.TRUE.equals(result.get())) updated++;
-                        else failed++;
+                        Future<RefreshResult> result = completionService.take();
+                        RefreshResult refreshResult = result.get();
+                        if (refreshResult == RefreshResult.DOWNLOADED) downloaded++;
+                        else if (refreshResult == RefreshResult.RETAINED) retained++;
+                        else if (refreshResult == RefreshResult.LOCAL_FALLBACK) localFallback++;
+                        else missing++;
                     } catch (Exception e) {
-                        failed++;
+                        missing++;
                         Log.w(TAG, "App source metadata refresh item failed", e);
                     } finally {
                         completed++;
                     }
                 }
 
-                if (prefs.getBoolean(PREF_USE_SOURCE_DESCRIPTIONS, true)
-                        && prefs.getBoolean("semantic-search-enabled", false)
+                // The completed DB snapshot is the only input to HNSW. Rebuild once, never once per
+                // app. If semantic/HNSW is currently off, its normal enable path rebuilds later
+                // from this same cache.
+                if (prefs.getBoolean("semantic-search-enabled", false)
                         && prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true)) {
                     SemanticHnswIndex.getInstance().scheduleRebuild(dataHandler, prefs);
                 }
@@ -156,59 +177,138 @@ public final class AppSourceMetadataUpdater {
     @NonNull
     public static String statusSummary(@NonNull Context context) {
         if (RUNNING.get()) {
-            return "Updating app source data… " + completed + "/" + total
-                    + " · updated " + updated + " · failed " + failed;
+            return "Updating app descriptions… " + completed + "/" + total
+                    + " · downloaded " + downloaded
+                    + " · retained " + retained
+                    + " · local " + localFallback
+                    + " · missing " + missing;
         }
 
         int stored = DBHelper.getAppSourceMetadataCount(context);
         if (lastFinishedAt > 0L) {
-            return stored + " app descriptions cached · last refresh updated "
-                    + updated + ", failed " + failed;
+            return stored + " app descriptions cached · last refresh: "
+                    + downloaded + " downloaded, "
+                    + retained + " retained, "
+                    + localFallback + " local, "
+                    + missing + " missing";
         }
         return stored + " app descriptions cached locally";
     }
 
-    private static Set<String> installedPackages(DataHandler dataHandler) {
+    /**
+     * Build a package set independent of provider timing. The DataHandler snapshot preserves
+     * Smart S's cross-profile/frozen entries; PackageManager adds normal launcher activities even
+     * if the provider has not finished loading yet.
+     */
+    private static Set<String> installedPackages(Context context, DataHandler dataHandler) {
         Set<String> packages = new HashSet<>();
+
         for (Pojo pojo : dataHandler.getSemanticIndexSnapshot()) {
             if (pojo instanceof AppPojo) {
                 String packageName = ((AppPojo) pojo).packageName;
                 if (!TextUtils.isEmpty(packageName)) packages.add(packageName);
             }
         }
+
+        PackageManager packageManager = context.getPackageManager();
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        try {
+            List<ResolveInfo> launchable = packageManager.queryIntentActivities(
+                    launcherIntent, PackageManager.MATCH_DISABLED_COMPONENTS);
+            for (ResolveInfo info : launchable) {
+                if (info == null || info.activityInfo == null) continue;
+                String packageName = info.activityInfo.packageName;
+                if (!TextUtils.isEmpty(packageName)) packages.add(packageName);
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to enumerate launcher activities for metadata update", e);
+        }
+
         return packages;
     }
 
-    private static boolean refreshOne(Context context, String packageName) {
+    private static RefreshResult refreshOne(Context context,
+                                            String packageName,
+                                            @Nullable AppSourceMetadataRecord previous) {
         AppSourceMetadataRecord record = new AppSourceMetadataRecord();
         record.packageName = packageName;
         record.installerPackage = installerPackage(context, packageName);
-        record.fetchedAt = System.currentTimeMillis();
+
+        LocalPackageText local = localPackageText(context, packageName);
+        record.title = local.title;
 
         List<CatalogTarget> targets = targetsForInstaller(record.installerPackage, packageName);
         String lastError = "";
         for (CatalogTarget target : targets) {
             try {
                 CatalogResult fetched = target.fetch();
-                if (fetched != null && !TextUtils.isEmpty(fetched.description)) {
-                    record.source = target.source;
-                    record.title = cleanText(fetched.title);
-                    record.description = cleanText(fetched.description);
-                    record.sourceUrl = target.url;
-                    record.lastError = "";
-                    DBHelper.upsertAppSourceMetadata(context, record);
-                    return true;
-                }
+                if (fetched == null || TextUtils.isEmpty(fetched.description)) continue;
+
+                record.source = target.source;
+                record.title = TextUtils.isEmpty(fetched.title)
+                        ? local.title : cleanText(fetched.title);
+                record.description = cleanText(fetched.description);
+                record.sourceUrl = target.url;
+                record.fetchedAt = System.currentTimeMillis();
+                record.lastError = "";
+                DBHelper.upsertAppSourceMetadata(context, record);
+                return RefreshResult.DOWNLOADED;
             } catch (Exception e) {
                 lastError = e.getClass().getSimpleName() + ": "
                         + (e.getMessage() == null ? "fetch failed" : e.getMessage());
             }
         }
 
+        // A transient store/network failure must never destroy previously downloaded semantic
+        // context. Keep the successful description and only record the latest refresh error.
+        if (previous != null && !TextUtils.isEmpty(previous.description)) {
+            record.source = previous.source;
+            record.title = TextUtils.isEmpty(previous.title) ? local.title : previous.title;
+            record.description = previous.description;
+            record.sourceUrl = previous.sourceUrl;
+            record.fetchedAt = previous.fetchedAt;
+            record.lastError = lastError.isEmpty()
+                    ? "No newer public description found; retained cached description"
+                    : lastError;
+            DBHelper.upsertAppSourceMetadata(context, record);
+            return RefreshResult.RETAINED;
+        }
+
+        // Some APK manifests contain a public application description. It is not a store download,
+        // but it is useful semantic context when no supported catalog has a listing.
+        if (!TextUtils.isEmpty(local.description)) {
+            record.source = "Android app manifest";
+            record.description = local.description;
+            record.sourceUrl = "";
+            record.fetchedAt = System.currentTimeMillis();
+            record.lastError = lastError;
+            DBHelper.upsertAppSourceMetadata(context, record);
+            return RefreshResult.LOCAL_FALLBACK;
+        }
+
         record.source = sourceLabel(record.installerPackage);
+        record.sourceUrl = "";
+        record.fetchedAt = System.currentTimeMillis();
         record.lastError = lastError.isEmpty() ? "No public description found" : lastError;
         DBHelper.upsertAppSourceMetadata(context, record);
-        return false;
+        return RefreshResult.MISSING;
+    }
+
+    @NonNull
+    private static LocalPackageText localPackageText(Context context, String packageName) {
+        PackageManager packageManager = context.getPackageManager();
+        try {
+            ApplicationInfo info = packageManager.getApplicationInfo(
+                    packageName, PackageManager.MATCH_DISABLED_COMPONENTS | PackageManager.GET_META_DATA);
+            CharSequence title = info.loadLabel(packageManager);
+            CharSequence description = info.loadDescription(packageManager);
+            return new LocalPackageText(
+                    title == null ? packageName : title.toString(),
+                    description == null ? "" : cleanText(description.toString()));
+        } catch (PackageManager.NameNotFoundException | RuntimeException e) {
+            return new LocalPackageText(packageName, "");
+        }
     }
 
     @NonNull
@@ -232,14 +332,14 @@ public final class AppSourceMetadataUpdater {
     }
 
     private static List<CatalogTarget> targetsForInstaller(String installer, String packageName) {
-        List<CatalogTarget> targets = new ArrayList<>(3);
+        List<CatalogTarget> targets = new ArrayList<>(4);
         String normalizedInstaller = installer == null ? "" : installer.toLowerCase(Locale.ROOT);
 
         if (normalizedInstaller.equals("com.android.vending")
                 || normalizedInstaller.equals("com.aurora.store")) {
             addPlay(targets, packageName);
-            addFdroid(targets, packageName);
             addAptoide(targets, packageName);
+            addFdroid(targets, packageName);
         } else if (normalizedInstaller.equals("org.fdroid.fdroid")
                 || normalizedInstaller.equals("org.fdroid.basic")
                 || normalizedInstaller.contains("droidify")
@@ -252,12 +352,15 @@ public final class AppSourceMetadataUpdater {
             addAptoide(targets, packageName);
             addPlay(targets, packageName);
             addFdroid(targets, packageName);
-        } else {
-            // Unknown/sideloaded source: package-name lookup across public catalogs widens context
-            // without guessing that the installer itself came from one particular store.
+        } else if (normalizedInstaller.equals("com.sec.android.app.samsungapps")) {
+            addSamsung(targets, packageName);
             addPlay(targets, packageName);
-            addFdroid(targets, packageName);
             addAptoide(targets, packageName);
+            addFdroid(targets, packageName);
+        } else {
+            addPlay(targets, packageName);
+            addAptoide(targets, packageName);
+            addFdroid(targets, packageName);
         }
         return targets;
     }
@@ -279,18 +382,55 @@ public final class AppSourceMetadataUpdater {
         targets.add(new CatalogTarget("Aptoide", url, () -> fetchAptoideMetadata(url)));
     }
 
+    private static void addSamsung(List<CatalogTarget> targets, String packageName) {
+        String url = "https://galaxystore.samsung.com/detail/" + encodePath(packageName);
+        targets.add(new CatalogTarget("Galaxy Store", url, () -> fetchHtmlMetadata(url)));
+    }
+
     @Nullable
     private static CatalogResult fetchHtmlMetadata(String url) throws IOException {
         String body = httpGet(url);
         if (TextUtils.isEmpty(body)) return null;
 
-        String description = firstGroup(META_PROPERTY_DESCRIPTION, body);
-        if (TextUtils.isEmpty(description)) description = firstGroup(META_NAME_DESCRIPTION, body);
-        if (TextUtils.isEmpty(description)) description = firstGroup(META_REVERSED_DESCRIPTION, body);
+        String description = extractMetaDescription(body);
         if (TextUtils.isEmpty(description)) return null;
 
         String title = firstGroup(TITLE_PATTERN, body);
         return new CatalogResult(title, description);
+    }
+
+    @Nullable
+    private static String extractMetaDescription(String html) {
+        Matcher tags = META_TAG_PATTERN.matcher(html);
+        while (tags.find()) {
+            String tag = tags.group();
+            String name = attribute(tag, "name");
+            String property = attribute(tag, "property");
+            String itemprop = attribute(tag, "itemprop");
+            String descriptor = !TextUtils.isEmpty(name)
+                    ? name : (!TextUtils.isEmpty(property) ? property : itemprop);
+
+            if (descriptor == null) continue;
+            String normalized = descriptor.toLowerCase(Locale.ROOT);
+            if (!"description".equals(normalized)
+                    && !"og:description".equals(normalized)
+                    && !"twitter:description".equals(normalized)) {
+                continue;
+            }
+
+            String content = attribute(tag, "content");
+            if (!TextUtils.isEmpty(content)) return content;
+        }
+        return null;
+    }
+
+    @Nullable
+    private static String attribute(String tag, String name) {
+        Pattern pattern = Pattern.compile(
+                "(?i)\\b" + Pattern.quote(name) + "\\s*=\\s*([\\\"'])(.*?)\\1",
+                Pattern.DOTALL);
+        Matcher matcher = pattern.matcher(tag);
+        return matcher.find() ? matcher.group(2) : null;
     }
 
     @Nullable
@@ -302,9 +442,7 @@ public final class AppSourceMetadataUpdater {
         JSONObject nodes = root.optJSONObject("nodes");
         JSONObject meta = nodes == null ? null : nodes.optJSONObject("meta");
         JSONObject data = meta == null ? null : meta.optJSONObject("data");
-        if (data == null) {
-            data = root.optJSONObject("data");
-        }
+        if (data == null) data = root.optJSONObject("data");
         if (data == null) return null;
 
         String title = data.optString("name", "");
@@ -326,12 +464,12 @@ public final class AppSourceMetadataUpdater {
                 "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 "
                         + "(KHTML, like Gecko) Chrome/140 Mobile Safari/537.36");
         connection.setRequestProperty("Accept-Language", "en-ZA,en;q=0.9");
+        connection.setRequestProperty("Accept", "text/html,application/json;q=0.9,*/*;q=0.8");
 
         try {
             int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) {
-                throw new IOException("HTTP " + status);
-            }
+            if (status < 200 || status >= 300) throw new IOException("HTTP " + status);
+
             try (InputStream input = connection.getInputStream();
                  BufferedReader reader = new BufferedReader(
                          new InputStreamReader(input, StandardCharsets.UTF_8))) {
@@ -358,6 +496,7 @@ public final class AppSourceMetadataUpdater {
         if (installer.equals("com.aurora.store")) return "Aurora Store / Google Play";
         if (installer.contains("fdroid") || installer.contains("droidify")) return "F-Droid";
         if (installer.contains("aptoide")) return "Aptoide";
+        if (installer.equals("com.sec.android.app.samsungapps")) return "Galaxy Store";
         if (installer.equals("com.amazon.venezia")) return "Amazon Appstore";
         return installerPackage;
     }
@@ -378,6 +517,8 @@ public final class AppSourceMetadataUpdater {
                 .replace("&apos;", "'")
                 .replace("&lt;", "<")
                 .replace("&gt;", ">")
+                .replace("&#x27;", "'")
+                .replace("&#x2F;", "/")
                 .replaceAll("<[^>]+>", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
@@ -395,6 +536,13 @@ public final class AppSourceMetadataUpdater {
 
     private static String encodePath(String value) {
         return value.replaceAll("[^A-Za-z0-9._-]", "");
+    }
+
+    enum RefreshResult {
+        DOWNLOADED,
+        RETAINED,
+        LOCAL_FALLBACK,
+        MISSING
     }
 
     private interface FetchAction {
@@ -422,6 +570,16 @@ public final class AppSourceMetadataUpdater {
         final String description;
 
         CatalogResult(String title, String description) {
+            this.title = title == null ? "" : title;
+            this.description = description == null ? "" : description;
+        }
+    }
+
+    private static final class LocalPackageText {
+        final String title;
+        final String description;
+
+        LocalPackageText(String title, String description) {
             this.title = title == null ? "" : title;
             this.description = description == null ? "" : description;
         }
