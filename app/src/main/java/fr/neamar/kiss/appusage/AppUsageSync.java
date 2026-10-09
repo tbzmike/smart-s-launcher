@@ -20,18 +20,16 @@ import android.text.TextUtils;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
-import androidx.preference.PreferenceManager;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.pojo.ShortcutPojo;
-import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
+import fr.neamar.kiss.searcher.AppMetadataRefreshJobService;
 
 /** Copies the usage history Android still exposes into Smart S's 365-day local timeline. */
 public final class AppUsageSync {
@@ -227,16 +225,7 @@ public final class AppUsageSync {
             @NonNull Context context,
             @NonNull String packageName,
             @NonNull String reason) {
-        try {
-            AppSourceMetadataUpdater.refreshPackage(
-                    context,
-                    KissApplication.getApplication(context).getDataHandler(),
-                    PreferenceManager.getDefaultSharedPreferences(context),
-                    packageName,
-                    reason);
-        } catch (RuntimeException ignored) {
-            // Usage history remains authoritative even if metadata refresh cannot be queued.
-        }
+        AppMetadataRefreshJobService.schedule(context, packageName, reason);
     }
 
     private static void importUsageEvents(Context context, AppUsageStore store, long now) {
