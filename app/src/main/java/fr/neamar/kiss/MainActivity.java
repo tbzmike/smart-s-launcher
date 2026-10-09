@@ -67,6 +67,7 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.searcher.SemanticHnswIndex;
 import fr.neamar.kiss.ui.AnimatedListView;
 import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.ui.KeyboardScrollHider;
@@ -295,6 +296,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                         displayLoader(true);
                         return;
                     }
+
+                    // Semantic vectors/HNSW are rebuilt once after a complete provider batch, on a
+                    // low-priority worker. Search never pays this provider-wide indexing cost.
+                    SemanticHnswIndex.getInstance().scheduleRebuild(dataHandler, prefs);
 
                     boolean forceVisibleRebind =
                             intent.getBooleanExtra(EXTRA_FORCE_VISIBLE_REBIND, false);
@@ -531,8 +536,14 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         if (searchEditText != null) searchEditText.syncKeyboardMode();
         dismissPopup();
 
-        if (KissApplication.getApplication(this).getDataHandler().isAllProvidersLoaded()) {
+        fr.neamar.kiss.DataHandler resumedDataHandler =
+                KissApplication.getApplication(this).getDataHandler();
+        if (resumedDataHandler.isAllProvidersLoaded()) {
             displayLoader(false);
+            SemanticHnswIndex.getInstance().ensureReady(
+                    resumedDataHandler,
+                    prefs,
+                    SemanticHnswIndex.parseDimensions(prefs));
         }
 
         boolean resetDefaultHistoryAfterSearchLaunch =
