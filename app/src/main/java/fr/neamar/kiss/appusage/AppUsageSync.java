@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import fr.neamar.kiss.KissApplication;
+import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.pojo.ShortcutPojo;
@@ -40,6 +41,8 @@ public final class AppUsageSync {
     private static final long EVENT_OVERLAP_MS = 24L * 60L * 60L * 1000L;
     private static final long RAW_EVENT_QUERY_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L;
     private static final long AGGREGATE_OVERLAP_MS = 3L * 24L * 60L * 60L * 1000L;
+    private static final long FAILED_METADATA_RETRY_MS =
+            24L * 60L * 60L * 1000L;
 
     private AppUsageSync() {}
 
@@ -103,22 +106,38 @@ public final class AppUsageSync {
         }
 
         long cutoff = now - AppUsageStore.RETENTION_MS;
+        Map<String, AppSourceMetadataRecord> metadataByPackage =
+                DBHelper.getAppSourceMetadata(context);
         for (PackageInfo info : packages) {
             if (info == null || TextUtils.isEmpty(info.packageName)) continue;
 
             AppUsageStore.PackageState previousState =
                     store.getPackageState(info.packageName);
+            AppSourceMetadataRecord metadata =
+                    metadataByPackage.get(info.packageName);
             PackageMeta meta = packageMeta(pm, info.packageName, info);
             boolean updateChanged = shouldRefreshMetadataAfterPackageScan(
                     previousState, info.lastUpdateTime);
+            boolean metadataNeedsRetry = shouldRetryMetadataForPackage(
+                    previousState,
+                    info.lastUpdateTime,
+                    metadata,
+                    now);
             store.putPackageState(meta.toState());
 
-            if (updateChanged) {
-                queueMetadataRefresh(
-                        context,
-                        info.packageName,
-                        "App Usage reconciliation detected lastUpdateTime change from "
-                                + previousState.lastUpdateMs + " to " + info.lastUpdateTime);
+            if (metadataNeedsRetry) {
+                String reason;
+                if (updateChanged) {
+                    reason = "App Usage reconciliation detected lastUpdateTime change from "
+                            + previousState.lastUpdateMs + " to " + info.lastUpdateTime;
+                } else if (metadata != null
+                        && info.lastUpdateTime > 0L
+                        && metadata.fetchedAt < info.lastUpdateTime) {
+                    reason = "App Usage found app metadata older than the installed app update";
+                } else {
+                    reason = "App Usage retrying a failed/missing app description after cooldown";
+                }
+                queueMetadataRefresh(context, info.packageName, reason);
             }
 
             if (info.firstInstallTime >= cutoff && info.firstInstallTime <= now) {
@@ -176,6 +195,32 @@ public final class AppUsageSync {
         return previous != null
                 && currentLastUpdateMs > 0L
                 && currentLastUpdateMs != previous.lastUpdateMs;
+    }
+
+    static boolean shouldRetryMetadataForPackage(
+            @Nullable AppUsageStore.PackageState previous,
+            long currentLastUpdateMs,
+            @Nullable AppSourceMetadataRecord metadata,
+            long nowMs) {
+        if (shouldRefreshMetadataAfterPackageScan(previous, currentLastUpdateMs)) {
+            return true;
+        }
+
+        // If the package state was already updated by the broadcast receiver but its metadata
+        // refresh failed, the old cached description remains older than the APK update. Retry it.
+        if (metadata != null
+                && currentLastUpdateMs > 0L
+                && metadata.fetchedAt > 0L
+                && metadata.fetchedAt < currentLastUpdateMs) {
+            return true;
+        }
+
+        // A package with no usable description should not hammer the stores on every 6-hour App
+        // Usage sync. Retry once per day so temporary DNS/network/catalog failures self-heal.
+        return metadata != null
+                && TextUtils.isEmpty(metadata.description)
+                && metadata.fetchedAt > 0L
+                && nowMs - metadata.fetchedAt >= FAILED_METADATA_RETRY_MS;
     }
 
     private static void queueMetadataRefresh(
