@@ -13,10 +13,15 @@ import android.net.Uri;
 import android.os.Build;
 import android.text.TextUtils;
 
+import androidx.preference.PreferenceManager;
+
+import fr.neamar.kiss.KissApplication;
+import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
+
 public final class AppUsagePackageReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (intent == null || !AppUsageTracker.isEnabled(context)) return;
+        if (intent == null) return;
         Uri data = intent.getData();
         if (data == null) return;
         String packageName = data.getSchemeSpecificPart();
@@ -31,22 +36,48 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
         if (Intent.ACTION_PACKAGE_ADDED.equals(action) && replacing) return;
 
         Context appContext = context.getApplicationContext();
+        boolean usageEnabled = AppUsageTracker.isEnabled(appContext);
+
         if (Intent.ACTION_PACKAGE_ADDED.equals(action)) {
-            if (!recordCurrentPackage(appContext, packageName, false)) {
+            if (usageEnabled && !recordCurrentPackage(appContext, packageName, false)) {
                 AppUsageSync.recordPackageChange(appContext, action, packageName, false);
             }
+            queueMetadataRefresh(
+                    appContext, packageName, "App Usage detected app installation");
             return;
         }
+
         if (Intent.ACTION_PACKAGE_REPLACED.equals(action)) {
-            if (!recordCurrentPackage(appContext, packageName, true)) {
+            if (usageEnabled && !recordCurrentPackage(appContext, packageName, true)) {
                 AppUsageSync.recordPackageChange(appContext, action, packageName, true);
             }
+            // Metadata refresh is intentionally independent of the App Usage on/off preference:
+            // app descriptions must follow installed package updates even when usage tracking is off.
+            queueMetadataRefresh(
+                    appContext, packageName, "App Usage detected package update");
             return;
         }
 
         // For removals the package may already be invisible to PackageManager. The sync layer
         // intentionally reads the last locally remembered label/source before writing the event.
-        AppUsageSync.recordPackageChange(appContext, action, packageName, replacing);
+        if (usageEnabled) {
+            AppUsageSync.recordPackageChange(appContext, action, packageName, replacing);
+        }
+    }
+
+    private static void queueMetadataRefresh(Context context,
+                                             String packageName,
+                                             String reason) {
+        try {
+            AppSourceMetadataUpdater.refreshPackage(
+                    context,
+                    KissApplication.getApplication(context).getDataHandler(),
+                    PreferenceManager.getDefaultSharedPreferences(context),
+                    packageName,
+                    reason);
+        } catch (RuntimeException ignored) {
+            // Package/update history must remain safe even if metadata services are unavailable.
+        }
     }
 
     private static boolean recordCurrentPackage(Context context, String packageName,
