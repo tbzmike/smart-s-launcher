@@ -326,13 +326,18 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         // safely from Settings search. 3.30.156 incorrectly targeted a PreferenceCategory.
         if (!"semantic-search-screen".equals(rootKey)) return;
 
+        // Migrate 3.30.160's legacy 128D/ef96 defaults before the ListPreferences are rendered,
+        // so the screen never displays a stale value that differs from the graph/query engine.
+        SemanticHnswIndex.parseDimensions(prefs);
+        SemanticHnswIndex.parseEfSearch(prefs);
+
         PreferenceGroup parent = getPreferenceScreen();
         if (parent == null || parent.findPreference("semantic-search-category") != null) return;
 
         PreferenceCategory category = new PreferenceCategory(requireContext());
         category.setKey("semantic-search-category");
         category.setTitle("Semantic engine");
-        category.setSummary("On-device semantic retrieval with HNSW and per-app metadata context.");
+        category.setSummary("384D recommended semantic retrieval with adaptive HNSW and per-app metadata context.");
         parent.addPreference(category);
 
         SwitchPreference enabled = new SwitchPreference(requireContext());
@@ -355,12 +360,12 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         hnswDepth.setTitle("HNSW search depth");
         hnswDepth.setEntries(new CharSequence[]{
                 "48 · fastest",
-                "96 · balanced",
-                "160 · higher recall",
-                "224 · maximum recall"
+                "80 · optimized balanced",
+                "128 · higher recall",
+                "192 · maximum recall"
         });
-        hnswDepth.setEntryValues(new CharSequence[]{"48", "96", "160", "224"});
-        hnswDepth.setDefaultValue("96");
+        hnswDepth.setEntryValues(new CharSequence[]{"48", "80", "128", "192"});
+        hnswDepth.setDefaultValue("80");
         hnswDepth.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
         hnswDepth.setDependency(SemanticHnswIndex.PREF_HNSW_ENABLED);
         category.addPreference(hnswDepth);
@@ -430,11 +435,16 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         category.addPreference(model);
 
         ListPreference dimensions = new ListPreference(requireContext());
-        dimensions.setKey("semantic-embedding-dimensions");
+        dimensions.setKey(SemanticHnswIndex.PREF_EMBEDDING_DIMENSIONS);
         dimensions.setTitle("Embedding dimensions");
-        dimensions.setEntries(new CharSequence[]{"64 · fastest", "128 · balanced", "256 · higher accuracy"});
-        dimensions.setEntryValues(new CharSequence[]{"64", "128", "256"});
-        dimensions.setDefaultValue("128");
+        dimensions.setEntries(new CharSequence[]{
+                "256 · faster high accuracy",
+                "320 · balanced high accuracy",
+                "384 · recommended",
+                "400 · maximum dimensions"
+        });
+        dimensions.setEntryValues(new CharSequence[]{"256", "320", "384", "400"});
+        dimensions.setDefaultValue(Integer.toString(SemanticHnswIndex.DEFAULT_DIMENSIONS));
         dimensions.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
         dimensions.setDependency("semantic-search-enabled");
         category.addPreference(dimensions);
@@ -475,7 +485,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         info.setKey("semantic-model-info");
         info.setTitle("Embedding engine details");
         info.setSummary(SemanticEmbeddingScorer.MODEL_NAME
-                + " · on-device · no network · candidate vectors are precomputed for HNSW");
+                + " · on-device · no network during search · 384D recommended · "
+                        + "adaptive HNSW graph and precomputed candidate vectors");
         info.setSelectable(false);
         category.addPreference(info);
     }
@@ -546,7 +557,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
 
             if ("semantic-search-enabled".equals(key)
                     || "semantic-model".equals(key)
-                    || "semantic-embedding-dimensions".equals(key)
+                    || SemanticHnswIndex.PREF_EMBEDDING_DIMENSIONS.equals(key)
                     || SemanticHnswIndex.PREF_HNSW_ENABLED.equals(key)
                     || AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS.equals(key)) {
                 SemanticHnswIndex.getInstance().scheduleRebuild(getDataHandler(), sharedPreferences);
