@@ -355,12 +355,13 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         hnswDepth.setTitle("HNSW search depth");
         hnswDepth.setEntries(new CharSequence[]{
                 "48 · fastest",
-                "96 · balanced",
-                "160 · higher recall",
-                "224 · maximum recall"
+                "80 · recommended",
+                "96 · higher recall",
+                "128 · strong recall",
+                "192 · maximum recall"
         });
-        hnswDepth.setEntryValues(new CharSequence[]{"48", "96", "160", "224"});
-        hnswDepth.setDefaultValue("96");
+        hnswDepth.setEntryValues(new CharSequence[]{"48", "80", "96", "128", "192"});
+        hnswDepth.setDefaultValue("80");
         hnswDepth.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
         hnswDepth.setDependency(SemanticHnswIndex.PREF_HNSW_ENABLED);
         category.addPreference(hnswDepth);
