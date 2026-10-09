@@ -66,6 +66,7 @@ public class QuerySearcher extends Searcher {
     private float[] preparedSemanticQuery;
     private List<SemanticHnswIndex.Hit> hnswHits = Collections.emptyList();
     private final Map<String, Float> semanticScoresById = new HashMap<>();
+    private Map<String, String> sourceTextByPackage = Collections.emptyMap();
 
     public QuerySearcher(MainActivity activity, String query, boolean isRefresh,
                          List<Pojo> historySeed) {
@@ -98,7 +99,10 @@ public class QuerySearcher extends Searcher {
                 if ((checked++ & 31) == 0 && isCancelled()) return false;
                 if (pojo == null || lexicalIds.contains(pojo.id)
                         || !isVisibleByFrozenSearchPolicy(pojo)) continue;
-                float score = SemanticEmbeddingScorer.scorePrepared(preparedSemanticQuery, pojo);
+                float score = SemanticEmbeddingScorer.scorePrepared(
+                        preparedSemanticQuery,
+                        pojo,
+                        sourceSemanticText(pojo));
                 if (score < semanticThreshold) continue;
 
                 if (semanticRerank) {
@@ -302,7 +306,13 @@ public class QuerySearcher extends Searcher {
         semanticScoresById.clear();
         hnswHits = Collections.emptyList();
 
-        if (!hnswEnabled) return;
+        if (!hnswEnabled) {
+            if (prefs.getBoolean(
+                    AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, true)) {
+                sourceTextByPackage = dataHandler.getAppSourceSemanticTextByPackage();
+            }
+            return;
+        }
 
         SemanticHnswIndex index = SemanticHnswIndex.getInstance();
         index.ensureReady(dataHandler, prefs, semanticDimensions);
@@ -317,6 +327,17 @@ public class QuerySearcher extends Searcher {
             if (hit == null || hit.pojo == null || hit.pojo.id == null) continue;
             semanticScoresById.put(hit.pojo.id, hit.score);
         }
+    }
+
+    private String sourceSemanticText(Pojo pojo) {
+        if (sourceTextByPackage.isEmpty() || pojo == null) return null;
+        String packageName = null;
+        if (pojo instanceof AppPojo) {
+            packageName = ((AppPojo) pojo).packageName;
+        } else if (pojo instanceof ShortcutPojo) {
+            packageName = ((ShortcutPojo) pojo).packageName;
+        }
+        return packageName == null ? null : sourceTextByPackage.get(packageName);
     }
 
     private void addHnswSemanticMatches() {
