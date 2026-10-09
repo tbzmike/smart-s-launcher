@@ -41,6 +41,7 @@ public final class AppUsageSync {
     private static final long AGGREGATE_OVERLAP_MS = 3L * 24L * 60L * 60L * 1000L;
     private static final long FAILED_METADATA_RETRY_MS =
             24L * 60L * 60L * 1000L;
+    private static final int MAX_FAILED_METADATA_RETRIES_PER_SYNC = 12;
 
     private AppUsageSync() {}
 
@@ -106,6 +107,7 @@ public final class AppUsageSync {
         long cutoff = now - AppUsageStore.RETENTION_MS;
         Map<String, AppSourceMetadataRecord> metadataByPackage =
                 DBHelper.getAppSourceMetadata(context);
+        int failedMetadataRetryBudget = MAX_FAILED_METADATA_RETRIES_PER_SYNC;
         for (PackageInfo info : packages) {
             if (info == null || TextUtils.isEmpty(info.packageName)) continue;
 
@@ -125,17 +127,27 @@ public final class AppUsageSync {
 
             if (metadataNeedsRetry) {
                 String reason;
+                boolean updateOrStalePackage = updateChanged
+                        || (metadata != null
+                                && info.lastUpdateTime > 0L
+                                && metadata.fetchedAt > 0L
+                                && metadata.fetchedAt < info.lastUpdateTime);
                 if (updateChanged) {
                     reason = "App Usage reconciliation detected lastUpdateTime change from "
                             + previousState.lastUpdateMs + " to " + info.lastUpdateTime;
-                } else if (metadata != null
-                        && info.lastUpdateTime > 0L
-                        && metadata.fetchedAt < info.lastUpdateTime) {
+                } else if (updateOrStalePackage) {
                     reason = "App Usage found app metadata older than the installed app update";
                 } else {
-                    reason = "App Usage retrying a failed/missing app description after cooldown";
+                    if (failedMetadataRetryBudget <= 0) {
+                        reason = null;
+                    } else {
+                        failedMetadataRetryBudget--;
+                        reason = "App Usage retrying a failed/missing app description after cooldown";
+                    }
                 }
-                queueMetadataRefresh(context, info.packageName, reason);
+                if (reason != null) {
+                    queueMetadataRefresh(context, info.packageName, reason);
+                }
             }
 
             if (info.firstInstallTime >= cutoff && info.firstInstallTime <= now) {
