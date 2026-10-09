@@ -708,11 +708,23 @@ public final class SemanticHnswIndex {
                                            int dimensions,
                                            int count,
                                            int efSearch) {
+        return buildAndSearchForTest(
+                pojos, Collections.emptyMap(), query, dimensions, count, efSearch);
+    }
+
+    static List<Hit> buildAndSearchForTest(List<Pojo> pojos,
+                                           Map<String, String> extraSemanticTextById,
+                                           String query,
+                                           int dimensions,
+                                           int count,
+                                           int efSearch) {
         MutableGraph graph = new MutableGraph(dimensions);
         Set<String> seen = new HashSet<>();
         for (Pojo pojo : pojos) {
             if (pojo == null || pojo.id == null || !seen.add(pojo.id)) continue;
-            float[] vector = SemanticEmbeddingScorer.prepareCandidate(pojo, dimensions, null);
+            String extra = extraSemanticTextById == null
+                    ? null : extraSemanticTextById.get(pojo.id);
+            float[] vector = SemanticEmbeddingScorer.prepareCandidate(pojo, dimensions, extra);
             if (!isZero(vector)) insert(graph, pojo, vector);
         }
         Snapshot snapshot = graph.freeze();
