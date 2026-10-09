@@ -800,6 +800,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         } else if (itemId == R.id.search_keyboard) {
             showSearchKeyboardDialog();
             return true;
+        } else if (itemId == R.id.data_activity_viewer) {
+            startActivity(new Intent(this, DataActivityViewerActivity.class));
+            return true;
         } else if (itemId == R.id.update_apps_metadata) {
             boolean started = fr.neamar.kiss.searcher.AppSourceMetadataUpdater.refreshAll(
                     this,
