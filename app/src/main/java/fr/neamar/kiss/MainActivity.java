@@ -64,6 +64,7 @@ import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.SearchPojo;
 import fr.neamar.kiss.result.Result;
+import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
@@ -486,6 +487,15 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.menu_main, menu);
 
+        MenuItem metadataItem = menu.findItem(R.id.update_app_metadata);
+        if (metadataItem != null) {
+            boolean metadataRunning = AppSourceMetadataUpdater.isRunning();
+            metadataItem.setEnabled(!metadataRunning);
+            metadataItem.setTitle(metadataRunning
+                    ? "Updating apps metadata…"
+                    : "Update apps metadata");
+        }
+
         MenuItem privateSpaceItem = menu.findItem(R.id.private_space);
         if (privateSpaceItem != null) {
             UserHandle privateUser = getPrivateUser();
@@ -808,6 +818,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                         + " history items linked to cached identity images", Toast.LENGTH_LONG).show();
             });
             return true;
+        } else if (itemId == R.id.update_app_metadata) {
+            updateAllAppMetadataFromMenu();
+            return true;
         } else if (itemId == R.id.preferences) {
             startActivity(new Intent(this, SettingsActivity.class));
             return true;
@@ -816,6 +829,36 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void updateAllAppMetadataFromMenu() {
+        fr.neamar.kiss.DataHandler dataHandler =
+                KissApplication.getApplication(this).getDataHandler();
+
+        boolean started = AppSourceMetadataUpdater.refreshAll(
+                this,
+                dataHandler,
+                prefs,
+                () -> {
+                    invalidateOptionsMenu();
+                    Toast.makeText(
+                            this,
+                            "App metadata update finished · "
+                                    + AppSourceMetadataUpdater.statusSummary(this),
+                            Toast.LENGTH_LONG).show();
+                });
+
+        if (started) {
+            Toast.makeText(
+                    this,
+                    "Updating installed app metadata and descriptions in the background…",
+                    Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(
+                    this,
+                    "App metadata update is already running",
+                    Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showSearchKeyboardDialog() {
