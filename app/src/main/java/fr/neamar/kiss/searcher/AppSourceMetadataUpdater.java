@@ -217,6 +217,8 @@ public final class AppSourceMetadataUpdater {
                                 + " · retained " + retained
                                 + " · local " + localFallback
                                 + " · missing " + missing
+                                + ". Network resolver: "
+                                + ResilientDns.INSTANCE.statusSummary()
                                 + ". HNSW rebuild "
                                 + (prefs.getBoolean("semantic-search-enabled", false)
                                         && prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true)
