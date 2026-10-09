@@ -205,11 +205,12 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                         details));
             }
             loaded.sort((left, right) -> Long.compare(right.eventTime, left.eventTime));
+            final int cachedDescriptionCount = metadataCount;
             String hnsw = SemanticHnswIndex.getInstance().statusSummary();
             runOnUiThread(() -> {
                 all.clear();
                 all.addAll(loaded);
-                status.setText("Stored app descriptions: " + metadataCount
+                status.setText("Stored app descriptions: " + cachedDescriptionCount
                         + " · Activity records: " + loaded.size()
                         + "\nMetadata updater: "
                         + (AppSourceMetadataUpdater.isRunning() ? "running" : "idle")
