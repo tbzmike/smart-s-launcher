@@ -38,6 +38,8 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
     private final RecordAdapter adapter;
     private final TextView sectionLabel;
     private final DateFastScrollView fastScroll;
+    private boolean historyScrollbarMode;
+    private int lastRepresentativePosition = -1;
 
     public HistoryDateNavigator(@NonNull MainActivity activity,
                                 @NonNull AnimatedListView list,
@@ -85,6 +87,8 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
     public void destroy() {
         list.setOnScrollListener(null);
         list.setVerticalScrollBarEnabled(true);
+        historyScrollbarMode = false;
+        lastRepresentativePosition = -1;
         ViewGroup labelParent = (ViewGroup) sectionLabel.getParent();
         if (labelParent != null) labelParent.removeView(sectionLabel);
         ViewGroup scrollParent = (ViewGroup) fastScroll.getParent();
@@ -115,17 +119,24 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
                                     int visibleCount,
                                     int totalCount) {
         boolean history = isHistorySurface();
-        list.setVerticalScrollBarEnabled(!history);
+        if (historyScrollbarMode != history) {
+            historyScrollbarMode = history;
+            list.setVerticalScrollBarEnabled(!history);
+        }
         if (!history || totalCount <= 0) {
+            lastRepresentativePosition = -1;
             sectionLabel.setVisibility(View.GONE);
             fastScroll.setVisibility(View.GONE);
             return;
         }
 
         int representative = representativePosition(firstVisible, totalCount);
-        String label = labelForPosition(representative);
-        if (!label.contentEquals(sectionLabel.getText())) {
-            sectionLabel.setText(label);
+        if (representative != lastRepresentativePosition) {
+            lastRepresentativePosition = representative;
+            String label = labelForPosition(representative);
+            if (!label.contentEquals(sectionLabel.getText())) {
+                sectionLabel.setText(label);
+            }
         }
         sectionLabel.setVisibility(View.VISIBLE);
 
