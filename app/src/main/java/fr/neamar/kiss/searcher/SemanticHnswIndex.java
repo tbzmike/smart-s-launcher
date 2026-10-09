@@ -19,8 +19,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import fr.neamar.kiss.DataHandler;
+import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.SearchPojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.utils.Log;
 
 /**
@@ -83,13 +85,19 @@ public final class SemanticHnswIndex {
         final int dimensions = parseDimensions(prefs);
         final int generation = requestedGeneration.incrementAndGet();
         final List<Pojo> source = dataHandler.getSemanticIndexSnapshot();
+        final boolean useSourceDescriptions =
+                prefs.getBoolean(AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, true);
+        final Map<String, String> sourceTextByPackage = useSourceDescriptions
+                ? dataHandler.getAppSourceSemanticTextByPackage()
+                : Collections.emptyMap();
         lastSourceCount = source.size();
 
         buildExecutor.execute(() -> {
             if (generation != requestedGeneration.get()) return;
             building = true;
             long startNs = System.nanoTime();
-            Snapshot built = buildSnapshot(source, dimensions, generation);
+            Snapshot built = buildSnapshot(
+                    source, dimensions, generation, sourceTextByPackage);
             long elapsedMs = nanosToMs(System.nanoTime() - startNs);
 
             if (generation != requestedGeneration.get()) return;
@@ -196,7 +204,10 @@ public final class SemanticHnswIndex {
                 + " ms · last lookup " + lastLookupMs + " ms";
     }
 
-    private Snapshot buildSnapshot(List<Pojo> source, int dimensions, int generation) {
+    private Snapshot buildSnapshot(List<Pojo> source,
+                                   int dimensions,
+                                   int generation,
+                                   Map<String, String> sourceTextByPackage) {
         MutableGraph graph = new MutableGraph(dimensions);
         Set<String> seenIds = new HashSet<>(Math.max(16, source.size() * 2));
 
@@ -211,12 +222,31 @@ public final class SemanticHnswIndex {
                 continue;
             }
 
-            float[] vector = SemanticEmbeddingScorer.prepareCandidate(pojo, dimensions);
+            float[] vector = SemanticEmbeddingScorer.prepareCandidate(
+                    pojo,
+                    dimensions,
+                    sourceTextForPojo(pojo, sourceTextByPackage));
             if (isZero(vector)) continue;
             insert(graph, pojo, vector);
         }
 
         return graph.freeze();
+    }
+
+    @Nullable
+    private static String sourceTextForPojo(
+            Pojo pojo, Map<String, String> sourceTextByPackage) {
+        if (sourceTextByPackage == null || sourceTextByPackage.isEmpty() || pojo == null) {
+            return null;
+        }
+
+        String packageName = null;
+        if (pojo instanceof AppPojo) {
+            packageName = ((AppPojo) pojo).packageName;
+        } else if (pojo instanceof ShortcutPojo) {
+            packageName = ((ShortcutPojo) pojo).packageName;
+        }
+        return packageName == null ? null : sourceTextByPackage.get(packageName);
     }
 
     private static void insert(MutableGraph graph, Pojo pojo, float[] vector) {
@@ -564,7 +594,7 @@ public final class SemanticHnswIndex {
         Set<String> seen = new HashSet<>();
         for (Pojo pojo : pojos) {
             if (pojo == null || pojo.id == null || !seen.add(pojo.id)) continue;
-            float[] vector = SemanticEmbeddingScorer.prepareCandidate(pojo, dimensions);
+            float[] vector = SemanticEmbeddingScorer.prepareCandidate(pojo, dimensions, null);
             if (!isZero(vector)) insert(graph, pojo, vector);
         }
         Snapshot snapshot = graph.freeze();
