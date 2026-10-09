@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 
 import fr.neamar.kiss.R;
+import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
 import fr.neamar.kiss.searcher.SemanticHnswIndex;
 
 /** Builds a searchable index across legacy settings, Smart S settings and dynamic settings. */
@@ -228,6 +229,12 @@ public final class SettingsSearchIndex {
                 SemanticHnswIndex.PREF_HNSW_ENABLED, "providers", Destination.STANDARD, null);
         dynamic(out, "HNSW search depth", "Balance semantic lookup speed and recall",
                 SemanticHnswIndex.PREF_HNSW_EF_SEARCH, "providers", Destination.STANDARD, null);
+        dynamic(out, "Use app-store descriptions for semantic search", "Include cached installation-source app descriptions in semantic vectors",
+                AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, "providers", Destination.STANDARD, null);
+        dynamic(out, "App source data", "Cached Play Store, F-Droid, Aptoide and catalog descriptions",
+                "semantic-app-source-status", "providers", Destination.STANDARD, null);
+        dynamic(out, "Update all apps source data", "Refresh installed app descriptions from their source catalogs",
+                "semantic-update-all-app-source-data", "providers", Destination.STANDARD, null);
         dynamic(out, "Semantic index status", "Indexed vectors, dimensions and HNSW timing",
                 "semantic-hnsw-status", "providers", Destination.STANDARD, null);
         dynamic(out, "Rebuild semantic HNSW index", "Recompute semantic vectors and graph",
