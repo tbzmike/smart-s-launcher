@@ -518,9 +518,20 @@ public final class AppSourceMetadataUpdater {
     }
 
     private static void addPlay(List<CatalogTarget> targets, String packageName) {
-        String url = "https://play.google.com/store/apps/details?id="
+        String zaUrl = "https://play.google.com/store/apps/details?id="
                 + encode(packageName) + "&hl=en&gl=ZA";
-        targets.add(new CatalogTarget("Google Play", url, () -> fetchPlayMetadata(url)));
+        targets.add(new CatalogTarget(
+                "Google Play", zaUrl, () -> fetchPlayMetadata(zaUrl)));
+
+        // A package can be installed while its current ZA listing is hidden or region-restricted.
+        // A second public locale lookup still uses the exact package id and gives metadata another
+        // chance without changing where the installed app came from.
+        String fallbackUrl = "https://play.google.com/store/apps/details?id="
+                + encode(packageName) + "&hl=en&gl=US";
+        targets.add(new CatalogTarget(
+                "Google Play (global fallback)",
+                fallbackUrl,
+                () -> fetchPlayMetadata(fallbackUrl)));
     }
 
     private static void addFdroid(List<CatalogTarget> targets, String packageName) {
