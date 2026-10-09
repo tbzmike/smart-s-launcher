@@ -213,17 +213,23 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         PreferenceGroup keyboardOptions = findPreference("keyboard-options");
         if (keyboardOptions == null) return;
 
-        ListPreference mode = new ListPreference(requireContext());
-        mode.setKey(SearchEditText.PREF_SEARCH_KEYBOARD_MODE);
-        mode.setTitle("Search keyboard");
-        mode.setEntries(new CharSequence[]{"Built-in Smart S keyboard", "System keyboard"});
-        mode.setEntryValues(new CharSequence[]{
-                SearchEditText.KEYBOARD_MODE_BUILT_IN,
-                SearchEditText.KEYBOARD_MODE_SYSTEM
-        });
-        mode.setDefaultValue(SearchEditText.KEYBOARD_MODE_BUILT_IN);
+        // These controls are XML-backed so they are visible both in SettingsFragment and in the
+        // SmartCategorySettingsFragment used by User experience. Keep runtime creation only as a
+        // migration/fallback for old or partially restored preference resources.
+        ListPreference mode = findPreference(SearchEditText.PREF_SEARCH_KEYBOARD_MODE);
+        if (mode == null) {
+            mode = new ListPreference(requireContext());
+            mode.setKey(SearchEditText.PREF_SEARCH_KEYBOARD_MODE);
+            mode.setTitle("Search keyboard");
+            mode.setEntries(new CharSequence[]{"Built-in Smart S keyboard", "System keyboard"});
+            mode.setEntryValues(new CharSequence[]{
+                    SearchEditText.KEYBOARD_MODE_BUILT_IN,
+                    SearchEditText.KEYBOARD_MODE_SYSTEM
+            });
+            mode.setDefaultValue(SearchEditText.KEYBOARD_MODE_BUILT_IN);
+            keyboardOptions.addPreference(mode);
+        }
         mode.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        keyboardOptions.addPreference(mode);
 
         addKeyboardSeekBar(
                 keyboardOptions,
@@ -261,16 +267,41 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 BuiltInKeyboardSizing.MAX_LABEL_SIZE_SP,
                 BuiltInKeyboardSizing.DEFAULT_LABEL_SIZE_SP);
 
-        Preference chooser = new Preference(requireContext());
-        chooser.setKey(PREF_CHOOSE_SYSTEM_KEYBOARD);
-        chooser.setTitle("Choose installed system keyboard");
+        Preference chooser = findPreference(PREF_CHOOSE_SYSTEM_KEYBOARD);
+        if (chooser == null) {
+            chooser = new Preference(requireContext());
+            chooser.setKey(PREF_CHOOSE_SYSTEM_KEYBOARD);
+            chooser.setTitle("Choose installed system keyboard");
+            keyboardOptions.addPreference(chooser);
+        }
         chooser.setOnPreferenceClickListener(preference -> {
-            InputMethodManager imm = ContextCompat.getSystemService(requireContext(), InputMethodManager.class);
+            InputMethodManager imm = ContextCompat.getSystemService(
+                    requireContext(), InputMethodManager.class);
             if (imm != null) imm.showInputMethodPicker();
-            else Toast.makeText(requireContext(), "Android keyboard picker is unavailable", Toast.LENGTH_SHORT).show();
+            else Toast.makeText(
+                    requireContext(),
+                    "Android keyboard picker is unavailable",
+                    Toast.LENGTH_SHORT).show();
             return true;
         });
-        keyboardOptions.addPreference(chooser);
+
+        // XML-backed sliders also need the immediate-update behavior that the old dynamic controls
+        // had in 3.30.153.
+        String[] sizingKeys = {
+                BuiltInKeyboardSizing.PREF_HEIGHT_PERCENT,
+                BuiltInKeyboardSizing.PREF_WIDTH_PERCENT,
+                BuiltInKeyboardSizing.PREF_BUTTON_PERCENT,
+                BuiltInKeyboardSizing.PREF_LABEL_SIZE_SP
+        };
+        for (String key : sizingKeys) {
+            SeekBarPreference slider = findPreference(key);
+            if (slider != null) {
+                slider.setSeekBarIncrement(1);
+                slider.setShowSeekBarValue(true);
+                slider.setUpdatesContinuously(true);
+            }
+        }
+
         refreshSearchKeyboardPicker();
     }
 
@@ -322,149 +353,72 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     }
 
     private void addSemanticSearchPreferences(@Nullable String rootKey) {
-        PreferenceGroup parent = findPreference("providers");
-        if (parent == null && "providers".equals(rootKey)) parent = getPreferenceScreen();
-        if (parent == null || parent.findPreference("semantic-search-category") != null) return;
+        // Semantic controls are XML-backed under Providers → Semantic search & app metadata so
+        // they are always visible and searchable. This method only wires live actions/status.
+        Preference semanticScreen = findPreference("semantic-search-screen");
+        boolean insideSemanticScreen = "semantic-search-screen".equals(rootKey);
+        if (semanticScreen == null && !insideSemanticScreen) return;
 
-        PreferenceCategory category = new PreferenceCategory(requireContext());
-        category.setKey("semantic-search-category");
-        category.setTitle("Semantic search & embeddings");
-        parent.addPreference(category);
+        Preference updateSources = findPreference("semantic-update-all-app-source-data");
+        if (updateSources != null) {
+            updateSources.setOnPreferenceClickListener(preference -> {
+                boolean started = AppSourceMetadataUpdater.refreshAll(
+                        requireContext(),
+                        getDataHandler(),
+                        prefs,
+                        () -> {
+                            if (!isAdded()) return;
+                            refreshAppSourceStatus();
+                            refreshSemanticIndexStatus();
+                            Toast.makeText(
+                                    requireContext(),
+                                    "App metadata and descriptions update finished",
+                                    Toast.LENGTH_SHORT).show();
+                        });
+                refreshAppSourceStatus();
+                if (!started) {
+                    Toast.makeText(
+                            requireContext(),
+                            "App metadata update is already running",
+                            Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(
+                            requireContext(),
+                            "Updating app metadata and descriptions in the background…",
+                            Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            });
+        }
 
-        SwitchPreference enabled = new SwitchPreference(requireContext());
-        enabled.setKey("semantic-search-enabled");
-        enabled.setTitle("Enable semantic search");
-        enabled.setSummary("Use on-device semantic embeddings together with normal lexical/fuzzy search.");
-        enabled.setDefaultValue(false);
-        category.addPreference(enabled);
-
-        SwitchPreference hnsw = new SwitchPreference(requireContext());
-        hnsw.setKey(SemanticHnswIndex.PREF_HNSW_ENABLED);
-        hnsw.setTitle("HNSW fast semantic retrieval");
-        hnsw.setSummary("Pre-index searchable records in the background and retrieve only nearest semantic candidates instead of scanning every record while you type.");
-        hnsw.setDefaultValue(true);
-        hnsw.setDependency("semantic-search-enabled");
-        category.addPreference(hnsw);
-
-        ListPreference hnswDepth = new ListPreference(requireContext());
-        hnswDepth.setKey(SemanticHnswIndex.PREF_HNSW_EF_SEARCH);
-        hnswDepth.setTitle("HNSW search depth");
-        hnswDepth.setEntries(new CharSequence[]{
-                "48 · fastest",
-                "96 · balanced",
-                "160 · higher recall",
-                "224 · maximum recall"
-        });
-        hnswDepth.setEntryValues(new CharSequence[]{"48", "96", "160", "224"});
-        hnswDepth.setDefaultValue("96");
-        hnswDepth.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        hnswDepth.setDependency(SemanticHnswIndex.PREF_HNSW_ENABLED);
-        category.addPreference(hnswDepth);
-
-        SwitchPreference sourceDescriptions = new SwitchPreference(requireContext());
-        sourceDescriptions.setKey(AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS);
-        sourceDescriptions.setTitle("Use app-store descriptions for semantic search");
-        sourceDescriptions.setSummary("Add locally cached Play Store, F-Droid, Aptoide or other discovered catalog descriptions to each app's semantic vector. Search itself stays offline.");
-        sourceDescriptions.setDefaultValue(true);
-        sourceDescriptions.setDependency("semantic-search-enabled");
-        category.addPreference(sourceDescriptions);
-
-        Preference sourceStatus = new Preference(requireContext());
-        sourceStatus.setKey("semantic-app-source-status");
-        sourceStatus.setTitle("App source data");
-        sourceStatus.setSummary(AppSourceMetadataUpdater.statusSummary(requireContext()));
-        sourceStatus.setSelectable(false);
-        category.addPreference(sourceStatus);
-
-        Preference updateSources = new Preference(requireContext());
-        updateSources.setKey("semantic-update-all-app-source-data");
-        updateSources.setTitle("Update all apps source data");
-        updateSources.setSummary("Fetch public app descriptions in the background from the detected installation source first, then compatible fallback catalogs when needed.");
-        updateSources.setDependency("semantic-search-enabled");
-        updateSources.setOnPreferenceClickListener(preference -> {
-            boolean started = AppSourceMetadataUpdater.refreshAll(
-                    requireContext(),
-                    getDataHandler(),
-                    prefs,
-                    () -> {
-                        if (!isAdded()) return;
-                        refreshAppSourceStatus();
-                        refreshSemanticIndexStatus();
-                        Toast.makeText(
-                                requireContext(),
-                                "App source data refresh finished",
-                                Toast.LENGTH_SHORT).show();
-                    });
-            refreshAppSourceStatus();
-            if (!started) {
+        Preference rebuild = findPreference("semantic-hnsw-rebuild");
+        if (rebuild != null) {
+            rebuild.setOnPreferenceClickListener(preference -> {
+                SemanticHnswIndex.getInstance().scheduleRebuild(getDataHandler(), prefs);
+                refreshSemanticIndexStatus();
                 Toast.makeText(
                         requireContext(),
-                        "App source data update is already running",
+                        "Rebuilding semantic HNSW index in the background…",
                         Toast.LENGTH_SHORT).show();
-            }
-            return true;
-        });
-        category.addPreference(updateSources);
+                return true;
+            });
+        }
 
-        ListPreference model = new ListPreference(requireContext());
-        model.setKey("semantic-model");
-        model.setTitle("Embedding model");
-        model.setEntries(new CharSequence[]{SemanticEmbeddingScorer.MODEL_NAME});
-        model.setEntryValues(new CharSequence[]{SemanticEmbeddingScorer.MODEL_ID});
-        model.setDefaultValue(SemanticEmbeddingScorer.MODEL_ID);
-        model.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        model.setDependency("semantic-search-enabled");
-        category.addPreference(model);
+        Preference status = findPreference("semantic-hnsw-status");
+        if (status != null) status.setSelectable(false);
 
-        ListPreference dimensions = new ListPreference(requireContext());
-        dimensions.setKey("semantic-embedding-dimensions");
-        dimensions.setTitle("Embedding dimensions");
-        dimensions.setEntries(new CharSequence[]{"64 · fastest", "128 · balanced", "256 · higher accuracy"});
-        dimensions.setEntryValues(new CharSequence[]{"64", "128", "256"});
-        dimensions.setDefaultValue("128");
-        dimensions.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        dimensions.setDependency("semantic-search-enabled");
-        category.addPreference(dimensions);
+        Preference sourceStatus = findPreference("semantic-app-source-status");
+        if (sourceStatus != null) sourceStatus.setSelectable(false);
 
-        ListPreference threshold = new ListPreference(requireContext());
-        threshold.setKey("semantic-threshold");
-        threshold.setTitle("Semantic similarity threshold");
-        threshold.setEntries(new CharSequence[]{"0.26 · broad", "0.34 · balanced", "0.42 · strict", "0.52 · very strict"});
-        threshold.setEntryValues(new CharSequence[]{"0.26", "0.34", "0.42", "0.52"});
-        threshold.setDefaultValue("0.34");
-        threshold.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        threshold.setDependency("semantic-search-enabled");
-        category.addPreference(threshold);
+        Preference info = findPreference("semantic-model-info");
+        if (info != null) {
+            info.setSelectable(false);
+            info.setSummary(SemanticEmbeddingScorer.MODEL_NAME
+                    + " · on-device search · cached app descriptions · HNSW vectors built in the background");
+        }
 
-        Preference status = new Preference(requireContext());
-        status.setKey("semantic-hnsw-status");
-        status.setTitle("Semantic index status");
-        status.setSummary(SemanticHnswIndex.getInstance().statusSummary());
-        status.setSelectable(false);
-        category.addPreference(status);
-
-        Preference rebuild = new Preference(requireContext());
-        rebuild.setKey("semantic-hnsw-rebuild");
-        rebuild.setTitle("Rebuild semantic HNSW index");
-        rebuild.setSummary("Recompute candidate vectors and the HNSW graph now. Normal search remains available while the replacement index builds.");
-        rebuild.setDependency("semantic-search-enabled");
-        rebuild.setOnPreferenceClickListener(preference -> {
-            SemanticHnswIndex.getInstance().scheduleRebuild(getDataHandler(), prefs);
-            Preference currentStatus = findPreference("semantic-hnsw-status");
-            if (currentStatus != null) {
-                currentStatus.setSummary(SemanticHnswIndex.getInstance().statusSummary());
-            }
-            return true;
-        });
-        category.addPreference(rebuild);
-
-        Preference info = new Preference(requireContext());
-        info.setKey("semantic-model-info");
-        info.setTitle("Embedding engine details");
-        info.setSummary(SemanticEmbeddingScorer.MODEL_NAME
-                + " · on-device · no network · candidate vectors are precomputed for HNSW");
-        info.setSelectable(false);
-        category.addPreference(info);
+        refreshSemanticIndexStatus();
+        refreshAppSourceStatus();
     }
 
     private void updateItemsToRun() {
