@@ -429,6 +429,19 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         model.setDependency("semantic-search-enabled");
         category.addPreference(model);
 
+        // Migrate legacy 64/128D profiles to the new recommended 384D engine. The runtime
+        // parser also protects users who never open Settings, but storing the new value here keeps
+        // the UI honest and prevents a stale legacy value from appearing blank in ListPreference.
+        try {
+            int storedDimensions = Integer.parseInt(
+                    prefs.getString("semantic-embedding-dimensions", "384"));
+            if (storedDimensions < 256) {
+                prefs.edit().putString("semantic-embedding-dimensions", "384").apply();
+            }
+        } catch (NumberFormatException | ClassCastException ignored) {
+            prefs.edit().putString("semantic-embedding-dimensions", "384").apply();
+        }
+
         ListPreference dimensions = new ListPreference(requireContext());
         dimensions.setKey("semantic-embedding-dimensions");
         dimensions.setTitle("Embedding dimensions");
