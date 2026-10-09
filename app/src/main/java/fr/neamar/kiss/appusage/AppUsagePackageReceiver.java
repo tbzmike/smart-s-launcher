@@ -106,7 +106,9 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
                     ? info.getLongVersionCode() : info.versionCode;
             String version = TextUtils.isEmpty(info.versionName)
                     ? "code " + code : "v" + info.versionName + ":" + code;
-            String detail = version + (update ? " updated" : " installed");
+            String detail = version
+                    + (update ? " updated" : " installed")
+                    + " · app description refresh requested";
 
             InstallMeta install = installMeta(pm, packageName);
             AppUsageStore store = AppUsageStore.get(context);
