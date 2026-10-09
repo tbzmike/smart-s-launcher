@@ -27,6 +27,7 @@ import android.widget.AbsListView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -54,6 +55,7 @@ import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.notification.NotificationIdentityIcon;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
+import fr.neamar.kiss.ui.ChronologicalDateScroller;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
@@ -69,6 +71,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     private LinearLayout tabs;
     private EditText search;
     private ListView list;
+    private ChronologicalDateScroller dateScroller;
     private View rootView;
     private final List<NotificationHistoryRecord> records = new ArrayList<>();
     private String selectedPackage;
@@ -190,6 +193,9 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             @Override
             public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount,
                                  int totalItemCount) {
+                if (dateScroller != null) {
+                    dateScroller.onScroll(firstVisibleItem, visibleItemCount, totalItemCount);
+                }
                 if (visibleItemCount <= 0) return;
                 if (lastFirstVisible < 0) {
                     lastFirstVisible = firstVisibleItem;
@@ -207,7 +213,12 @@ public class NotificationHistoryActivity extends AppCompatActivity {
                 lastFirstVisible = firstVisibleItem;
             }
         });
-        root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        FrameLayout historyHost = new FrameLayout(this);
+        historyHost.addView(list, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        dateScroller = new ChronologicalDateScroller(this, historyHost);
+        root.addView(historyHost, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
@@ -266,6 +277,12 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         if (list != null && list.getAdapter() instanceof BaseAdapter) {
             ((BaseAdapter) list.getAdapter()).notifyDataSetChanged();
             lastFirstVisible = -1;
+            if (dateScroller != null) {
+                dateScroller.setSource(records.size(), p -> records.get(p).postTime,
+                        (position, topOffset) -> list.setSelectionFromTop(position, topOffset));
+                list.post(() -> dateScroller.onScroll(list.getFirstVisiblePosition(),
+                        Math.max(1, list.getChildCount()), records.size()));
+            }
             list.post(this::animateVisibleRows);
         }
     }
