@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.161 - automatic app-update metadata and HNSW sync
-        versionCode 589
-        versionName "3.30.161"
+        // Smart S Launcher 3.30.162 - Home date navigation, preserving 3.30.153/161
+        versionCode 590
+        versionName "3.30.162"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

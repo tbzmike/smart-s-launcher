@@ -71,6 +71,7 @@ import fr.neamar.kiss.searcher.SemanticHnswIndex;
 import fr.neamar.kiss.ui.AnimatedListView;
 import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.ui.KeyboardScrollHider;
+import fr.neamar.kiss.ui.HistoryDateNavigator;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.SearchEditText;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
@@ -119,6 +120,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
      */
     public AnimatedListView list;
     public View listContainer;
+    private HistoryDateNavigator historyDateNavigator;
     /**
      * View to display when list is empty
      */
@@ -369,6 +371,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // Create adapter for records
         this.adapter = new RecordAdapter(this, new ArrayList<>());
         this.list.setAdapter(this.adapter);
+        if (this.listContainer instanceof ViewGroup) {
+            this.historyDateNavigator = new HistoryDateNavigator(
+                    this, this.list, this.adapter, (ViewGroup) this.listContainer);
+        }
 
         this.list.setOnItemClickListener((parent, v, position, id) -> adapter.onClick(position, v));
         this.list.setOnItemLongClickListener((parent, v, pos, id) -> {
@@ -405,6 +411,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 // walk the entire launcher hierarchy after every dataset publication; dynamic rows
                 // are scaled once when they are created/bound.
                 forwarderManager.onDataSetChanged();
+                if (historyDateNavigator != null) historyDateNavigator.onDataChanged();
 
             }
         });
@@ -414,6 +421,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             if (isViewingAllApps()) {
                 displayKissBar(false, false);
             }
+            if (historyDateNavigator != null) historyDateNavigator.onSurfaceChanged();
             updateSearchRecords(false, changedText);
         }));
 
@@ -636,6 +644,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     protected void onDestroy() {
+        if (historyDateNavigator != null) {
+            historyDateNavigator.destroy();
+            historyDateNavigator = null;
+        }
         super.onDestroy();
         onBackPressedCallback.remove();
         this.unregisterReceiver(this.mReceiver);
@@ -1320,6 +1332,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
      * the adapter's new oldest-to-newest order instead of deferring that recency move as if it were
      * a passive background update.
      */
+    /** Refresh Home date labels when the background History timestamp snapshot arrives. */
+    public void onHistoryDateMetadataLoaded() {
+        if (historyDateNavigator != null) historyDateNavigator.onDataChanged();
+    }
+
     public void prepareExplicitHistoryLaunchReorder() {
         if (forwarderManager != null) {
             forwarderManager.prepareExplicitHistoryLaunchReorder();
