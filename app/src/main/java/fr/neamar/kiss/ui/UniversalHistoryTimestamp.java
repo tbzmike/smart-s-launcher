@@ -13,6 +13,7 @@ import androidx.annotation.NonNull;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -99,6 +100,59 @@ public final class UniversalHistoryTimestamp {
         String historyId = pojo.getHistoryId();
         if (snapshot == null || TextUtils.isEmpty(historyId)) return null;
         return snapshot.get(historyId);
+    }
+
+    /** Timestamp used to place a Home/History row on the date navigator. */
+    public static long resolveHistoryTimestamp(@NonNull Result<?> result) {
+        Pojo pojo = result.getPojo();
+        if (pojo == null) return 0L;
+        return resolveTimestamp(pojo, resolveStats(pojo));
+    }
+
+    /**
+     * Human-friendly section label for Home history navigation.
+     * Examples: Today, Yesterday, Wednesday, Sep 30, 2026.
+     */
+    @NonNull
+    public static String formatHistorySectionLabel(@NonNull Context context, long timestamp) {
+        if (timestamp <= 0L) return "History";
+
+        Calendar now = Calendar.getInstance();
+        Calendar value = Calendar.getInstance();
+        value.setTimeInMillis(timestamp);
+
+        if (sameLocalDay(now, value)) return "Today";
+
+        Calendar yesterday = (Calendar) now.clone();
+        yesterday.add(Calendar.DAY_OF_YEAR, -1);
+        if (sameLocalDay(yesterday, value)) return "Yesterday";
+
+        Calendar sixDaysAgo = (Calendar) now.clone();
+        sixDaysAgo.add(Calendar.DAY_OF_YEAR, -6);
+        if (!value.before(startOfLocalDay(sixDaysAgo))
+                && value.before(startOfLocalDay(now))) {
+            java.text.DateFormat weekday = new SimpleDateFormat(
+                    "EEEE", context.getResources().getConfiguration().locale);
+            return weekday.format(new Date(timestamp));
+        }
+
+        java.text.DateFormat dateFormat = DateFormat.getMediumDateFormat(context);
+        return dateFormat.format(new Date(timestamp));
+    }
+
+    private static boolean sameLocalDay(Calendar left, Calendar right) {
+        return left.get(Calendar.ERA) == right.get(Calendar.ERA)
+                && left.get(Calendar.YEAR) == right.get(Calendar.YEAR)
+                && left.get(Calendar.DAY_OF_YEAR) == right.get(Calendar.DAY_OF_YEAR);
+    }
+
+    private static Calendar startOfLocalDay(Calendar source) {
+        Calendar copy = (Calendar) source.clone();
+        copy.set(Calendar.HOUR_OF_DAY, 0);
+        copy.set(Calendar.MINUTE, 0);
+        copy.set(Calendar.SECOND, 0);
+        copy.set(Calendar.MILLISECOND, 0);
+        return copy;
     }
 
     private static long resolveTimestamp(Pojo pojo, LaunchStatsProvider.LaunchStats stats) {
