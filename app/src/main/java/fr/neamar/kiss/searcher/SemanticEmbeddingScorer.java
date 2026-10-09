@@ -122,8 +122,15 @@ public final class SemanticEmbeddingScorer {
 
     /** Score a candidate without rebuilding the query vector. Kept for lexical-only reranking. */
     public static float scorePrepared(float[] preparedQuery, Pojo pojo) {
+        return scorePrepared(preparedQuery, pojo, null);
+    }
+
+    public static float scorePrepared(
+            float[] preparedQuery, Pojo pojo, String extraSemanticText) {
         if (preparedQuery == null || preparedQuery.length == 0 || pojo == null) return 0f;
-        return cosine(preparedQuery, prepareCandidate(pojo, preparedQuery.length));
+        return cosine(
+                preparedQuery,
+                prepareCandidate(pojo, preparedQuery.length, extraSemanticText));
     }
 
     private static String candidateText(Pojo pojo) {
