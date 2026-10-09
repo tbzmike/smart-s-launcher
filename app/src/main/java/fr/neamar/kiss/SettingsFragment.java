@@ -432,9 +432,13 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         ListPreference dimensions = new ListPreference(requireContext());
         dimensions.setKey("semantic-embedding-dimensions");
         dimensions.setTitle("Embedding dimensions");
-        dimensions.setEntries(new CharSequence[]{"64 · fastest", "128 · balanced", "256 · higher accuracy"});
-        dimensions.setEntryValues(new CharSequence[]{"64", "128", "256"});
-        dimensions.setDefaultValue("128");
+        dimensions.setEntries(new CharSequence[]{
+                "256 · fast high accuracy",
+                "384 · recommended",
+                "400 · maximum semantic detail"
+        });
+        dimensions.setEntryValues(new CharSequence[]{"256", "384", "400"});
+        dimensions.setDefaultValue("384");
         dimensions.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
         dimensions.setDependency("semantic-search-enabled");
         category.addPreference(dimensions);
@@ -475,7 +479,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         info.setKey("semantic-model-info");
         info.setTitle("Embedding engine details");
         info.setSummary(SemanticEmbeddingScorer.MODEL_NAME
-                + " · on-device · no network · candidate vectors are precomputed for HNSW");
+                + " · 256-400D full semantic vectors · compact HNSW navigation · "
+                + "full-vector final reranking · candidate vectors are precomputed");
         info.setSelectable(false);
         category.addPreference(info);
     }
