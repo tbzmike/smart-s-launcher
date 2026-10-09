@@ -6,6 +6,8 @@ import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.method.LinkMovementMethod;
+import android.text.util.Linkify;
 import android.view.Gravity;
 import android.view.MenuItem;
 import android.view.View;
@@ -16,6 +18,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -42,13 +45,15 @@ import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
 import fr.neamar.kiss.searcher.SemanticHnswIndex;
 
 /**
- * Local audit trail for app metadata fetching and semantic/HNSW indexing.
+ * Human-readable transparency view for app descriptions and semantic/HNSW indexing.
  *
- * <p>This screen deliberately reads the persistent event log on a worker thread so transparency
- * never blocks launcher rendering or search.</p>
+ * <p>The default view intentionally shows apps with cached descriptions rather than thousands of
+ * low-level HNSW records. Technical indexing events remain available through the filter.</p>
  */
 public final class DataActivityViewerActivity extends AppCompatActivity {
     private static final int LOAD_LIMIT = 5000;
+    private static final String TYPE_DESCRIPTION_READY = "APP_DESCRIPTION_READY";
+    private static final String TYPE_DESCRIPTION_MISSING = "APP_DESCRIPTION_MISSING";
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "smart-s-data-activity-viewer");
@@ -63,6 +68,7 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
     private TextView status;
     private Spinner filter;
     private EditText search;
+    private Button updateDescriptions;
     private ActivityAdapter adapter;
 
     @Override
@@ -110,8 +116,9 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView explanation = new TextView(this);
-        explanation.setText("Transparent local audit of semantic indexing and app-description downloads. "
-                + "Tap any row for the complete event details.");
+        explanation.setText("See which apps really have descriptions, where the data came from, "
+                + "when it was downloaded, and whether the app was indexed into HNSW. "
+                + "Tap an app to read its full description.");
         explanation.setTextSize(13.5f);
         explanation.setPadding(0, 0, 0, dp(8));
         root.addView(explanation);
@@ -121,40 +128,48 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
         status.setPadding(0, 0, 0, dp(8));
         root.addView(status);
 
-        LinearLayout controls = new LinearLayout(this);
-        controls.setOrientation(LinearLayout.HORIZONTAL);
-        controls.setGravity(Gravity.CENTER_VERTICAL);
-
         filter = new Spinner(this);
         String[] choices = {
-                "All activity",
-                "HNSW builds",
-                "Indexed apps & records",
-                "Metadata activity",
-                "Current metadata cache",
-                "Errors / missing data"
+                "Apps with descriptions",
+                "Apps missing descriptions",
+                "Metadata refresh history",
+                "Apps indexed in HNSW",
+                "HNSW build history",
+                "All technical activity"
         };
         filter.setAdapter(new ArrayAdapter<>(
                 this, android.R.layout.simple_spinner_dropdown_item, choices));
+        filter.setSelection(0, false);
         filter.setOnItemSelectedListener(new SimpleItemSelectedListener(this::applyFilter));
-        controls.addView(filter, new LinearLayout.LayoutParams(
+        root.addView(filter, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+
+        updateDescriptions = new Button(this);
+        updateDescriptions.setText("Update descriptions");
+        updateDescriptions.setAllCaps(false);
+        updateDescriptions.setOnClickListener(v -> updateDescriptionsNow());
+        actions.addView(updateDescriptions, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         Button refresh = new Button(this);
         refresh.setText("Refresh");
         refresh.setAllCaps(false);
         refresh.setOnClickListener(v -> reload());
-        controls.addView(refresh);
+        actions.addView(refresh);
 
         Button clear = new Button(this);
-        clear.setText("Clear");
+        clear.setText("Clear log");
         clear.setAllCaps(false);
         clear.setOnClickListener(v -> confirmClear());
-        controls.addView(clear);
-        root.addView(controls);
+        actions.addView(clear);
+        root.addView(actions);
 
         search = new EditText(this);
-        search.setHint("Filter app, package, source or event");
+        search.setHint("Filter app, package or source");
         search.setSingleLine(true);
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
@@ -177,44 +192,98 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
         return root;
     }
 
+    private void updateDescriptionsNow() {
+        if (AppSourceMetadataUpdater.isRunning()) {
+            Toast.makeText(this, "App descriptions are already being updated",
+                    Toast.LENGTH_SHORT).show();
+            reload();
+            return;
+        }
+
+        updateDescriptions.setEnabled(false);
+        boolean started = AppSourceMetadataUpdater.refreshAll(
+                this,
+                KissApplication.getApplication(this).getDataHandler(),
+                prefs,
+                () -> {
+                    Toast.makeText(
+                            this,
+                            AppSourceMetadataUpdater.statusSummary(this),
+                            Toast.LENGTH_LONG).show();
+                    reload();
+                });
+        if (!started) updateDescriptions.setEnabled(true);
+        status.setText(started
+                ? "Updating descriptions for installed, disabled and remembered apps…"
+                : "App description update is already running.");
+    }
+
     private void reload() {
-        status.setText("Loading activity…");
+        if (status == null) return;
+        status.setText("Loading app-description data…");
+        if (updateDescriptions != null) {
+            updateDescriptions.setEnabled(!AppSourceMetadataUpdater.isRunning());
+        }
+
         executor.execute(() -> {
-            List<SemanticActivityRecord> loaded = DBHelper.getSemanticActivity(this, LOAD_LIMIT);
+            List<SemanticActivityRecord> loaded =
+                    new ArrayList<>(DBHelper.getSemanticActivity(this, LOAD_LIMIT));
             Map<String, AppSourceMetadataRecord> metadata =
                     DBHelper.getAppSourceMetadata(this);
-            int metadataCount = 0;
+
+            int ready = 0;
+            int missing = 0;
             for (AppSourceMetadataRecord record : metadata.values()) {
-                if (record == null || TextUtils.isEmpty(record.description)) continue;
-                metadataCount++;
-                String details = "Current cached description (" + record.description.length()
-                        + " characters): " + record.description;
+                if (record == null || TextUtils.isEmpty(record.packageName)) continue;
+                boolean hasDescription = !TextUtils.isEmpty(record.description);
+                if (hasDescription) ready++;
+                else missing++;
+
+                StringBuilder details = new StringBuilder();
+                if (hasDescription) {
+                    details.append(record.description.trim());
+                } else {
+                    details.append("No usable online or manifest description has been cached yet.");
+                }
                 if (!TextUtils.isEmpty(record.sourceUrl)) {
-                    details += "\nSource URL: " + record.sourceUrl;
+                    details.append("\n\nSource URL: ").append(record.sourceUrl);
                 }
                 if (!TextUtils.isEmpty(record.installerPackage)) {
-                    details += "\nInstaller package: " + record.installerPackage;
+                    details.append("\nInstaller package: ").append(record.installerPackage);
                 }
+                if (!TextUtils.isEmpty(record.lastError)) {
+                    details.append("\nLast fetch result: ").append(record.lastError);
+                }
+
                 loaded.add(new SemanticActivityRecord(
                         record.fetchedAt,
-                        "METADATA_CACHE_SNAPSHOT",
-                        "cache",
+                        hasDescription ? TYPE_DESCRIPTION_READY : TYPE_DESCRIPTION_MISSING,
+                        "current-cache",
                         record.packageName,
-                        record.title,
+                        TextUtils.isEmpty(record.title) ? record.packageName : record.title,
                         record.source,
-                        details));
+                        details.toString()));
             }
+
             loaded.sort((left, right) -> Long.compare(right.eventTime, left.eventTime));
-            final int cachedDescriptionCount = metadataCount;
-            String hnsw = SemanticHnswIndex.getInstance().statusSummary();
+            final int readyCount = ready;
+            final int missingCount = missing;
+            final int packageCount = ready + missing;
+            final int technicalCount = loaded.size() - packageCount;
+            final String hnsw = SemanticHnswIndex.getInstance().statusSummary();
+
             runOnUiThread(() -> {
                 all.clear();
                 all.addAll(loaded);
-                status.setText("Stored app descriptions: " + cachedDescriptionCount
-                        + " · Activity records: " + loaded.size()
+                status.setText("Descriptions ready: " + readyCount + " / " + packageCount
+                        + " apps · Missing: " + missingCount
                         + "\nMetadata updater: "
-                        + (AppSourceMetadataUpdater.isRunning() ? "running" : "idle")
-                        + " · HNSW: " + hnsw);
+                        + (AppSourceMetadataUpdater.isRunning() ? "RUNNING" : "idle")
+                        + " · Technical events: " + technicalCount
+                        + "\nHNSW: " + hnsw);
+                if (updateDescriptions != null) {
+                    updateDescriptions.setEnabled(!AppSourceMetadataUpdater.isRunning());
+                }
                 applyFilter();
             });
         });
@@ -236,23 +305,21 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
     }
 
     private static boolean matchesMode(SemanticActivityRecord record, int mode) {
-        String type = record.eventType == null ? "" : record.eventType;
+        String type = safe(record.eventType);
         switch (mode) {
+            case 0:
+                return TYPE_DESCRIPTION_READY.equals(type);
             case 1:
-                return type.startsWith("HNSW_BUILD");
+                return TYPE_DESCRIPTION_MISSING.equals(type);
             case 2:
-                return type.startsWith("HNSW_") && type.endsWith("_INDEXED");
+                return type.startsWith("METADATA_");
             case 3:
-                return type.startsWith("METADATA_")
-                        && !"METADATA_CACHE_SNAPSHOT".equals(type);
+                return "HNSW_APP_INDEXED".equals(type);
             case 4:
-                return "METADATA_CACHE_SNAPSHOT".equals(type);
-            case 5:
-                return type.contains("FAILED")
-                        || type.contains("MISSING")
-                        || type.contains("ERROR");
+                return type.startsWith("HNSW_BUILD");
             default:
-                return true;
+                return !TYPE_DESCRIPTION_READY.equals(type)
+                        && !TYPE_DESCRIPTION_MISSING.equals(type);
         }
     }
 
@@ -267,9 +334,9 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
 
     private void confirmClear() {
         new AlertDialog.Builder(this)
-                .setTitle("Clear Data Activity history?")
-                .setMessage("This only clears the transparency/audit log. "
-                        + "Downloaded app descriptions and the HNSW index are not deleted.")
+                .setTitle("Clear technical activity history?")
+                .setMessage("This only clears the audit/event history. Cached app descriptions "
+                        + "remain visible here and are not deleted. The HNSW index is not deleted.")
                 .setNegativeButton(android.R.string.cancel, null)
                 .setPositiveButton("Clear", (dialog, which) ->
                         executor.execute(() -> {
@@ -280,18 +347,34 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
     }
 
     private void showDetails(SemanticActivityRecord record) {
+        boolean descriptionReady = TYPE_DESCRIPTION_READY.equals(record.eventType);
+        boolean descriptionMissing = TYPE_DESCRIPTION_MISSING.equals(record.eventType);
+
         TextView body = new TextView(this);
         int pad = dp(18);
         body.setPadding(pad, pad, pad, pad);
-        body.setTextSize(14f);
+        body.setTextSize(15f);
+        body.setLineSpacing(0f, 1.16f);
         body.setTextIsSelectable(true);
-        body.setText("Time: " + formatTime(record.eventTime)
-                + "\nEvent: " + safe(record.eventType)
-                + "\nSession: " + safe(record.sessionId)
-                + "\nApp: " + emptyDash(record.appName)
-                + "\nPackage: " + emptyDash(record.packageName)
-                + "\nSource: " + emptyDash(record.source)
-                + "\n\n" + safe(record.details));
+        body.setAutoLinkMask(Linkify.WEB_URLS);
+        body.setMovementMethod(LinkMovementMethod.getInstance());
+
+        StringBuilder text = new StringBuilder();
+        text.append("App: ").append(emptyDash(record.appName))
+                .append("\nPackage: ").append(emptyDash(record.packageName))
+                .append("\nSource: ").append(emptyDash(record.source))
+                .append("\nDownloaded / recorded: ").append(formatTime(record.eventTime));
+
+        if (descriptionReady) {
+            text.append("\n\nAPP DESCRIPTION\n\n").append(safe(record.details));
+        } else if (descriptionMissing) {
+            text.append("\n\nDESCRIPTION STATUS\n\n").append(safe(record.details));
+        } else {
+            text.append("\nEvent: ").append(prettyType(record.eventType))
+                    .append("\nSession: ").append(emptyDash(record.sessionId))
+                    .append("\n\n").append(safe(record.details));
+        }
+        body.setText(text.toString());
 
         new AlertDialog.Builder(this)
                 .setTitle(TextUtils.isEmpty(record.appName)
@@ -307,21 +390,21 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
         public ActivityHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             LinearLayout row = new LinearLayout(parent.getContext());
             row.setOrientation(LinearLayout.VERTICAL);
-            row.setPadding(dp(10), dp(9), dp(10), dp(9));
+            row.setPadding(dp(10), dp(10), dp(10), dp(10));
 
             TextView title = new TextView(parent.getContext());
-            title.setTextSize(15f);
+            title.setTextSize(16f);
             row.addView(title);
 
             TextView secondary = new TextView(parent.getContext());
             secondary.setTextSize(12.5f);
-            secondary.setPadding(0, dp(2), 0, 0);
+            secondary.setPadding(0, dp(3), 0, 0);
             row.addView(secondary);
 
             TextView details = new TextView(parent.getContext());
-            details.setTextSize(12f);
-            details.setMaxLines(4);
-            details.setPadding(0, dp(3), 0, 0);
+            details.setTextSize(13f);
+            details.setMaxLines(5);
+            details.setPadding(0, dp(4), 0, dp(2));
             row.addView(details);
 
             return new ActivityHolder(row, title, secondary, details);
@@ -332,16 +415,28 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
             SemanticActivityRecord record = visible.get(position);
             String app = TextUtils.isEmpty(record.appName)
                     ? prettyType(record.eventType) : record.appName;
-            holder.title.setText(app + "  ·  " + prettyType(record.eventType));
 
-            String packageText = TextUtils.isEmpty(record.packageName)
-                    ? "" : record.packageName + "  ·  ";
-            holder.secondary.setText(formatTime(record.eventTime)
-                    + "  ·  " + packageText + emptyDash(record.source));
-
-            String detail = safe(record.details);
-            holder.details.setText(detail.length() > 420
-                    ? detail.substring(0, 420) + "…" : detail);
+            if (TYPE_DESCRIPTION_READY.equals(record.eventType)) {
+                holder.title.setText(app + "  ✓ Description ready");
+                holder.secondary.setText(emptyDash(record.source)
+                        + " · " + formatTime(record.eventTime)
+                        + "\n" + emptyDash(record.packageName));
+                holder.details.setText(descriptionPreview(record.details));
+            } else if (TYPE_DESCRIPTION_MISSING.equals(record.eventType)) {
+                holder.title.setText(app + "  ⚠ Description missing");
+                holder.secondary.setText(emptyDash(record.packageName)
+                        + " · " + formatTime(record.eventTime));
+                holder.details.setText(safe(record.details));
+            } else {
+                holder.title.setText(app + "  ·  " + prettyType(record.eventType));
+                String packageText = TextUtils.isEmpty(record.packageName)
+                        ? "" : record.packageName + "  ·  ";
+                holder.secondary.setText(formatTime(record.eventTime)
+                        + "  ·  " + packageText + emptyDash(record.source));
+                String detail = safe(record.details);
+                holder.details.setText(detail.length() > 420
+                        ? detail.substring(0, 420) + "…" : detail);
+            }
             holder.itemView.setOnClickListener(v -> showDetails(record));
         }
 
@@ -349,6 +444,17 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
         public int getItemCount() {
             return visible.size();
         }
+    }
+
+    private static String descriptionPreview(String details) {
+        if (TextUtils.isEmpty(details)) return "";
+        int sourceAt = details.indexOf("\n\nSource URL:");
+        String description = sourceAt >= 0 ? details.substring(0, sourceAt) : details;
+        int installerAt = description.indexOf("\nInstaller package:");
+        if (installerAt >= 0) description = description.substring(0, installerAt);
+        int errorAt = description.indexOf("\nLast fetch result:");
+        if (errorAt >= 0) description = description.substring(0, errorAt);
+        return description.length() > 420 ? description.substring(0, 420) + "…" : description;
     }
 
     private static final class ActivityHolder extends RecyclerView.ViewHolder {
