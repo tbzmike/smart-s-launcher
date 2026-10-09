@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.160 - current Google Play ds5 description parsing
-        versionCode 588
-        versionName "3.30.160"
+        // Smart S Launcher 3.30.161 - automatic app-update metadata and HNSW sync
+        versionCode 589
+        versionName "3.30.161"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
