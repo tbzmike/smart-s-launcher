@@ -41,6 +41,7 @@ import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.SemanticActivityRecord;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
+import fr.neamar.kiss.searcher.AppMetadataRefreshJobService;
 import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
 import fr.neamar.kiss.searcher.SemanticHnswIndex;
 
@@ -292,7 +293,9 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                         + " · Missing: " + missingCount
                         + "\nMetadata updater: "
                         + (AppSourceMetadataUpdater.isRunning() ? "FULL REFRESH RUNNING" : "idle")
-                        + " · Automatic app refreshes queued: "
+                        + " · Automatic metadata jobs: "
+                        + AppMetadataRefreshJobService.pendingJobCount(this)
+                        + " · Active package refreshes: "
                         + AppSourceMetadataUpdater.pendingPackageRefreshCount()
                         + " · Technical events: " + technicalCount
                         + "\nNetwork: " + AppSourceMetadataUpdater.networkStatusSummary()
