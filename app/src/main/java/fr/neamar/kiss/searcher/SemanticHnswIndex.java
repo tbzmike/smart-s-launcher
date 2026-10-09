@@ -117,16 +117,21 @@ public final class SemanticHnswIndex {
                 }
                 lastSourceCount = source.size();
                 final String sessionId = "hnsw-" + generation + "-" + System.currentTimeMillis();
-                dataHandler.logSemanticActivity(new SemanticActivityRecord(
-                        System.currentTimeMillis(),
-                        "HNSW_BUILD_STARTED",
-                        sessionId,
-                        "",
-                        "",
-                        "HNSW",
-                        "Started semantic HNSW build from " + source.size()
-                                + " records · " + dimensions + " dimensions · metadata descriptions "
-                                + sourceTextByPackage.size() + "."));
+                try {
+                    dataHandler.logSemanticActivity(new SemanticActivityRecord(
+                            System.currentTimeMillis(),
+                            "HNSW_BUILD_STARTED",
+                            sessionId,
+                            "",
+                            "",
+                            "HNSW",
+                            "Started semantic HNSW build from " + source.size()
+                                    + " records · " + dimensions
+                                    + " dimensions · metadata descriptions "
+                                    + sourceTextByPackage.size() + "."));
+                } catch (RuntimeException logError) {
+                    Log.w(TAG, "Unable to record HNSW build start", logError);
+                }
 
                 if (generation != requestedGeneration.get()) return;
 
@@ -154,20 +159,28 @@ public final class SemanticHnswIndex {
                         "Committed " + built.nodes.size() + " vectors from " + source.size()
                                 + " source records · " + dimensions + " dimensions · "
                                 + elapsedMs + " ms."));
-                dataHandler.logSemanticActivities(indexEvents);
+                try {
+                    dataHandler.logSemanticActivities(indexEvents);
+                } catch (RuntimeException logError) {
+                    Log.w(TAG, "HNSW index is ready but activity logging failed", logError);
+                }
                 Log.i(TAG, "HNSW semantic index ready: " + built.nodes.size()
                         + " vectors, " + dimensions + " dimensions, " + elapsedMs + "ms");
             } catch (RuntimeException e) {
                 if (generation == requestedGeneration.get()) {
-                    dataHandler.logSemanticActivity(new SemanticActivityRecord(
-                            System.currentTimeMillis(),
-                            "HNSW_BUILD_FAILED",
-                            "hnsw-" + generation,
-                            "",
-                            "",
-                            "HNSW",
-                            e.getClass().getSimpleName() + ": "
-                                    + (e.getMessage() == null ? "build failed" : e.getMessage())));
+                    try {
+                        dataHandler.logSemanticActivity(new SemanticActivityRecord(
+                                System.currentTimeMillis(),
+                                "HNSW_BUILD_FAILED",
+                                "hnsw-" + generation,
+                                "",
+                                "",
+                                "HNSW",
+                                e.getClass().getSimpleName() + ": "
+                                        + (e.getMessage() == null ? "build failed" : e.getMessage())));
+                    } catch (RuntimeException logError) {
+                        Log.w(TAG, "Unable to record HNSW build failure", logError);
+                    }
                     Log.w(TAG, "HNSW semantic index rebuild failed; retaining previous graph", e);
                 }
             } finally {
