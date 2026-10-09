@@ -688,6 +688,87 @@ public class DBHelper {
         });
     }
 
+    public static void upsertAppSourceMetadata(
+            @NonNull Context context, @NonNull AppSourceMetadataRecord record) {
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+            ContentValues values = new ContentValues();
+            values.put("package", record.packageName);
+            values.put("source", record.source);
+            values.put("installer_package", record.installerPackage);
+            values.put("title", record.title);
+            values.put("description", record.description);
+            values.put("source_url", record.sourceUrl);
+            values.put("fetched_at", record.fetchedAt);
+            values.put("last_error", record.lastError);
+
+            int updated = recoveryDb.update(
+                    "app_source_metadata", values, "package = ?",
+                    new String[]{record.packageName});
+            if (updated == 0) recoveryDb.insert("app_source_metadata", null, values);
+        });
+    }
+
+    @NonNull
+    public static Map<String, AppSourceMetadataRecord> getAppSourceMetadata(
+            @NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            Map<String, AppSourceMetadataRecord> records = new HashMap<>();
+            String[] columns = {
+                    "package", "source", "installer_package", "title",
+                    "description", "source_url", "fetched_at", "last_error"
+            };
+            try (Cursor cursor = recoveryDb.query(
+                    "app_source_metadata", columns,
+                    null, null, null, null, null)) {
+                while (cursor.moveToNext()) {
+                    AppSourceMetadataRecord record = new AppSourceMetadataRecord();
+                    record.packageName = cursor.getString(0);
+                    record.source = cursor.getString(1);
+                    record.installerPackage = cursor.getString(2);
+                    record.title = cursor.getString(3);
+                    record.description = cursor.getString(4);
+                    record.sourceUrl = cursor.getString(5);
+                    record.fetchedAt = cursor.getLong(6);
+                    record.lastError = cursor.getString(7);
+                    records.put(record.packageName, record);
+                }
+            }
+            return records;
+        });
+    }
+
+    public static int getAppSourceMetadataCount(@NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            try (Cursor cursor = recoveryDb.rawQuery(
+                    "SELECT COUNT(*) FROM app_source_metadata WHERE description <> ''", null)) {
+                return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+            }
+        });
+    }
+
+    public static void pruneAppSourceMetadata(
+            @NonNull Context context, @NonNull java.util.Set<String> installedPackages) {
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+            if (installedPackages.isEmpty()) {
+                recoveryDb.delete("app_source_metadata", null, null);
+                return;
+            }
+
+            StringBuilder placeholders = new StringBuilder();
+            String[] args = new String[installedPackages.size()];
+            int index = 0;
+            for (String packageName : installedPackages) {
+                if (index > 0) placeholders.append(',');
+                placeholders.append('?');
+                args[index++] = packageName;
+            }
+            recoveryDb.delete(
+                    "app_source_metadata",
+                    "package NOT IN (" + placeholders + ")",
+                    args);
+        });
+    }
+
     public static void initDatabase(Context context) {
         DatabaseRecovery.runVoid(context, recoveryDb -> { });
     }
