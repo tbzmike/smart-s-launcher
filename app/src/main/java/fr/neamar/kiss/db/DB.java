@@ -24,7 +24,7 @@ import fr.neamar.kiss.utils.UserHandle;
 class DB extends SQLiteOpenHelper {
 
     static final String DB_NAME = "kiss.s3db";
-    private final static int DB_VERSION = 19;
+    private final static int DB_VERSION = 20;
     private static final String TAG = DB.class.getSimpleName();
 
     private final Context mContext;
@@ -45,6 +45,7 @@ class DB extends SQLiteOpenHelper {
         addCustomComponentsTable(database);
         addSmartLauncherStateTables(database);
         addAppSourceMetadataTable(database);
+        addSemanticActivityLogTable(database);
     }
 
     private void createTags(SQLiteDatabase database) {
@@ -88,6 +89,24 @@ class DB extends SQLiteOpenHelper {
                 + "last_error TEXT NOT NULL DEFAULT '')");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_app_source_metadata_fetched "
                 + "ON app_source_metadata(fetched_at DESC)");
+    }
+
+    private void addSemanticActivityLogTable(SQLiteDatabase database) {
+        database.execSQL("CREATE TABLE IF NOT EXISTS semantic_activity_log ("
+                + "_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "event_time INTEGER NOT NULL,"
+                + "event_type TEXT NOT NULL,"
+                + "session_id TEXT NOT NULL DEFAULT '',"
+                + "package TEXT NOT NULL DEFAULT '',"
+                + "app_name TEXT NOT NULL DEFAULT '',"
+                + "source TEXT NOT NULL DEFAULT '',"
+                + "details TEXT NOT NULL DEFAULT '')");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_semantic_activity_time "
+                + "ON semantic_activity_log(event_time DESC)");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_semantic_activity_type "
+                + "ON semantic_activity_log(event_type)");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_semantic_activity_package "
+                + "ON semantic_activity_log(package)");
     }
 
     @Override
@@ -155,6 +174,7 @@ class DB extends SQLiteOpenHelper {
             // migration too, because several historical switch branches intentionally terminate
             // early once their own schema step is complete.
             if (newVersion >= 19) addAppSourceMetadataTable(database);
+            if (newVersion >= 20) addSemanticActivityLogTable(database);
         }
     }
 
@@ -206,6 +226,12 @@ class DB extends SQLiteOpenHelper {
                     throw new UnsupportedOperationException("Can't downgrade app below DB level " + (newVersion + 1));
                 default:
                     break;
+            }
+            if (newVersion < 20) {
+                database.execSQL("DROP INDEX IF EXISTS idx_semantic_activity_package");
+                database.execSQL("DROP INDEX IF EXISTS idx_semantic_activity_type");
+                database.execSQL("DROP INDEX IF EXISTS idx_semantic_activity_time");
+                database.execSQL("DROP TABLE IF EXISTS semantic_activity_log");
             }
             if (newVersion < 19) {
                 database.execSQL("DROP INDEX IF EXISTS idx_app_source_metadata_fetched");
