@@ -24,7 +24,7 @@ import fr.neamar.kiss.pojo.ShortcutPojo;
 public final class SemanticEmbeddingScorer {
     // Keep the persisted ID compatible with existing installations while upgrading its internals.
     public static final String MODEL_ID = "smart-s-mini-v1";
-    public static final String MODEL_NAME = "Smart S Semantic v2 + HNSW";
+    public static final String MODEL_NAME = "Smart S Semantic v3 High-Dimension + HNSW";
 
     private static final Map<String, List<String>> CONCEPTS = new HashMap<>();
 
