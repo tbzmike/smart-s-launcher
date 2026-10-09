@@ -322,8 +322,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     }
 
     private void addSemanticSearchPreferences(@Nullable String rootKey) {
-        PreferenceGroup parent = findPreference("providers");
-        if (parent == null && "providers".equals(rootKey)) parent = getPreferenceScreen();
+        PreferenceGroup parent = findPreference("search-providers");
+        if (parent == null && "search-providers".equals(rootKey)) parent = getPreferenceScreen();
         if (parent == null || parent.findPreference("semantic-search-category") != null) return;
 
         PreferenceCategory category = new PreferenceCategory(requireContext());
