@@ -192,17 +192,19 @@ public class QuerySearcher extends Searcher {
             publishCurrentResults();
         }
 
-        if (semanticEnabled && !isCancelled()) {
-            if (hnswEnabled && hnswReady) {
-                addHnswSemanticMatches();
-            } else {
-                // Preserve 3.30.153 semantic coverage while a new HNSW graph is warming or when
-                // HNSW is deliberately disabled. Once the graph is ready, the exhaustive pass
-                // disappears from the typing path.
-                semanticPass = true;
-                dataHandler.requestAllRecords(this);
-                semanticPass = false;
-            }
+        if (!isCancelled()
+                && SemanticRetrievalPolicy.useHnsw(
+                        semanticEnabled, hnswEnabled, hnswReady)) {
+            addHnswSemanticMatches();
+        } else if (!isCancelled()
+                && SemanticRetrievalPolicy.useLegacyFallback(
+                        semanticEnabled, hnswEnabled, hnswReady)) {
+            // Preserve 3.30.153 semantic coverage while a new HNSW graph is warming or when
+            // HNSW is deliberately disabled. Once the graph is ready, the exhaustive pass
+            // disappears from the typing path.
+            semanticPass = true;
+            dataHandler.requestAllRecords(this);
+            semanticPass = false;
         }
         return null;
     }
