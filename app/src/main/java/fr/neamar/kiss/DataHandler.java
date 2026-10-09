@@ -385,6 +385,70 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
                 snapshot.add(pojo);
             }
         }
+
+        // Frozen/disabled apps can disappear from LauncherApps while their package and remembered
+        // launcher identity still exist. Add those remembered app identities to the background
+        // semantic snapshot so cached descriptions can still produce HNSW app vectors. Interactive
+        // search continues to apply the user's frozen-app visibility policy before showing results.
+        UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
+        if (userManager != null) {
+            Set<String> excludedApps = getExcluded();
+            Set<String> excludedHistory = getExcludedFromHistory();
+            Set<String> excludedShortcuts = getExcludedShortcutApps();
+            PackageManager packageManager = context.getPackageManager();
+
+            for (android.os.UserHandle profile : userManager.getUserProfiles()) {
+                long serial = userManager.getSerialNumberForUser(profile);
+                if (serial < 0L) continue;
+                UserHandle user = new UserHandle(context, profile);
+
+                for (AppCatalogRecord record : SmartStateStore.getRememberedApps(context, serial)) {
+                    if (record == null
+                            || TextUtils.isEmpty(record.packageName)
+                            || TextUtils.isEmpty(record.activityName)) continue;
+
+                    String id = user.addUserSuffixToString(
+                            "app://" + record.packageName + "/" + record.activityName, '/');
+                    if (!seen.add(id)) continue;
+
+                    boolean disabled = false;
+                    if (profile.equals(android.os.Process.myUserHandle())) {
+                        try {
+                            ApplicationInfo info = packageManager.getApplicationInfo(
+                                    record.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+                            int state = packageManager.getApplicationEnabledSetting(record.packageName);
+                            disabled = !info.enabled
+                                    || PackageManagerUtils.isAppSuspended(info)
+                                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
+                        } catch (PackageManager.NameNotFoundException | IllegalArgumentException e) {
+                            // Keep the remembered identity in the semantic graph. IceBox and similar
+                            // tools can temporarily hide the package from normal PackageManager APIs.
+                            disabled = true;
+                        }
+                    }
+
+                    boolean excluded = excludedApps.contains(
+                            AppPojo.getComponentName(
+                                    record.packageName, record.activityName, user));
+                    AppPojo app = new AppPojo(
+                            id,
+                            record.packageName,
+                            record.activityName,
+                            user,
+                            excluded,
+                            excludedHistory.contains(id),
+                            excludedShortcuts.contains(record.packageName),
+                            disabled);
+                    app.setName(TextUtils.isEmpty(record.label)
+                            ? record.packageName : record.label);
+                    app.setTags(getTagsHandler().getTags(id));
+                    snapshot.add(app);
+                }
+            }
+        }
+
         return snapshot;
     }
 
