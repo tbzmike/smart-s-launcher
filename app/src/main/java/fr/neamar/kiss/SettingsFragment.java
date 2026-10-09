@@ -393,7 +393,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         Preference updateSources = new Preference(requireContext());
         updateSources.setKey("semantic-update-all-app-source-data");
         updateSources.setTitle("Update all apps source data");
-        updateSources.setSummary("Find descriptions by package name for installed apps, including frozen/disabled apps. Smart S tries the detected source plus Google Play, Aptoide, F-Droid and supported fallbacks, then rebuilds HNSW when semantic search is enabled.");
+        updateSources.setSummary("Find descriptions by package name for installed apps, including frozen/disabled apps. Descriptions also refresh automatically after app installs and updates detected by Smart S App Usage/package monitoring. Manual update refreshes the full library.");
         updateSources.setOnPreferenceClickListener(preference -> {
             boolean started = AppSourceMetadataUpdater.refreshAll(
                     requireContext(),
