@@ -102,6 +102,10 @@ public final class AppSourceMetadataUpdater {
     private static final Pattern ITEMPROP_NAME_PATTERN = Pattern.compile(
             "<h1\\b[^>]*itemprop=[\\\"']name[\\\"'][^>]*>.*?<span[^>]*>(.*?)</span>",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern DS5_KEY_PATTERN = Pattern.compile(
+            "\\bkey\\s*:\\s*[\\\"']ds:5[\\\"']");
+    private static final Pattern DATA_FIELD_PATTERN = Pattern.compile(
+            "\\bdata\\s*:");
 
     private AppSourceMetadataUpdater() { }
 
@@ -662,31 +666,28 @@ public final class AppSourceMetadataUpdater {
             int callback = html.indexOf("AF_initDataCallback", cursor);
             if (callback < 0) return null;
 
-            int end = html.indexOf(");", callback);
-            if (end < 0) end = Math.min(html.length(), callback + 4_000_000);
-            String block = html.substring(callback, end);
+            // Do not stop at the first literal ");": app descriptions are arbitrary text and can
+            // contain punctuation that looks like the callback terminator. The balanced-array
+            // scanner below is string-aware and is the safe boundary detector.
+            int scanEnd = Math.min(html.length(), callback + 4_000_000);
+            String block = html.substring(callback, scanEnd);
 
-            if (containsDs5Key(block)) {
-                int data = block.indexOf("data:");
-                if (data < 0) data = block.indexOf("data :");
-                if (data >= 0) {
-                    int arrayStart = block.indexOf('[', data);
+            Matcher keyMatcher = DS5_KEY_PATTERN.matcher(block);
+            if (keyMatcher.find()) {
+                Matcher dataMatcher = DATA_FIELD_PATTERN.matcher(block);
+                if (dataMatcher.find(keyMatcher.end())) {
+                    int arrayStart = block.indexOf('[', dataMatcher.end());
                     if (arrayStart >= 0) {
                         String array = balancedArray(block, arrayStart);
-                        if (!TextUtils.isEmpty(array)) return normalizeJsArrayForJson(array);
+                        if (!TextUtils.isEmpty(array)) {
+                            return normalizeJsArrayForJson(array);
+                        }
                     }
                 }
             }
-            cursor = Math.max(callback + 20, end + 2);
+            cursor = callback + "AF_initDataCallback".length();
         }
         return null;
-    }
-
-    private static boolean containsDs5Key(String block) {
-        return block.contains("key:'ds:5'")
-                || block.contains("key: 'ds:5'")
-                || block.contains("key:\"ds:5\"")
-                || block.contains("key: \"ds:5\"");
     }
 
     @Nullable
