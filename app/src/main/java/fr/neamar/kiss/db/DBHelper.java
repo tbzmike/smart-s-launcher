@@ -769,6 +769,82 @@ public class DBHelper {
         });
     }
 
+    public static void insertSemanticActivity(
+            @NonNull Context context, @NonNull SemanticActivityRecord record) {
+        DatabaseRecovery.runVoid(context, recoveryDb ->
+                recoveryDb.insert("semantic_activity_log", null, semanticActivityValues(record)));
+    }
+
+    public static void insertSemanticActivities(
+            @NonNull Context context, @NonNull List<SemanticActivityRecord> records) {
+        if (records.isEmpty()) return;
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+            recoveryDb.beginTransaction();
+            try {
+                for (SemanticActivityRecord record : records) {
+                    if (record == null) continue;
+                    recoveryDb.insert("semantic_activity_log", null, semanticActivityValues(record));
+                }
+                recoveryDb.execSQL(
+                        "DELETE FROM semantic_activity_log WHERE _id NOT IN "
+                                + "(SELECT _id FROM semantic_activity_log ORDER BY _id DESC LIMIT 10000)");
+                recoveryDb.setTransactionSuccessful();
+            } finally {
+                recoveryDb.endTransaction();
+            }
+        });
+    }
+
+    @NonNull
+    public static List<SemanticActivityRecord> getSemanticActivity(
+            @NonNull Context context, int requestedLimit) {
+        final int limit = Math.max(1, Math.min(10000, requestedLimit));
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            List<SemanticActivityRecord> records = new ArrayList<>();
+            String[] columns = {
+                    "_id", "event_time", "event_type", "session_id",
+                    "package", "app_name", "source", "details"
+            };
+            try (Cursor cursor = recoveryDb.query(
+                    "semantic_activity_log",
+                    columns,
+                    null, null, null, null,
+                    "event_time DESC, _id DESC",
+                    Integer.toString(limit))) {
+                while (cursor.moveToNext()) {
+                    SemanticActivityRecord record = new SemanticActivityRecord();
+                    record.id = cursor.getLong(0);
+                    record.eventTime = cursor.getLong(1);
+                    record.eventType = cursor.getString(2);
+                    record.sessionId = cursor.getString(3);
+                    record.packageName = cursor.getString(4);
+                    record.appName = cursor.getString(5);
+                    record.source = cursor.getString(6);
+                    record.details = cursor.getString(7);
+                    records.add(record);
+                }
+            }
+            return records;
+        });
+    }
+
+    public static void clearSemanticActivity(@NonNull Context context) {
+        DatabaseRecovery.runVoid(context,
+                recoveryDb -> recoveryDb.delete("semantic_activity_log", null, null));
+    }
+
+    private static ContentValues semanticActivityValues(@NonNull SemanticActivityRecord record) {
+        ContentValues values = new ContentValues();
+        values.put("event_time", record.eventTime);
+        values.put("event_type", record.eventType);
+        values.put("session_id", record.sessionId);
+        values.put("package", record.packageName);
+        values.put("app_name", record.appName);
+        values.put("source", record.source);
+        values.put("details", record.details);
+        return values;
+    }
+
     public static void initDatabase(Context context) {
         DatabaseRecovery.runVoid(context, recoveryDb -> { });
     }
