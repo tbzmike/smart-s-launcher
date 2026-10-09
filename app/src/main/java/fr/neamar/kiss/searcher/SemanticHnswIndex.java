@@ -314,29 +314,33 @@ public final class SemanticHnswIndex {
             if (isZero(vector)) continue;
             insert(graph, pojo, vector);
 
-            AppSourceMetadataRecord metadata = packageName == null
-                    ? null : metadataByPackage.get(packageName);
-            String eventType;
-            if (pojo instanceof AppPojo) eventType = "HNSW_APP_INDEXED";
-            else if (pojo instanceof ShortcutPojo) eventType = "HNSW_SHORTCUT_INDEXED";
-            else eventType = "HNSW_RECORD_INDEXED";
-            String sourceName = metadata == null || metadata.source == null
-                    || metadata.source.isEmpty() ? "Local app identity" : metadata.source;
-            int metadataChars = metadata == null || metadata.description == null
-                    ? 0 : metadata.description.length();
-            indexEvents.add(new SemanticActivityRecord(
-                    System.currentTimeMillis(),
-                    eventType,
-                    sessionId,
-                    packageName == null ? "" : packageName,
-                    pojo.getName() == null ? "" : pojo.getName(),
-                    sourceName,
-                    "Indexed " + dimensions + "-dimension semantic vector"
-                            + (metadataChars > 0
-                                    ? " with " + metadataChars
-                                            + " description characters from " + sourceName
-                                    : " without downloaded description metadata")
-                            + "."));
+            // Keep per-record transparency focused on launch targets. Logging every contact,
+            // message and provider record created thousands of low-value rows and hid the app
+            // information the user actually needs. The build-complete event still reports the
+            // full vector count for all indexed record types.
+            if (pojo instanceof AppPojo || pojo instanceof ShortcutPojo) {
+                AppSourceMetadataRecord metadata = packageName == null
+                        ? null : metadataByPackage.get(packageName);
+                String eventType = pojo instanceof AppPojo
+                        ? "HNSW_APP_INDEXED" : "HNSW_SHORTCUT_INDEXED";
+                String sourceName = metadata == null || metadata.source == null
+                        || metadata.source.isEmpty() ? "Local app identity" : metadata.source;
+                int metadataChars = metadata == null || metadata.description == null
+                        ? 0 : metadata.description.length();
+                indexEvents.add(new SemanticActivityRecord(
+                        System.currentTimeMillis(),
+                        eventType,
+                        sessionId,
+                        packageName == null ? "" : packageName,
+                        pojo.getName() == null ? "" : pojo.getName(),
+                        sourceName,
+                        "Indexed " + dimensions + "-dimension semantic vector"
+                                + (metadataChars > 0
+                                        ? " with " + metadataChars
+                                                + " description characters from " + sourceName
+                                        : " without downloaded description metadata")
+                                + "."));
+            }
         }
 
         return graph.freeze();
