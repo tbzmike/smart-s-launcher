@@ -539,6 +539,26 @@ public final class AppSourceMetadataUpdater {
         targets.add(new CatalogTarget("Galaxy Store", url, () -> fetchHtmlMetadata(url)));
     }
 
+    // Package-private parser helper used by JVM regression tests without network access.
+    @Nullable
+    static String parsePlayDescriptionForTest(String body) {
+        if (TextUtils.isEmpty(body)) return null;
+
+        CatalogResult structured = extractJsonLdMetadata(body);
+        if (structured != null && isUsefulDescription(structured.description)) {
+            return structured.description;
+        }
+
+        String description = cleanText(firstGroup(PLAY_DESCRIPTION_PATTERN, body));
+        if (!isUsefulDescription(description)) {
+            description = cleanText(firstGroup(ITEMPROP_DESCRIPTION_PATTERN, body));
+        }
+        if (!isUsefulDescription(description)) {
+            description = cleanText(extractMetaDescription(body));
+        }
+        return isUsefulDescription(description) ? description : null;
+    }
+
     @Nullable
     private static CatalogResult fetchPlayMetadata(String url) throws Exception {
         String body = httpGet(url);
