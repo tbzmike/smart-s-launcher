@@ -24,7 +24,7 @@ import fr.neamar.kiss.utils.UserHandle;
 class DB extends SQLiteOpenHelper {
 
     static final String DB_NAME = "kiss.s3db";
-    private final static int DB_VERSION = 18;
+    private final static int DB_VERSION = 19;
     private static final String TAG = DB.class.getSimpleName();
 
     private final Context mContext;
@@ -44,6 +44,7 @@ class DB extends SQLiteOpenHelper {
         addAppsTable(database);
         addCustomComponentsTable(database);
         addSmartLauncherStateTables(database);
+        addAppSourceMetadataTable(database);
     }
 
     private void createTags(SQLiteDatabase database) {
@@ -73,6 +74,20 @@ class DB extends SQLiteOpenHelper {
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package ON notification_history(package)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_package_time ON notification_history(package,post_time DESC)");
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_permanent ON notification_history(is_permanent)");
+    }
+
+    private void addAppSourceMetadataTable(SQLiteDatabase database) {
+        database.execSQL("CREATE TABLE IF NOT EXISTS app_source_metadata ("
+                + "package TEXT PRIMARY KEY NOT NULL,"
+                + "source TEXT NOT NULL DEFAULT '',"
+                + "installer_package TEXT NOT NULL DEFAULT '',"
+                + "title TEXT NOT NULL DEFAULT '',"
+                + "description TEXT NOT NULL DEFAULT '',"
+                + "source_url TEXT NOT NULL DEFAULT '',"
+                + "fetched_at INTEGER NOT NULL DEFAULT 0,"
+                + "last_error TEXT NOT NULL DEFAULT '')");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_app_source_metadata_fetched "
+                + "ON app_source_metadata(fetched_at DESC)");
     }
 
     @Override
@@ -135,6 +150,11 @@ class DB extends SQLiteOpenHelper {
                 default:
                     break;
             }
+
+            // Version 19 adds a self-contained table. Create it after the legacy fall-through
+            // migration too, because several historical switch branches intentionally terminate
+            // early once their own schema step is complete.
+            if (newVersion >= 19) addAppSourceMetadataTable(database);
         }
     }
 
@@ -186,6 +206,10 @@ class DB extends SQLiteOpenHelper {
                     throw new UnsupportedOperationException("Can't downgrade app below DB level " + (newVersion + 1));
                 default:
                     break;
+            }
+            if (newVersion < 19) {
+                database.execSQL("DROP INDEX IF EXISTS idx_app_source_metadata_fetched");
+                database.execSQL("DROP TABLE IF EXISTS app_source_metadata");
             }
         }
     }
