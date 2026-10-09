@@ -30,9 +30,11 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.SemanticActivityRecord;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
@@ -128,7 +130,8 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                 "All activity",
                 "HNSW builds",
                 "Indexed apps & records",
-                "Metadata downloads",
+                "Metadata activity",
+                "Current metadata cache",
                 "Errors / missing data"
         };
         filter.setAdapter(new ArrayAdapter<>(
@@ -178,7 +181,30 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
         status.setText("Loading activity…");
         executor.execute(() -> {
             List<SemanticActivityRecord> loaded = DBHelper.getSemanticActivity(this, LOAD_LIMIT);
-            int metadataCount = DBHelper.getAppSourceMetadataCount(this);
+            Map<String, AppSourceMetadataRecord> metadata =
+                    DBHelper.getAppSourceMetadata(this);
+            int metadataCount = 0;
+            for (AppSourceMetadataRecord record : metadata.values()) {
+                if (record == null || TextUtils.isEmpty(record.description)) continue;
+                metadataCount++;
+                String details = "Current cached description (" + record.description.length()
+                        + " characters): " + record.description;
+                if (!TextUtils.isEmpty(record.sourceUrl)) {
+                    details += "\nSource URL: " + record.sourceUrl;
+                }
+                if (!TextUtils.isEmpty(record.installerPackage)) {
+                    details += "\nInstaller package: " + record.installerPackage;
+                }
+                loaded.add(new SemanticActivityRecord(
+                        record.fetchedAt,
+                        "METADATA_CACHE_SNAPSHOT",
+                        "cache",
+                        record.packageName,
+                        record.title,
+                        record.source,
+                        details));
+            }
+            loaded.sort((left, right) -> Long.compare(right.eventTime, left.eventTime));
             String hnsw = SemanticHnswIndex.getInstance().statusSummary();
             runOnUiThread(() -> {
                 all.clear();
@@ -217,8 +243,10 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                 return type.startsWith("HNSW_") && type.endsWith("_INDEXED");
             case 3:
                 return type.startsWith("METADATA_")
-                        && !"METADATA_MISSING".equals(type);
+                        && !"METADATA_CACHE_SNAPSHOT".equals(type);
             case 4:
+                return "METADATA_CACHE_SNAPSHOT".equals(type);
+            case 5:
                 return type.contains("FAILED")
                         || type.contains("MISSING")
                         || type.contains("ERROR");
