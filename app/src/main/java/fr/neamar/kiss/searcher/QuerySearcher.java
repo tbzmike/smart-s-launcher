@@ -60,6 +60,7 @@ public class QuerySearcher extends Searcher {
     private boolean semanticEnabled;
     private boolean semanticRerank;
     private boolean hnswEnabled;
+    private boolean hnswReady;
     private float semanticThreshold;
     private float semanticWeight;
     private int semanticDimensions;
@@ -192,11 +193,12 @@ public class QuerySearcher extends Searcher {
         }
 
         if (semanticEnabled && !isCancelled()) {
-            if (hnswEnabled) {
+            if (hnswEnabled && hnswReady) {
                 addHnswSemanticMatches();
             } else {
-                // Compatibility switch: users can still compare against the legacy exhaustive
-                // semantic pass. HNSW is the default because this path scales with every record.
+                // Preserve 3.30.153 semantic coverage while a new HNSW graph is warming or when
+                // HNSW is deliberately disabled. Once the graph is ready, the exhaustive pass
+                // disappears from the typing path.
                 semanticPass = true;
                 dataHandler.requestAllRecords(this);
                 semanticPass = false;
@@ -266,26 +268,38 @@ public class QuerySearcher extends Searcher {
     }
 
     private boolean isVisibleByFrozenSearchPolicy(Pojo pojo) {
-        if (pojo == null) return false;
+        // Keep the normal 3.30.153 lexical/history visibility contract unchanged. Provider-level
+        // app/favorite exclusions are already applied by those providers before they call us.
+        if (pojo == null || !pojo.isDisabled()) return true;
 
         MainActivity activity = activityWeakReference.get();
         if (activity == null) return false;
-
-        DataHandler dataHandler = KissApplication.getApplication(activity).getDataHandler();
-        if (dataHandler.getExcludedFavorites().contains(pojo.getFavoriteId())) return false;
-
-        if (pojo instanceof AppPojo) {
-            AppPojo app = (AppPojo) pojo;
-            if (app.isExcluded() && !prefs.getBoolean("enable-excluded-apps", false)) return false;
-        }
-
-        if (!pojo.isDisabled()) return true;
         if (pojo instanceof ShortcutPojo
                 && ShortcutUtil.isIceBoxPublisher(
                 activity, ((ShortcutPojo) pojo).packageName)) {
             return true;
         }
         return FrozenAppPreferences.keepSearchable(activity);
+    }
+
+    /**
+     * HNSW bypasses provider requestResults(), so only HNSW candidates need the provider-level
+     * exclusion checks here. Keeping this separate prevents semantic changes from altering normal
+     * lexical/fuzzy result behavior inherited from 3.30.153.
+     */
+    private boolean isVisibleHnswCandidate(Pojo pojo) {
+        if (!isVisibleByFrozenSearchPolicy(pojo)) return false;
+
+        MainActivity activity = activityWeakReference.get();
+        if (activity == null) return false;
+        DataHandler dataHandler = KissApplication.getApplication(activity).getDataHandler();
+
+        if (dataHandler.getExcludedFavorites().contains(pojo.getFavoriteId())) return false;
+        if (pojo instanceof AppPojo) {
+            AppPojo app = (AppPojo) pojo;
+            if (app.isExcluded() && !prefs.getBoolean("enable-excluded-apps", false)) return false;
+        }
+        return true;
     }
 
     private void configureSemanticSearch(DataHandler dataHandler) {
@@ -302,6 +316,7 @@ public class QuerySearcher extends Searcher {
         semanticRerank = prefs.getBoolean(PREF_SEMANTIC_RERANK, true);
         semanticWeight = parseFloatPreference(PREF_SEMANTIC_WEIGHT, 0.58f, 0.20f, 0.85f);
         hnswEnabled = prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true);
+        hnswReady = false;
 
         semanticScoresById.clear();
         hnswHits = Collections.emptyList();
@@ -317,6 +332,7 @@ public class QuerySearcher extends Searcher {
         SemanticHnswIndex index = SemanticHnswIndex.getInstance();
         index.ensureReady(dataHandler, prefs, semanticDimensions);
         if (!index.isReadyFor(semanticDimensions)) return;
+        hnswReady = true;
 
         int candidateCount = Math.max(48, Math.min(192, getMaxResultCount() * 3));
         hnswHits = index.search(
@@ -352,7 +368,7 @@ public class QuerySearcher extends Searcher {
             Pojo pojo = hit.pojo;
             if (lexicalIds.contains(pojo.id)
                     || hit.score < semanticThreshold
-                    || !isVisibleByFrozenSearchPolicy(pojo)) {
+                    || !isVisibleHnswCandidate(pojo)) {
                 continue;
             }
 
