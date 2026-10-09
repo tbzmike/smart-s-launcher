@@ -51,6 +51,7 @@ public final class AppMetadataRefreshJobService extends JobService {
                 new ComponentName(context, AppMetadataRefreshJobService.class))
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                 .setMinimumLatency(1_500L)
+                .setPersisted(true)
                 .setBackoffCriteria(30_000L, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
                 .setExtras(extras)
                 .build();
