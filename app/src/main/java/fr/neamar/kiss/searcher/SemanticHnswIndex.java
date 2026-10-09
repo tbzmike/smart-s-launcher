@@ -19,6 +19,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import fr.neamar.kiss.DataHandler;
+import fr.neamar.kiss.db.AppSourceMetadataRecord;
+import fr.neamar.kiss.db.SemanticActivityRecord;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.SearchPojo;
@@ -99,24 +101,73 @@ public final class SemanticHnswIndex {
                 // Provider snapshots and SQLite metadata reads stay entirely off the Home/UI path.
                 // The currently complete graph remains queryable until this replacement is ready.
                 final List<Pojo> source = dataHandler.getSemanticIndexSnapshot();
-                final Map<String, String> sourceTextByPackage = useSourceDescriptions
-                        ? dataHandler.getAppSourceSemanticTextByPackage()
-                        : Collections.emptyMap();
+                final Map<String, AppSourceMetadataRecord> metadataByPackage =
+                        useSourceDescriptions
+                                ? dataHandler.getAppSourceMetadataRecords()
+                                : Collections.emptyMap();
+                final Map<String, String> sourceTextByPackage = new HashMap<>();
+                for (Map.Entry<String, AppSourceMetadataRecord> entry
+                        : metadataByPackage.entrySet()) {
+                    AppSourceMetadataRecord record = entry.getValue();
+                    if (record == null) continue;
+                    String text = record.semanticText();
+                    if (text != null && !text.trim().isEmpty()) {
+                        sourceTextByPackage.put(entry.getKey(), text);
+                    }
+                }
                 lastSourceCount = source.size();
+                final String sessionId = "hnsw-" + generation + "-" + System.currentTimeMillis();
+                dataHandler.logSemanticActivity(new SemanticActivityRecord(
+                        System.currentTimeMillis(),
+                        "HNSW_BUILD_STARTED",
+                        sessionId,
+                        "",
+                        "",
+                        "HNSW",
+                        "Started semantic HNSW build from " + source.size()
+                                + " records · " + dimensions + " dimensions · metadata descriptions "
+                                + sourceTextByPackage.size() + "."));
 
                 if (generation != requestedGeneration.get()) return;
 
+                List<SemanticActivityRecord> indexEvents = new ArrayList<>();
                 Snapshot built = buildSnapshot(
-                        source, dimensions, generation, sourceTextByPackage);
+                        source,
+                        dimensions,
+                        generation,
+                        sourceTextByPackage,
+                        metadataByPackage,
+                        sessionId,
+                        indexEvents);
                 long elapsedMs = nanosToMs(System.nanoTime() - startNs);
 
                 if (generation != requestedGeneration.get()) return;
                 snapshot = built;
                 lastBuildMs = elapsedMs;
+                indexEvents.add(new SemanticActivityRecord(
+                        System.currentTimeMillis(),
+                        "HNSW_BUILD_COMPLETED",
+                        sessionId,
+                        "",
+                        "",
+                        "HNSW",
+                        "Committed " + built.nodes.size() + " vectors from " + source.size()
+                                + " source records · " + dimensions + " dimensions · "
+                                + elapsedMs + " ms."));
+                dataHandler.logSemanticActivities(indexEvents);
                 Log.i(TAG, "HNSW semantic index ready: " + built.nodes.size()
                         + " vectors, " + dimensions + " dimensions, " + elapsedMs + "ms");
             } catch (RuntimeException e) {
                 if (generation == requestedGeneration.get()) {
+                    dataHandler.logSemanticActivity(new SemanticActivityRecord(
+                            System.currentTimeMillis(),
+                            "HNSW_BUILD_FAILED",
+                            "hnsw-" + generation,
+                            "",
+                            "",
+                            "HNSW",
+                            e.getClass().getSimpleName() + ": "
+                                    + (e.getMessage() == null ? "build failed" : e.getMessage())));
                     Log.w(TAG, "HNSW semantic index rebuild failed; retaining previous graph", e);
                 }
             } finally {
@@ -223,7 +274,10 @@ public final class SemanticHnswIndex {
     private Snapshot buildSnapshot(List<Pojo> source,
                                    int dimensions,
                                    int generation,
-                                   Map<String, String> sourceTextByPackage) {
+                                   Map<String, String> sourceTextByPackage,
+                                   Map<String, AppSourceMetadataRecord> metadataByPackage,
+                                   String sessionId,
+                                   List<SemanticActivityRecord> indexEvents) {
         MutableGraph graph = new MutableGraph(dimensions);
         Set<String> seenIds = new HashSet<>(Math.max(16, source.size() * 2));
 
@@ -238,15 +292,48 @@ public final class SemanticHnswIndex {
                 continue;
             }
 
+            String packageName = packageForPojo(pojo);
+            String sourceText = sourceTextForPojo(pojo, sourceTextByPackage);
             float[] vector = SemanticEmbeddingScorer.prepareCandidate(
                     pojo,
                     dimensions,
-                    sourceTextForPojo(pojo, sourceTextByPackage));
+                    sourceText);
             if (isZero(vector)) continue;
             insert(graph, pojo, vector);
+
+            AppSourceMetadataRecord metadata = packageName == null
+                    ? null : metadataByPackage.get(packageName);
+            String eventType;
+            if (pojo instanceof AppPojo) eventType = "HNSW_APP_INDEXED";
+            else if (pojo instanceof ShortcutPojo) eventType = "HNSW_SHORTCUT_INDEXED";
+            else eventType = "HNSW_RECORD_INDEXED";
+            String sourceName = metadata == null || metadata.source == null
+                    || metadata.source.isEmpty() ? "Local app identity" : metadata.source;
+            int metadataChars = metadata == null || metadata.description == null
+                    ? 0 : metadata.description.length();
+            indexEvents.add(new SemanticActivityRecord(
+                    System.currentTimeMillis(),
+                    eventType,
+                    sessionId,
+                    packageName == null ? "" : packageName,
+                    pojo.getName() == null ? "" : pojo.getName(),
+                    sourceName,
+                    "Indexed " + dimensions + "-dimension semantic vector"
+                            + (metadataChars > 0
+                                    ? " with " + metadataChars
+                                            + " description characters from " + sourceName
+                                    : " without downloaded description metadata")
+                            + "."));
         }
 
         return graph.freeze();
+    }
+
+    @Nullable
+    private static String packageForPojo(Pojo pojo) {
+        if (pojo instanceof AppPojo) return ((AppPojo) pojo).packageName;
+        if (pojo instanceof ShortcutPojo) return ((ShortcutPojo) pojo).packageName;
+        return null;
     }
 
     @Nullable
