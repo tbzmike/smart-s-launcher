@@ -10,7 +10,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Local, rolling 365-day store for app usage, screen state and package history. */
 public final class AppUsageStore extends SQLiteOpenHelper {
@@ -157,6 +159,24 @@ public final class AppUsageStore extends SQLiteOpenHelper {
         values.put("source_uri", state.sourceUri);
         getWritableDatabase().insertWithOnConflict(
                 "package_state", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    @NonNull
+    public synchronized Map<String, PackageState> getPackageStates() {
+        Map<String, PackageState> states = new HashMap<>();
+        try (Cursor c = getReadableDatabase().query(
+                "package_state",
+                new String[]{"package_name", "app_label", "is_system", "first_install_ms",
+                        "last_update_ms", "installer_package", "source", "source_uri"},
+                null, null, null, null, null)) {
+            while (c.moveToNext()) {
+                PackageState state = new PackageState(
+                        c.getString(0), c.getString(1), c.getInt(2) != 0,
+                        c.getLong(3), c.getLong(4), c.getString(5), c.getString(6), c.getString(7));
+                states.put(state.packageName, state);
+            }
+        }
+        return states;
     }
 
     @Nullable
