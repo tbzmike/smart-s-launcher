@@ -111,8 +111,10 @@ public final class AppUsageSync {
             // missed while Smart S was stopped. The normal receiver updates package_state first,
             // so successfully handled live updates do not get queued twice here.
             if (previousState != null
-                    && info.lastUpdateTime > previousState.lastUpdateMs
-                    && info.lastUpdateTime > info.firstInstallTime + 1_000L) {
+                    && AppMetadataRefreshPolicy.shouldQueueFromReconciliation(
+                            previousState.lastUpdateMs,
+                            info.lastUpdateTime,
+                            info.firstInstallTime)) {
                 AppMetadataSyncScheduler.enqueuePackage(
                         context,
                         info.packageName,
