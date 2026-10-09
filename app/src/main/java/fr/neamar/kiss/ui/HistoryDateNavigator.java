@@ -82,10 +82,8 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
     }
 
     public void destroy() {
-        if (list.getOnFocusChangeListener() == this) {
-            // No-op compatibility guard; the navigator owns only OnScrollListener.
-        }
         list.setOnScrollListener(null);
+        list.setVerticalScrollBarEnabled(true);
         ViewGroup labelParent = (ViewGroup) sectionLabel.getParent();
         if (labelParent != null) labelParent.removeView(sectionLabel);
         ViewGroup scrollParent = (ViewGroup) fastScroll.getParent();
@@ -116,6 +114,7 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
                                     int visibleCount,
                                     int totalCount) {
         boolean history = isHistorySurface();
+        list.setVerticalScrollBarEnabled(!history);
         if (!history || totalCount <= 0) {
             sectionLabel.setVisibility(View.GONE);
             fastScroll.setVisibility(View.GONE);
