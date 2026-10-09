@@ -240,14 +240,15 @@ public final class AppSourceMetadataUpdater {
         }
 
         int stored = DBHelper.getAppSourceMetadataCount(context);
+        int attempted = DBHelper.getAppSourceMetadataTotalCount(context);
         if (lastFinishedAt > 0L) {
-            return stored + " app descriptions cached · last refresh: "
+            return stored + "/" + attempted + " app descriptions ready · last refresh: "
                     + downloaded + " downloaded, "
                     + retained + " retained, "
                     + localFallback + " local, "
                     + missing + " missing";
         }
-        return stored + " app descriptions cached locally";
+        return stored + "/" + attempted + " app descriptions ready locally";
     }
 
     /**
