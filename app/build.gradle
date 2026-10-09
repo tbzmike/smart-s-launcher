@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.160 - resilient DNS for app description downloads
-        versionCode 588
-        versionName "3.30.160"
+        // Smart S Launcher 3.30.161 - date-aware Home history fast scrolling
+        versionCode 589
+        versionName "3.30.161"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
