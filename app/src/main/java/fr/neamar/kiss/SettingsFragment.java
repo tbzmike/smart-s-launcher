@@ -322,20 +322,17 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     }
 
     private void addSemanticSearchPreferences(@Nullable String rootKey) {
-        // The semantic controls belong to the actual Providers PreferenceScreen, not to the
-        // "search-providers" PreferenceCategory inside it. PreferenceFragmentCompat can only
-        // navigate to PreferenceScreen roots, and treating a category as a screen caused the
-        // settings-search crash in 3.30.156.
-        if (!"providers".equals(rootKey)) return;
+        // Use a real PreferenceScreen so this feature is manually discoverable and can be opened
+        // safely from Settings search. 3.30.156 incorrectly targeted a PreferenceCategory.
+        if (!"semantic-search-screen".equals(rootKey)) return;
 
         PreferenceGroup parent = getPreferenceScreen();
         if (parent == null || parent.findPreference("semantic-search-category") != null) return;
 
         PreferenceCategory category = new PreferenceCategory(requireContext());
         category.setKey("semantic-search-category");
-        category.setTitle("Semantic search & HNSW");
-        category.setSummary("Fast on-device semantic app search, HNSW indexing and app metadata context.");
-        category.setOrder(1);
+        category.setTitle("Semantic engine");
+        category.setSummary("On-device semantic retrieval with HNSW and per-app metadata context.");
         parent.addPreference(category);
 
         SwitchPreference enabled = new SwitchPreference(requireContext());
