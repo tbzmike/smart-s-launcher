@@ -120,14 +120,19 @@ public final class AppSourceMetadataUpdater {
                 Set<String> packages = installedPackages(appContext, dataHandler);
                 total = packages.size();
                 final String sessionId = "metadata-" + System.currentTimeMillis();
-                DBHelper.insertSemanticActivity(appContext, new SemanticActivityRecord(
-                        System.currentTimeMillis(),
-                        "METADATA_REFRESH_STARTED",
-                        sessionId,
-                        "",
-                        "",
-                        "App metadata updater",
-                        "Started metadata refresh for " + total + " installed/searchable app packages."));
+                try {
+                    DBHelper.insertSemanticActivity(appContext, new SemanticActivityRecord(
+                            System.currentTimeMillis(),
+                            "METADATA_REFRESH_STARTED",
+                            sessionId,
+                            "",
+                            "",
+                            "App metadata updater",
+                            "Started metadata refresh for " + total
+                                    + " installed/searchable app packages."));
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "Unable to record metadata refresh start", e);
+                }
 
                 // Never erase a good cache just because Android temporarily reports no apps while
                 // providers/profiles are being restored.
@@ -186,7 +191,11 @@ public final class AppSourceMetadataUpdater {
                                 + (prefs.getBoolean("semantic-search-enabled", false)
                                         && prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true)
                                         ? "scheduled." : "deferred until semantic HNSW is enabled.")));
-                DBHelper.insertSemanticActivities(appContext, finishEvents);
+                try {
+                    DBHelper.insertSemanticActivities(appContext, finishEvents);
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "Unable to record metadata refresh completion", e);
+                }
             } finally {
                 fetchPool.shutdownNow();
                 lastFinishedAt = System.currentTimeMillis();
@@ -349,14 +358,18 @@ public final class AppSourceMetadataUpdater {
         if (!TextUtils.isEmpty(record.installerPackage)) {
             transparentDetails += "\nInstaller package: " + record.installerPackage;
         }
-        DBHelper.insertSemanticActivity(context, new SemanticActivityRecord(
-                System.currentTimeMillis(),
-                eventType,
-                sessionId,
-                record.packageName,
-                record.title,
-                record.source,
-                transparentDetails));
+        try {
+            DBHelper.insertSemanticActivity(context, new SemanticActivityRecord(
+                    System.currentTimeMillis(),
+                    eventType,
+                    sessionId,
+                    record.packageName,
+                    record.title,
+                    record.source,
+                    transparentDetails));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to record metadata activity for " + record.packageName, e);
+        }
     }
 
     @NonNull
