@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -82,6 +83,9 @@ public final class AppSourceMetadataUpdater {
             .followSslRedirects(true)
             .retryOnConnectionFailure(true)
             .build();
+
+    private static final Set<String> PENDING_PACKAGE_REFRESHES =
+            java.util.Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
     private static final ExecutorService COORDINATOR =
@@ -242,6 +246,88 @@ public final class AppSourceMetadataUpdater {
 
     public static boolean isRunning() {
         return RUNNING.get();
+    }
+
+    public static boolean isPackageRefreshPending(@Nullable String packageName) {
+        return !TextUtils.isEmpty(packageName)
+                && PENDING_PACKAGE_REFRESHES.contains(packageName);
+    }
+
+    /**
+     * Refresh exactly one app after Android/App Usage reports an install or package update.
+     *
+     * <p>The request is serialized with full metadata refreshes, deduplicated per package, and
+     * always updates the HNSW graph when semantic HNSW is enabled. This means app-description
+     * metadata follows the application lifecycle rather than depending on a manual full refresh.</p>
+     */
+    public static boolean refreshPackage(@NonNull Context context,
+                                         @NonNull DataHandler dataHandler,
+                                         @NonNull SharedPreferences prefs,
+                                         @NonNull String packageName,
+                                         @NonNull String reason) {
+        if (TextUtils.isEmpty(packageName)
+                || !PENDING_PACKAGE_REFRESHES.add(packageName)) {
+            return false;
+        }
+
+        final Context appContext = context.getApplicationContext();
+        prefs.edit().putBoolean(PREF_USE_SOURCE_DESCRIPTIONS, true).apply();
+
+        COORDINATOR.execute(() -> {
+            final long startedAt = System.currentTimeMillis();
+            final String sessionId = "metadata-package-" + startedAt + "-" + packageName;
+            try {
+                DBHelper.insertSemanticActivity(appContext, new SemanticActivityRecord(
+                        startedAt,
+                        "METADATA_PACKAGE_REFRESH_STARTED",
+                        sessionId,
+                        packageName,
+                        localPackageText(appContext, packageName).title,
+                        "App Usage",
+                        "Automatic app-description refresh requested. Reason: " + reason));
+
+                AppSourceMetadataRecord previous =
+                        DBHelper.getAppSourceMetadata(appContext).get(packageName);
+                RefreshResult result = refreshOne(
+                        appContext, packageName, previous, sessionId);
+
+                boolean rebuild = prefs.getBoolean("semantic-search-enabled", false)
+                        && prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true);
+                if (rebuild) {
+                    SemanticHnswIndex.getInstance().scheduleRebuild(dataHandler, prefs);
+                }
+
+                DBHelper.insertSemanticActivity(appContext, new SemanticActivityRecord(
+                        System.currentTimeMillis(),
+                        "METADATA_PACKAGE_REFRESH_COMPLETED",
+                        sessionId,
+                        packageName,
+                        localPackageText(appContext, packageName).title,
+                        "App Usage",
+                        "Automatic refresh result: " + result
+                                + " · Reason: " + reason
+                                + " · Network: " + ResilientDns.INSTANCE.statusSummary()
+                                + " · HNSW rebuild " + (rebuild ? "scheduled." : "deferred.")));
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Automatic metadata refresh failed for " + packageName, e);
+                try {
+                    DBHelper.insertSemanticActivity(appContext, new SemanticActivityRecord(
+                            System.currentTimeMillis(),
+                            "METADATA_PACKAGE_REFRESH_FAILED",
+                            sessionId,
+                            packageName,
+                            packageName,
+                            "App Usage",
+                            e.getClass().getSimpleName() + ": "
+                                    + (e.getMessage() == null ? "refresh failed" : e.getMessage())));
+                } catch (RuntimeException ignored) {
+                    // Metadata refresh failure must never crash package-update processing.
+                }
+            } finally {
+                PENDING_PACKAGE_REFRESHES.remove(packageName);
+            }
+        });
+        return true;
     }
 
     @NonNull
