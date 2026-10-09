@@ -293,6 +293,7 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                         + "\nMetadata updater: "
                         + (AppSourceMetadataUpdater.isRunning() ? "RUNNING" : "idle")
                         + " · Technical events: " + technicalCount
+                        + "\nNetwork: " + AppSourceMetadataUpdater.networkStatusSummary()
                         + "\nHNSW: " + hnsw);
                 if (updateDescriptions != null) {
                     updateDescriptions.setEnabled(!AppSourceMetadataUpdater.isRunning());
