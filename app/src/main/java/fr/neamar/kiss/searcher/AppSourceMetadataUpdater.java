@@ -229,6 +229,110 @@ public final class AppSourceMetadataUpdater {
         return true;
     }
 
+    public static void refreshPackages(@NonNull Context context,
+                                       @NonNull DataHandler dataHandler,
+                                       @NonNull SharedPreferences prefs,
+                                       @NonNull Set<String> packages,
+                                       @NonNull String reason,
+                                       @Nullable Runnable finishedCallback) {
+        if (packages.isEmpty()) {
+            if (finishedCallback != null) {
+                new Handler(Looper.getMainLooper()).post(finishedCallback);
+            }
+            return;
+        }
+
+        final Context appContext = context.getApplicationContext();
+        final Set<String> requested = new HashSet<>(packages);
+        prefs.edit().putBoolean(PREF_USE_SOURCE_DESCRIPTIONS, true).apply();
+
+        COORDINATOR.execute(() -> {
+            ExecutorService fetchPool = Executors.newFixedThreadPool(
+                    Math.max(1, Math.min(FETCH_WORKERS, requested.size())),
+                    runnable -> {
+                        Thread thread = new Thread(runnable, "smart-s-app-source-auto-fetch");
+                        thread.setPriority(Thread.MIN_PRIORITY);
+                        return thread;
+                    });
+
+            final String sessionId = "metadata-auto-" + System.currentTimeMillis();
+            int autoDownloaded = 0;
+            int autoRetained = 0;
+            int autoLocal = 0;
+            int autoMissing = 0;
+
+            try {
+                try {
+                    DBHelper.insertSemanticActivity(appContext, new SemanticActivityRecord(
+                            System.currentTimeMillis(),
+                            "METADATA_AUTO_REFRESH_STARTED",
+                            sessionId,
+                            "",
+                            "",
+                            "App usage / package detector",
+                            reason + " · refreshing " + requested.size() + " package(s)."));
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "Unable to record automatic metadata refresh start", e);
+                }
+
+                Map<String, AppSourceMetadataRecord> previous =
+                        DBHelper.getAppSourceMetadata(appContext);
+                ExecutorCompletionService<RefreshResult> completionService =
+                        new ExecutorCompletionService<>(fetchPool);
+
+                for (String packageName : requested) {
+                    AppSourceMetadataRecord old = previous.get(packageName);
+                    completionService.submit(() ->
+                            refreshOne(appContext, packageName, old, sessionId));
+                }
+
+                for (int i = 0; i < requested.size(); i++) {
+                    try {
+                        RefreshResult result = completionService.take().get();
+                        if (result == RefreshResult.DOWNLOADED) autoDownloaded++;
+                        else if (result == RefreshResult.RETAINED) autoRetained++;
+                        else if (result == RefreshResult.LOCAL_FALLBACK) autoLocal++;
+                        else autoMissing++;
+                    } catch (Exception e) {
+                        autoMissing++;
+                        Log.w(TAG, "Automatic app metadata refresh item failed", e);
+                    }
+                }
+
+                boolean hnswScheduled = false;
+                if (prefs.getBoolean("semantic-search-enabled", false)
+                        && prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true)) {
+                    SemanticHnswIndex.getInstance().scheduleRebuild(dataHandler, prefs);
+                    hnswScheduled = true;
+                }
+
+                try {
+                    DBHelper.insertSemanticActivity(appContext, new SemanticActivityRecord(
+                            System.currentTimeMillis(),
+                            "METADATA_AUTO_REFRESH_COMPLETED",
+                            sessionId,
+                            "",
+                            "",
+                            "App usage / package detector",
+                            reason + " · completed " + requested.size()
+                                    + " package(s) · downloaded " + autoDownloaded
+                                    + " · retained " + autoRetained
+                                    + " · local " + autoLocal
+                                    + " · missing " + autoMissing
+                                    + " · HNSW rebuild "
+                                    + (hnswScheduled ? "scheduled." : "not currently enabled.")));
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "Unable to record automatic metadata refresh completion", e);
+                }
+            } finally {
+                fetchPool.shutdownNow();
+                if (finishedCallback != null) {
+                    new Handler(Looper.getMainLooper()).post(finishedCallback);
+                }
+            }
+        });
+    }
+
     public static boolean isRunning() {
         return RUNNING.get();
     }
