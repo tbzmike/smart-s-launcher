@@ -42,12 +42,20 @@ public final class SemanticHnswIndex {
     public static final String PREF_HNSW_ENABLED = "semantic-hnsw-enabled";
     public static final String PREF_HNSW_EF_SEARCH = "semantic-hnsw-ef-search";
 
-    private static final int M = 12;
-    private static final int EF_CONSTRUCTION = 72;
+    // Full semantic vectors are intentionally higher-dimensional for fewer hash collisions.
+    // HNSW navigates with an exact folded projection (128D for 256/384D vectors) and rescoring
+    // uses the full vector, giving most of the speed of the old 128D graph with better accuracy.
+    private static final int DEFAULT_DIMENSIONS = 384;
+    private static final int MIN_DIMENSIONS = 256;
+    private static final int MAX_DIMENSIONS = 400;
+    private static final int TARGET_NAVIGATION_DIMENSIONS = 128;
+
+    private static final int M = 16;
+    private static final int EF_CONSTRUCTION = 96;
     private static final int MAX_LEVEL = 8;
-    private static final int DEFAULT_EF_SEARCH = 96;
-    private static final int MIN_EF_SEARCH = 24;
-    private static final int MAX_EF_SEARCH = 256;
+    private static final int DEFAULT_EF_SEARCH = 80;
+    private static final int MIN_EF_SEARCH = 32;
+    private static final int MAX_EF_SEARCH = 192;
 
     private static final SemanticHnswIndex INSTANCE = new SemanticHnswIndex();
 
@@ -127,7 +135,8 @@ public final class SemanticHnswIndex {
                             "HNSW",
                             "Started semantic HNSW build from " + source.size()
                                     + " records · " + dimensions
-                                    + " dimensions · metadata descriptions "
+                                    + "D semantic / " + navigationDimensions(dimensions)
+                                    + "D HNSW navigation · metadata descriptions "
                                     + sourceTextByPackage.size() + "."));
                 } catch (RuntimeException logError) {
                     Log.w(TAG, "Unable to record HNSW build start", logError);
@@ -157,7 +166,8 @@ public final class SemanticHnswIndex {
                         "",
                         "HNSW",
                         "Committed " + built.nodes.size() + " vectors from " + source.size()
-                                + " source records · " + dimensions + " dimensions · "
+                                + " source records · " + dimensions + "D semantic / "
+                                + built.navigationDimensions + "D HNSW navigation · "
                                 + elapsedMs + " ms."));
                 try {
                     dataHandler.logSemanticActivities(indexEvents);
@@ -165,7 +175,9 @@ public final class SemanticHnswIndex {
                     Log.w(TAG, "HNSW index is ready but activity logging failed", logError);
                 }
                 Log.i(TAG, "HNSW semantic index ready: " + built.nodes.size()
-                        + " vectors, " + dimensions + " dimensions, " + elapsedMs + "ms");
+                        + " vectors, " + dimensions + "D semantic / "
+                        + built.navigationDimensions + "D navigation, "
+                        + elapsedMs + "ms");
             } catch (RuntimeException e) {
                 if (generation == requestedGeneration.get()) {
                     try {
@@ -202,8 +214,8 @@ public final class SemanticHnswIndex {
 
     @NonNull
     public List<Hit> search(@NonNull float[] queryVector,
-                            int requestedCount,
-                            int requestedEfSearch) {
+                             int requestedCount,
+                             int requestedEfSearch) {
         Snapshot current = snapshot;
         if (queryVector.length == 0
                 || current.nodes.isEmpty()
@@ -215,24 +227,45 @@ public final class SemanticHnswIndex {
         long startNs = System.nanoTime();
         int count = Math.max(1, Math.min(requestedCount, current.nodes.size()));
         int ef = clamp(requestedEfSearch, MIN_EF_SEARCH, MAX_EF_SEARCH);
-        ef = Math.max(ef, count);
+        // Keep a wider candidate pool than the final result count because final ranking is done
+        // with the full 256-400D semantic vectors rather than the compact navigation projection.
+        ef = Math.max(ef, Math.min(current.nodes.size(), count * 4));
+
+        float[] navigationQuery =
+                foldNormalized(queryVector, current.navigationDimensions);
 
         int entry = current.entryPoint;
-        float entryScore = dot(queryVector, current.nodes.get(entry).vector);
+        float entryScore = dot(
+                navigationQuery, current.nodes.get(entry).navigationVector);
 
         for (int level = current.maxLevel; level > 0; level--) {
-            Candidate improved = greedyClosest(current, queryVector, entry, entryScore, level);
+            Candidate improved = greedyClosest(
+                    current, navigationQuery, entry, entryScore, level);
             entry = improved.index;
             entryScore = improved.score;
         }
 
         List<Candidate> nearest = searchLayer(
-                current, queryVector, Collections.singletonList(entry), ef, 0);
-        nearest.sort((left, right) -> Float.compare(right.score, left.score));
+                current,
+                navigationQuery,
+                Collections.singletonList(entry),
+                ef,
+                0);
 
-        List<Hit> hits = new ArrayList<>(Math.min(count, nearest.size()));
-        for (int i = 0; i < nearest.size() && hits.size() < count; i++) {
-            Candidate candidate = nearest.get(i);
+        // HNSW gets us the candidate pool cheaply. Re-score those candidates with the full
+        // semantic vector so the extra dimensions improve final accuracy instead of just cost.
+        List<Candidate> rescored = new ArrayList<>(nearest.size());
+        for (Candidate candidate : nearest) {
+            Node node = current.nodes.get(candidate.index);
+            rescored.add(new Candidate(
+                    candidate.index,
+                    dot(queryVector, node.fullVector)));
+        }
+        rescored.sort((left, right) -> Float.compare(right.score, left.score));
+
+        List<Hit> hits = new ArrayList<>(Math.min(count, rescored.size()));
+        for (int i = 0; i < rescored.size() && hits.size() < count; i++) {
+            Candidate candidate = rescored.get(i);
             Node node = current.nodes.get(candidate.index);
             hits.add(new Hit(node.pojo, candidate.score));
         }
@@ -280,7 +313,8 @@ public final class SemanticHnswIndex {
             return "HNSW index not ready yet";
         }
         return "Ready · " + current.nodes.size() + " vectors · "
-                + current.dimensions + " dimensions · build " + lastBuildMs
+                + current.dimensions + "D semantic · "
+                + current.navigationDimensions + "D HNSW navigation · build " + lastBuildMs
                 + " ms · last lookup " + lastLookupMs + " ms";
     }
 
@@ -291,7 +325,8 @@ public final class SemanticHnswIndex {
                                    Map<String, AppSourceMetadataRecord> metadataByPackage,
                                    String sessionId,
                                    List<SemanticActivityRecord> indexEvents) {
-        MutableGraph graph = new MutableGraph(dimensions);
+        int navigationDimensions = navigationDimensions(dimensions);
+        MutableGraph graph = new MutableGraph(dimensions, navigationDimensions);
         Set<String> seenIds = new HashSet<>(Math.max(16, source.size() * 2));
 
         for (int i = 0; i < source.size(); i++) {
@@ -307,12 +342,13 @@ public final class SemanticHnswIndex {
 
             String packageName = packageForPojo(pojo);
             String sourceText = sourceTextForPojo(pojo, sourceTextByPackage);
-            float[] vector = SemanticEmbeddingScorer.prepareCandidate(
+            float[] fullVector = SemanticEmbeddingScorer.prepareCandidate(
                     pojo,
                     dimensions,
                     sourceText);
-            if (isZero(vector)) continue;
-            insert(graph, pojo, vector);
+            if (isZero(fullVector)) continue;
+            float[] navigationVector = foldNormalized(fullVector, navigationDimensions);
+            insert(graph, pojo, navigationVector, fullVector);
 
             // Keep per-record transparency focused on launch targets. Logging every contact,
             // message and provider record created thousands of low-value rows and hid the app
@@ -369,9 +405,13 @@ public final class SemanticHnswIndex {
         return packageName == null ? null : sourceTextByPackage.get(packageName);
     }
 
-    private static void insert(MutableGraph graph, Pojo pojo, float[] vector) {
+    private static void insert(
+            MutableGraph graph,
+            Pojo pojo,
+            float[] navigationVector,
+            float[] fullVector) {
         int level = deterministicLevel(pojo.id);
-        MutableNode node = new MutableNode(pojo, vector, level);
+        MutableNode node = new MutableNode(pojo, navigationVector, fullVector, level);
         int newIndex = graph.nodes.size();
         graph.nodes.add(node);
 
@@ -382,10 +422,11 @@ public final class SemanticHnswIndex {
         }
 
         int entry = graph.entryPoint;
-        float entryScore = dot(vector, graph.nodes.get(entry).vector);
+        float entryScore = dot(
+                navigationVector, graph.nodes.get(entry).navigationVector);
 
         for (int currentLevel = graph.maxLevel; currentLevel > level; currentLevel--) {
-            Candidate best = greedyClosest(graph, vector, entry, entryScore, currentLevel);
+            Candidate best = greedyClosest(graph, navigationVector, entry, entryScore, currentLevel);
             entry = best.index;
             entryScore = best.score;
         }
@@ -393,7 +434,7 @@ public final class SemanticHnswIndex {
         int connectFrom = Math.min(level, graph.maxLevel);
         for (int currentLevel = connectFrom; currentLevel >= 0; currentLevel--) {
             List<Candidate> candidates = searchLayer(
-                    graph, vector, Collections.singletonList(entry), EF_CONSTRUCTION, currentLevel);
+                    graph, navigationVector, Collections.singletonList(entry), EF_CONSTRUCTION, currentLevel);
             candidates.sort((left, right) -> Float.compare(right.score, left.score));
 
             int links = Math.min(M, candidates.size());
@@ -436,10 +477,10 @@ public final class SemanticHnswIndex {
         List<Integer> neighbors = graph.nodes.get(nodeIndex).neighbors.get(level);
         if (neighbors.size() <= M) return;
 
-        float[] base = graph.nodes.get(nodeIndex).vector;
+        float[] base = graph.nodes.get(nodeIndex).navigationVector;
         neighbors.sort((left, right) -> Float.compare(
-                dot(base, graph.nodes.get(right).vector),
-                dot(base, graph.nodes.get(left).vector)));
+                dot(base, graph.nodes.get(right).navigationVector),
+                dot(base, graph.nodes.get(left).navigationVector)));
         while (neighbors.size() > M) neighbors.remove(neighbors.size() - 1);
     }
 
@@ -534,8 +575,51 @@ public final class SemanticHnswIndex {
     private static float dot(float[] left, float[] right) {
         int count = Math.min(left.length, right.length);
         float sum = 0f;
-        for (int i = 0; i < count; i++) sum += left[i] * right[i];
+        int i = 0;
+
+        // Manual unrolling materially reduces loop overhead for 256-400D full-vector rescoring
+        // and keeps the hot HNSW navigation path small and allocation-free.
+        for (; i + 7 < count; i += 8) {
+            sum += left[i] * right[i]
+                    + left[i + 1] * right[i + 1]
+                    + left[i + 2] * right[i + 2]
+                    + left[i + 3] * right[i + 3]
+                    + left[i + 4] * right[i + 4]
+                    + left[i + 5] * right[i + 5]
+                    + left[i + 6] * right[i + 6]
+                    + left[i + 7] * right[i + 7];
+        }
+        for (; i < count; i++) sum += left[i] * right[i];
         return Math.max(0f, sum);
+    }
+
+    private static int navigationDimensions(int fullDimensions) {
+        if (fullDimensions % TARGET_NAVIGATION_DIMENSIONS == 0) {
+            return Math.min(TARGET_NAVIGATION_DIMENSIONS, fullDimensions);
+        }
+        // 400D folds exactly to 100D. Keeping an exact divisor preserves the hashed-feature
+        // projection instead of arbitrarily truncating dimensions.
+        if (fullDimensions % 100 == 0) return Math.min(100, fullDimensions);
+        return Math.min(128, fullDimensions);
+    }
+
+    static int navigationDimensionsForTest(int fullDimensions) {
+        return navigationDimensions(fullDimensions);
+    }
+
+    private static float[] foldNormalized(float[] fullVector, int targetDimensions) {
+        if (fullVector.length == targetDimensions) return fullVector;
+        float[] folded = new float[targetDimensions];
+        for (int i = 0; i < fullVector.length; i++) {
+            folded[i % targetDimensions] += fullVector[i];
+        }
+
+        double sum = 0d;
+        for (float value : folded) sum += value * value;
+        if (sum <= 0d) return folded;
+        float inverse = (float) (1d / Math.sqrt(sum));
+        for (int i = 0; i < folded.length; i++) folded[i] *= inverse;
+        return folded;
     }
 
     private static boolean isZero(float[] vector) {
@@ -557,10 +641,16 @@ public final class SemanticHnswIndex {
 
     public static int parseDimensions(SharedPreferences prefs) {
         try {
-            return clamp(Integer.parseInt(
-                    prefs.getString("semantic-embedding-dimensions", "128")), 32, 512);
+            int configured = Integer.parseInt(
+                    prefs.getString(
+                            "semantic-embedding-dimensions",
+                            Integer.toString(DEFAULT_DIMENSIONS)));
+            // Automatically retire the old 64/128D profiles. Existing installations upgrade to
+            // 384D without needing the user to find and change the preference manually.
+            if (configured < MIN_DIMENSIONS) return DEFAULT_DIMENSIONS;
+            return clamp(configured, MIN_DIMENSIONS, MAX_DIMENSIONS);
         } catch (NumberFormatException | ClassCastException e) {
-            return 128;
+            return DEFAULT_DIMENSIONS;
         }
     }
 
@@ -600,12 +690,14 @@ public final class SemanticHnswIndex {
 
     private static final class MutableGraph implements GraphAccess {
         final int dimensions;
+        final int navigationDimensions;
         final List<MutableNode> nodes = new ArrayList<>();
         int entryPoint = -1;
         int maxLevel;
 
-        MutableGraph(int dimensions) {
+        MutableGraph(int dimensions, int navigationDimensions) {
             this.dimensions = dimensions;
+            this.navigationDimensions = navigationDimensions;
         }
 
         @Override public int size() {
@@ -613,7 +705,7 @@ public final class SemanticHnswIndex {
         }
 
         @Override public float[] vector(int index) {
-            return nodes.get(index).vector;
+            return nodes.get(index).navigationVector;
         }
 
         @Override public List<Integer> neighbors(int index, int level) {
@@ -633,12 +725,14 @@ public final class SemanticHnswIndex {
                 }
                 frozen.add(new Node(
                         mutable.pojo,
-                        mutable.vector,
+                        mutable.navigationVector,
+                        mutable.fullVector,
                         mutable.level,
                         Collections.unmodifiableList(levels)));
             }
             return new Snapshot(
                     dimensions,
+                    navigationDimensions,
                     Collections.unmodifiableList(frozen),
                     entryPoint,
                     maxLevel);
@@ -647,13 +741,15 @@ public final class SemanticHnswIndex {
 
     private static final class MutableNode {
         final Pojo pojo;
-        final float[] vector;
+        final float[] navigationVector;
+        final float[] fullVector;
         final int level;
         final List<List<Integer>> neighbors;
 
-        MutableNode(Pojo pojo, float[] vector, int level) {
+        MutableNode(Pojo pojo, float[] navigationVector, float[] fullVector, int level) {
             this.pojo = pojo;
-            this.vector = vector;
+            this.navigationVector = navigationVector;
+            this.fullVector = fullVector;
             this.level = level;
             this.neighbors = new ArrayList<>(level + 1);
             for (int i = 0; i <= level; i++) neighbors.add(new ArrayList<>());
@@ -662,13 +758,19 @@ public final class SemanticHnswIndex {
 
     private static final class Node {
         final Pojo pojo;
-        final float[] vector;
+        final float[] navigationVector;
+        final float[] fullVector;
         final int level;
         final List<List<Integer>> neighbors;
 
-        Node(Pojo pojo, float[] vector, int level, List<List<Integer>> neighbors) {
+        Node(Pojo pojo,
+             float[] navigationVector,
+             float[] fullVector,
+             int level,
+             List<List<Integer>> neighbors) {
             this.pojo = pojo;
-            this.vector = vector;
+            this.navigationVector = navigationVector;
+            this.fullVector = fullVector;
             this.level = level;
             this.neighbors = neighbors;
         }
@@ -676,19 +778,25 @@ public final class SemanticHnswIndex {
 
     private static final class Snapshot implements GraphAccess {
         final int dimensions;
+        final int navigationDimensions;
         final List<Node> nodes;
         final int entryPoint;
         final int maxLevel;
 
-        Snapshot(int dimensions, List<Node> nodes, int entryPoint, int maxLevel) {
+        Snapshot(int dimensions,
+                 int navigationDimensions,
+                 List<Node> nodes,
+                 int entryPoint,
+                 int maxLevel) {
             this.dimensions = dimensions;
+            this.navigationDimensions = navigationDimensions;
             this.nodes = nodes;
             this.entryPoint = entryPoint;
             this.maxLevel = maxLevel;
         }
 
         static Snapshot empty() {
-            return new Snapshot(0, Collections.emptyList(), -1, 0);
+            return new Snapshot(0, 0, Collections.emptyList(), -1, 0);
         }
 
         @Override public int size() {
@@ -696,7 +804,7 @@ public final class SemanticHnswIndex {
         }
 
         @Override public float[] vector(int index) {
-            return nodes.get(index).vector;
+            return nodes.get(index).navigationVector;
         }
 
         @Override public List<Integer> neighbors(int index, int level) {
@@ -722,34 +830,56 @@ public final class SemanticHnswIndex {
                                            int dimensions,
                                            int count,
                                            int efSearch) {
-        MutableGraph graph = new MutableGraph(dimensions);
+        int navigationDimensions = navigationDimensions(dimensions);
+        MutableGraph graph = new MutableGraph(dimensions, navigationDimensions);
         Set<String> seen = new HashSet<>();
         for (Pojo pojo : pojos) {
             if (pojo == null || pojo.id == null || !seen.add(pojo.id)) continue;
             String extra = extraSemanticTextById == null
                     ? null : extraSemanticTextById.get(pojo.id);
-            float[] vector = SemanticEmbeddingScorer.prepareCandidate(pojo, dimensions, extra);
-            if (!isZero(vector)) insert(graph, pojo, vector);
+            float[] fullVector =
+                    SemanticEmbeddingScorer.prepareCandidate(pojo, dimensions, extra);
+            if (!isZero(fullVector)) {
+                insert(
+                        graph,
+                        pojo,
+                        foldNormalized(fullVector, navigationDimensions),
+                        fullVector);
+            }
         }
         Snapshot snapshot = graph.freeze();
         if (snapshot.nodes.isEmpty()) return Collections.emptyList();
 
-        float[] queryVector = SemanticEmbeddingScorer.prepareQuery(query, dimensions);
+        float[] fullQuery = SemanticEmbeddingScorer.prepareQuery(query, dimensions);
+        float[] navigationQuery =
+                foldNormalized(fullQuery, snapshot.navigationDimensions);
         int entry = snapshot.entryPoint;
-        float entryScore = dot(queryVector, snapshot.nodes.get(entry).vector);
+        float entryScore = dot(
+                navigationQuery, snapshot.nodes.get(entry).navigationVector);
         for (int level = snapshot.maxLevel; level > 0; level--) {
-            Candidate improved = greedyClosest(snapshot, queryVector, entry, entryScore, level);
+            Candidate improved = greedyClosest(
+                    snapshot, navigationQuery, entry, entryScore, level);
             entry = improved.index;
             entryScore = improved.score;
         }
 
         List<Candidate> nearest = searchLayer(
-                snapshot, queryVector, Collections.singletonList(entry),
-                Math.max(count, efSearch), 0);
-        nearest.sort((left, right) -> Float.compare(right.score, left.score));
+                snapshot,
+                navigationQuery,
+                Collections.singletonList(entry),
+                Math.max(count * 4, efSearch),
+                0);
+        List<Candidate> rescored = new ArrayList<>(nearest.size());
+        for (Candidate candidate : nearest) {
+            rescored.add(new Candidate(
+                    candidate.index,
+                    dot(fullQuery, snapshot.nodes.get(candidate.index).fullVector)));
+        }
+        rescored.sort((left, right) -> Float.compare(right.score, left.score));
+
         List<Hit> hits = new ArrayList<>();
-        for (int i = 0; i < nearest.size() && hits.size() < count; i++) {
-            Candidate candidate = nearest.get(i);
+        for (int i = 0; i < rescored.size() && hits.size() < count; i++) {
+            Candidate candidate = rescored.get(i);
             hits.add(new Hit(snapshot.nodes.get(candidate.index).pojo, candidate.score));
         }
         return hits;
