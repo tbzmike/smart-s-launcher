@@ -50,6 +50,7 @@ import fr.neamar.kiss.dataprovider.simpleprovider.SettingsProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.TagsProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.TimerProvider;
 import fr.neamar.kiss.db.AppCatalogRecord;
+import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ShortcutRecord;
@@ -384,6 +385,23 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
             }
         }
         return snapshot;
+    }
+
+    /**
+     * Package-keyed source/catalog text loaded once per semantic index rebuild.
+     * This keeps SQLite completely out of the interactive query path.
+     */
+    @NonNull
+    public Map<String, String> getAppSourceSemanticTextByPackage() {
+        Map<String, AppSourceMetadataRecord> stored = DBHelper.getAppSourceMetadata(context);
+        Map<String, String> semanticText = new HashMap<>(stored.size());
+        for (Map.Entry<String, AppSourceMetadataRecord> entry : stored.entrySet()) {
+            AppSourceMetadataRecord record = entry.getValue();
+            if (record == null) continue;
+            String text = record.semanticText();
+            if (!TextUtils.isEmpty(text)) semanticText.put(entry.getKey(), text);
+        }
+        return semanticText;
     }
 
     /**
