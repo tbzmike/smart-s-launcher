@@ -312,7 +312,10 @@ public class QuerySearcher extends Searcher {
                         getStringPreference("semantic-model", SemanticEmbeddingScorer.MODEL_ID));
         if (!semanticEnabled) return;
 
-        semanticDimensions = parseIntPreference("semantic-embedding-dimensions", 128, 32, 512);
+        // Keep query and index dimensions on one authoritative setting/migration path.
+        // 3.30.160 parsed a separate 128D fallback here, which could leave the query vector
+        // mismatched with a newly rebuilt high-dimensional HNSW graph.
+        semanticDimensions = SemanticHnswIndex.parseDimensions(prefs);
         preparedSemanticQuery = SemanticEmbeddingScorer.prepareQuery(query, semanticDimensions);
         semanticThreshold = parseFloatPreference("semantic-threshold", 0.34f, 0.05f, 0.95f);
         semanticRerank = prefs.getBoolean(PREF_SEMANTIC_RERANK, true);
