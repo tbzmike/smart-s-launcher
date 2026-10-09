@@ -20,14 +20,17 @@ import android.text.TextUtils;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
+import androidx.preference.PreferenceManager;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
 
 /** Copies the usage history Android still exposes into Smart S's 365-day local timeline. */
 public final class AppUsageSync {
@@ -102,8 +105,21 @@ public final class AppUsageSync {
         long cutoff = now - AppUsageStore.RETENTION_MS;
         for (PackageInfo info : packages) {
             if (info == null || TextUtils.isEmpty(info.packageName)) continue;
+
+            AppUsageStore.PackageState previousState =
+                    store.getPackageState(info.packageName);
             PackageMeta meta = packageMeta(pm, info.packageName, info);
+            boolean updateChanged = shouldRefreshMetadataAfterPackageScan(
+                    previousState, info.lastUpdateTime);
             store.putPackageState(meta.toState());
+
+            if (updateChanged) {
+                queueMetadataRefresh(
+                        context,
+                        info.packageName,
+                        "App Usage reconciliation detected lastUpdateTime change from "
+                                + previousState.lastUpdateMs + " to " + info.lastUpdateTime);
+            }
 
             if (info.firstInstallTime >= cutoff && info.firstInstallTime <= now) {
                 store.putTimeline(new AppUsageStore.TimelineEntry(
@@ -119,7 +135,10 @@ public final class AppUsageSync {
                         "update:" + info.packageName + ":" + info.lastUpdateTime,
                         info.lastUpdateTime, 0L, AppUsageStore.KIND_UPDATED,
                         info.packageName, meta.label, 0L, meta.system,
-                        "Package updated", meta.source, meta.sourceUri));
+                        updateChanged
+                                ? "Package updated · App description refresh requested"
+                                : "Package updated",
+                        meta.source, meta.sourceUri));
             }
         }
     }
@@ -145,6 +164,33 @@ public final class AppUsageSync {
                     meta.source, meta.sourceUri));
         } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
             // Package broadcasts can race package manager visibility; the next scheduled sync repairs it.
+        }
+    }
+
+    static boolean shouldRefreshMetadataAfterPackageScan(
+            @Nullable AppUsageStore.PackageState previous,
+            long currentLastUpdateMs) {
+        // Do not treat the very first App Usage catalogue import as hundreds of fresh updates.
+        // Once a baseline exists, any changed non-zero lastUpdateTime means Android reports a
+        // newer package version and metadata must be refreshed.
+        return previous != null
+                && currentLastUpdateMs > 0L
+                && currentLastUpdateMs != previous.lastUpdateMs;
+    }
+
+    private static void queueMetadataRefresh(
+            @NonNull Context context,
+            @NonNull String packageName,
+            @NonNull String reason) {
+        try {
+            AppSourceMetadataUpdater.refreshPackage(
+                    context,
+                    KissApplication.getApplication(context).getDataHandler(),
+                    PreferenceManager.getDefaultSharedPreferences(context),
+                    packageName,
+                    reason);
+        } catch (RuntimeException ignored) {
+            // Usage history remains authoritative even if metadata refresh cannot be queued.
         }
     }
 
