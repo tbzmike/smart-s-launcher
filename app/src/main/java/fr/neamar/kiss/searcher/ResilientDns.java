@@ -2,6 +2,9 @@ package fr.neamar.kiss.searcher;
 
 import androidx.annotation.NonNull;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -15,9 +18,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import okhttp3.Dns;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 /**
  * DNS strategy for app-metadata HTTP requests.
@@ -40,6 +48,29 @@ final class ResilientDns implements Dns {
     private static final int DNS_PORT = 53;
     private static final int DNS_TIMEOUT_MS = 1800;
     private static final int MAX_PACKET = 2048;
+
+    private static final Dns BOOTSTRAP_DNS = hostname -> {
+        if ("cloudflare-dns.com".equalsIgnoreCase(hostname)) {
+            List<InetAddress> addresses = new ArrayList<>();
+            addresses.add(InetAddress.getByName("1.1.1.1"));
+            addresses.add(InetAddress.getByName("1.0.0.1"));
+            return addresses;
+        }
+        if ("dns.google".equalsIgnoreCase(hostname)) {
+            List<InetAddress> addresses = new ArrayList<>();
+            addresses.add(InetAddress.getByName("8.8.8.8"));
+            addresses.add(InetAddress.getByName("8.8.4.4"));
+            return addresses;
+        }
+        return Dns.SYSTEM.lookup(hostname);
+    };
+
+    private static final OkHttpClient DOH_CLIENT = new OkHttpClient.Builder()
+            .dns(BOOTSTRAP_DNS)
+            .connectTimeout(3500, TimeUnit.MILLISECONDS)
+            .readTimeout(4500, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(true)
+            .build();
 
     private final AtomicInteger systemFailures = new AtomicInteger();
     private final AtomicInteger fallbackSuccesses = new AtomicInteger();
@@ -67,8 +98,21 @@ final class ResilientDns implements Dns {
                         return recovered;
                     }
                 } catch (IOException ignored) {
-                    // Try the next resolver. The final error keeps the original hostname context.
+                    // Try the next resolver.
                 }
+            }
+
+            // Some mobile networks block direct UDP/53 while normal HTTPS still works. Use
+            // DNS-over-HTTPS as a second resolver path, bootstrapped with fixed resolver IPs so
+            // it does not depend on the broken Android hostname resolver.
+            try {
+                List<InetAddress> recovered = queryDoh(hostname);
+                if (!recovered.isEmpty()) {
+                    fallbackSuccesses.incrementAndGet();
+                    return recovered;
+                }
+            } catch (IOException ignored) {
+                // Fall through to a diagnostic UnknownHostException.
             }
 
             fallbackFailures.incrementAndGet();
@@ -122,6 +166,71 @@ final class ResilientDns implements Dns {
         } catch (SocketTimeoutException timeout) {
             throw new IOException("DNS timeout via " + resolver, timeout);
         }
+    }
+
+    @NonNull
+    private static List<InetAddress> queryDoh(String hostname) throws IOException {
+        IOException last = null;
+        String encoded = java.net.URLEncoder.encode(
+                hostname, java.nio.charset.StandardCharsets.UTF_8.name());
+        String[] urls = {
+                "https://cloudflare-dns.com/dns-query?name=" + encoded + "&type=A",
+                "https://dns.google/resolve?name=" + encoded + "&type=A"
+        };
+
+        for (String url : urls) {
+            Request request = new Request.Builder()
+                    .url(url)
+                    .header("Accept", "application/dns-json")
+                    .build();
+            try (Response response = DOH_CLIENT.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    last = new IOException("DoH HTTP " + response.code());
+                    continue;
+                }
+                ResponseBody body = response.body();
+                if (body == null) continue;
+
+                JSONObject root = new JSONObject(body.string());
+                JSONArray answers = root.optJSONArray("Answer");
+                if (answers == null) continue;
+
+                List<InetAddress> result = new ArrayList<>();
+                for (int i = 0; i < answers.length(); i++) {
+                    JSONObject answer = answers.optJSONObject(i);
+                    if (answer == null || answer.optInt("type", -1) != 1) continue;
+                    String address = answer.optString("data", "");
+                    if (address.matches("\\d{1,3}(?:\\.\\d{1,3}){3}")) {
+                        result.add(InetAddress.getByAddress(
+                                hostname, ipv4Bytes(address)));
+                    }
+                }
+                if (!result.isEmpty()) return result;
+            } catch (Exception e) {
+                last = e instanceof IOException
+                        ? (IOException) e : new IOException("DoH parse failure", e);
+            }
+        }
+
+        if (last != null) throw last;
+        return Collections.emptyList();
+    }
+
+    private static byte[] ipv4Bytes(String address) throws IOException {
+        String[] parts = address.split("\\.");
+        if (parts.length != 4) throw new IOException("Invalid IPv4 address");
+        byte[] bytes = new byte[4];
+        for (int i = 0; i < 4; i++) {
+            int value;
+            try {
+                value = Integer.parseInt(parts[i]);
+            } catch (NumberFormatException e) {
+                throw new IOException("Invalid IPv4 address", e);
+            }
+            if (value < 0 || value > 255) throw new IOException("Invalid IPv4 address");
+            bytes[i] = (byte) value;
+        }
+        return bytes;
     }
 
     private static byte[] buildQuery(String hostname, int id) throws IOException {
