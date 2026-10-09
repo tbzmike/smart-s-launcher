@@ -221,32 +221,42 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         preferenceFragment.getListView().postDelayed(() -> {
             try {
                 preferenceFragment.scrollToPreference(targetKey);
-                // Flash the exact row after navigation so the chosen result is unmistakable.
+                // Flash the exact visible row after navigation so the chosen result is unmistakable.
+                // Do not depend on PreferenceGroupAdapter: that API is restricted to androidx.
                 androidx.preference.Preference target = preferenceFragment.findPreference(targetKey);
                 if (target != null) {
                     androidx.recyclerview.widget.RecyclerView list = preferenceFragment.getListView();
-                    androidx.recyclerview.widget.RecyclerView.Adapter<?> adapter = list.getAdapter();
-                    if (adapter instanceof androidx.preference.PreferenceGroupAdapter) {
-                        int position = ((androidx.preference.PreferenceGroupAdapter) adapter)
-                                .getPreferenceAdapterPosition(target);
-                        if (position >= 0) {
-                            list.scrollToPosition(position);
-                            list.postDelayed(() -> {
-                                androidx.recyclerview.widget.RecyclerView.ViewHolder holder =
-                                        list.findViewHolderForAdapterPosition(position);
-                                if (holder == null) return;
-                                android.view.View row = holder.itemView;
-                                android.graphics.drawable.Drawable previous = row.getBackground();
-                                row.setBackgroundColor(0x5564B5F6);
-                                row.postDelayed(() -> row.setBackground(previous), 1800L);
-                            }, 180L);
+                    CharSequence targetTitle = target.getTitle();
+                    list.postDelayed(() -> {
+                        for (int i = 0; i < list.getChildCount(); i++) {
+                            android.view.View row = list.getChildAt(i);
+                            if (!rowContainsText(row, targetTitle)) continue;
+                            android.graphics.drawable.Drawable previous = row.getBackground();
+                            row.setBackgroundColor(0x5564B5F6);
+                            row.postDelayed(() -> row.setBackground(previous), 1800L);
+                            break;
                         }
-                    }
+                    }, 220L);
                 }
             } catch (RuntimeException e) {
                 Log.w(TAG, "Unable to scroll to searched setting: " + targetKey);
             }
         }, 80L);
+    }
+
+    private static boolean rowContainsText(android.view.View view, CharSequence target) {
+        if (view == null || TextUtils.isEmpty(target)) return false;
+        if (view instanceof android.widget.TextView) {
+            CharSequence text = ((android.widget.TextView) view).getText();
+            return target.equals(text);
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                if (rowContainsText(group.getChildAt(i), target)) return true;
+            }
+        }
+        return false;
     }
 
     private void clearSearchWithoutNavigation() {
