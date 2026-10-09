@@ -9,6 +9,9 @@ import android.text.TextUtils;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -221,10 +224,74 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         preferenceFragment.getListView().postDelayed(() -> {
             try {
                 preferenceFragment.scrollToPreference(targetKey);
+                // scrollToPreference() can settle one or two frames later. Pulse the actual row
+                // after it becomes visible so selecting a Settings search result is unmistakable.
+                preferenceFragment.getListView().postDelayed(
+                        () -> pulseSearchedPreference(preferenceFragment, targetKey),
+                        180L);
             } catch (RuntimeException e) {
                 Log.w(TAG, "Unable to scroll to searched setting: " + targetKey);
             }
         }, 80L);
+    }
+
+    private void pulseSearchedPreference(
+            @NonNull PreferenceFragmentCompat fragment, @NonNull String targetKey) {
+        Preference target = fragment.findPreference(targetKey);
+        if (target == null || TextUtils.isEmpty(target.getTitle())) return;
+
+        CharSequence targetTitle = target.getTitle();
+        androidx.recyclerview.widget.RecyclerView list = fragment.getListView();
+        for (int i = 0; i < list.getChildCount(); i++) {
+            View row = list.getChildAt(i);
+            if (rowContainsText(row, targetTitle)) {
+                row.animate().cancel();
+                row.setAlpha(1f);
+                row.setScaleX(1f);
+                row.setScaleY(1f);
+                row.animate()
+                        .alpha(0.48f)
+                        .scaleX(1.018f)
+                        .scaleY(1.018f)
+                        .setDuration(170L)
+                        .withEndAction(() -> row.animate()
+                                .alpha(1f)
+                                .scaleX(1f)
+                                .scaleY(1f)
+                                .setDuration(340L)
+                                .start())
+                        .start();
+                return;
+            }
+        }
+
+        // A very long preference screen can still be settling after the first scroll. Retry once
+        // rather than silently landing near the setting without identifying it.
+        list.postDelayed(() -> {
+            for (int i = 0; i < list.getChildCount(); i++) {
+                View row = list.getChildAt(i);
+                if (rowContainsText(row, targetTitle)) {
+                    row.animate().cancel();
+                    row.setAlpha(0.52f);
+                    row.animate().alpha(1f).setDuration(420L).start();
+                    return;
+                }
+            }
+        }, 220L);
+    }
+
+    private boolean rowContainsText(@NonNull View view, @NonNull CharSequence targetTitle) {
+        if (view instanceof TextView) {
+            CharSequence value = ((TextView) view).getText();
+            return value != null && TextUtils.equals(value, targetTitle);
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                if (rowContainsText(group.getChildAt(i), targetTitle)) return true;
+            }
+        }
+        return false;
     }
 
     private void clearSearchWithoutNavigation() {
