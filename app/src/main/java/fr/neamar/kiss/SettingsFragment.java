@@ -326,13 +326,18 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         // safely from Settings search. 3.30.156 incorrectly targeted a PreferenceCategory.
         if (!"semantic-search-screen".equals(rootKey)) return;
 
+        // Migrate 3.30.160's legacy 128D/ef96 defaults before the ListPreferences are rendered,
+        // so the screen never displays a stale value that differs from the graph/query engine.
+        SemanticHnswIndex.parseDimensions(prefs);
+        SemanticHnswIndex.parseEfSearch(prefs);
+
         PreferenceGroup parent = getPreferenceScreen();
         if (parent == null || parent.findPreference("semantic-search-category") != null) return;
 
         PreferenceCategory category = new PreferenceCategory(requireContext());
         category.setKey("semantic-search-category");
         category.setTitle("Semantic engine");
-        category.setSummary("On-device semantic retrieval with HNSW and per-app metadata context.");
+        category.setSummary("384D recommended semantic retrieval with adaptive HNSW and per-app metadata context.");
         parent.addPreference(category);
 
         SwitchPreference enabled = new SwitchPreference(requireContext());
