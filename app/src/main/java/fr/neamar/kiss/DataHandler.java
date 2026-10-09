@@ -54,6 +54,7 @@ import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ShortcutRecord;
+import fr.neamar.kiss.db.SemanticActivityRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -385,6 +386,19 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
             }
         }
         return snapshot;
+    }
+
+    @NonNull
+    public Map<String, AppSourceMetadataRecord> getAppSourceMetadataRecords() {
+        return DBHelper.getAppSourceMetadata(context);
+    }
+
+    public void logSemanticActivity(@NonNull SemanticActivityRecord record) {
+        DBHelper.insertSemanticActivity(context, record);
+    }
+
+    public void logSemanticActivities(@NonNull List<SemanticActivityRecord> records) {
+        DBHelper.insertSemanticActivities(context, records);
     }
 
     /**
