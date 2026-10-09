@@ -218,6 +218,7 @@ final class HistoryVisualEnhancer {
         hasLoadedSnapshot = true;
         UniversalHistoryTimestamp.updateEnrichment(cachedStats, cachedUsage);
         applyToVisibleNativeRows();
+        activity.onHistoryDateMetadataLoaded();
         if (refreshPending) requestRefresh();
     }
 
