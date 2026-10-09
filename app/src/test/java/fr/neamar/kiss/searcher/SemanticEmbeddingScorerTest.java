@@ -62,6 +62,24 @@ class SemanticEmbeddingScorerTest {
         assertTrue(withDescription > withoutDescription);
     }
 
+    @Test void barcodeIntentPrefersBarcodeCapabilityOverGenericCamera() {
+        float[] prepared = SemanticEmbeddingScorer.prepareQuery("scan bar code", 256);
+        Pojo opaqueScanner = pojo("Utility Pro");
+        Pojo camera = pojo("Camera");
+
+        float scannerScore = SemanticEmbeddingScorer.scorePrepared(
+                prepared,
+                opaqueScanner,
+                "Scan QR codes, barcodes, EAN and UPC product codes with the camera.");
+        float cameraScore = SemanticEmbeddingScorer.scorePrepared(
+                prepared,
+                camera,
+                "Take photos and videos with manual camera controls.");
+
+        assertTrue(scannerScore > cameraScore);
+        assertTrue(scannerScore > 0.20f);
+    }
+
     private static Pojo pojo(String name) {
         Pojo pojo = new Pojo("test://" + name) { };
         pojo.setName(name, false);
