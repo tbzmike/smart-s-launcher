@@ -109,6 +109,7 @@ public final class AppUsageSync {
                 DBHelper.getAppSourceMetadata(context);
         Map<String, AppUsageStore.PackageState> previousPackageStates =
                 store.getPackageStates();
+        boolean packageBaselineExists = !previousPackageStates.isEmpty();
         int failedMetadataRetryBudget = MAX_FAILED_METADATA_RETRIES_PER_SYNC;
         for (PackageInfo info : packages) {
             if (info == null || TextUtils.isEmpty(info.packageName)) continue;
@@ -118,9 +119,12 @@ public final class AppUsageSync {
             AppSourceMetadataRecord metadata =
                     metadataByPackage.get(info.packageName);
             PackageMeta meta = packageMeta(pm, info.packageName, info);
+            boolean newlyInstalled = packageBaselineExists
+                    && previousState == null
+                    && info.firstInstallTime > 0L;
             boolean updateChanged = shouldRefreshMetadataAfterPackageScan(
                     previousState, info.lastUpdateTime);
-            boolean metadataNeedsRetry = shouldRetryMetadataForPackage(
+            boolean metadataNeedsRetry = newlyInstalled || shouldRetryMetadataForPackage(
                     previousState,
                     info.lastUpdateTime,
                     metadata,
@@ -134,7 +138,9 @@ public final class AppUsageSync {
                                 && info.lastUpdateTime > 0L
                                 && metadata.fetchedAt > 0L
                                 && metadata.fetchedAt < info.lastUpdateTime);
-                if (updateChanged) {
+                if (newlyInstalled) {
+                    reason = "App Usage reconciliation discovered a newly installed package";
+                } else if (updateChanged) {
                     reason = "App Usage reconciliation detected lastUpdateTime change from "
                             + previousState.lastUpdateMs + " to " + info.lastUpdateTime;
                 } else if (updateOrStalePackage) {
