@@ -746,6 +746,15 @@ public class DBHelper {
         });
     }
 
+    public static int getAppSourceMetadataTotalCount(@NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            try (Cursor cursor = recoveryDb.rawQuery(
+                    "SELECT COUNT(*) FROM app_source_metadata", null)) {
+                return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+            }
+        });
+    }
+
     public static void pruneAppSourceMetadata(
             @NonNull Context context, @NonNull java.util.Set<String> installedPackages) {
         DatabaseRecovery.runVoid(context, recoveryDb -> {
