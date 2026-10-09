@@ -221,6 +221,28 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         preferenceFragment.getListView().postDelayed(() -> {
             try {
                 preferenceFragment.scrollToPreference(targetKey);
+                // Flash the exact row after navigation so the chosen result is unmistakable.
+                androidx.preference.Preference target = preferenceFragment.findPreference(targetKey);
+                if (target != null) {
+                    androidx.recyclerview.widget.RecyclerView list = preferenceFragment.getListView();
+                    androidx.recyclerview.widget.RecyclerView.Adapter<?> adapter = list.getAdapter();
+                    if (adapter instanceof androidx.preference.PreferenceGroupAdapter) {
+                        int position = ((androidx.preference.PreferenceGroupAdapter) adapter)
+                                .getPreferenceAdapterPosition(target);
+                        if (position >= 0) {
+                            list.scrollToPosition(position);
+                            list.postDelayed(() -> {
+                                androidx.recyclerview.widget.RecyclerView.ViewHolder holder =
+                                        list.findViewHolderForAdapterPosition(position);
+                                if (holder == null) return;
+                                android.view.View row = holder.itemView;
+                                android.graphics.drawable.Drawable previous = row.getBackground();
+                                row.setBackgroundColor(0x5564B5F6);
+                                row.postDelayed(() -> row.setBackground(previous), 1800L);
+                            }, 180L);
+                        }
+                    }
+                }
             } catch (RuntimeException e) {
                 Log.w(TAG, "Unable to scroll to searched setting: " + targetKey);
             }
