@@ -269,6 +269,15 @@ public final class AppSourceMetadataUpdater {
                                          @NonNull SharedPreferences prefs,
                                          @NonNull String packageName,
                                          @NonNull String reason) {
+        return refreshPackage(context, dataHandler, prefs, packageName, reason, null);
+    }
+
+    public static boolean refreshPackage(@NonNull Context context,
+                                         @NonNull DataHandler dataHandler,
+                                         @NonNull SharedPreferences prefs,
+                                         @NonNull String packageName,
+                                         @NonNull String reason,
+                                         @Nullable Runnable finishedCallback) {
         if (TextUtils.isEmpty(packageName)
                 || !PENDING_PACKAGE_REFRESHES.add(packageName)) {
             return false;
@@ -329,6 +338,9 @@ public final class AppSourceMetadataUpdater {
                 }
             } finally {
                 PENDING_PACKAGE_REFRESHES.remove(packageName);
+                if (finishedCallback != null) {
+                    new Handler(Looper.getMainLooper()).post(finishedCallback);
+                }
             }
         });
         return true;
