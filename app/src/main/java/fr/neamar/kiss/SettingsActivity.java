@@ -175,6 +175,9 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
             case APP_USAGE:
                 startActivity(new Intent(this, AppUsageActivity.class));
                 return;
+            case DATA_ACTIVITY:
+                startActivity(new Intent(this, DataActivityViewerActivity.class));
+                return;
             case SMART_SECTION: {
                 SmartFeaturesSettingsFragment fragment = new SmartFeaturesSettingsFragment();
                 Bundle args = new Bundle();
