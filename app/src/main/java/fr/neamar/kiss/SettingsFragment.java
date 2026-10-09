@@ -322,13 +322,20 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     }
 
     private void addSemanticSearchPreferences(@Nullable String rootKey) {
-        PreferenceGroup parent = findPreference("search-providers");
-        if (parent == null && "search-providers".equals(rootKey)) parent = getPreferenceScreen();
+        // The semantic controls belong to the actual Providers PreferenceScreen, not to the
+        // "search-providers" PreferenceCategory inside it. PreferenceFragmentCompat can only
+        // navigate to PreferenceScreen roots, and treating a category as a screen caused the
+        // settings-search crash in 3.30.156.
+        if (!"providers".equals(rootKey)) return;
+
+        PreferenceGroup parent = getPreferenceScreen();
         if (parent == null || parent.findPreference("semantic-search-category") != null) return;
 
         PreferenceCategory category = new PreferenceCategory(requireContext());
         category.setKey("semantic-search-category");
-        category.setTitle("Semantic search & embeddings");
+        category.setTitle("Semantic search & HNSW");
+        category.setSummary("Fast on-device semantic app search, HNSW indexing and app metadata context.");
+        category.setOrder(1);
         parent.addPreference(category);
 
         SwitchPreference enabled = new SwitchPreference(requireContext());
@@ -379,8 +386,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         Preference updateSources = new Preference(requireContext());
         updateSources.setKey("semantic-update-all-app-source-data");
         updateSources.setTitle("Update all apps source data");
-        updateSources.setSummary("Fetch public app descriptions in the background from the detected installation source first, then compatible fallback catalogs when needed.");
-        updateSources.setDependency("semantic-search-enabled");
+        updateSources.setSummary("Download descriptions for all searchable installed apps. Smart S tries the detected installation source first, then Play Store, F-Droid and Aptoide fallbacks. This can run even when semantic search is off.");
         updateSources.setOnPreferenceClickListener(preference -> {
             boolean started = AppSourceMetadataUpdater.refreshAll(
                     requireContext(),
@@ -511,8 +517,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         }
         Preference update = findPreference("semantic-update-all-app-source-data");
         if (update != null) {
-            update.setEnabled(!AppSourceMetadataUpdater.isRunning()
-                    && prefs.getBoolean("semantic-search-enabled", false));
+            update.setEnabled(!AppSourceMetadataUpdater.isRunning());
         }
     }
 
