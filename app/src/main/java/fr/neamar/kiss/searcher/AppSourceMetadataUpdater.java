@@ -67,7 +67,7 @@ public final class AppSourceMetadataUpdater {
 
     private static final int CONNECT_TIMEOUT_MS = 7000;
     private static final int READ_TIMEOUT_MS = 9000;
-    private static final int MAX_BODY_CHARS = 1_500_000;
+    private static final int MAX_BODY_CHARS = 3_500_000;
     private static final int FETCH_WORKERS = 3;
 
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
