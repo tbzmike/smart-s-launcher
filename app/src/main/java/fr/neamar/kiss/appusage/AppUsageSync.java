@@ -28,6 +28,7 @@ import java.util.Map;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.searcher.AppMetadataSyncScheduler;
 
 /** Copies the usage history Android still exposes into Smart S's 365-day local timeline. */
 public final class AppUsageSync {
@@ -102,8 +103,21 @@ public final class AppUsageSync {
         long cutoff = now - AppUsageStore.RETENTION_MS;
         for (PackageInfo info : packages) {
             if (info == null || TextUtils.isEmpty(info.packageName)) continue;
+            AppUsageStore.PackageState previousState = store.getPackageState(info.packageName);
             PackageMeta meta = packageMeta(pm, info.packageName, info);
             store.putPackageState(meta.toState());
+
+            // Reconcile a package update even if Android's live PACKAGE_REPLACED broadcast was
+            // missed while Smart S was stopped. The normal receiver updates package_state first,
+            // so successfully handled live updates do not get queued twice here.
+            if (previousState != null
+                    && info.lastUpdateTime > previousState.lastUpdateMs
+                    && info.lastUpdateTime > info.firstInstallTime + 1_000L) {
+                AppMetadataSyncScheduler.enqueuePackage(
+                        context,
+                        info.packageName,
+                        "App update recovered by Smart S App Usage reconciliation");
+            }
 
             if (info.firstInstallTime >= cutoff && info.firstInstallTime <= now) {
                 store.putTimeline(new AppUsageStore.TimelineEntry(
