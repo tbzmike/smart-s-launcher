@@ -13,10 +13,12 @@ import android.net.Uri;
 import android.os.Build;
 import android.text.TextUtils;
 
+import fr.neamar.kiss.searcher.AppMetadataSyncScheduler;
+
 public final class AppUsagePackageReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (intent == null || !AppUsageTracker.isEnabled(context)) return;
+        if (intent == null) return;
         Uri data = intent.getData();
         if (data == null) return;
         String packageName = data.getSchemeSpecificPart();
@@ -31,22 +33,34 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
         if (Intent.ACTION_PACKAGE_ADDED.equals(action) && replacing) return;
 
         Context appContext = context.getApplicationContext();
+        boolean usageEnabled = AppUsageTracker.isEnabled(appContext);
+
         if (Intent.ACTION_PACKAGE_ADDED.equals(action)) {
-            if (!recordCurrentPackage(appContext, packageName, false)) {
+            if (usageEnabled && !recordCurrentPackage(appContext, packageName, false)) {
                 AppUsageSync.recordPackageChange(appContext, action, packageName, false);
             }
+            AppMetadataSyncScheduler.enqueuePackage(
+                    appContext,
+                    packageName,
+                    "New app install detected by Smart S App Usage/package receiver");
             return;
         }
         if (Intent.ACTION_PACKAGE_REPLACED.equals(action)) {
-            if (!recordCurrentPackage(appContext, packageName, true)) {
+            if (usageEnabled && !recordCurrentPackage(appContext, packageName, true)) {
                 AppUsageSync.recordPackageChange(appContext, action, packageName, true);
             }
+            AppMetadataSyncScheduler.enqueuePackage(
+                    appContext,
+                    packageName,
+                    "App update detected by Smart S App Usage/package receiver");
             return;
         }
 
-        // For removals the package may already be invisible to PackageManager. The sync layer
-        // intentionally reads the last locally remembered label/source before writing the event.
-        AppUsageSync.recordPackageChange(appContext, action, packageName, replacing);
+        // For removals the package may already be invisible to PackageManager. The usage timeline
+        // remains opt-in, while metadata update detection above works regardless of that setting.
+        if (usageEnabled) {
+            AppUsageSync.recordPackageChange(appContext, action, packageName, replacing);
+        }
     }
 
     private static boolean recordCurrentPackage(Context context, String packageName,
@@ -75,7 +89,9 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
                     ? info.getLongVersionCode() : info.versionCode;
             String version = TextUtils.isEmpty(info.versionName)
                     ? "code " + code : "v" + info.versionName + ":" + code;
-            String detail = version + (update ? " updated" : " installed");
+            String detail = version + (update
+                    ? " updated · app description refresh queued"
+                    : " installed · app description refresh queued");
 
             InstallMeta install = installMeta(pm, packageName);
             AppUsageStore store = AppUsageStore.get(context);
