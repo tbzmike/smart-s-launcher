@@ -107,12 +107,14 @@ public final class AppUsageSync {
         long cutoff = now - AppUsageStore.RETENTION_MS;
         Map<String, AppSourceMetadataRecord> metadataByPackage =
                 DBHelper.getAppSourceMetadata(context);
+        Map<String, AppUsageStore.PackageState> previousPackageStates =
+                store.getPackageStates();
         int failedMetadataRetryBudget = MAX_FAILED_METADATA_RETRIES_PER_SYNC;
         for (PackageInfo info : packages) {
             if (info == null || TextUtils.isEmpty(info.packageName)) continue;
 
             AppUsageStore.PackageState previousState =
-                    store.getPackageState(info.packageName);
+                    previousPackageStates.get(info.packageName);
             AppSourceMetadataRecord metadata =
                     metadataByPackage.get(info.packageName);
             PackageMeta meta = packageMeta(pm, info.packageName, info);
