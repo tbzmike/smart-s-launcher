@@ -32,7 +32,8 @@ public final class SettingsSearchIndex {
         SMART_SECTION,
         BATTERY_MONITOR,
         INDEXING_SETTINGS,
-        APP_USAGE
+        APP_USAGE,
+        DATA_ACTIVITY
     }
 
     public static final class Entry {
@@ -252,6 +253,9 @@ public final class SettingsSearchIndex {
                 null, null, Destination.INDEXING_SETTINGS, null, false));
         out.add(new Entry("App usage timeline", "View launcher and phone app usage history",
                 null, null, Destination.APP_USAGE, null, false));
+        out.add(new Entry("Data Activity Viewer",
+                "See HNSW indexing, indexed apps, downloaded metadata, sources and timestamps",
+                null, null, Destination.DATA_ACTIVITY, null, false));
     }
 
     private static void dynamic(List<Entry> out, String title, String summary, String key,
