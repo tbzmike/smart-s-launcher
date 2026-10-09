@@ -802,11 +802,17 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return true;
         } else if (itemId == R.id.update_apps_metadata) {
             boolean started = fr.neamar.kiss.searcher.AppSourceMetadataUpdater.refreshAll(
-                    this, KissApplication.getApplication(this).getDataHandler(), prefs,
-                    () -> runOnUiThread(() -> Toast.makeText(this,
-                            "App metadata update finished", Toast.LENGTH_LONG).show()));
-            Toast.makeText(this, started ? "Updating app descriptions in background…" :
-                    "App metadata update already running", Toast.LENGTH_LONG).show();
+                    this,
+                    KissApplication.getApplication(this).getDataHandler(),
+                    prefs,
+                    () -> Toast.makeText(
+                            this,
+                            fr.neamar.kiss.searcher.AppSourceMetadataUpdater.statusSummary(this),
+                            Toast.LENGTH_LONG).show());
+            Toast.makeText(this, started
+                            ? "Updating descriptions for installed apps in background…"
+                            : "App metadata update already running",
+                    Toast.LENGTH_LONG).show();
             return true;
         } else if (itemId == R.id.load_avatars) {
             Toast.makeText(this, "Loading avatars for recent history…", Toast.LENGTH_SHORT).show();
