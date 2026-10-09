@@ -380,6 +380,16 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         sourceStatus.setSelectable(false);
         category.addPreference(sourceStatus);
 
+        Preference activityViewer = new Preference(requireContext());
+        activityViewer.setKey("semantic-data-activity-viewer");
+        activityViewer.setTitle("Data Activity Viewer");
+        activityViewer.setSummary("See every semantic HNSW build, each indexed app/record, metadata source, downloaded app description, timestamp and errors.");
+        activityViewer.setOnPreferenceClickListener(preference -> {
+            startActivity(new Intent(requireContext(), DataActivityViewerActivity.class));
+            return true;
+        });
+        category.addPreference(activityViewer);
+
         Preference updateSources = new Preference(requireContext());
         updateSources.setKey("semantic-update-all-app-source-data");
         updateSources.setTitle("Update all apps source data");
