@@ -84,28 +84,44 @@ public final class SemanticHnswIndex {
 
         final int dimensions = parseDimensions(prefs);
         final int generation = requestedGeneration.incrementAndGet();
-        final List<Pojo> source = dataHandler.getSemanticIndexSnapshot();
         final boolean useSourceDescriptions =
                 prefs.getBoolean(AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, true);
-        final Map<String, String> sourceTextByPackage = useSourceDescriptions
-                ? dataHandler.getAppSourceSemanticTextByPackage()
-                : Collections.emptyMap();
-        lastSourceCount = source.size();
+
+        // Mark queued work immediately. onResume()/LOAD_OVER can arrive back-to-back and must not
+        // enqueue duplicate snapshots while the launcher is rendering its first frame.
+        building = true;
 
         buildExecutor.execute(() -> {
             if (generation != requestedGeneration.get()) return;
-            building = true;
-            long startNs = System.nanoTime();
-            Snapshot built = buildSnapshot(
-                    source, dimensions, generation, sourceTextByPackage);
-            long elapsedMs = nanosToMs(System.nanoTime() - startNs);
 
-            if (generation != requestedGeneration.get()) return;
-            snapshot = built;
-            lastBuildMs = elapsedMs;
-            building = false;
-            Log.i(TAG, "HNSW semantic index ready: " + built.nodes.size()
-                    + " vectors, " + dimensions + " dimensions, " + elapsedMs + "ms");
+            long startNs = System.nanoTime();
+            try {
+                // Provider snapshots and SQLite metadata reads stay entirely off the Home/UI path.
+                // The currently complete graph remains queryable until this replacement is ready.
+                final List<Pojo> source = dataHandler.getSemanticIndexSnapshot();
+                final Map<String, String> sourceTextByPackage = useSourceDescriptions
+                        ? dataHandler.getAppSourceSemanticTextByPackage()
+                        : Collections.emptyMap();
+                lastSourceCount = source.size();
+
+                if (generation != requestedGeneration.get()) return;
+
+                Snapshot built = buildSnapshot(
+                        source, dimensions, generation, sourceTextByPackage);
+                long elapsedMs = nanosToMs(System.nanoTime() - startNs);
+
+                if (generation != requestedGeneration.get()) return;
+                snapshot = built;
+                lastBuildMs = elapsedMs;
+                Log.i(TAG, "HNSW semantic index ready: " + built.nodes.size()
+                        + " vectors, " + dimensions + " dimensions, " + elapsedMs + "ms");
+            } catch (RuntimeException e) {
+                if (generation == requestedGeneration.get()) {
+                    Log.w(TAG, "HNSW semantic index rebuild failed; retaining previous graph", e);
+                }
+            } finally {
+                if (generation == requestedGeneration.get()) building = false;
+            }
         });
     }
 
