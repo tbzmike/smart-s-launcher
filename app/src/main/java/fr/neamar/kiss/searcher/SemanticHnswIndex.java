@@ -245,12 +245,8 @@ public final class SemanticHnswIndex {
             entryScore = improved.score;
         }
 
-        List<Candidate> nearest = searchLayer(
-                current,
-                navigationQuery,
-                Collections.singletonList(entry),
-                ef,
-                0);
+        List<Candidate> nearest =
+                searchFrozenLayer(current, navigationQuery, entry, ef, 0);
 
         // HNSW gets us the candidate pool cheaply. Re-score those candidates with the full
         // semantic vector so the extra dimensions improve final accuracy instead of just cost.
@@ -506,6 +502,56 @@ public final class SemanticHnswIndex {
         } while (changed);
 
         return new Candidate(current, currentScore);
+    }
+
+    private static List<Candidate> searchFrozenLayer(
+            Snapshot graph,
+            float[] query,
+            int entry,
+            int ef,
+            int level) {
+        PriorityQueue<Candidate> candidates = new PriorityQueue<>(
+                Math.max(11, ef),
+                (left, right) -> Float.compare(right.score, left.score));
+        PriorityQueue<Candidate> best = new PriorityQueue<>(
+                Math.max(11, ef),
+                Comparator.comparingDouble(value -> value.score));
+
+        // Frozen queries know the graph size, so a primitive visited bitmap avoids HashSet<Integer>
+        // allocation/boxing on every keystroke.
+        boolean[] visited = new boolean[graph.nodes.size()];
+        if (entry < 0 || entry >= graph.nodes.size()) return Collections.emptyList();
+
+        visited[entry] = true;
+        float score = dot(query, graph.nodes.get(entry).navigationVector);
+        Candidate first = new Candidate(entry, score);
+        candidates.offer(first);
+        best.offer(first);
+
+        while (!candidates.isEmpty()) {
+            Candidate current = candidates.poll();
+            Candidate worstBest = best.peek();
+            if (worstBest != null && best.size() >= ef && current.score < worstBest.score) {
+                break;
+            }
+
+            for (int neighbor : graph.neighbors(current.index, level)) {
+                if (neighbor < 0 || neighbor >= visited.length || visited[neighbor]) continue;
+                visited[neighbor] = true;
+
+                float neighborScore =
+                        dot(query, graph.nodes.get(neighbor).navigationVector);
+                Candidate worst = best.peek();
+                if (best.size() < ef || worst == null || neighborScore > worst.score) {
+                    Candidate next = new Candidate(neighbor, neighborScore);
+                    candidates.offer(next);
+                    best.offer(next);
+                    if (best.size() > ef) best.poll();
+                }
+            }
+        }
+
+        return new ArrayList<>(best);
     }
 
     private static List<Candidate> searchLayer(GraphAccess graph,
@@ -863,10 +909,10 @@ public final class SemanticHnswIndex {
             entryScore = improved.score;
         }
 
-        List<Candidate> nearest = searchLayer(
+        List<Candidate> nearest = searchFrozenLayer(
                 snapshot,
                 navigationQuery,
-                Collections.singletonList(entry),
+                entry,
                 Math.max(count * 4, efSearch),
                 0);
         List<Candidate> rescored = new ArrayList<>(nearest.size());
