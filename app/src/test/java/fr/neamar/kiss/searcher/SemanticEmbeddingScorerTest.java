@@ -77,7 +77,7 @@ class SemanticEmbeddingScorerTest {
                 "Take photos and videos with manual camera controls.");
 
         assertTrue(scannerScore > cameraScore);
-        assertTrue(scannerScore > 0.20f);
+        assertTrue(scannerScore > 0.34f);
     }
 
     private static Pojo pojo(String name) {
