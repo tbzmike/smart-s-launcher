@@ -6,12 +6,15 @@ import android.text.TextUtils;
 import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
+import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.DBHelper;
@@ -56,10 +59,13 @@ public class QuerySearcher extends Searcher {
     private boolean semanticPass;
     private boolean semanticEnabled;
     private boolean semanticRerank;
+    private boolean hnswEnabled;
     private float semanticThreshold;
     private float semanticWeight;
     private int semanticDimensions;
     private float[] preparedSemanticQuery;
+    private List<SemanticHnswIndex.Hit> hnswHits = Collections.emptyList();
+    private final Map<String, Float> semanticScoresById = new HashMap<>();
 
     public QuerySearcher(MainActivity activity, String query, boolean isRefresh,
                          List<Pojo> historySeed) {
@@ -125,7 +131,10 @@ public class QuerySearcher extends Searcher {
                 if (historyValue != null && !pojo.isDisabled()) {
                     originalRelevance += 25 * historyValue;
                 }
-                float semanticScore = SemanticEmbeddingScorer.scorePrepared(preparedSemanticQuery, pojo);
+                Float indexedSemanticScore = semanticScoresById.get(pojo.id);
+                float semanticScore = indexedSemanticScore != null
+                        ? indexedSemanticScore
+                        : SemanticEmbeddingScorer.scorePrepared(preparedSemanticQuery, pojo);
                 pojo.relevance = hybridRelevance(pojo, originalRelevance, semanticScore, true);
             } else if (pojo instanceof SearchPojo) {
                 // SearchPojo relevance is deliberately authored by SearchProvider. Preserve explicit
@@ -167,21 +176,27 @@ public class QuerySearcher extends Searcher {
         knownIds = new HashMap<>();
         for (ValuedHistoryRecord id : lastIdsForQuery) knownIds.put(id.record, id.value);
 
-        configureSemanticSearch();
-        KissApplication.getApplication(activity).getDataHandler().requestResults(query, this);
+        DataHandler dataHandler = KissApplication.getApplication(activity).getDataHandler();
+        configureSemanticSearch(dataHandler);
+        dataHandler.requestResults(query, this);
         mergeMissingHistoryMatches();
 
-        // Do not hold useful lexical matches behind the full semantic-record scan. The same
-        // Searcher remains active, so the deeper pass can still improve the final ranking and is
-        // cancelled immediately if the user types again or chooses a result.
+        // Lexical results are still published immediately. Semantic HNSW retrieval never blocks
+        // them behind a provider-wide embedding scan.
         if (semanticEnabled && !lexicalIds.isEmpty() && !isCancelled()) {
             publishCurrentResults();
         }
 
         if (semanticEnabled && !isCancelled()) {
-            semanticPass = true;
-            KissApplication.getApplication(activity).getDataHandler().requestAllRecords(this);
-            semanticPass = false;
+            if (hnswEnabled) {
+                addHnswSemanticMatches();
+            } else {
+                // Compatibility switch: users can still compare against the legacy exhaustive
+                // semantic pass. HNSW is the default because this path scales with every record.
+                semanticPass = true;
+                dataHandler.requestAllRecords(this);
+                semanticPass = false;
+            }
         }
         return null;
     }
@@ -247,9 +262,20 @@ public class QuerySearcher extends Searcher {
     }
 
     private boolean isVisibleByFrozenSearchPolicy(Pojo pojo) {
-        if (pojo == null || !pojo.isDisabled()) return true;
+        if (pojo == null) return false;
+
         MainActivity activity = activityWeakReference.get();
         if (activity == null) return false;
+
+        DataHandler dataHandler = KissApplication.getApplication(activity).getDataHandler();
+        if (dataHandler.getExcludedFavorites().contains(pojo.getFavoriteId())) return false;
+
+        if (pojo instanceof AppPojo) {
+            AppPojo app = (AppPojo) pojo;
+            if (app.isExcluded() && !prefs.getBoolean("enable-excluded-apps", false)) return false;
+        }
+
+        if (!pojo.isDisabled()) return true;
         if (pojo instanceof ShortcutPojo
                 && ShortcutUtil.isIceBoxPublisher(
                 activity, ((ShortcutPojo) pojo).packageName)) {
@@ -258,7 +284,7 @@ public class QuerySearcher extends Searcher {
         return FrozenAppPreferences.keepSearchable(activity);
     }
 
-    private void configureSemanticSearch() {
+    private void configureSemanticSearch(DataHandler dataHandler) {
         semanticEnabled = query != null
                 && query.trim().length() >= 2
                 && prefs.getBoolean("semantic-search-enabled", false)
@@ -268,9 +294,58 @@ public class QuerySearcher extends Searcher {
 
         semanticDimensions = parseIntPreference("semantic-embedding-dimensions", 128, 32, 512);
         preparedSemanticQuery = SemanticEmbeddingScorer.prepareQuery(query, semanticDimensions);
-        semanticThreshold = parseFloatPreference("semantic-threshold", 0.26f, 0.05f, 0.95f);
+        semanticThreshold = parseFloatPreference("semantic-threshold", 0.34f, 0.05f, 0.95f);
         semanticRerank = prefs.getBoolean(PREF_SEMANTIC_RERANK, true);
         semanticWeight = parseFloatPreference(PREF_SEMANTIC_WEIGHT, 0.58f, 0.20f, 0.85f);
+        hnswEnabled = prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true);
+
+        semanticScoresById.clear();
+        hnswHits = Collections.emptyList();
+
+        if (!hnswEnabled) return;
+
+        SemanticHnswIndex index = SemanticHnswIndex.getInstance();
+        index.ensureReady(dataHandler, prefs, semanticDimensions);
+        if (!index.isReadyFor(semanticDimensions)) return;
+
+        int candidateCount = Math.max(48, Math.min(192, getMaxResultCount() * 3));
+        hnswHits = index.search(
+                preparedSemanticQuery,
+                candidateCount,
+                SemanticHnswIndex.parseEfSearch(prefs));
+        for (SemanticHnswIndex.Hit hit : hnswHits) {
+            if (hit == null || hit.pojo == null || hit.pojo.id == null) continue;
+            semanticScoresById.put(hit.pojo.id, hit.score);
+        }
+    }
+
+    private void addHnswSemanticMatches() {
+        if (hnswHits.isEmpty() || isCancelled()) return;
+
+        List<Pojo> semanticMatches = new ArrayList<>();
+        int checked = 0;
+        for (SemanticHnswIndex.Hit hit : hnswHits) {
+            if ((checked++ & 31) == 0 && isCancelled()) return;
+            if (hit == null || hit.pojo == null) continue;
+
+            Pojo pojo = hit.pojo;
+            if (lexicalIds.contains(pojo.id)
+                    || hit.score < semanticThreshold
+                    || !isVisibleByFrozenSearchPolicy(pojo)) {
+                continue;
+            }
+
+            if (semanticRerank) {
+                pojo.relevance = hybridRelevance(pojo, 0, hit.score, false);
+            } else {
+                pojo.relevance = 120 + Math.round(hit.score * 280f);
+                if (pojo.isDisabled()) pojo.relevance -= 200;
+            }
+            promoteLaunchTarget(pojo);
+            semanticMatches.add(pojo);
+        }
+
+        if (!semanticMatches.isEmpty()) super.addResults(semanticMatches);
     }
 
     private int normalizeLocalLexicalRelevance(int rawRelevance) {
