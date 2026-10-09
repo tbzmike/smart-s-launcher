@@ -338,11 +338,15 @@ public final class AppSourceMetadataUpdater {
         record.title = local.title;
 
         List<CatalogTarget> targets = targetsForInstaller(record.installerPackage, packageName);
+        StringBuilder attempts = new StringBuilder();
         String lastError = "";
         for (CatalogTarget target : targets) {
             try {
                 CatalogResult fetched = target.fetch();
-                if (fetched == null || TextUtils.isEmpty(fetched.description)) continue;
+                if (fetched == null || TextUtils.isEmpty(fetched.description)) {
+                    appendAttempt(attempts, target.source + ": no usable description");
+                    continue;
+                }
 
                 record.source = target.source;
                 String fetchedTitle = cleanText(fetched.title);
@@ -360,10 +364,12 @@ public final class AppSourceMetadataUpdater {
                                 + "Description: " + record.description);
                 return RefreshResult.DOWNLOADED;
             } catch (Exception e) {
-                lastError = e.getClass().getSimpleName() + ": "
+                lastError = target.source + " · " + e.getClass().getSimpleName() + ": "
                         + (e.getMessage() == null ? "fetch failed" : e.getMessage());
+                appendAttempt(attempts, lastError);
             }
         }
+        if (attempts.length() > 0) lastError = attempts.toString();
 
         // A transient store/network failure must never destroy previously downloaded semantic
         // context. Keep the successful description and only record the latest refresh error.
@@ -407,6 +413,11 @@ public final class AppSourceMetadataUpdater {
         logMetadataEvent(context, sessionId, "METADATA_MISSING", record,
                 "No usable description found. " + record.lastError);
         return RefreshResult.MISSING;
+    }
+
+    private static void appendAttempt(StringBuilder attempts, String message) {
+        if (attempts.length() > 0) attempts.append(" | ");
+        attempts.append(message);
     }
 
     private static void logMetadataEvent(Context context,
