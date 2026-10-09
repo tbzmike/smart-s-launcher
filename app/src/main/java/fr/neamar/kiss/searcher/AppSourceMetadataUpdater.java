@@ -529,9 +529,17 @@ public final class AppSourceMetadataUpdater {
     }
 
     private static void addAptoide(List<CatalogTarget> targets, String packageName) {
-        String url = "https://ws75.aptoide.com/api/7/app/get/package_name="
+        String metaUrl = "https://ws2.aptoide.com/api/7/app/getMeta/package_name="
                 + encodePath(packageName);
-        targets.add(new CatalogTarget("Aptoide", url, () -> fetchAptoideMetadata(url)));
+        targets.add(new CatalogTarget(
+                "Aptoide", metaUrl, () -> fetchAptoideMetadata(metaUrl)));
+
+        // Keep the older public v7 details endpoint as a second independent fallback because
+        // catalogue coverage can differ between Aptoide stores/edges for the same package.
+        String detailsUrl = "https://ws75.aptoide.com/api/7/app/get/package_name="
+                + encodePath(packageName) + "/language=en/nodes=meta";
+        targets.add(new CatalogTarget(
+                "Aptoide details", detailsUrl, () -> fetchAptoideMetadata(detailsUrl)));
     }
 
     private static void addSamsung(List<CatalogTarget> targets, String packageName) {
