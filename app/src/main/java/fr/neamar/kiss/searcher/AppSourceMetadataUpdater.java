@@ -563,6 +563,11 @@ public final class AppSourceMetadataUpdater {
     static String parsePlayDescriptionForTest(String body) {
         if (TextUtils.isEmpty(body)) return null;
 
+        CatalogResult ds5 = extractPlayDs5Metadata(body);
+        if (ds5 != null && isUsefulDescription(ds5.description)) {
+            return ds5.description;
+        }
+
         CatalogResult structured = extractJsonLdMetadata(body);
         if (structured != null && isUsefulDescription(structured.description)) {
             return structured.description;
@@ -583,6 +588,11 @@ public final class AppSourceMetadataUpdater {
         String body = httpGet(url);
         if (TextUtils.isEmpty(body)) return null;
 
+        CatalogResult ds5 = extractPlayDs5Metadata(body);
+        if (ds5 != null && isUsefulDescription(ds5.description)) {
+            return ds5;
+        }
+
         CatalogResult structured = extractJsonLdMetadata(body);
         if (structured != null && isUsefulDescription(structured.description)) {
             return structured;
@@ -601,6 +611,170 @@ public final class AppSourceMetadataUpdater {
         return isUsefulDescription(description)
                 ? new CatalogResult(title, description)
                 : null;
+    }
+
+    /**
+     * Google Play's current server response embeds the app detail model in
+     * AF_initDataCallback({key:'ds:5', data:[...]}). This is more stable than DOM class names and
+     * is the same root used by maintained Play Store scrapers in 2026.
+     */
+    @Nullable
+    private static CatalogResult extractPlayDs5Metadata(String html) {
+        String arrayText = extractDs5DataArray(html);
+        if (TextUtils.isEmpty(arrayText)) return null;
+
+        try {
+            JSONArray root = new JSONArray(arrayText);
+            Object details = jsonPath(root, 1, 2);
+            if (!(details instanceof JSONArray)) return null;
+
+            JSONArray detail = (JSONArray) details;
+            String title = asString(jsonPath(detail, 0, 0));
+
+            // Current Play detail model: localized description first, original-language fallback.
+            String description = asString(jsonPath(detail, 12, 0, 0, 1));
+            if (!isUsefulDescription(description)) {
+                description = asString(jsonPath(detail, 72, 0, 1));
+            }
+
+            // Some listings expose only the short summary in the detail payload. Use that as an
+            // online semantic fallback rather than leaving an otherwise known app with no context.
+            if (!isUsefulDescription(description)) {
+                description = asString(jsonPath(detail, 73, 0, 1));
+            }
+
+            description = cleanText(description);
+            title = cleanText(title);
+            return isUsefulDescription(description)
+                    ? new CatalogResult(title, description)
+                    : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private static String extractDs5DataArray(String html) {
+        if (TextUtils.isEmpty(html)) return null;
+
+        int cursor = 0;
+        while (cursor < html.length()) {
+            int callback = html.indexOf("AF_initDataCallback", cursor);
+            if (callback < 0) return null;
+
+            int end = html.indexOf(");", callback);
+            if (end < 0) end = Math.min(html.length(), callback + 4_000_000);
+            String block = html.substring(callback, end);
+
+            if (containsDs5Key(block)) {
+                int data = block.indexOf("data:");
+                if (data < 0) data = block.indexOf("data :");
+                if (data >= 0) {
+                    int arrayStart = block.indexOf('[', data);
+                    if (arrayStart >= 0) {
+                        String array = balancedArray(block, arrayStart);
+                        if (!TextUtils.isEmpty(array)) return normalizeJsArrayForJson(array);
+                    }
+                }
+            }
+            cursor = Math.max(callback + 20, end + 2);
+        }
+        return null;
+    }
+
+    private static boolean containsDs5Key(String block) {
+        return block.contains("key:'ds:5'")
+                || block.contains("key: 'ds:5'")
+                || block.contains("key:\"ds:5\"")
+                || block.contains("key: \"ds:5\"");
+    }
+
+    @Nullable
+    private static String balancedArray(String text, int start) {
+        int depth = 0;
+        boolean escaped = false;
+        char quote = 0;
+
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (quote != 0) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == quote) {
+                    quote = 0;
+                }
+                continue;
+            }
+
+            if (c == '\"' || c == '\'') {
+                quote = c;
+                continue;
+            }
+            if (c == '[') depth++;
+            else if (c == ']') {
+                depth--;
+                if (depth == 0) return text.substring(start, i + 1);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Play's ds:5 arrays are JSON-compatible in normal responses. This tiny normalizer only
+     * replaces the JavaScript literal undefined outside strings, which JSONArray cannot parse.
+     */
+    private static String normalizeJsArrayForJson(String input) {
+        StringBuilder out = new StringBuilder(input.length());
+        boolean escaped = false;
+        char quote = 0;
+
+        for (int i = 0; i < input.length();) {
+            char c = input.charAt(i);
+            if (quote != 0) {
+                out.append(c);
+                if (escaped) escaped = false;
+                else if (c == '\\') escaped = true;
+                else if (c == quote) quote = 0;
+                i++;
+                continue;
+            }
+
+            if (c == '\"' || c == '\'') {
+                quote = c;
+                out.append(c);
+                i++;
+                continue;
+            }
+
+            if (input.startsWith("undefined", i)) {
+                out.append("null");
+                i += "undefined".length();
+            } else {
+                out.append(c);
+                i++;
+            }
+        }
+        return out.toString();
+    }
+
+    @Nullable
+    private static Object jsonPath(Object value, int... path) {
+        Object current = value;
+        for (int index : path) {
+            if (!(current instanceof JSONArray)) return null;
+            JSONArray array = (JSONArray) current;
+            if (index < 0 || index >= array.length()) return null;
+            current = array.opt(index);
+            if (current == JSONObject.NULL) return null;
+        }
+        return current;
+    }
+
+    @NonNull
+    private static String asString(@Nullable Object value) {
+        return value instanceof String ? (String) value : "";
     }
 
     @Nullable
