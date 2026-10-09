@@ -24,7 +24,7 @@ class SemanticHnswIndexTest {
                 pojo("Google Maps"));
 
         List<SemanticHnswIndex.Hit> hits = SemanticHnswIndex.buildAndSearchForTest(
-                records, "send money", 256, 3, 48);
+                records, "send money", 384, 3, 64);
 
         assertFalse(hits.isEmpty());
         assertEquals("FNB Banking", hits.get(0).pojo.getName());
@@ -40,7 +40,7 @@ class SemanticHnswIndexTest {
                 pojo("Chrome Browser"));
 
         List<SemanticHnswIndex.Hit> hits = SemanticHnswIndex.buildAndSearchForTest(
-                records, "read scripture", 256, 2, 48);
+                records, "read scripture", 384, 2, 64);
 
         assertFalse(hits.isEmpty());
         assertEquals("JW Library", hits.get(0).pojo.getName());
@@ -67,7 +67,7 @@ class SemanticHnswIndexTest {
                 "Take photos and videos with manual camera controls.");
 
         List<SemanticHnswIndex.Hit> hits = SemanticHnswIndex.buildAndSearchForTest(
-                records, metadata, "scan barcode", 256, 4, 48);
+                records, metadata, "scan barcode", 384, 4, 64);
 
         assertFalse(hits.isEmpty());
         assertEquals("Utility Pro", hits.get(0).pojo.getName());
@@ -83,9 +83,16 @@ class SemanticHnswIndexTest {
                 pojo("Calculator"));
 
         List<SemanticHnswIndex.Hit> hits = SemanticHnswIndex.buildAndSearchForTest(
-                records, "music", 128, 2, 48);
+                records, "music", 384, 2, 64);
 
         assertEquals(2, hits.size());
+    }
+
+    @Test
+    void highDimensionProfilesUseCompactExactDivisorNavigation() {
+        assertEquals(128, SemanticHnswIndex.navigationDimensionsForTest(256));
+        assertEquals(128, SemanticHnswIndex.navigationDimensionsForTest(384));
+        assertEquals(100, SemanticHnswIndex.navigationDimensionsForTest(400));
     }
 
     private static Pojo pojo(String name) {
