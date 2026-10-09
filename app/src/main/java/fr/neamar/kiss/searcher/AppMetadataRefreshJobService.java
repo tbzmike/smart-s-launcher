@@ -28,7 +28,7 @@ public final class AppMetadataRefreshJobService extends JobService {
     private static final String TAG = AppMetadataRefreshJobService.class.getSimpleName();
     private static final String EXTRA_PACKAGE = "package";
     private static final String EXTRA_REASON = "reason";
-    private static final int JOB_NAMESPACE = 0x53000000;
+    private static final int JOB_NAMESPACE = 0x6A000000;
 
     public static boolean schedule(@NonNull Context context,
                                    @NonNull String packageName,
