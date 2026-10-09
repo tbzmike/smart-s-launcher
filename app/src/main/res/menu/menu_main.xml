@@ -40,6 +40,10 @@
         android:title="Load avatars"
         app:showAsAction="never" />
     <item
+        android:id="@+id/update_app_metadata"
+        android:title="Update apps metadata"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/add_widget"
         android:title="@string/menu_widget_add"
         app:showAsAction="never" />
