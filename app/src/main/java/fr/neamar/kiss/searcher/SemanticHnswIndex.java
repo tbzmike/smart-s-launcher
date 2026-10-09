@@ -50,9 +50,11 @@ public final class SemanticHnswIndex {
             "semantic-embedding-dimensions-384-upgrade-done";
 
     private static final int MAX_LEVEL = 8;
-    private static final int DEFAULT_EF_SEARCH = 96;
+    private static final int DEFAULT_EF_SEARCH = 80;
     private static final int MIN_EF_SEARCH = 24;
     private static final int MAX_EF_SEARCH = 256;
+    private static final String PREF_HNSW_TUNING_UPGRADE_DONE =
+            "semantic-hnsw-384-tuning-upgrade-done";
 
     private static final SemanticHnswIndex INSTANCE = new SemanticHnswIndex();
 
@@ -593,13 +595,28 @@ public final class SemanticHnswIndex {
     }
 
     public static int parseEfSearch(SharedPreferences prefs) {
+        int parsed = DEFAULT_EF_SEARCH;
         try {
-            return clamp(Integer.parseInt(
-                    prefs.getString(PREF_HNSW_EF_SEARCH, Integer.toString(DEFAULT_EF_SEARCH))),
-                    MIN_EF_SEARCH, MAX_EF_SEARCH);
-        } catch (NumberFormatException | ClassCastException e) {
-            return DEFAULT_EF_SEARCH;
+            parsed = Integer.parseInt(
+                    prefs.getString(
+                            PREF_HNSW_EF_SEARCH,
+                            Integer.toString(DEFAULT_EF_SEARCH)));
+        } catch (NumberFormatException | ClassCastException ignored) {
+            parsed = DEFAULT_EF_SEARCH;
         }
+
+        // 3.30.160's balanced default was 96. 384D + M16 provides stronger separation and
+        // connectivity, so 80 keeps recall high while reducing graph work on every keystroke.
+        if (!prefs.getBoolean(PREF_HNSW_TUNING_UPGRADE_DONE, false)) {
+            if (parsed == 96) parsed = DEFAULT_EF_SEARCH;
+            parsed = clamp(parsed, MIN_EF_SEARCH, MAX_EF_SEARCH);
+            prefs.edit()
+                    .putString(PREF_HNSW_EF_SEARCH, Integer.toString(parsed))
+                    .putBoolean(PREF_HNSW_TUNING_UPGRADE_DONE, true)
+                    .apply();
+        }
+
+        return clamp(parsed, MIN_EF_SEARCH, MAX_EF_SEARCH);
     }
 
     public static int parseDimensions(SharedPreferences prefs) {
