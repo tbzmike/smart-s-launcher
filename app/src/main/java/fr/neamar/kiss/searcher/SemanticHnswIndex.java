@@ -353,8 +353,10 @@ public final class SemanticHnswIndex {
                                                int ef,
                                                int level) {
         PriorityQueue<Candidate> candidates = new PriorityQueue<>(
+                Math.max(11, ef),
                 (left, right) -> Float.compare(right.score, left.score));
         PriorityQueue<Candidate> best = new PriorityQueue<>(
+                Math.max(11, ef),
                 Comparator.comparingDouble(value -> value.score));
         Set<Integer> visited = new HashSet<>(Math.max(32, ef * 3));
 
