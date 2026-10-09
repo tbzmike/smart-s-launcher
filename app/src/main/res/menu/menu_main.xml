@@ -36,6 +36,10 @@
         android:title="Search keyboard"
         app:showAsAction="never" />
     <item
+        android:id="@+id/data_activity_viewer"
+        android:title="Data Activity Viewer"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/update_apps_metadata"
         android:title="Update apps metadata"
         app:showAsAction="never" />
