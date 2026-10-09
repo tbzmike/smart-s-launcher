@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -42,6 +44,34 @@ class SemanticHnswIndexTest {
 
         assertFalse(hits.isEmpty());
         assertEquals("JW Library", hits.get(0).pojo.getName());
+    }
+
+    @Test
+    void hnswFindsOpaqueAppFromDownloadedBarcodeDescription() {
+        Pojo scanner = pojo("Utility Pro");
+        Pojo camera = pojo("Camera");
+        List<Pojo> records = Arrays.asList(
+                pojo("WhatsApp Eric"),
+                pojo("WhatsApp London"),
+                pojo("Calculator"),
+                pojo("Spotify Music"),
+                camera,
+                scanner,
+                pojo("Calendar"),
+                pojo("Files"));
+
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put(scanner.id,
+                "Scan QR codes, barcodes, EAN, UPC and Data Matrix product codes.");
+        metadata.put(camera.id,
+                "Take photos and videos with manual camera controls.");
+
+        List<SemanticHnswIndex.Hit> hits = SemanticHnswIndex.buildAndSearchForTest(
+                records, metadata, "scan barcode", 256, 4, 48);
+
+        assertFalse(hits.isEmpty());
+        assertEquals("Utility Pro", hits.get(0).pojo.getName());
+        assertTrue(hits.get(0).score > 0.34f);
     }
 
     @Test
