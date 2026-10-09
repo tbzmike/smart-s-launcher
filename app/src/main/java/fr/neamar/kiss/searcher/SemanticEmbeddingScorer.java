@@ -112,12 +112,21 @@ public final class SemanticEmbeddingScorer {
      * background semantic index is built; the interactive query path never reads the metadata DB.
      */
     public static float[] prepareCandidate(Pojo pojo, int dimensions, String extraSemanticText) {
-        if (pojo == null) return new float[Math.max(32, Math.min(512, dimensions))];
-        String base = candidateText(pojo);
-        if (extraSemanticText != null && !extraSemanticText.trim().isEmpty()) {
-            base = base + " " + extraSemanticText;
+        int dims = Math.max(32, Math.min(512, dimensions));
+        if (pojo == null) return new float[dims];
+
+        // Keep the app's own identity dominant. Store descriptions are intentionally a secondary
+        // context signal: otherwise a long marketing description can drown the package/name/tags
+        // and make several unrelated "all-in-one" apps look artificially similar.
+        float[] identity = embed(candidateText(pojo), dims, false);
+        if (extraSemanticText == null || extraSemanticText.trim().isEmpty()) return identity;
+
+        float[] sourceContext = embed(extraSemanticText, dims, false);
+        for (int i = 0; i < identity.length; i++) {
+            identity[i] = identity[i] * 0.78f + sourceContext[i] * 0.52f;
         }
-        return embed(base, dimensions, false);
+        normalizeVector(identity);
+        return identity;
     }
 
     /** Score a candidate without rebuilding the query vector. Kept for lexical-only reranking. */
