@@ -941,7 +941,7 @@ final class SmartCardListForwarder extends Forwarder {
             AutoScrollPreviewTextView lastMessage = new AutoScrollPreviewTextView(mainActivity);
             lastMessage.setText(latestMessage);
             lastMessage.setTextColor(Color.WHITE);
-            lastMessage.setTextSize(13f);
+            lastMessage.setTextSize(prefInt("smart-list-body-size-sp", 14, 8, 32));
             lastMessage.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             lastMessage.setPadding(0, dp(2), 0, dp(2));
             lastMessage.setShadowLayer(dp(1), 0f, dp(1), Color.argb(150, 0, 0, 0));
@@ -952,7 +952,7 @@ final class SmartCardListForwarder extends Forwarder {
             AutoMarqueeTextView context = new AutoMarqueeTextView(mainActivity);
             context.setText(describeResult(source));
             context.setTextColor(Color.argb(175, 255, 255, 255));
-            context.setTextSize(12f);
+            context.setTextSize(prefInt("smart-list-body-size-sp", 14, 8, 32));
             context.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             center.addView(context, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(25))));
@@ -963,7 +963,8 @@ final class SmartCardListForwarder extends Forwarder {
             AutoMarqueeTextView callerName = new AutoMarqueeTextView(mainActivity);
             callerName.setText(call.displayName);
             callerName.setTextColor(Color.WHITE);
-            callerName.setTextSize(15f * namePercent / 100f);
+            callerName.setTextSize(prefInt("smart-list-label-size-sp", 18, 10, 40)
+                    * namePercent / 100f);
             callerName.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             callerName.setPadding(0, dp(3), 0, dp(1));
             callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
@@ -1152,7 +1153,7 @@ final class SmartCardListForwarder extends Forwarder {
             text.setSelected(true);
         }
         text.setTextColor(Color.WHITE);
-        text.setTextSize(13f);
+        text.setTextSize(prefInt("smart-list-body-size-sp", 14, 8, 32));
         text.setGravity(Gravity.START);
         text.setPadding(0, dp(2), 0, dp(2));
     }
@@ -1191,6 +1192,9 @@ final class SmartCardListForwarder extends Forwarder {
         hide(source, R.id.item_setting_name);
         hide(source, R.id.item_shortcut_icon);
         hide(source, R.id.item_shortcut_tag);
+        // The card already renders the canonical metadata slot; do not allow the
+        // discarded native source's duplicate metadata to create a details button.
+        hide(source, R.id.item_history_meta);
         View notification = source.findViewById(R.id.item_notification_row);
         if (notification != null) notification.setVisibility(View.GONE);
     }
