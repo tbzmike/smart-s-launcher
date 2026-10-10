@@ -293,3 +293,128 @@ jobs:
           path: verification-results
           archive: true
           if-no-files-found: ignore
+
+  android-168:
+    name: Verify long text, timestamps and scrollbar on Android 35
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.168-history-overflow-fading') }}
+    needs: [test, apk]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Enable hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test real Android 35 history UI
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash scripts/verify_168_android.sh
+      - name: Preserve Android verification logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: history-168-android-35-evidence
+          path: verification-results
+          archive: true
+          if-no-files-found: ignore
+
+signed-168:
+    name: Sign installable Smart S Launcher 3.30.168
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.168-history-overflow-fading') }}
+    needs: [test, apk, android-168]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: app-release-unsigned.apk
+          path: unsigned-release
+      - name: Sign and verify original app identity
+        shell: bash
+        env:
+          SMART_S_SIGNING_KEY_B64: ${{ secrets.SMART_S_SIGNING_KEY_B64 }}
+          SMART_S_SIGNING_STORE_PASSWORD: ${{ secrets.SMART_S_SIGNING_STORE_PASSWORD }}
+          SMART_S_SIGNING_KEY_ALIAS: ${{ secrets.SMART_S_SIGNING_KEY_ALIAS }}
+          SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/smart-s-168-release.p12"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          SDK="$ANDROID_HOME/build-tools/34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null
+          test -n "$SMART_S_SIGNING_KEY_B64"
+          printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          mkdir -p verified-apk
+          OUT="verified-apk/Smart-S-Launcher-3.30.168.apk"
+          "$SDK/apksigner" sign --ks "$KEYSTORE" --ks-type PKCS12 \
+            --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
+            --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
+            --key-pass env:SMART_S_SIGNING_KEY_PASSWORD \
+            --out "$OUT" unsigned-release/app-release-unsigned.apk
+          "$SDK/apksigner" verify --verbose --print-certs "$OUT" | tee verified-apk/apk-verification.txt
+          CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' verified-apk/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test "$CERT" = '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53'
+          "$SDK/aapt" dump badging "$OUT" > verified-apk/package-badging.txt
+          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='596'" | grep -F "versionName='3.30.168'"
+          sha256sum "$OUT" | tee verified-apk/Smart-S-Launcher-3.30.168.sha256
+          git rev-parse HEAD > verified-apk/source-commit.txt
+      - name: Publish signed APK build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.168-signed
+          path: verified-apk
+          archive: true
+          if-no-files-found: error
+          retention-days: 90
+
+  android-168:
+    name: Validate history sizing and timestamps on Android 35
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.168-history-style-timestamps') }}
+    needs: [test, apk]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Enable hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify on Android emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash scripts/verify_168_android.sh
+      - name: Preserve Android verification logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: history-168-android-35-evidence
+          path: verification-results
+          archive: true
+          if-no-files-found: ignore
