@@ -35,6 +35,8 @@ public final class ChronologicalDateScroller {
     }
 
     private static final int MIN_SCRUB_ROWS = 8;
+    private static final long IDLE_FADE_DELAY_MS = 1100L;
+    private static final long FADE_DURATION_MS = 240L;
     private final TextView section;
     private final ThumbView thumb;
     private final View content;
@@ -44,6 +46,21 @@ public final class ChronologicalDateScroller {
     private int itemCount;
     private int visibleCount = 1;
     private int firstVisible;
+    private final Runnable fadeRailAfterIdle = () -> {
+        if (!thumb.dragging && thumb.getVisibility() == View.VISIBLE) {
+            thumb.animate().alpha(0f).setDuration(FADE_DURATION_MS).start();
+        }
+    };
+
+    private void brieflyRevealRail() {
+        if (thumb.getVisibility() != View.VISIBLE) return;
+        thumb.removeCallbacks(fadeRailAfterIdle);
+        if (thumb.getAlpha() < 1f) {
+            thumb.animate().cancel();
+            thumb.setAlpha(1f);
+        }
+        if (!thumb.dragging) thumb.postDelayed(fadeRailAfterIdle, IDLE_FADE_DELAY_MS);
+    }
 
     public ChronologicalDateScroller(@NonNull Context context, @NonNull FrameLayout host) {
         content = host.getChildCount() > 0 ? host.getChildAt(0) : null;
@@ -76,6 +93,7 @@ public final class ChronologicalDateScroller {
                 dp(context, 160), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END);
         host.addView(thumb, rail);
         thumb.setVisibility(View.GONE);
+        thumb.setAlpha(0f);
     }
 
     /** Set to null for non-chronological screens such as Overview and Detailed Usage. */
@@ -88,7 +106,10 @@ public final class ChronologicalDateScroller {
         visibleCount = 1;
         if (source == null || jump == null || itemCount == 0) {
             section.setVisibility(View.GONE);
+            thumb.removeCallbacks(fadeRailAfterIdle);
+            thumb.animate().cancel();
             thumb.setVisibility(View.GONE);
+            thumb.setAlpha(0f);
             thumb.dragging = false;
             return;
         }
@@ -97,6 +118,7 @@ public final class ChronologicalDateScroller {
         updateLabel(0);
         thumb.thumbTop = 0;
         thumb.invalidate();
+        brieflyRevealRail();
     }
 
     private void reserveHeaderSpace(boolean active) {
@@ -123,6 +145,9 @@ public final class ChronologicalDateScroller {
             float fraction = DateScrollPositionMath.fraction(firstVisible, visibleCount, itemCount);
             thumb.thumbTop = fraction * Math.max(0, thumb.getHeight() - thumb.thumbHeight);
             thumb.invalidate();
+            // A rendered date rail is useful while moving; fading it after idle leaves
+            // the full text area unobstructed. Keep it attached for swipe-to-scrub.
+            brieflyRevealRail();
         }
     }
 
@@ -221,6 +246,7 @@ public final class ChronologicalDateScroller {
                             || Math.abs(event.getY() - (thumbTop + thumbHeight / 2))
                             > thumbHeight / 2 + dp(getContext(), 20)) return false;
                     dragging = true;
+                    brieflyRevealRail();
                     performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
                     getParent().requestDisallowInterceptTouchEvent(true);
                     dragTo(event.getY());
@@ -235,6 +261,7 @@ public final class ChronologicalDateScroller {
                     if (event.getActionMasked() == MotionEvent.ACTION_UP) dragTo(event.getY());
                     dragging = false;
                     getParent().requestDisallowInterceptTouchEvent(false);
+                    brieflyRevealRail();
                     invalidate();
                     performClick();
                     return true;
