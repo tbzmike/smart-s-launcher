@@ -66,6 +66,14 @@ public class AutoMarqueeTextView extends TextView {
         if (next != autoExpand) {
             autoExpand = next;
             appliedBehaviorMode = -1;
+            // One retained row can move between a tall multi-line StaticLayout and
+            // a compact marquee without being detached or having its text replaced.
+            // Force measurement to rebuild the layout for the newly selected mode.
+            removeCallbacks(deferredLayoutRequest);
+            removeCallbacks(deferredMarqueeRestart);
+            setSelected(false);
+            requestLayout();
+            invalidate();
         }
     }
 
@@ -81,6 +89,20 @@ public class AutoMarqueeTextView extends TextView {
         // Refresh BEFORE measurement, otherwise the old one-line marquee can still win.
         refreshConfiguredBehavior();
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        if (!isAutoExpand()) {
+            // TextView may retain the full wrapped Layout briefly after switching
+            // from Auto Expand. A compact tile still must occupy one text line,
+            // even before the next attach/window-focus lifecycle callback.
+            int lineHeight = Math.max(1, getLineHeight());
+            int compactHeight = getCompoundPaddingTop() + getCompoundPaddingBottom() + lineHeight;
+            int heightMode = MeasureSpec.getMode(heightMeasureSpec);
+            if (heightMode == MeasureSpec.EXACTLY) {
+                compactHeight = MeasureSpec.getSize(heightMeasureSpec);
+            } else if (heightMode == MeasureSpec.AT_MOST) {
+                compactHeight = Math.min(compactHeight, MeasureSpec.getSize(heightMeasureSpec));
+            }
+            setMeasuredDimension(getMeasuredWidth(), Math.min(getMeasuredHeight(), compactHeight));
+        }
     }
 
     @Override
