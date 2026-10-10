@@ -718,7 +718,7 @@ final class SmartCardListForwarder extends Forwarder {
                 "smart-list-resize-feature-icons", "smart-list-label-size-sp",
                 "smart-list-body-size-sp", "smart-history-meta-size-sp",
                 "smart-history-meta-font", "smart-history-meta-color",
-                "global-text-size-percent"
+                "global-text-size-percent", "smart-text-overflow-mode"
         };
         Map<String, ?> values = prefs.getAll();
         int hash = 17;
@@ -900,7 +900,8 @@ final class SmartCardListForwarder extends Forwarder {
         NotificationBellStyle.apply(cardTitle,
                 NotificationBellStyle.isNotificationItem(mainActivity, result, source));
         center.addView(cardTitle, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(31) * Math.max(90, namePercent) / 100)));
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                textRowHeight(cardTitle, dp(31) * Math.max(90, namePercent) / 100, 1)));
 
         if (!TextUtils.isEmpty(subtitle)) {
             AutoMarqueeTextView meta = new AutoMarqueeTextView(mainActivity);
@@ -910,7 +911,7 @@ final class SmartCardListForwarder extends Forwarder {
             meta.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             meta.setShadowLayer(dp(1), 0f, dp(1), Color.argb(160, 0, 0, 0));
             center.addView(meta, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(27))));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(meta, dp(27), 1)));
         }
 
         if (UniversalHistoryTimestamp.isHistorySurface(mainActivity)) {
@@ -958,7 +959,7 @@ final class SmartCardListForwarder extends Forwarder {
             lastMessage.setPadding(0, dp(2), 0, dp(2));
             lastMessage.setShadowLayer(dp(1), 0f, dp(1), Color.argb(150, 0, 0, 0));
             center.addView(lastMessage, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(31))));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(lastMessage, dp(31), 2)));
             messageView = lastMessage;
         } else if (TextUtils.isEmpty(subtitle)) {
             AutoMarqueeTextView context = new AutoMarqueeTextView(mainActivity);
@@ -967,7 +968,7 @@ final class SmartCardListForwarder extends Forwarder {
             context.setTextSize(prefInt("smart-list-body-size-sp", 14, 8, 32));
             context.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             center.addView(context, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(25))));
+                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(context, dp(25), 1)));
         }
 
         if (call != null && call.kind == CommunicationPojo.Kind.CALL
@@ -982,7 +983,8 @@ final class SmartCardListForwarder extends Forwarder {
             callerName.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
             callerName.setContentDescription("Caller: " + call.displayName);
             center.addView(callerName, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(31) * Math.max(90, namePercent) / 100)));
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    textRowHeight(callerName, dp(31) * Math.max(90, namePercent) / 100, 1)));
         }
 
         prepareSourceForDetails(source);
@@ -1143,9 +1145,16 @@ final class SmartCardListForwarder extends Forwarder {
         return text == null ? "" : text.toString().trim();
     }
 
-    private int textRowHeight(int scrollingHeight) {
-        return TextOverflowMode.isAutoExpandForHistory(mainActivity)
-                ? ViewGroup.LayoutParams.WRAP_CONTENT : scrollingHeight;
+    private int textRowHeight(TextView text, int scrollingHeight, int visibleLines) {
+        if (TextOverflowMode.isAutoExpandForHistory(mainActivity)) {
+            return ViewGroup.LayoutParams.WRAP_CONTENT;
+        }
+        // Compact cards must still leave enough vertical space for their configured font
+        // size and (for message previews) two complete stepped lines of text.
+        float global = prefInt("global-text-size-percent", 100, 50, 300) / 100f;
+        int minHeight = Math.round(text.getTextSize() * global
+                * (visibleLines > 1 ? 2.6f : 1.5f));
+        return Math.max(scrollingHeight, minHeight);
     }
 
     private void configureCollapsedMessage(TextView text) {
