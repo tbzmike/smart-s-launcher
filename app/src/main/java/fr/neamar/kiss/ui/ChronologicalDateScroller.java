@@ -46,11 +46,7 @@ public final class ChronologicalDateScroller {
     private int itemCount;
     private int visibleCount = 1;
     private int firstVisible;
-    private final Runnable fadeRailAfterIdle = () -> {
-        if (!thumb.dragging && thumb.getVisibility() == View.VISIBLE) {
-            thumb.animate().alpha(0f).setDuration(FADE_DURATION_MS).start();
-        }
-    };
+    private final Runnable fadeRailAfterIdle;
 
     private void brieflyRevealRail() {
         if (thumb.getVisibility() != View.VISIBLE) return;
@@ -89,6 +85,11 @@ public final class ChronologicalDateScroller {
         host.addView(section, label);
 
         thumb = new ThumbView(context);
+        fadeRailAfterIdle = () -> {
+            if (!thumb.dragging && thumb.getVisibility() == View.VISIBLE) {
+                thumb.animate().alpha(0f).setDuration(FADE_DURATION_MS).start();
+            }
+        };
         FrameLayout.LayoutParams rail = new FrameLayout.LayoutParams(
                 dp(context, 160), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END);
         host.addView(thumb, rail);
