@@ -59,6 +59,11 @@ public final class HistoryLongTextRegressionTest {
                         message.getMeasuredHeight() >= message.getLineHeight() * 3);
 
                 assertTrue(prefs.edit().putString("smart-text-overflow-mode", "auto_scroll").commit());
+                assertEquals("Saved preference must change", "auto_scroll",
+                        prefs.getString("smart-text-overflow-mode", ""));
+                assertEquals("Activity must resolve effective mode", "auto_scroll",
+                        fr.neamar.kiss.ui.TextOverflowMode.effectiveMode(activity));
+                text.refreshConfiguredBehavior();
                 measure(text, px);
                 // TextView can retain the old multi-line Layout object even as
                 // maxLines and measured compact height have already switched.
