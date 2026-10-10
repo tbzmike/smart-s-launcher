@@ -55,11 +55,15 @@ import fr.neamar.kiss.SettingsActivity;
 import fr.neamar.kiss.SettingsFragment;
 import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.AppMetadataSyncScheduler;
 import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
 import fr.neamar.kiss.searcher.SemanticHnswIndex;
 import fr.neamar.kiss.searcher.SearchHandler;
+import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.ui.ChronologicalDateScroller;
+import fr.neamar.kiss.utils.RecentLaunchTracker;
 
 public class FeaturePortBehaviorTest {
     private Context context;
@@ -117,6 +121,7 @@ public class FeaturePortBehaviorTest {
     }
 
     @Test public void dateControlHasOneOwnerAndDoesNotCoverHistoryRows() throws Exception {
+        prefs.edit().putString("number-of-history-results", "50").commit();
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             BaselineBehaviorTest.await(scenario, activity -> KissApplication.getApplication(activity)
                     .getDataHandler().isAllProvidersLoaded(), "providers for date control");
@@ -125,9 +130,15 @@ public class FeaturePortBehaviorTest {
                 activity.searchEditText.setText("");
                 activity.displayKissBar(false);
                 SearchHandler.getInstance().cancelSearch();
-                activity.adapter.updateResults(activity, BaselineBehaviorTest.fixtures(activity, true), false, "");
-                activity.list.setSelection(0);
-                activity.onHistoryDateMetadataLoaded();
+                // Feed the real history loader. Adapter-only rows disappear legitimately when
+                // a queued lifecycle/provider refresh reads the otherwise empty history DB.
+                for (Result<?> result : BaselineBehaviorTest.fixtures(activity, true)) {
+                    Pojo pojo = result.getPojo();
+                    DBHelper.removeFromHistory(activity, pojo.getHistoryId());
+                    RecentLaunchTracker.remember(pojo);
+                    DBHelper.insertHistory(activity, "", pojo.getHistoryId());
+                }
+                SearchHandler.getInstance().search(Searcher.Type.HISTORY, activity, "", false);
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             BaselineBehaviorTest.await(scenario, activity -> {
@@ -136,6 +147,8 @@ public class FeaturePortBehaviorTest {
                         && label.getHeight() > 0 && activity.adapter.getCount() == 24
                         && activity.list.getChildCount() > 0;
             }, "laid-out history date control");
+            scenario.onActivity(activity -> activity.list.setSelection(0));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
                 View label = findDescription(activity.listContainer, "History date section");
                 View thumb = findDescription(activity.listContainer, "History date fast scroll");
@@ -159,7 +172,8 @@ public class FeaturePortBehaviorTest {
                             + " count=" + activity.adapter.getCount() + " visibility=" + label.getVisibility()
                             + " density=" + activity.getResources().getDisplayMetrics().density
                             + " query=" + activity.searchEditText.getText();
-                    return label.getHeight() > 44 * activity.getResources().getDisplayMetrics().density
+                    return label.getVisibility() == View.VISIBLE && activity.adapter.getCount() == 24
+                            && label.getHeight() > 44 * activity.getResources().getDisplayMetrics().density
                             && activity.list.getTop() >= label.getBottom();
                 }, "large date label reserves enough space");
             } catch (AssertionError e) {
@@ -207,6 +221,12 @@ public class FeaturePortBehaviorTest {
                     assertEquals(View.GONE, thumb.getVisibility());
                     assertEquals(1, countDescription(activity.listContainer, "History date fast scroll"));
                 });
+            }
+        } finally {
+            for (int i = 0; i < 24; i++) {
+                String id = "notification://verification-" + i;
+                DBHelper.removeFromHistory(context, id);
+                RecentLaunchTracker.clearIfMatches(id);
             }
         }
     }
