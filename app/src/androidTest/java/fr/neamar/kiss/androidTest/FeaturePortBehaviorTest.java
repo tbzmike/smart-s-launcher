@@ -152,15 +152,43 @@ public class FeaturePortBehaviorTest {
                     RecentLaunchTracker.remember(pojo);
                     DBHelper.insertHistory(activity, "", pojo.getHistoryId());
                 }
-                SearchHandler.getInstance().search(Searcher.Type.HISTORY, activity, "", false);
+                assertEquals("Stored date fixtures must resolve through the original history reader", 24,
+                        KissApplication.getApplication(activity).getDataHandler()
+                                .getHistory(activity, 50, Collections.emptySet()).size());
+                activity.runWhenHistoryScrollIdle(() -> SearchHandler.getInstance()
+                        .search(Searcher.Type.HISTORY, activity, "", false));
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            BaselineBehaviorTest.await(scenario, activity -> {
-                View label = findDescription(activity.listContainer, "History date section");
-                return label != null && label.getVisibility() == View.VISIBLE
-                        && label.getHeight() > 0 && activity.adapter.getCount() == 24
-                        && activity.list.getChildCount() > 0;
-            }, "laid-out history date control");
+            String[] historyState = new String[1];
+            try {
+                BaselineBehaviorTest.await(scenario, activity -> {
+                    View label = findDescription(activity.listContainer, "History date section");
+                    historyState[0] = "count=" + activity.adapter.getCount()
+                            + " children=" + activity.list.getChildCount()
+                            + " labelVisible=" + (label == null ? -1 : label.getVisibility())
+                            + " labelHeight=" + (label == null ? -1 : label.getHeight())
+                            + " listVisible=" + activity.list.getVisibility()
+                            + " allApps=" + activity.isViewingAllApps()
+                            + " searchType=" + SearchHandler.getInstance().getLastSearchType()
+                            + " historyScrolling=" + SearchHandler.getInstance().isHistoryScrollActive()
+                            + " listScrolling=" + activity.list.isScrollInProgress()
+                            + " historyWorkerActive=" + Searcher.SEARCH_THREAD.getActiveCount()
+                            + " historyWorkerQueued=" + Searcher.SEARCH_THREAD.getQueue().size()
+                            + " query=" + activity.searchEditText.getText();
+                    return label != null && label.getVisibility() == View.VISIBLE
+                            && label.getHeight() > 0 && activity.adapter.getCount() == 24
+                            && activity.list.getChildCount() > 0;
+                }, "laid-out history date control");
+            } catch (AssertionError e) {
+                screenshot("history-date-load-failed.png");
+                StringBuilder workers = new StringBuilder();
+                for (Map.Entry<Thread, StackTraceElement[]> entry : Thread.getAllStackTraces().entrySet()) {
+                    if (!entry.getKey().getName().contains("smart-s")) continue;
+                    workers.append('\n').append(entry.getKey().getName()).append(':');
+                    for (StackTraceElement frame : entry.getValue()) workers.append('\n').append(frame);
+                }
+                throw new AssertionError(historyState[0] + workers, e);
+            }
             scenario.onActivity(activity -> activity.list.setSelection(0));
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
