@@ -69,10 +69,24 @@ public class AutoMarqueeTextView extends TextView {
         }
     }
 
+    /** Called by recycled rows when the saved overflow setting changes. */
+    public void refreshConfiguredBehavior() {
+        refreshOverflowMode();
+        applyConfiguredBehavior();
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        // A retained/recycled View can survive a Settings round-trip without detaching.
+        // Refresh BEFORE measurement, otherwise the old one-line marquee can still win.
+        refreshConfiguredBehavior();
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+    }
+
     @Override
     public void setSingleLine(boolean singleLine) {
         if (behaviorLocked) {
-            applyConfiguredBehavior();
+            refreshConfiguredBehavior();
             return;
         }
         super.setSingleLine(singleLine);
@@ -81,6 +95,7 @@ public class AutoMarqueeTextView extends TextView {
     @Override
     public void setMaxLines(int maxLines) {
         if (behaviorLocked) {
+            refreshOverflowMode();
             super.setMaxLines(isAutoExpand() ? Integer.MAX_VALUE : 1);
             return;
         }
@@ -90,6 +105,7 @@ public class AutoMarqueeTextView extends TextView {
     @Override
     public void setEllipsize(TextUtils.TruncateAt where) {
         if (behaviorLocked) {
+            refreshOverflowMode();
             super.setEllipsize(isAutoExpand() ? null : TextUtils.TruncateAt.MARQUEE);
             return;
         }
@@ -99,6 +115,7 @@ public class AutoMarqueeTextView extends TextView {
     @Override
     public void setHorizontallyScrolling(boolean whether) {
         if (behaviorLocked) {
+            refreshOverflowMode();
             super.setHorizontallyScrolling(!isAutoExpand());
             return;
         }
