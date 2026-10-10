@@ -158,6 +158,7 @@ public class ForwarderManager extends Forwarder {
             verticalCardGroupResizeController.onResume();
             verticalCardNotificationHistoryForwarder.onResume();
             verticalCardUsageForwarder.onResume();
+            if (isHistorySearch()) historyVisualEnhancer.onResume();
         } else if (isHistorySearch() && isVerticalListMode()) {
             // Only the recycled native list needs this enrichment pipeline. 3D Wheel owns a
             // retained tree; rebuilding that tree merely to refresh metadata caused visible stalls.
@@ -247,6 +248,12 @@ public class ForwarderManager extends Forwarder {
 
     public boolean onTouch(View view, MotionEvent event) { experienceTweaks.onTouch(event); return liveWallpaperForwarder.onTouch(view, event); }
 
+    public void onHistoryMetadataLoaded() {
+        if (isVerticalCardsMode() && isHistorySearch()) {
+            smartCardListForwarder.refreshHistoryMetadata();
+        }
+    }
+
     public boolean onDataSetChanged() {
         widgetsForwarder.onDataSetChanged();
         widgetPeelController.onDataSetChanged();
@@ -276,8 +283,9 @@ public class ForwarderManager extends Forwarder {
         // Native Vertical List scrolling is render-only: do not even queue metadata enrichment
         // while the viewport is moving. Cards have their own enrichment and 3D Wheel must not
         // rebuild its retained tree for metadata.
-        if (isHistorySearch() && isVerticalListMode()
-                && !historyDisplayForwarder.isScrollInProgress()) {
+        if (isHistorySearch() && (isVerticalListMode() || verticalCards)
+                && !historyDisplayForwarder.isScrollInProgress()
+                && (!verticalCards || !smartCardListForwarder.isScrollInProgress())) {
             historyVisualEnhancer.onDataSetChanged();
         }
 
