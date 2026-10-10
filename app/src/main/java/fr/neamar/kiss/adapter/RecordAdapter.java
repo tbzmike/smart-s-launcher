@@ -182,6 +182,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             // skipped, or reused rows inherit the previous item's appearance until another
             // adapter publication. Defer optional notification/overflow work instead.
             rebindVisibleHistoryPresentation(view, result, renderContext);
+            // The view may have been recycled from a different row width. Keep the
+            // visible text boundary correct even when optional decorators are paused.
+            applyVerticalHistoryWidth(view, parent, renderContext, cachedHistoryWidthPercent);
             return view;
         }
 
@@ -450,6 +453,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private void configureMarquee(TextView text) {
         // These views already own their text-change, visibility and overflow lifecycle.
         if (text instanceof AutoMarqueeTextView || text instanceof AutoScrollPreviewTextView) {
+            if (text instanceof AutoMarqueeTextView) {
+                ((AutoMarqueeTextView) text).refreshConfiguredBehavior();
+            }
             text.setFocusable(false);
             text.setFocusableInTouchMode(false);
             makeTextUseAvailableWidth(text);
@@ -492,6 +498,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
     private void configureExpandedText(TextView text) {
         if (text instanceof AutoMarqueeTextView || text instanceof AutoScrollPreviewTextView) {
+            if (text instanceof AutoMarqueeTextView) {
+                ((AutoMarqueeTextView) text).refreshConfiguredBehavior();
+            }
             text.setFocusable(false);
             text.setFocusableInTouchMode(false);
             makeTextUseAvailableWidth(text);
@@ -642,7 +651,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 base[0], cachedHistoryWidthPercent);
         int rightPadding = HistoryEdgeWidthPolicy.insetForPercent(
                 base[2], cachedHistoryWidthPercent);
-        row.setPadding(leftPadding, base[1], rightPadding,
+        // Keep all wrapped text away from the date navigation/thumb area. This is a
+        // single row inset, never an extra overlay or duplicated text container.
+        row.setPadding(Math.max(dp(context, 4), leftPadding), base[1],
+                Math.max(dp(context, 22), rightPadding),
                 base[3] + dp(context, cachedRowSpacing));
     }
 
@@ -685,8 +697,11 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                     ? ViewGroup.LayoutParams.MATCH_PARENT : raw.width);
         }
 
-        int targetWidth = HistoryEdgeWidthPolicy.targetWidth(
-                viewportWidth, viewportWidth, widthPercent);
+        // Wide-card sizing can request up to 400% of the viewport, but native
+        // ListView cannot show wrapped text that is measured beyond the screen.
+        // Bound the rendered row to the viewport without rewriting the saved slider.
+        int targetWidth = Math.min(viewportWidth, HistoryEdgeWidthPolicy.targetWidth(
+                viewportWidth, viewportWidth, widthPercent));
         int height = raw == null ? ViewGroup.LayoutParams.WRAP_CONTENT : raw.height;
         AbsListView.LayoutParams lp;
         if (raw instanceof AbsListView.LayoutParams) {
