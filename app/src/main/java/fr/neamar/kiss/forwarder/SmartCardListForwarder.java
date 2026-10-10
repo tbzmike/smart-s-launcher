@@ -759,13 +759,23 @@ final class SmartCardListForwarder extends Forwarder {
                 || isScrollInProgress() || !UniversalHistoryTimestamp.isHistorySurface(mainActivity)) {
             return;
         }
+        // Cards retain stable identity while passive History publications may reorder the
+        // adapter. Index by that identity instead of pairing the old card at position i with
+        // a different notification/app now occupying adapter position i.
+        Map<String, Result<?>> currentById = new HashMap<>();
+        for (int i = 0; i < mainActivity.adapter.getCount(); i++) {
+            Result<?> result = mainActivity.adapter.getItem(i);
+            if (result != null) currentById.put(result.getPojoId(), result);
+        }
         for (int i = 0; i < column.getChildCount(); i++) {
             View row = column.getChildAt(i);
-            if (i >= mainActivity.adapter.getCount()) break;
+            Object identity = row.getTag();
+            Result<?> result = identity instanceof String
+                    ? currentById.get((String) identity) : null;
+            if (result == null) continue;
             TextView timestamp = row.findViewById(R.id.item_history_meta);
             if (timestamp == null) continue;
-            CharSequence content = UniversalHistoryTimestamp.describe(
-                    mainActivity.adapter.getItem(i), mainActivity);
+            CharSequence content = UniversalHistoryTimestamp.describe(result, mainActivity);
             if (!TextUtils.equals(timestamp.getText(), content)) timestamp.setText(content);
             SmartTextAppearance.applyHistoryMetadata(timestamp);
             mainActivity.applyGlobalTextScaleToSubtree(timestamp);
