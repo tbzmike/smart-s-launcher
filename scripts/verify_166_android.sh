@@ -48,13 +48,13 @@ PY
 bash ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace
 adb logcat -c
 adb shell input keyevent 82
-adb install -r "$BASELINE_DIR/app/build/outputs/apk/debug/app-debug.apk"
+adb install -r -g "$BASELINE_DIR/app/build/outputs/apk/debug/app-debug.apk"
 adb install -r "$BASELINE_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
 run_test fr.neamar.kiss.androidTest.BaselineBehaviorTest "$RESULT_DIR/baseline-153.log"
 adb pull "/sdcard/Android/data/$APP_PACKAGE/files/baseline-behavior.json" "$RESULT_DIR/153.json"
 
 # Upgrade the same installed app so the real schema migration is exercised.
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r -g app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 run_test 'fr.neamar.kiss.androidTest.FeaturePortBehaviorTest#schemaUpgradeKeepsBaselineHistoryAndMetadataCacheInvalidatesOnce' \
   "$RESULT_DIR/upgrade-166.log"

@@ -2,6 +2,7 @@ package fr.neamar.kiss.ui;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
@@ -17,6 +18,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
 import androidx.preference.PreferenceManager;
 
 import fr.neamar.kiss.MainActivity;
@@ -226,18 +228,20 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
     }
 
     private static TextView buildSectionLabel(Context context) {
-        TextView label = new TextView(context);
+        // This date chip owns a fixed contrast-safe palette, like the date bubble and tool screens.
+        TextView label = new TextView(context.getApplicationContext());
         label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         label.setGravity(Gravity.CENTER);
         label.setContentDescription("History date section");
         label.setPadding(dp(context, 14), dp(context, 6), dp(context, 14), dp(context, 6));
-        label.setTextColor(resolveColor(context, android.R.attr.textColorPrimary, 0xFFFFFFFF));
+        int surface = resolveColor(context, R.attr.listBackgroundColor, 0xFF202124);
+        label.setTextColor(readableColor(
+                resolveColor(context, android.R.attr.textColorPrimary, Color.WHITE), surface));
         label.setElevation(dp(context, 4));
         label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
 
         GradientDrawable background = new GradientDrawable();
-        background.setColor(withAlpha(
-                resolveColor(context, R.attr.listBackgroundColor, 0xFF202124), 0xE6));
+        background.setColor(withAlpha(surface, 0xE6));
         background.setCornerRadius(dp(context, 18));
         label.setBackground(background);
         label.setVisibility(View.GONE);
@@ -271,9 +275,10 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
             setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
             setContentDescription("History date fast scroll");
 
-            int primary = resolveColor(context, android.R.attr.textColorPrimary, 0xFFFFFFFF);
-            int accent = resolveColor(context, android.R.attr.colorAccent, primary);
             int surface = resolveColor(context, R.attr.listBackgroundColor, 0xFF202124);
+            int primary = readableColor(
+                    resolveColor(context, android.R.attr.textColorPrimary, Color.WHITE), surface);
+            int accent = resolveColor(context, android.R.attr.colorAccent, primary);
 
             trackPaint.setColor(withAlpha(primary, 0x36));
             thumbPaint.setColor(withAlpha(primary, 0xE8));
@@ -428,6 +433,13 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
 
     private static int withAlpha(int color, int alpha) {
         return (color & 0x00FFFFFF) | ((alpha & 0xFF) << 24);
+    }
+
+    private static int readableColor(int preferred, int surface) {
+        int opaqueSurface = surface | 0xFF000000;
+        if (ColorUtils.calculateContrast(preferred, opaqueSurface) >= 4.5) return preferred;
+        return ColorUtils.calculateContrast(Color.WHITE, opaqueSurface)
+                >= ColorUtils.calculateContrast(Color.BLACK, opaqueSurface) ? Color.WHITE : Color.BLACK;
     }
 
     private static int dp(Context context, int value) {

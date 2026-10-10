@@ -31,6 +31,7 @@ import org.junit.Test;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.reflect.Method;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Collections;
@@ -152,14 +153,23 @@ public class FeaturePortBehaviorTest {
                 return label.getHeight() > 44 * activity.getResources().getDisplayMetrics().density
                         && activity.list.getTop() >= label.getBottom();
             }, "large date label reserves enough space");
+            int[] originalFirst = new int[1];
             scenario.onActivity(activity -> {
                 View thumb = findDescription(activity.listContainer, "History date fast scroll");
                 float density = activity.getResources().getDisplayMetrics().density;
                 float x = thumb.getWidth() - 2 * density;
+                float center;
+                try {
+                    Field top = thumb.getClass().getDeclaredField("thumbTop");
+                    top.setAccessible(true);
+                    center = top.getFloat(thumb) + 29 * density;
+                } catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+                originalFirst[0] = activity.list.getFirstVisiblePosition();
+                float destination = center > thumb.getHeight() / 2f ? 1f : thumb.getHeight() - 1f;
                 long now = SystemClock.uptimeMillis();
-                MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, 29 * density, 0);
-                MotionEvent move = MotionEvent.obtain(now, now + 100, MotionEvent.ACTION_MOVE, x, thumb.getHeight() - 1, 0);
-                MotionEvent up = MotionEvent.obtain(now, now + 110, MotionEvent.ACTION_UP, x, thumb.getHeight() - 1, 0);
+                MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, center, 0);
+                MotionEvent move = MotionEvent.obtain(now, now + 100, MotionEvent.ACTION_MOVE, x, destination, 0);
+                MotionEvent up = MotionEvent.obtain(now, now + 110, MotionEvent.ACTION_UP, x, destination, 0);
                 try {
                     assertTrue(thumb.dispatchTouchEvent(down));
                     assertTrue(thumb.dispatchTouchEvent(move));
@@ -168,7 +178,7 @@ public class FeaturePortBehaviorTest {
                     down.recycle(); move.recycle(); up.recycle();
                 }
             });
-            BaselineBehaviorTest.await(scenario, activity -> activity.list.getFirstVisiblePosition() > 0,
+            BaselineBehaviorTest.await(scenario, activity -> activity.list.getFirstVisiblePosition() != originalFirst[0],
                     "date scrubber moved through history");
             screenshot("history-date-scrubbed.png");
             for (String layout : new String[]{"vertical_cards", "wheel_3d"}) {
