@@ -209,7 +209,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         }
         // History's configured sizes must be final, then the global multiplier applies
         // once. Previously the History-specific setter overwrote global text sizing.
-        if (renderContext instanceof MainActivity) {
+        if (renderContext instanceof MainActivity
+                && (!(parent instanceof AbsListView) || !isVerticalHistory())) {
             ((MainActivity) renderContext).applyGlobalTextScaleToSubtree(view);
         }
         return view;
