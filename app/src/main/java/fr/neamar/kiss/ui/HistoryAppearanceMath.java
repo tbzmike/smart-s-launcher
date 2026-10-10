@@ -13,6 +13,12 @@ public final class HistoryAppearanceMath {
         return Math.max(1f, categorySp * (global / 100f));
     }
 
+    /** Recycled ListView rows must not keep a signature from a different result identity. */
+    public static int rowStyleSignature(int appearanceHash, int iconPercent, long uniqueId) {
+        int h = 31 * appearanceHash + iconPercent;
+        return 31 * h + (int) (uniqueId ^ (uniqueId >>> 32));
+    }
+
     public static int scaledIconPx(int basePx, int percent) {
         return Math.max(1, Math.round(basePx * (Math.max(50, Math.min(240, percent)) / 100f)));
     }

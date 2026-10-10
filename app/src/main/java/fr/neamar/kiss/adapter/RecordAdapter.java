@@ -203,7 +203,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             if (isVerticalHistory()) {
                 // Include the effective row icon size. Recycled ListView rows can represent
                 // different semantic result classes even while global preferences are unchanged.
-                int signature = 31 * cachedVerticalStyleSignature + iconPercentForRow(view, result);
+                int signature = HistoryAppearanceMath.rowStyleSignature(
+                        cachedVerticalStyleSignature, iconPercentForRow(view, result),
+                        result.getUniqueId());
                 Integer previous = verticalStyleSignatures.get(view);
                 if (previous == null || previous != signature) {
                     applyVerticalHistorySizing(view, context, result);
@@ -805,7 +807,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             View row = activity.list.getChildAt(i);
             if (row == null) continue;
             Result<?> result = results.get(index);
-            int signature = 31 * cachedVerticalStyleSignature + iconPercentForRow(row, result);
+            int signature = HistoryAppearanceMath.rowStyleSignature(
+                    cachedVerticalStyleSignature, iconPercentForRow(row, result),
+                    result.getUniqueId());
             Integer styled = verticalStyleSignatures.get(row);
             if (styled == null || styled != signature) {
                 applyVerticalHistorySizing(row, activity, result);
