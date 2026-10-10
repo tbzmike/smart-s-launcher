@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.166 - 3.30.153 baseline with additive semantic and date features
-        versionCode 594
-        versionName "3.30.166"
+        // Smart S Launcher 3.30.167 - 3.30.166 baseline with History presentation regression fixes
+        versionCode 595
+        versionName "3.30.167"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
