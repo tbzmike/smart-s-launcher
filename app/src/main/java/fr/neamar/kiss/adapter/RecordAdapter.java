@@ -177,11 +177,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         boolean hardScrollFreeze = cachedVerticalHistory
                 && parent instanceof fr.neamar.kiss.ui.AnimatedListView
                 && ((fr.neamar.kiss.ui.AnimatedListView) parent).isScrollInProgress();
-        if (hardScrollFreeze) return view;
-
-        // Scale only this recycled/new row, never the complete launcher hierarchy.
-        if (renderContext instanceof MainActivity) {
-            ((MainActivity) renderContext).applyGlobalTextScaleToSubtree(view);
+        if (hardScrollFreeze) {
+            // Rows are recycled during a fling. Their icon, text and timestamp cannot be
+            // skipped, or reused rows inherit the previous item's appearance until another
+            // adapter publication. Defer optional notification/overflow work instead.
+            rebindVisibleHistoryPresentation(view, result, renderContext);
+            return view;
         }
 
         NotificationBellStyle.applyToResult(view, result, parent instanceof AbsListView);
@@ -199,23 +200,46 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             Context context = renderContext;
             TileVisualStyle.apply(view, result, context);
             if (isVerticalHistory()) {
-                // Include the effective row icon size. Recycled ListView rows can represent
-                // different semantic result classes even while global preferences are unchanged.
-                int signature = 31 * cachedVerticalStyleSignature + iconPercentForRow(view, result);
-                Integer previous = verticalStyleSignatures.get(view);
-                if (previous == null || previous != signature) {
-                    applyVerticalHistorySizing(view, context, result);
-                    applyVerticalHistoryPolish(view, context);
-                    verticalStyleSignatures.put(view, signature);
-                }
+                rebindVisibleHistoryPresentation(view, result, context);
                 applyVerticalHistoryWidth(view, parent, context, cachedHistoryWidthPercent);
-                UniversalHistoryTimestamp.bind(view, result, context);
             } else {
                 restoreVerticalHistoryAppearance(view);
                 verticalStyleSignatures.remove(view);
             }
         }
+        // History's configured sizes must be final, then the global multiplier applies
+        // once. Previously the History-specific setter overwrote global text sizing.
+        if (renderContext instanceof MainActivity) {
+            ((MainActivity) renderContext).applyGlobalTextScaleToSubtree(view);
+        }
         return view;
+    }
+
+    /**
+     * Reapply the canonical History presentation without a full dataset refresh.
+     * Also used after fling idle to repair recycled rows without adding UI layers.
+     */
+    public void rebindVisibleHistoryPresentation(View row, Result<?> result, Context context) {
+        if (row == null || result == null) return;
+        refreshRenderConfigIfNeeded(context);
+        if (!isVerticalHistory()) return;
+        int signature = 31 * cachedVerticalStyleSignature + iconPercentForRow(row, result);
+        Integer previous = verticalStyleSignatures.get(row);
+        if (previous == null || previous != signature) {
+            applyVerticalHistorySizing(row, context, result);
+            applyVerticalHistoryPolish(row, context);
+            verticalStyleSignatures.put(row, signature);
+        }
+        UniversalHistoryTimestamp.bind(row, result, context);
+        if (context instanceof MainActivity) {
+            ((MainActivity) context).applyGlobalTextScaleToSubtree(row);
+        }
+    }
+
+    /** Preferences may change without a provider result changing or a dataset publication. */
+    public void invalidateHistoryPresentation() {
+        invalidateRenderConfig();
+        verticalStyleSignatures.clear();
     }
 
     private void configureSocialMessageCard(View view, NotificationPojo notification) {
