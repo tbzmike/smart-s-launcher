@@ -110,6 +110,8 @@ final class SmartCardListForwarder extends Forwarder {
         scroller.setFillViewport(false);
         scroller.setVerticalScrollBarEnabled(true);
         scroller.setScrollbarFadingEnabled(true);
+        scroller.setScrollBarDefaultDelayBeforeFade(900);
+        scroller.setScrollBarFadeDuration(240);
         scroller.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         scroller.setClipToPadding(false);
         scroller.setPadding(dp(8), dp(8), dp(8), dp(18));
