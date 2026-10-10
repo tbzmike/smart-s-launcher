@@ -688,6 +688,179 @@ public class DBHelper {
         });
     }
 
+    public static void upsertAppSourceMetadata(
+            @NonNull Context context, @NonNull AppSourceMetadataRecord record) {
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+            ContentValues values = new ContentValues();
+            values.put("package", record.packageName);
+            values.put("source", record.source);
+            values.put("installer_package", record.installerPackage);
+            values.put("title", record.title);
+            values.put("description", record.description);
+            values.put("source_url", record.sourceUrl);
+            values.put("fetched_at", record.fetchedAt);
+            values.put("last_error", record.lastError);
+
+            int updated = recoveryDb.update(
+                    "app_source_metadata", values, "package = ?",
+                    new String[]{record.packageName});
+            if (updated == 0) recoveryDb.insert("app_source_metadata", null, values);
+        });
+    }
+
+    @NonNull
+    public static Map<String, AppSourceMetadataRecord> getAppSourceMetadata(
+            @NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            Map<String, AppSourceMetadataRecord> records = new HashMap<>();
+            String[] columns = {
+                    "package", "source", "installer_package", "title",
+                    "description", "source_url", "fetched_at", "last_error"
+            };
+            try (Cursor cursor = recoveryDb.query(
+                    "app_source_metadata", columns,
+                    null, null, null, null, null)) {
+                while (cursor.moveToNext()) {
+                    AppSourceMetadataRecord record = new AppSourceMetadataRecord();
+                    record.packageName = cursor.getString(0);
+                    record.source = cursor.getString(1);
+                    record.installerPackage = cursor.getString(2);
+                    record.title = cursor.getString(3);
+                    record.description = cursor.getString(4);
+                    record.sourceUrl = cursor.getString(5);
+                    record.fetchedAt = cursor.getLong(6);
+                    record.lastError = cursor.getString(7);
+                    records.put(record.packageName, record);
+                }
+            }
+            return records;
+        });
+    }
+
+    public static int getAppSourceMetadataCount(@NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            try (Cursor cursor = recoveryDb.rawQuery(
+                    "SELECT COUNT(*) FROM app_source_metadata WHERE description <> ''", null)) {
+                return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+            }
+        });
+    }
+
+    public static int getAppSourceMetadataTotalCount(@NonNull Context context) {
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            try (Cursor cursor = recoveryDb.rawQuery(
+                    "SELECT COUNT(*) FROM app_source_metadata", null)) {
+                return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+            }
+        });
+    }
+
+    public static void pruneAppSourceMetadata(
+            @NonNull Context context, @NonNull java.util.Set<String> installedPackages) {
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+            if (installedPackages.isEmpty()) {
+                recoveryDb.delete("app_source_metadata", null, null);
+                return;
+            }
+
+            // Android 5 SQLite limits bound parameters to 999. Compare package keys in memory
+            // instead of binding the complete installed-app library to one NOT IN query.
+            List<String> obsolete = new ArrayList<>();
+            try (Cursor cursor = recoveryDb.query("app_source_metadata",
+                    new String[]{"package"}, null, null, null, null, null)) {
+                while (cursor.moveToNext()) {
+                    String name = cursor.getString(0);
+                    if (!installedPackages.contains(name)) obsolete.add(name);
+                }
+            }
+            recoveryDb.beginTransaction();
+            try {
+                for (String name : obsolete) {
+                    recoveryDb.delete("app_source_metadata", "package = ?", new String[]{name});
+                }
+                recoveryDb.setTransactionSuccessful();
+            } finally {
+                recoveryDb.endTransaction();
+            }
+        });
+    }
+
+    public static void insertSemanticActivity(
+            @NonNull Context context, @NonNull SemanticActivityRecord record) {
+        DatabaseRecovery.runVoid(context, recoveryDb ->
+                recoveryDb.insert("semantic_activity_log", null, semanticActivityValues(record)));
+    }
+
+    public static void insertSemanticActivities(
+            @NonNull Context context, @NonNull List<SemanticActivityRecord> records) {
+        if (records.isEmpty()) return;
+        DatabaseRecovery.runVoid(context, recoveryDb -> {
+            recoveryDb.beginTransaction();
+            try {
+                for (SemanticActivityRecord record : records) {
+                    if (record == null) continue;
+                    recoveryDb.insert("semantic_activity_log", null, semanticActivityValues(record));
+                }
+                recoveryDb.execSQL(
+                        "DELETE FROM semantic_activity_log WHERE _id NOT IN "
+                                + "(SELECT _id FROM semantic_activity_log ORDER BY _id DESC LIMIT 10000)");
+                recoveryDb.setTransactionSuccessful();
+            } finally {
+                recoveryDb.endTransaction();
+            }
+        });
+    }
+
+    @NonNull
+    public static List<SemanticActivityRecord> getSemanticActivity(
+            @NonNull Context context, int requestedLimit) {
+        final int limit = Math.max(1, Math.min(10000, requestedLimit));
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            List<SemanticActivityRecord> records = new ArrayList<>();
+            String[] columns = {
+                    "_id", "event_time", "event_type", "session_id",
+                    "package", "app_name", "source", "details"
+            };
+            try (Cursor cursor = recoveryDb.query(
+                    "semantic_activity_log",
+                    columns,
+                    null, null, null, null,
+                    "event_time DESC, _id DESC",
+                    Integer.toString(limit))) {
+                while (cursor.moveToNext()) {
+                    SemanticActivityRecord record = new SemanticActivityRecord();
+                    record.id = cursor.getLong(0);
+                    record.eventTime = cursor.getLong(1);
+                    record.eventType = cursor.getString(2);
+                    record.sessionId = cursor.getString(3);
+                    record.packageName = cursor.getString(4);
+                    record.appName = cursor.getString(5);
+                    record.source = cursor.getString(6);
+                    record.details = cursor.getString(7);
+                    records.add(record);
+                }
+            }
+            return records;
+        });
+    }
+
+    public static void clearSemanticActivity(@NonNull Context context) {
+        DatabaseRecovery.runVoid(context,
+                recoveryDb -> recoveryDb.delete("semantic_activity_log", null, null));
+    }
+
+    private static ContentValues semanticActivityValues(@NonNull SemanticActivityRecord record) {
+        ContentValues values = new ContentValues();
+        values.put("event_time", record.eventTime);
+        values.put("event_type", record.eventType);
+        values.put("session_id", record.sessionId);
+        values.put("package", record.packageName);
+        values.put("app_name", record.appName);
+        values.put("source", record.source);
+        values.put("details", record.details);
+        return values;
+    }
+
     public static void initDatabase(Context context) {
         DatabaseRecovery.runVoid(context, recoveryDb -> { });
     }

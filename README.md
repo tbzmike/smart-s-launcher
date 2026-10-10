@@ -15,6 +15,20 @@ Smart S Launcher keeps the search-first foundation of KISS while adding and exte
 - Optional accessibility-based double-tap-to-lock support
 - Additional local launcher preferences and history behavior
 
+Version 3.30.166 is built directly on the verified 3.30.153 source. It adds background HNSW
+semantic retrieval, richer task matching, locally cached app-store descriptions and automatic
+install/update metadata refresh, a Data Activity Viewer, a dedicated semantic settings screen,
+settings-search highlighting, and date navigation in native Home history, Notification History,
+and chronological App Usage views. The original row adapter, history loading, text styling,
+keyboard, card/wheel renderers and notification actions remain unchanged.
+
+Semantic search remains optional. Its existing dimension choices are 64, 128 and 256, with 128
+as the default. Description refresh does not change the user's semantic or description settings.
+Metadata requests are deduplicated by app revision; newer pending updates survive older fetch
+completion. HNSW rebuild bursts coalesce into the latest replacement and optional feature work
+pauses during launcher scrolling. Verification compares rendered row measurements against
+3.30.153 through search, resume, recycling, scrolling and recreation on Android emulators.
+
 These changes are maintained in this repository under the Smart S Launcher application ID `com.tbzmike.smartslauncher`.
 
 ## Features

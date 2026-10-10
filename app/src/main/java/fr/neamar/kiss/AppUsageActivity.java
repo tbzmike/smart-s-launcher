@@ -64,6 +64,7 @@ import fr.neamar.kiss.appusage.AppUsageTimelineCompactor;
 import fr.neamar.kiss.appusage.AppUsageTracker;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.ui.AutoMarqueeTextView;
+import fr.neamar.kiss.ui.ChronologicalDateScroller;
 
 /**
  * Detailed, local, 365-day phone usage explorer.
@@ -114,6 +115,7 @@ public final class AppUsageActivity extends AppCompatActivity {
     private Button rangeButton;
     private ProgressBar progress;
     private RecyclerView list;
+    private ChronologicalDateScroller dateScroller;
 
     private int activeView = VIEW_TIMELINE;
     private int rangeDays = 1;
@@ -222,7 +224,16 @@ public final class AppUsageActivity extends AppCompatActivity {
         list.setBackgroundColor(BG);
         list.setItemAnimator(null);
         list.setHasFixedSize(false);
-        root.addView(list, new LinearLayout.LayoutParams(
+        FrameLayout historyHost = new FrameLayout(this);
+        historyHost.addView(list, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        dateScroller = new ChronologicalDateScroller(this, historyHost);
+        list.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override public void onScrolled(@NonNull RecyclerView recycler, int dx, int dy) {
+                refreshDateScroller();
+            }
+        });
+        root.addView(historyHost, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         setContentView(root);
@@ -469,20 +480,26 @@ public final class AppUsageActivity extends AppCompatActivity {
         if (data == null || list == null) return;
         switch (activeView) {
             case VIEW_OVERVIEW:
+                dateScroller.setSource(0, null, null);
                 list.setLayoutManager(new LinearLayoutManager(this));
                 list.setAdapter(new OverviewAdapter(data));
                 break;
             case VIEW_HEATMAP:
+                List<HeatmapDay> heatmap = buildHeatmap(data);
                 list.setLayoutManager(new LinearLayoutManager(this));
-                list.setAdapter(new HeatmapAdapter(buildHeatmap(data)));
+                list.setAdapter(new HeatmapAdapter(heatmap));
+                dateScroller.setSource(heatmap.size(), p -> heatmap.get(p).dayMs,
+                        this::jumpToDatePosition);
                 break;
             case VIEW_DETAILED:
+                dateScroller.setSource(0, null, null);
                 list.setLayoutManager(new LinearLayoutManager(this));
                 list.setAdapter(new DetailedAdapter(buildAggregates(data)));
                 break;
             case VIEW_INSTALLS:
                 GridLayoutManager grid = new GridLayoutManager(this, 2);
-                InstallAdapter installs = new InstallAdapter(buildInstallRows(data));
+                List<InstallRow> installRows = buildInstallRows(data);
+                InstallAdapter installs = new InstallAdapter(installRows);
                 grid.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
                     @Override public int getSpanSize(int position) {
                         return installs.isHeader(position) ? 2 : 1;
@@ -490,13 +507,48 @@ public final class AppUsageActivity extends AppCompatActivity {
                 });
                 list.setLayoutManager(grid);
                 list.setAdapter(installs);
+                dateScroller.setSource(installRows.size(), p -> {
+                    InstallRow row = installRows.get(p);
+                    if (row.entry != null) return row.entry.startMs;
+                    return p + 1 < installRows.size() && installRows.get(p + 1).entry != null
+                            ? installRows.get(p + 1).entry.startMs : 0L;
+                }, this::jumpToDatePosition);
                 break;
             case VIEW_TIMELINE:
             default:
+                List<TimelineRow> timelineRows = buildTimelineRows(data);
                 list.setLayoutManager(new LinearLayoutManager(this));
-                list.setAdapter(new TimelineAdapter(buildTimelineRows(data)));
+                list.setAdapter(new TimelineAdapter(timelineRows));
+                dateScroller.setSource(timelineRows.size(), p -> {
+                    TimelineRow row = timelineRows.get(p);
+                    if (row.entry != null) return row.entry.startMs;
+                    return p + 1 < timelineRows.size() && timelineRows.get(p + 1).entry != null
+                            ? timelineRows.get(p + 1).entry.startMs : 0L;
+                }, this::jumpToDatePosition);
                 break;
         }
+        list.post(this::refreshDateScroller);
+    }
+
+    private void jumpToDatePosition(int position, int offset) {
+        RecyclerView.LayoutManager manager = list.getLayoutManager();
+        if (manager instanceof LinearLayoutManager) {
+            ((LinearLayoutManager) manager).scrollToPositionWithOffset(position, offset);
+        } else {
+            list.scrollToPosition(position);
+        }
+    }
+
+    private void refreshDateScroller() {
+        if (list == null || dateScroller == null) return;
+        RecyclerView.LayoutManager manager = list.getLayoutManager();
+        RecyclerView.Adapter<?> adapter = list.getAdapter();
+        if (!(manager instanceof LinearLayoutManager) || adapter == null) return;
+        LinearLayoutManager linear = (LinearLayoutManager) manager;
+        int first = linear.findFirstVisibleItemPosition();
+        if (first == RecyclerView.NO_POSITION) return;
+        int last = linear.findLastVisibleItemPosition();
+        dateScroller.onScroll(first, Math.max(1, last - first + 1), adapter.getItemCount());
     }
 
     private List<AppUsageStore.TimelineEntry> filteredExact(Snapshot data) {

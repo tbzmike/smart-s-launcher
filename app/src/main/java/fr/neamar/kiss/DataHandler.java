@@ -50,9 +50,11 @@ import fr.neamar.kiss.dataprovider.simpleprovider.SettingsProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.TagsProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.TimerProvider;
 import fr.neamar.kiss.db.AppCatalogRecord;
+import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ShortcutRecord;
+import fr.neamar.kiss.db.SemanticActivityRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.pojo.AppPojo;
@@ -359,6 +361,133 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
             if (pojos != null) searcher.addResults(pojos);
             if (searcher.isCancelled()) return;
         }
+    }
+
+    /**
+     * Stable provider snapshot for background semantic indexing.
+     *
+     * <p>Unlike requestAllRecords(), this does not route every record through the active query or
+     * mutate relevance. The HNSW builder reads this copy on its own low-priority worker, so typing
+     * never performs a whole-provider semantic scan.</p>
+     */
+    @NonNull
+    public List<Pojo> getSemanticIndexSnapshot() {
+        List<Pojo> snapshot = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+
+        for (ProviderEntry entry : this.providers.values()) {
+            if (entry.provider == null || !entry.provider.isLoaded()) continue;
+            List<? extends Pojo> pojos = entry.provider.getPojos();
+            if (pojos == null || pojos.isEmpty()) continue;
+
+            for (Pojo pojo : pojos) {
+                if (pojo == null || pojo.id == null || !seen.add(pojo.id)) continue;
+                snapshot.add(pojo);
+            }
+        }
+
+        // Frozen/disabled apps can disappear from LauncherApps while their package and remembered
+        // launcher identity still exist. Add those remembered app identities to the background
+        // semantic snapshot so cached descriptions can still produce HNSW app vectors. Interactive
+        // search continues to apply the user's frozen-app visibility policy before showing results.
+        UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
+        if (userManager != null) {
+            Set<String> excludedApps = getExcluded();
+            Set<String> excludedHistory = getExcludedFromHistory();
+            Set<String> excludedShortcuts = getExcludedShortcutApps();
+            PackageManager packageManager = context.getPackageManager();
+
+            for (android.os.UserHandle profile : userManager.getUserProfiles()) {
+                long serial = userManager.getSerialNumberForUser(profile);
+                if (serial < 0L) continue;
+                UserHandle user = new UserHandle(context, profile);
+
+                for (AppCatalogRecord record : SmartStateStore.getRememberedApps(context, serial)) {
+                    if (record == null
+                            || TextUtils.isEmpty(record.packageName)
+                            || TextUtils.isEmpty(record.activityName)) continue;
+
+                    String id = user.addUserSuffixToString(
+                            "app://" + record.packageName + "/" + record.activityName, '/');
+                    if (!seen.add(id)) continue;
+
+                    boolean disabled = false;
+                    if (profile.equals(android.os.Process.myUserHandle())) {
+                        try {
+                            ApplicationInfo info = packageManager.getApplicationInfo(
+                                    record.packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+                            int state = packageManager.getApplicationEnabledSetting(record.packageName);
+                            disabled = !info.enabled
+                                    || PackageManagerUtils.isAppSuspended(info)
+                                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
+                        } catch (PackageManager.NameNotFoundException | IllegalArgumentException e) {
+                            // Keep the remembered identity in the semantic graph. IceBox and similar
+                            // tools can temporarily hide the package from normal PackageManager APIs.
+                            disabled = true;
+                        }
+                    }
+
+                    boolean excluded = excludedApps.contains(
+                            AppPojo.getComponentName(
+                                    record.packageName, record.activityName, user));
+                    AppPojo app = new AppPojo(
+                            id,
+                            record.packageName,
+                            record.activityName,
+                            user,
+                            excluded,
+                            excludedHistory.contains(id),
+                            excludedShortcuts.contains(record.packageName),
+                            disabled);
+                    app.setName(TextUtils.isEmpty(record.label)
+                            ? record.packageName : record.label);
+                    app.setTags(getTagsHandler().getTags(id));
+                    snapshot.add(app);
+                }
+            }
+        }
+
+        return snapshot;
+    }
+
+    @NonNull
+    public Map<String, AppSourceMetadataRecord> getAppSourceMetadataRecords() {
+        return DBHelper.getAppSourceMetadata(context);
+    }
+
+    public void logSemanticActivity(@NonNull SemanticActivityRecord record) {
+        DBHelper.insertSemanticActivity(context, record);
+    }
+
+    public void logSemanticActivities(@NonNull List<SemanticActivityRecord> records) {
+        DBHelper.insertSemanticActivities(context, records);
+    }
+
+    /**
+     * Package-keyed source/catalog text loaded once per semantic index rebuild.
+     * This keeps SQLite completely out of the interactive query path.
+     */
+    @NonNull
+    public synchronized Map<String, String> getAppSourceSemanticTextByPackage() {
+        if (cachedAppSourceSemanticText != null) return cachedAppSourceSemanticText;
+        Map<String, AppSourceMetadataRecord> stored = DBHelper.getAppSourceMetadata(context);
+        Map<String, String> semanticText = new HashMap<>(stored.size());
+        for (Map.Entry<String, AppSourceMetadataRecord> entry : stored.entrySet()) {
+            AppSourceMetadataRecord record = entry.getValue();
+            if (record == null) continue;
+            String text = record.semanticText();
+            if (!TextUtils.isEmpty(text)) semanticText.put(entry.getKey(), text);
+        }
+        cachedAppSourceSemanticText = Collections.unmodifiableMap(semanticText);
+        return cachedAppSourceSemanticText;
+    }
+
+    private Map<String, String> cachedAppSourceSemanticText;
+
+    public synchronized void invalidateAppSourceSemanticText() {
+        cachedAppSourceSemanticText = null;
     }
 
     /**

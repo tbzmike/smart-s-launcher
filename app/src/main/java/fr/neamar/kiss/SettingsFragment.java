@@ -46,8 +46,10 @@ import fr.neamar.kiss.preference.ExportSettingsPreference;
 import fr.neamar.kiss.preference.ImportSettingsPreference;
 import fr.neamar.kiss.preference.LaunchPojoSelectPreference;
 import fr.neamar.kiss.preference.SelectCustomSearchProvidersPreference;
+import fr.neamar.kiss.searcher.AppSourceMetadataUpdater;
 import fr.neamar.kiss.searcher.QuerySearcher;
 import fr.neamar.kiss.searcher.SemanticEmbeddingScorer;
+import fr.neamar.kiss.searcher.SemanticHnswIndex;
 import fr.neamar.kiss.ui.BuiltInKeyboardSizing;
 import fr.neamar.kiss.ui.SearchEditText;
 import fr.neamar.kiss.update.AppUpdater;
@@ -320,21 +322,102 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     }
 
     private void addSemanticSearchPreferences(@Nullable String rootKey) {
-        PreferenceGroup parent = findPreference("providers");
-        if (parent == null && "providers".equals(rootKey)) parent = getPreferenceScreen();
+        // Use a real PreferenceScreen so this feature is manually discoverable and can be opened
+        // safely from Settings search. 3.30.156 incorrectly targeted a PreferenceCategory.
+        if (!"semantic-search-screen".equals(rootKey)) return;
+
+        PreferenceGroup parent = getPreferenceScreen();
         if (parent == null || parent.findPreference("semantic-search-category") != null) return;
 
         PreferenceCategory category = new PreferenceCategory(requireContext());
         category.setKey("semantic-search-category");
-        category.setTitle("Semantic search & embeddings");
+        category.setTitle("Semantic engine");
+        category.setSummary("On-device semantic retrieval with HNSW and per-app metadata context.");
         parent.addPreference(category);
 
         SwitchPreference enabled = new SwitchPreference(requireContext());
         enabled.setKey("semantic-search-enabled");
         enabled.setTitle("Enable semantic search");
-        enabled.setSummary("Use on-device embeddings as a fallback when literal/fuzzy matching is not enough.");
+        enabled.setSummary("Use on-device semantic embeddings together with normal lexical/fuzzy search.");
         enabled.setDefaultValue(false);
         category.addPreference(enabled);
+
+        SwitchPreference hnsw = new SwitchPreference(requireContext());
+        hnsw.setKey(SemanticHnswIndex.PREF_HNSW_ENABLED);
+        hnsw.setTitle("HNSW fast semantic retrieval");
+        hnsw.setSummary("Pre-index searchable records in the background and retrieve only nearest semantic candidates instead of scanning every record while you type.");
+        hnsw.setDefaultValue(true);
+        hnsw.setDependency("semantic-search-enabled");
+        category.addPreference(hnsw);
+
+        ListPreference hnswDepth = new ListPreference(requireContext());
+        hnswDepth.setKey(SemanticHnswIndex.PREF_HNSW_EF_SEARCH);
+        hnswDepth.setTitle("HNSW search depth");
+        hnswDepth.setEntries(new CharSequence[]{
+                "48 · fastest",
+                "96 · balanced",
+                "160 · higher recall",
+                "224 · maximum recall"
+        });
+        hnswDepth.setEntryValues(new CharSequence[]{"48", "96", "160", "224"});
+        hnswDepth.setDefaultValue("96");
+        hnswDepth.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
+        hnswDepth.setDependency(SemanticHnswIndex.PREF_HNSW_ENABLED);
+        category.addPreference(hnswDepth);
+
+        SwitchPreference sourceDescriptions = new SwitchPreference(requireContext());
+        sourceDescriptions.setKey(AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS);
+        sourceDescriptions.setTitle("Use app-store descriptions for semantic search");
+        sourceDescriptions.setSummary("Add locally cached Play Store, F-Droid, Aptoide or other discovered catalog descriptions to each app's semantic vector. Search itself stays offline.");
+        sourceDescriptions.setDefaultValue(true);
+        sourceDescriptions.setDependency("semantic-search-enabled");
+        category.addPreference(sourceDescriptions);
+
+        Preference sourceStatus = new Preference(requireContext());
+        sourceStatus.setKey("semantic-app-source-status");
+        sourceStatus.setTitle("App source data");
+        sourceStatus.setSummary(AppSourceMetadataUpdater.statusSummary(requireContext()));
+        sourceStatus.setSelectable(false);
+        category.addPreference(sourceStatus);
+
+        Preference activityViewer = new Preference(requireContext());
+        activityViewer.setKey("semantic-data-activity-viewer");
+        activityViewer.setTitle("Data Activity Viewer");
+        activityViewer.setSummary("See which apps have online descriptions, read the full description, check its source/time, see missing apps, and inspect HNSW app indexing.");
+        activityViewer.setOnPreferenceClickListener(preference -> {
+            startActivity(new Intent(requireContext(), DataActivityViewerActivity.class));
+            return true;
+        });
+        category.addPreference(activityViewer);
+
+        Preference updateSources = new Preference(requireContext());
+        updateSources.setKey("semantic-update-all-app-source-data");
+        updateSources.setTitle("Update all apps source data");
+        updateSources.setSummary("Find descriptions by package name for installed apps, including frozen/disabled apps. Descriptions also refresh automatically after app installs and updates detected by Smart S App Usage/package monitoring. Manual update refreshes the full library.");
+        updateSources.setOnPreferenceClickListener(preference -> {
+            boolean started = AppSourceMetadataUpdater.refreshAll(
+                    requireContext(),
+                    getDataHandler(),
+                    prefs,
+                    () -> {
+                        if (!isAdded()) return;
+                        refreshAppSourceStatus();
+                        refreshSemanticIndexStatus();
+                        Toast.makeText(
+                                requireContext(),
+                                "App source data refresh finished",
+                                Toast.LENGTH_SHORT).show();
+                    });
+            refreshAppSourceStatus();
+            if (!started) {
+                Toast.makeText(
+                        requireContext(),
+                        "App source data update is already running",
+                        Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        });
+        category.addPreference(updateSources);
 
         ListPreference model = new ListPreference(requireContext());
         model.setKey("semantic-model");
@@ -349,7 +432,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         ListPreference dimensions = new ListPreference(requireContext());
         dimensions.setKey("semantic-embedding-dimensions");
         dimensions.setTitle("Embedding dimensions");
-        dimensions.setEntries(new CharSequence[]{"64 · fastest", "128 · balanced", "256 · richer"});
+        dimensions.setEntries(new CharSequence[]{"64 · fastest", "128 · balanced", "256 · higher accuracy"});
         dimensions.setEntryValues(new CharSequence[]{"64", "128", "256"});
         dimensions.setDefaultValue("128");
         dimensions.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
@@ -366,10 +449,33 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         threshold.setDependency("semantic-search-enabled");
         category.addPreference(threshold);
 
+        Preference status = new Preference(requireContext());
+        status.setKey("semantic-hnsw-status");
+        status.setTitle("Semantic index status");
+        status.setSummary(SemanticHnswIndex.getInstance().statusSummary());
+        status.setSelectable(false);
+        category.addPreference(status);
+
+        Preference rebuild = new Preference(requireContext());
+        rebuild.setKey("semantic-hnsw-rebuild");
+        rebuild.setTitle("Rebuild semantic HNSW index");
+        rebuild.setSummary("Recompute candidate vectors and the HNSW graph now. Normal search remains available while the replacement index builds.");
+        rebuild.setDependency("semantic-search-enabled");
+        rebuild.setOnPreferenceClickListener(preference -> {
+            SemanticHnswIndex.getInstance().scheduleRebuild(getDataHandler(), prefs);
+            Preference currentStatus = findPreference("semantic-hnsw-status");
+            if (currentStatus != null) {
+                currentStatus.setSummary(SemanticHnswIndex.getInstance().statusSummary());
+            }
+            return true;
+        });
+        category.addPreference(rebuild);
+
         Preference info = new Preference(requireContext());
         info.setKey("semantic-model-info");
         info.setTitle("Embedding engine details");
-        info.setSummary(SemanticEmbeddingScorer.MODEL_NAME + " · on-device · no network · vectors computed at search time");
+        info.setSummary(SemanticEmbeddingScorer.MODEL_NAME
+                + " · on-device · no network · candidate vectors are precomputed for HNSW");
         info.setSelectable(false);
         category.addPreference(info);
     }
@@ -407,6 +513,26 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         super.onResume();
         prefs.registerOnSharedPreferenceChangeListener(this);
         refreshSearchKeyboardPicker();
+        refreshSemanticIndexStatus();
+        refreshAppSourceStatus();
+    }
+
+    private void refreshAppSourceStatus() {
+        Preference status = findPreference("semantic-app-source-status");
+        if (status != null) {
+            status.setSummary(AppSourceMetadataUpdater.statusSummary(requireContext()));
+        }
+        Preference update = findPreference("semantic-update-all-app-source-data");
+        if (update != null) {
+            update.setEnabled(!AppSourceMetadataUpdater.isRunning());
+        }
+    }
+
+    private void refreshSemanticIndexStatus() {
+        Preference status = findPreference("semantic-hnsw-status");
+        if (status != null) {
+            status.setSummary(SemanticHnswIndex.getInstance().statusSummary());
+        }
     }
 
     @Override
@@ -416,6 +542,18 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
 
             if (SearchEditText.PREF_SEARCH_KEYBOARD_MODE.equals(key)) {
                 refreshSearchKeyboardPicker();
+            }
+
+            if ("semantic-search-enabled".equals(key)
+                    || "semantic-model".equals(key)
+                    || "semantic-embedding-dimensions".equals(key)
+                    || SemanticHnswIndex.PREF_HNSW_ENABLED.equals(key)
+                    || AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS.equals(key)) {
+                SemanticHnswIndex.getInstance().scheduleRebuild(getDataHandler(), sharedPreferences);
+                refreshSemanticIndexStatus();
+                refreshAppSourceStatus();
+            } else if (SemanticHnswIndex.PREF_HNSW_EF_SEARCH.equals(key)) {
+                refreshSemanticIndexStatus();
             }
 
             if (PREF_LISTS_WITH_DEPENDENCY.contains(key)) {

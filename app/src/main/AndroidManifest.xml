@@ -105,6 +105,12 @@
             android:excludeFromRecents="true"
             android:parentActivityName=".SettingsActivity"
             android:theme="@style/SettingTheme" />
+        <activity
+            android:name=".DataActivityViewerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:parentActivityName=".SettingsActivity"
+            android:theme="@style/SettingTheme" />
 
         <activity
             android:name=".NotificationHistoryActivity"
@@ -303,6 +309,10 @@
         </service>
         <service
             android:name=".appusage.AppUsageJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="false" />
+        <service
+            android:name=".searcher.AppMetadataSyncJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="false" />
 

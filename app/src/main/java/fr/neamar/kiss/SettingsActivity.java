@@ -175,6 +175,9 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
             case APP_USAGE:
                 startActivity(new Intent(this, AppUsageActivity.class));
                 return;
+            case DATA_ACTIVITY:
+                startActivity(new Intent(this, DataActivityViewerActivity.class));
+                return;
             case SMART_SECTION: {
                 SmartFeaturesSettingsFragment fragment = new SmartFeaturesSettingsFragment();
                 Bundle args = new Bundle();
@@ -197,6 +200,13 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
     private void openStandardSearchResult(SettingsSearchIndex.Entry entry) {
         String rootKey = entry.opensScreen ? entry.key : entry.rootKey;
         String targetKey = entry.opensScreen ? null : entry.key;
+
+        // Search results may point at a PreferenceCategory for indexing purposes, but
+        // PreferenceFragmentCompat can only inflate PreferenceScreen roots. Normalize known
+        // category keys defensively so a bad/stale search index can never crash Settings.
+        if ("search-providers".equals(rootKey) || "web-providers".equals(rootKey)) {
+            rootKey = "providers";
+        }
         SettingsFragment fragment = isSmartCategory(rootKey)
                 ? new SmartCategorySettingsFragment()
                 : new SettingsFragment();
@@ -221,10 +231,55 @@ public class SettingsActivity extends AppCompatActivity implements SharedPrefere
         preferenceFragment.getListView().postDelayed(() -> {
             try {
                 preferenceFragment.scrollToPreference(targetKey);
+                // Retry the pulse briefly because RecyclerView may still be laying out the row
+                // after scrollToPreference(). This makes search -> setting navigation reliable.
+                androidx.preference.Preference target = preferenceFragment.findPreference(targetKey);
+                if (target != null) {
+                    pulsePreferenceRow(
+                            preferenceFragment.getListView(),
+                            target.getTitle(),
+                            0);
+                }
             } catch (RuntimeException e) {
                 Log.w(TAG, "Unable to scroll to searched setting: " + targetKey);
             }
         }, 80L);
+    }
+
+    private static void pulsePreferenceRow(
+            androidx.recyclerview.widget.RecyclerView list,
+            CharSequence targetTitle,
+            int attempt) {
+        if (list == null || TextUtils.isEmpty(targetTitle)) return;
+
+        for (int i = 0; i < list.getChildCount(); i++) {
+            android.view.View row = list.getChildAt(i);
+            if (!rowContainsText(row, targetTitle)) continue;
+
+            android.graphics.drawable.Drawable previous = row.getBackground();
+            row.setBackgroundColor(0x5564B5F6);
+            row.postDelayed(() -> row.setBackground(previous), 1800L);
+            return;
+        }
+
+        if (attempt < 5) {
+            list.postDelayed(() -> pulsePreferenceRow(list, targetTitle, attempt + 1), 140L);
+        }
+    }
+
+    private static boolean rowContainsText(android.view.View view, CharSequence target) {
+        if (view == null || TextUtils.isEmpty(target)) return false;
+        if (view instanceof android.widget.TextView) {
+            CharSequence text = ((android.widget.TextView) view).getText();
+            return target.equals(text);
+        }
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                if (rowContainsText(group.getChildAt(i), target)) return true;
+            }
+        }
+        return false;
     }
 
     private void clearSearchWithoutNavigation() {

@@ -67,9 +67,11 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.QueryInterface;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.searcher.SemanticHnswIndex;
 import fr.neamar.kiss.ui.AnimatedListView;
 import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.ui.KeyboardScrollHider;
+import fr.neamar.kiss.ui.HistoryDateNavigator;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.SearchEditText;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
@@ -118,6 +120,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
      */
     public AnimatedListView list;
     public View listContainer;
+    private HistoryDateNavigator historyDateNavigator;
     /**
      * View to display when list is empty
      */
@@ -296,6 +299,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                         return;
                     }
 
+                    // Semantic vectors/HNSW are rebuilt once after a complete provider batch, on a
+                    // low-priority worker. Search never pays this provider-wide indexing cost.
+                    SemanticHnswIndex.getInstance().scheduleRebuild(dataHandler, prefs);
+
                     boolean forceVisibleRebind =
                             intent.getBooleanExtra(EXTRA_FORCE_VISIBLE_REBIND, false);
                     updateSearchRecords();
@@ -364,6 +371,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // Create adapter for records
         this.adapter = new RecordAdapter(this, new ArrayList<>());
         this.list.setAdapter(this.adapter);
+        if (this.listContainer instanceof ViewGroup) {
+            this.historyDateNavigator = new HistoryDateNavigator(
+                    this, this.list, this.adapter, (ViewGroup) this.listContainer);
+        }
 
         this.list.setOnItemClickListener((parent, v, position, id) -> adapter.onClick(position, v));
         this.list.setOnItemLongClickListener((parent, v, pos, id) -> {
@@ -400,6 +411,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 // walk the entire launcher hierarchy after every dataset publication; dynamic rows
                 // are scaled once when they are created/bound.
                 forwarderManager.onDataSetChanged();
+                if (historyDateNavigator != null) historyDateNavigator.onDataChanged();
 
             }
         });
@@ -409,6 +421,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             if (isViewingAllApps()) {
                 displayKissBar(false, false);
             }
+            if (historyDateNavigator != null) historyDateNavigator.onSurfaceChanged();
             updateSearchRecords(false, changedText);
         }));
 
@@ -533,6 +546,12 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
         if (KissApplication.getApplication(this).getDataHandler().isAllProvidersLoaded()) {
             displayLoader(false);
+            if (prefs.getBoolean("semantic-search-enabled", false)
+                    && prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true)) {
+                SemanticHnswIndex.getInstance().ensureReady(
+                        KissApplication.getApplication(this).getDataHandler(), prefs,
+                        SemanticHnswIndex.parseDimensions(prefs));
+            }
         }
 
         boolean resetDefaultHistoryAfterSearchLaunch =
@@ -625,6 +644,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     protected void onDestroy() {
+        if (historyDateNavigator != null) {
+            historyDateNavigator.destroy();
+            historyDateNavigator = null;
+        }
         super.onDestroy();
         onBackPressedCallback.remove();
         this.unregisterReceiver(this.mReceiver);
@@ -788,6 +811,23 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return true;
         } else if (itemId == R.id.search_keyboard) {
             showSearchKeyboardDialog();
+            return true;
+        } else if (itemId == R.id.data_activity_viewer) {
+            startActivity(new Intent(this, DataActivityViewerActivity.class));
+            return true;
+        } else if (itemId == R.id.update_apps_metadata) {
+            boolean started = fr.neamar.kiss.searcher.AppSourceMetadataUpdater.refreshAll(
+                    this,
+                    KissApplication.getApplication(this).getDataHandler(),
+                    prefs,
+                    () -> Toast.makeText(
+                            this,
+                            fr.neamar.kiss.searcher.AppSourceMetadataUpdater.statusSummary(this),
+                            Toast.LENGTH_LONG).show());
+            Toast.makeText(this, started
+                            ? "Updating descriptions for installed apps in background…"
+                            : "App metadata update already running",
+                    Toast.LENGTH_LONG).show();
             return true;
         } else if (itemId == R.id.load_avatars) {
             Toast.makeText(this, "Loading avatars for recent history…", Toast.LENGTH_SHORT).show();
@@ -1296,6 +1336,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         if (forwarderManager != null) {
             forwarderManager.prepareExplicitHistoryLaunchReorder();
         }
+    }
+
+    /** Refresh date navigation after the existing background timestamp loader finishes. */
+    public void onHistoryDateMetadataLoaded() {
+        if (historyDateNavigator != null) historyDateNavigator.onDataChanged();
     }
 
     @Override

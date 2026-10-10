@@ -559,6 +559,10 @@
         app:key="providers"
         app:summary="@string/providers_summary"
         app:title="@string/title_providers">
+        <PreferenceScreen
+            app:key="semantic-search-screen"
+            app:title="Semantic search &amp; HNSW"
+            app:summary="Fast semantic app search, HNSW indexing and app-description metadata." />
         <PreferenceCategory
             app:key="search-providers"
             app:title="@string/search_results_options">

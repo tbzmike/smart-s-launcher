@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.153 - fully resizable built-in keyboard
-        versionCode 581
-        versionName "3.30.153"
+        // Smart S Launcher 3.30.166 - 3.30.153 baseline with additive semantic and date features
+        versionCode 594
+        versionName "3.30.166"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -83,6 +83,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:6.0.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testImplementation 'org.hamcrest:hamcrest-library:3.0'
+    testImplementation 'org.json:json:20240303'
     errorprone('com.google.errorprone:error_prone_core:2.49.0')
     runtimeOnly('com.google.errorprone:error_prone_annotations:2.49.0')
 }
