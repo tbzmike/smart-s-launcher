@@ -176,6 +176,21 @@ public final class UniversalHistoryTimestamp {
         }
     }
 
+    /** Drop cached view styling after Settings changes; do not discard launch statistics. */
+    public static void invalidatePresentation() {
+        STYLED_VIEWS.clear();
+    }
+
+    /** Render the same canonical metadata in a custom Vertical Card. */
+    @NonNull
+    public static CharSequence describe(@NonNull Result<?> result, @NonNull Context context) {
+        Pojo pojo = result.getPojo();
+        if (pojo == null) return "";
+        LaunchStatsProvider.LaunchStats stats = resolveStats(pojo);
+        return formatTimestampCached(context, pojo, resolveTimestamp(pojo, stats),
+                stats, usageSnapshot);
+    }
+
     public static long statsGeneration() {
         return STATS_GENERATION.get();
     }
