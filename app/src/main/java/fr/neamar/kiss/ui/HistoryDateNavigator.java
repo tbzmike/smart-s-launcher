@@ -61,7 +61,9 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         sectionLabel.addOnLayoutChangeListener((view, left, top, right, bottom,
                 oldLeft, oldTop, oldRight, oldBottom) -> {
             if (bottom - top != oldBottom - oldTop) {
-                reserveHeaderSpace(isHistorySurface() && adapter.getCount() > 0);
+                // Reserve space after the parent finishes laying out its children. Reuse the
+                // single pending refresh rather than changing margins during that layout pass.
+                onDataChanged();
             }
         });
         fastScroll = new DateFastScrollView(activity);

@@ -148,11 +148,25 @@ public class FeaturePortBehaviorTest {
             screenshot("history-date-control.png");
             scenario.onActivity(activity -> ((TextView) findDescription(activity.listContainer,
                     "History date section")).setTextSize(40));
-            BaselineBehaviorTest.await(scenario, activity -> {
-                View label = findDescription(activity.listContainer, "History date section");
-                return label.getHeight() > 44 * activity.getResources().getDisplayMetrics().density
-                        && activity.list.getTop() >= label.getBottom();
-            }, "large date label reserves enough space");
+            String[] layoutState = new String[1];
+            try {
+                BaselineBehaviorTest.await(scenario, activity -> {
+                    TextView label = (TextView) findDescription(activity.listContainer, "History date section");
+                    layoutState[0] = "activity=" + System.identityHashCode(activity)
+                            + " textPx=" + label.getTextSize() + " labelHeight=" + label.getHeight()
+                            + " labelBottom=" + label.getBottom() + " listTop=" + activity.list.getTop()
+                            + " listMargin=" + ((FrameLayout.LayoutParams) activity.list.getLayoutParams()).topMargin
+                            + " count=" + activity.adapter.getCount() + " visibility=" + label.getVisibility()
+                            + " density=" + activity.getResources().getDisplayMetrics().density
+                            + " query=" + activity.searchEditText.getText();
+                    return label.getHeight() > 44 * activity.getResources().getDisplayMetrics().density
+                            && activity.list.getTop() >= label.getBottom();
+                }, "large date label reserves enough space");
+            } catch (AssertionError e) {
+                screenshot("history-large-date-control-failed.png");
+                throw new AssertionError(layoutState[0], e);
+            }
+            screenshot("history-large-date-control.png");
             int[] originalFirst = new int[1];
             scenario.onActivity(activity -> {
                 View thumb = findDescription(activity.listContainer, "History date fast scroll");
