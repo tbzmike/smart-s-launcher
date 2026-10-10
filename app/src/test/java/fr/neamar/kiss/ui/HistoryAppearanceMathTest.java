@@ -22,6 +22,12 @@ class HistoryAppearanceMathTest {
         org.junit.jupiter.api.Assertions.assertNotEquals(app1, app2);
         assertEquals(app1, HistoryAppearanceMath.rowStyleSignature(43, 236, 112L));
     }
+    @Test void disablingAnIndependentIconSliderInheritsAppIconSize() {
+        assertEquals(236, HistoryAppearanceMath.effectiveIconPercent(236, 158, false));
+        assertEquals(158, HistoryAppearanceMath.effectiveIconPercent(236, 158, true));
+        assertEquals(100, HistoryAppearanceMath.effectiveIconPercent(100, 236, false));
+        assertEquals(240, HistoryAppearanceMath.effectiveIconPercent(999, 158, false));
+    }
     @Test void scalingIsClampedAndNeverBecomesZero() {
         assertEquals(16f, HistoryAppearanceMath.scaledTextSp(10, 999), .001f);
         assertEquals(7f, HistoryAppearanceMath.scaledTextSp(10, 0), .001f);

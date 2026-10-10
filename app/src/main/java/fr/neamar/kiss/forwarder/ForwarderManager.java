@@ -58,10 +58,6 @@ public class ForwarderManager extends Forwarder {
         // on the active fling frame budget.
         historyDisplayForwarder.onScrollIdleAnimations();
         smartCardListForwarder.onScrollIdleAnimations();
-        if (mainActivity.adapter != null) {
-            // A fling uses cheap recycled rows. Restore icon/text sizing exactly once at idle.
-            mainActivity.adapter.rebindVisibleHistoryStyles();
-        }
         historyVisualEnhancer.onScrollIdle();
     }
 

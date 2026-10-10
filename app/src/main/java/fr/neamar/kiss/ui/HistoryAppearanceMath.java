@@ -19,6 +19,12 @@ public final class HistoryAppearanceMath {
         return 31 * h + (int) (uniqueId ^ (uniqueId >>> 32));
     }
 
+    /** Disabled dedicated sizing means inherit the main History app icon size. */
+    public static int effectiveIconPercent(int globalPercent, int dedicatedPercent,
+                                           boolean dedicatedEnabled) {
+        return Math.max(50, Math.min(240, dedicatedEnabled ? dedicatedPercent : globalPercent));
+    }
+
     public static int scaledIconPx(int basePx, int percent) {
         return Math.max(1, Math.round(basePx * (Math.max(50, Math.min(240, percent)) / 100f)));
     }

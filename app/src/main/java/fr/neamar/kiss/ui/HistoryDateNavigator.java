@@ -40,6 +40,7 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
     private final DateFastScrollView fastScroll;
     private boolean historyScrollbarMode;
     private int lastRepresentativePosition = -1;
+    private final int originalListTopMargin;
 
     public HistoryDateNavigator(@NonNull MainActivity activity,
                                 @NonNull AnimatedListView list,
@@ -48,6 +49,9 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         this.activity = activity;
         this.list = list;
         this.adapter = adapter;
+        ViewGroup.LayoutParams initial = list.getLayoutParams();
+        originalListTopMargin = initial instanceof FrameLayout.LayoutParams
+                ? ((FrameLayout.LayoutParams) initial).topMargin : 0;
 
         sectionLabel = buildSectionLabel(activity);
         fastScroll = new DateFastScrollView(activity);
@@ -77,6 +81,7 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
     }
 
     public void onDataChanged() {
+        lastRepresentativePosition = -1;
         list.post(this::refresh);
     }
 
@@ -87,6 +92,7 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
     public void destroy() {
         list.setOnScrollListener(null);
         list.setVerticalScrollBarEnabled(true);
+        reserveHeaderSpace(false);
         historyScrollbarMode = false;
         lastRepresentativePosition = -1;
         ViewGroup labelParent = (ViewGroup) sectionLabel.getParent();
@@ -119,6 +125,7 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
                                     int visibleCount,
                                     int totalCount) {
         boolean history = isHistorySurface();
+        reserveHeaderSpace(history);
         if (historyScrollbarMode != history) {
             historyScrollbarMode = history;
             list.setVerticalScrollBarEnabled(!history);
@@ -144,6 +151,18 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         fastScroll.setVisibility(canFastScroll ? View.VISIBLE : View.GONE);
         if (canFastScroll) {
             fastScroll.updatePosition(firstVisible, visibleCount, totalCount);
+        }
+    }
+
+    /** Keep the Today/Yesterday header above rows, not painted over notification text. */
+    private void reserveHeaderSpace(boolean history) {
+        ViewGroup.LayoutParams raw = list.getLayoutParams();
+        if (!(raw instanceof FrameLayout.LayoutParams)) return;
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) raw;
+        int wanted = originalListTopMargin + (history ? dp(activity, 44) : 0);
+        if (lp.topMargin != wanted) {
+            lp.topMargin = wanted;
+            list.setLayoutParams(lp);
         }
     }
 

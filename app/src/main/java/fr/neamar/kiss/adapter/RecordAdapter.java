@@ -126,6 +126,17 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private int cachedLabelContrast = 100;
     private int cachedBodyContrast = 100;
     private int cachedRowSpacing = 4;
+    private java.util.Map<String, ?> appearancePreferencesSnapshot;
+
+    private static final int[] HISTORY_LABEL_IDS = {
+            R.id.item_app_name, R.id.item_contact_name, R.id.item_setting_name,
+            R.id.item_notification_app, R.id.item_communication_title, R.id.item_phone_text
+    };
+    private static final int[] HISTORY_BODY_IDS = {
+            R.id.item_app_tag, R.id.item_shortcut_tag, R.id.item_contact_phone,
+            R.id.item_contact_nickname, R.id.item_notification_title, R.id.item_notification_text,
+            R.id.item_communication_meta, R.id.item_communication_body
+    };
     private int cachedGlobalTextPercent = 100;
 
     // History results may finish loading while a native/custom history renderer is moving.
@@ -179,7 +190,13 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         boolean hardScrollFreeze = cachedVerticalHistory
                 && parent instanceof fr.neamar.kiss.ui.AnimatedListView
                 && ((fr.neamar.kiss.ui.AnimatedListView) parent).isScrollInProgress();
-        if (hardScrollFreeze) return view;
+        if (hardScrollFreeze) {
+            // 3.30.164 returned an unstyled recycled row, leaving stale 100% icons and
+            // oversized message text on screen. Only lightweight, idempotent sizing is
+            // necessary during motion; defer metadata, width changes and animations.
+            applyEssentialHistoryAppearance(view, renderContext, result);
+            return view;
+        }
 
         // Scale only this recycled/new row, never the complete launcher hierarchy.
         if (renderContext instanceof MainActivity && !isVerticalHistory()) {
@@ -208,7 +225,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                         result.getUniqueId());
                 Integer previous = verticalStyleSignatures.get(view);
                 if (previous == null || previous != signature) {
-                    applyVerticalHistorySizing(view, context, result);
+                    applyEssentialHistoryAppearance(view, context, result);
                     applyVerticalHistoryPolish(view, context);
                     verticalStyleSignatures.put(view, signature);
                 }
@@ -548,7 +565,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (!baseRowMinimumHeight.containsKey(row)) {
             baseRowMinimumHeight.put(row, row.getMinimumHeight());
         }
-        row.setMinimumHeight(dp(context, 64) * cachedRowPercent / 100);
+        int height = dp(context, 64) * cachedRowPercent / 100;
+        if (row.getMinimumHeight() != height) row.setMinimumHeight(height);
         applyPrimaryIconSize(row, iconPercentForRow(row, result));
     }
 
@@ -562,16 +580,16 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 || pojo instanceof ContactsPojo
                 || pojo instanceof PhonePojo
                 || result instanceof CommunicationResult) {
-            return cachedResizeContactIcons ? cachedContactIconPercent : 100;
+            return HistoryAppearanceMath.effectiveIconPercent(cachedIconPercent, cachedContactIconPercent, cachedResizeContactIcons);
         }
         if (pojo instanceof NotificationPojo || pojo instanceof NotificationHistorySearchPojo) {
-            return cachedResizeNotificationIcons ? cachedNotificationIconPercent : 100;
+            return HistoryAppearanceMath.effectiveIconPercent(cachedIconPercent, cachedNotificationIconPercent, cachedResizeNotificationIcons);
         }
         if (pojo instanceof ShortcutPojo) {
-            return cachedResizeShortcutIcons ? cachedShortcutIconPercent : 100;
+            return HistoryAppearanceMath.effectiveIconPercent(cachedIconPercent, cachedShortcutIconPercent, cachedResizeShortcutIcons);
         }
         if (pojo instanceof SettingPojo) {
-            return cachedResizeFeatureIcons ? cachedFeatureIconPercent : 100;
+            return HistoryAppearanceMath.effectiveIconPercent(cachedIconPercent, cachedFeatureIconPercent, cachedResizeFeatureIcons);
         }
 
         ImageView icon = findPrimaryIcon(row);
@@ -580,37 +598,41 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         // Resource IDs are non-final with the current Android Gradle Plugin, so use comparisons
         // rather than a Java switch (which requires compile-time constants).
         if (id == R.id.item_notification_icon) {
-            return cachedResizeNotificationIcons ? cachedNotificationIconPercent : 100;
+            return HistoryAppearanceMath.effectiveIconPercent(cachedIconPercent, cachedNotificationIconPercent, cachedResizeNotificationIcons);
         }
         if (id == R.id.item_shortcut_icon) {
-            return cachedResizeShortcutIcons ? cachedShortcutIconPercent : 100;
+            return HistoryAppearanceMath.effectiveIconPercent(cachedIconPercent, cachedShortcutIconPercent, cachedResizeShortcutIcons);
         }
         if (id == R.id.item_setting_icon) {
-            return cachedResizeFeatureIcons ? cachedFeatureIconPercent : 100;
+            return HistoryAppearanceMath.effectiveIconPercent(cachedIconPercent, cachedFeatureIconPercent, cachedResizeFeatureIcons);
         }
         if (id == R.id.item_contact_icon) {
-            return cachedResizeContactIcons ? cachedContactIconPercent : 100;
+            return HistoryAppearanceMath.effectiveIconPercent(cachedIconPercent, cachedContactIconPercent, cachedResizeContactIcons);
         }
         return cachedIconPercent;
     }
 
-    private void applyVerticalHistoryPolish(View row, Context context) {
-        int[] labelIds = new int[]{
-                R.id.item_app_name, R.id.item_contact_name, R.id.item_setting_name,
-                R.id.item_notification_app, R.id.item_communication_title, R.id.item_phone_text
-        };
-        int[] bodyIds = new int[]{
-                R.id.item_app_tag, R.id.item_shortcut_tag, R.id.item_contact_phone,
-                R.id.item_contact_nickname, R.id.item_notification_title, R.id.item_notification_text,
-                R.id.item_communication_meta, R.id.item_communication_body
-        };
-        applyTextStyle(row, labelIds, cachedLabelSp, cachedLabelTypeface,
+    /** Single source for critical appearance on both normal and fling/recycled binds. */
+    private void applyEssentialHistoryAppearance(View row, Context context, Result<?> result) {
+        if (result != null) {
+            applyVerticalHistorySizing(row, context, result);
+        }
+        applyTextStyle(row, HISTORY_LABEL_IDS, cachedLabelSp, cachedLabelTypeface,
                 cachedLabelColor, cachedLabelContrast);
-        applyTextStyle(row, bodyIds, cachedBodySp, cachedBodyTypeface,
+        applyTextStyle(row, HISTORY_BODY_IDS, cachedBodySp, cachedBodyTypeface,
                 cachedBodyColor, cachedBodyContrast);
+        if (result != null && result.getPojo() instanceof NotificationPojo) {
+            // Avoid duplicate notification title + native preview layers after a fling.
+            TextView title = row.findViewById(R.id.item_notification_title);
+            if (title != null && !TextUtils.isEmpty(title.getText())) {
+                collapseDuplicateNotificationContent(row, title);
+            }
+        }
+    }
 
+    private void applyVerticalHistoryPolish(View row, Context context) {
         int bodyLines = cachedRowSpacing >= 56 ? 3 : cachedRowSpacing >= 24 ? 2 : 1;
-        configureVerticalHistoryBodyLines(row, bodyIds, bodyLines);
+        configureVerticalHistoryBodyLines(row, HISTORY_BODY_IDS, bodyLines);
 
         int[] base = baseRowPadding.get(row);
         if (base == null) {
@@ -783,6 +805,27 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
      * row styles independently of provider/database updates.
      */
     public void onAppearanceSettingsChanged() {
+        if (!(parent instanceof MainActivity)) return;
+        MainActivity activity = (MainActivity) parent;
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
+        java.util.Map<String, ?> all = prefs.getAll();
+        java.util.Map<String, Object> appearance = new java.util.HashMap<>();
+        for (java.util.Map.Entry<String, ?> entry : all.entrySet()) {
+            String key = entry.getKey();
+            if (key.startsWith("smart-list-") || key.startsWith("smart-history-meta-")
+                    || "global-text-size-percent".equals(key)
+                    || "smart-text-overflow-mode".equals(key)
+                    || "smart-history-layout".equals(key)
+                    || "smart-text-color-inverter".equals(key)) {
+                appearance.put(key, entry.getValue());
+            }
+        }
+        if (appearancePreferencesSnapshot == null) {
+            appearancePreferencesSnapshot = appearance;
+            return;
+        }
+        if (appearancePreferencesSnapshot.equals(appearance)) return;
+        appearancePreferencesSnapshot = appearance;
         invalidateRenderConfig();
         verticalStyleSignatures.clear();
         UniversalHistoryTimestamp.invalidateAppearance();
@@ -812,7 +855,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                     result.getUniqueId());
             Integer styled = verticalStyleSignatures.get(row);
             if (styled == null || styled != signature) {
-                applyVerticalHistorySizing(row, activity, result);
+                applyEssentialHistoryAppearance(row, activity, result);
                 applyVerticalHistoryPolish(row, activity);
                 verticalStyleSignatures.put(row, signature);
             }
@@ -868,13 +911,17 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 state = new TextStyleState(text);
                 baseTextStyles.put(text, state);
             }
-            text.setTextSize(TypedValue.COMPLEX_UNIT_SP,
-                    HistoryAppearanceMath.scaledTextSp(sizeSp, cachedGlobalTextPercent));
-            text.setTypeface(typeface);
+            float targetPx = HistoryAppearanceMath.scaledTextSp(sizeSp, cachedGlobalTextPercent)
+                    * text.getResources().getDisplayMetrics().scaledDensity;
+            if (Math.abs(text.getTextSize() - targetPx) > 0.5f) {
+                text.setTextSize(TypedValue.COMPLEX_UNIT_PX, targetPx);
+            }
+            if (!typeface.equals(text.getTypeface())) text.setTypeface(typeface);
             int selectedColor = resolveConfiguredTextColor(colorValue, state.textColor);
             int contrasted = applyContrast(selectedColor, state.textColor, contrast);
-            text.setTextColor(SmartTextAppearance.applyTextColorInverter(
-                    text.getContext(), contrasted));
+            int actualColor = SmartTextAppearance.applyTextColorInverter(
+                    text.getContext(), contrasted);
+            if (text.getCurrentTextColor() != actualColor) text.setTextColor(actualColor);
         }
     }
 

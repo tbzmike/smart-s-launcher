@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.164 - history appearance wiring and warm-start performance
-        versionCode 592
-        versionName "3.30.164"
+        // Smart S Launcher 3.30.165 - deterministic history appearance and fast recycled rows
+        versionCode 593
+        versionName "3.30.165"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
