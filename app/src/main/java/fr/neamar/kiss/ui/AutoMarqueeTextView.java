@@ -195,6 +195,23 @@ public class AutoMarqueeTextView extends TextView {
         }
     }
 
+    /**
+     * Android TextView's setSingleLine calls other virtual setters internally.
+     * Temporarily release the policy overrides while applying an entire mode,
+     * then lock it again so an arbitrary adapter setter cannot silently undo it.
+     */
+    private void applyFrameworkTextMode(boolean expanded) {
+        behaviorLocked = false;
+        try {
+            super.setSingleLine(!expanded);
+            super.setMaxLines(expanded ? Integer.MAX_VALUE : 1);
+            super.setEllipsize(expanded ? null : TextUtils.TruncateAt.MARQUEE);
+            super.setHorizontallyScrolling(!expanded);
+        } finally {
+            behaviorLocked = true;
+        }
+    }
+
     private void applyConfiguredBehavior() {
         if (!behaviorLocked) return;
         int mode = isNativeVerticalListRow() ? 0 : (isAutoExpand() ? 1 : 2);
@@ -208,36 +225,24 @@ public class AutoMarqueeTextView extends TextView {
             if (isAutoExpand()) {
                 setMarqueeRepeatLimit(0);
                 setHorizontalFadingEdgeEnabled(false);
-                super.setSingleLine(false);
-                super.setMaxLines(Integer.MAX_VALUE);
-                super.setEllipsize(null);
-                super.setHorizontallyScrolling(false);
+                applyFrameworkTextMode(true);
             } else {
-                super.setSingleLine(true);
-                super.setMaxLines(1);
-                super.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+                applyFrameworkTextMode(false);
                 setMarqueeRepeatLimit(-1);
-                super.setHorizontallyScrolling(true);
                 setHorizontalFadingEdgeEnabled(true);
             }
             return;
         }
 
         if (isAutoExpand()) {
-            super.setSingleLine(false);
-            super.setMaxLines(Integer.MAX_VALUE);
-            super.setEllipsize(null);
-            super.setHorizontallyScrolling(false);
+            applyFrameworkTextMode(true);
             setMarqueeRepeatLimit(0);
             setHorizontalFadingEdgeEnabled(false);
             setSelected(false);
             return;
         }
-        super.setSingleLine(true);
-        super.setMaxLines(1);
-        super.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+        applyFrameworkTextMode(false);
         setMarqueeRepeatLimit(-1);
-        super.setHorizontallyScrolling(true);
         setHorizontalFadingEdgeEnabled(true);
         setSelected(true);
     }
