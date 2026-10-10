@@ -751,7 +751,14 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     private void refreshRenderConfigIfNeeded(Context context) {
-        if (cachedVerticalStyleSignature != Integer.MIN_VALUE) return;
+        // A warm History restoration can change the search surface without publishing a new
+        // dataset. The old cache treated QUERY sizing as permanently valid, making History
+        // icons snap back to native size after leaving and returning to the launcher.
+        boolean shouldStyleHistory = ("vertical".equals(cachedHistoryLayout)
+                || "wheel_3d".equals(cachedHistoryLayout))
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+        if (cachedVerticalStyleSignature != Integer.MIN_VALUE
+                && cachedVerticalHistory == shouldStyleHistory) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         cachedHistoryLayout = prefs.getString("smart-history-layout", "vertical");
         if (cachedHistoryLayout == null) cachedHistoryLayout = "vertical";
