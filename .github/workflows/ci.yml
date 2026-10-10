@@ -205,3 +205,54 @@ jobs:
           archive: true
           if-no-files-found: error
           retention-days: 90
+
+  signed-167:
+    name: Sign installable Smart S Launcher 3.30.167
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.167-history-style-timestamps') }}
+    needs: [test, apk]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: unsigned-release
+      - name: Sign and verify original app identity
+        shell: bash
+        env:
+          SMART_S_SIGNING_KEY_B64: ${{ secrets.SMART_S_SIGNING_KEY_B64 }}
+          SMART_S_SIGNING_STORE_PASSWORD: ${{ secrets.SMART_S_SIGNING_STORE_PASSWORD }}
+          SMART_S_SIGNING_KEY_ALIAS: ${{ secrets.SMART_S_SIGNING_KEY_ALIAS }}
+          SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/smart-s-167-release.p12"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          SDK="$ANDROID_HOME/build-tools/34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null
+          test -n "$SMART_S_SIGNING_KEY_B64"
+          printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          mkdir -p verified-apk
+          OUT="verified-apk/Smart-S-Launcher-3.30.167.apk"
+          "$SDK/apksigner" sign --ks "$KEYSTORE" --ks-type PKCS12 \
+            --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
+            --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
+            --key-pass env:SMART_S_SIGNING_KEY_PASSWORD \
+            --out "$OUT" unsigned-release/app-release-unsigned.apk
+          "$SDK/apksigner" verify --verbose --print-certs "$OUT" | tee verified-apk/apk-verification.txt
+          CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' verified-apk/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test "$CERT" = '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53'
+          "$SDK/aapt" dump badging "$OUT" > verified-apk/package-badging.txt
+          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='595'" | grep -F "versionName='3.30.167'"
+          sha256sum "$OUT" | tee verified-apk/Smart-S-Launcher-3.30.167.sha256
+          git rev-parse HEAD > verified-apk/source-commit.txt
+      - name: Publish signed APK build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.167-signed
+          path: verified-apk
+          archive: true
+          if-no-files-found: error
+          retention-days: 90
