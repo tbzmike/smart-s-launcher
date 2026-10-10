@@ -33,6 +33,11 @@ public class AnimatedListView extends BlockableListView {
 
     private void initScrollIdleGate() {
         scrollIdleGate = new ScrollIdleGate(this);
+        // Date navigation is the History-specific scroll affordance. The Android scrollbar
+        // must not leave an additional permanent line beside the history text.
+        setScrollbarFadingEnabled(true);
+        setScrollBarDefaultDelayBeforeFade(900);
+        setScrollBarFadeDuration(240);
     }
 
     @Override
