@@ -59,6 +59,12 @@ public final class ChronologicalDateScroller {
         section.setBackground(round(Color.argb(238, 30, 32, 36), dp(context, 16)));
         section.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         section.setVisibility(View.GONE);
+        section.addOnLayoutChangeListener((view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (bottom - top != oldBottom - oldTop) {
+                reserveHeaderSpace(source != null && jump != null && itemCount > 0);
+            }
+        });
         FrameLayout.LayoutParams label = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL);
@@ -97,7 +103,9 @@ public final class ChronologicalDateScroller {
         if (content == null
                 || !(content.getLayoutParams() instanceof FrameLayout.LayoutParams)) return;
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) content.getLayoutParams();
-        int wanted = originalTopMargin + (active ? dp(section.getContext(), 44) : 0);
+        int header = Math.max(dp(section.getContext(), 44),
+                section.getHeight() + dp(section.getContext(), 14));
+        int wanted = originalTopMargin + (active ? header : 0);
         if (params.topMargin != wanted) {
             params.topMargin = wanted;
             content.setLayoutParams(params);

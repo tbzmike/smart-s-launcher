@@ -56,6 +56,12 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
                 ? ((FrameLayout.LayoutParams) initial).topMargin : 0;
 
         sectionLabel = buildSectionLabel(activity);
+        sectionLabel.addOnLayoutChangeListener((view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (bottom - top != oldBottom - oldTop) {
+                reserveHeaderSpace(isHistorySurface() && adapter.getCount() > 0);
+            }
+        });
         fastScroll = new DateFastScrollView(activity);
 
         if (host instanceof FrameLayout) {
@@ -129,7 +135,7 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
                                     int visibleCount,
                                     int totalCount) {
         boolean history = isHistorySurface();
-        reserveHeaderSpace(history);
+        reserveHeaderSpace(history && totalCount > 0);
         if (historyScrollbarMode != history) {
             historyScrollbarMode = history;
             list.setVerticalScrollBarEnabled(!history);
@@ -163,7 +169,8 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         ViewGroup.LayoutParams raw = list.getLayoutParams();
         if (!(raw instanceof FrameLayout.LayoutParams)) return;
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) raw;
-        int wanted = originalListTopMargin + (history ? dp(activity, 44) : 0);
+        int header = Math.max(dp(activity, 44), sectionLabel.getHeight() + dp(activity, 16));
+        int wanted = originalListTopMargin + (history ? header : 0);
         if (lp.topMargin != wanted) {
             lp.topMargin = wanted;
             list.setLayoutParams(lp);

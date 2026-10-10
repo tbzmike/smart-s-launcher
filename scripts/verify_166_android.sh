@@ -22,11 +22,20 @@ PY
 git worktree add --detach "$BASELINE_DIR" 145b42e7f4f954068b087f7958f62d47c0f10905
 cp app/src/androidTest/java/fr/neamar/kiss/androidTest/BaselineBehaviorTest.java \
   "$BASELINE_DIR/app/src/androidTest/java/fr/neamar/kiss/androidTest/"
-# The runner shares Kotlin/AndroidX dependencies with the app. Retain their test-only APIs in
-# both instrumentation builds; the separately built, signed release keeps normal optimization.
-for test_project in "$BASELINE_DIR" "$ROOT_DIR"; do
-  printf '\n# Instrumentation-only retention\n-dontshrink\n-dontoptimize\n' >> "$test_project/app/proguard-rules.pro"
-done
+# Instrumentation and the app share Kotlin and desugared Java runtime classes. Build both
+# comparison APKs without shrinking so a partially retained test runtime cannot shadow the app's
+# runtime. The separately built, signed release retains the original production optimization.
+python3 - "$BASELINE_DIR" "$ROOT_DIR" <<'PY'
+import sys
+from pathlib import Path
+for directory in sys.argv[1:]:
+    build = Path(directory) / 'app/build.gradle'
+    source = build.read_text()
+    assert source.count('minifyEnabled true') == 2
+    assert source.count('shrinkResources = true') == 2
+    build.write_text(source.replace('minifyEnabled true','minifyEnabled false')
+                           .replace('shrinkResources = true','shrinkResources = false'))
+PY
 (
   cd "$BASELINE_DIR"
   bash ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace

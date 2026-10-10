@@ -4,6 +4,22 @@ APP_PACKAGE="com.tbzmike.smartslauncher"
 RESULT_DIR="verification-results"
 mkdir -p "$RESULT_DIR"
 adb logcat -c
+BASELINE_APK="$RUNNER_TEMP/Smart-S-Launcher-3.30.153-original.apk"
+curl --fail --location --retry 3 --max-time 120 \
+  https://github.com/tbzmike/smart-s-launcher/releases/download/v3.30.153/SmartSLauncher.apk \
+  --output "$BASELINE_APK"
+printf '828e59832289c861962131dbc9ac324d902d0c522edad94b880cdbb46e8967e3  %s\n' "$BASELINE_APK" | sha256sum --check
+"$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$BASELINE_APK" > "$RESULT_DIR/original-153-certificate.txt"
+grep -F '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53' "$RESULT_DIR/original-153-certificate.txt"
+adb install -r "$BASELINE_APK"
+adb shell input keyevent 82
+adb shell am start -W -n "$APP_PACKAGE/fr.neamar.kiss.MainActivity" | tee "$RESULT_DIR/original-153-launch.txt"
+grep -F 'Status: ok' "$RESULT_DIR/original-153-launch.txt"
+adb shell uiautomator dump /sdcard/original-153-window.xml >/dev/null
+adb pull /sdcard/original-153-window.xml "$RESULT_DIR/original-153-window.xml" >/dev/null
+adb shell pidof "$APP_PACKAGE"
+adb shell am force-stop "$APP_PACKAGE"
+# This is an in-place upgrade of the original public, production-signed 3.30.153 APK.
 adb install -r verified-apk/Smart-S-Launcher-3.30.166.apk
 adb shell input keyevent 82
 adb shell am start -W -n "$APP_PACKAGE/fr.neamar.kiss.MainActivity" | tee "$RESULT_DIR/release-launch.txt"

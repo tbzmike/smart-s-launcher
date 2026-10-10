@@ -85,6 +85,13 @@ public class FeaturePortBehaviorTest {
                 assertTrue(activity.list.getTop() >= label.getBottom());
             });
             screenshot("history-date-control.png");
+            scenario.onActivity(activity -> ((TextView) findDescription(activity.listContainer,
+                    "History date section")).setTextSize(40));
+            BaselineBehaviorTest.await(scenario, activity -> {
+                View label = findDescription(activity.listContainer, "History date section");
+                return label.getHeight() > 44 * activity.getResources().getDisplayMetrics().density
+                        && activity.list.getTop() >= label.getBottom();
+            }, "large date label reserves enough space");
             scenario.onActivity(activity -> {
                 View thumb = findDescription(activity.listContainer, "History date fast scroll");
                 float density = activity.getResources().getDisplayMetrics().density;
@@ -133,6 +140,14 @@ public class FeaturePortBehaviorTest {
             }
             assertEquals(3, host.getChildCount());
             assertTrue(((FrameLayout.LayoutParams) content.getLayoutParams()).topMargin > 7);
+            TextView header = (TextView) host.getChildAt(1);
+            header.setTextSize(40);
+            for (int pass = 0; pass < 2; pass++) {
+                host.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY));
+                host.layout(0, 0, 1080, 1600);
+            }
+            assertTrue("Large date label covers chronological rows", content.getTop() >= header.getBottom());
             scroller.setSource(0, null, null);
             assertEquals(7, ((FrameLayout.LayoutParams) content.getLayoutParams()).topMargin);
             assertEquals(View.GONE, host.getChildAt(1).getVisibility());
