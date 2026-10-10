@@ -59,6 +59,7 @@ import fr.neamar.kiss.ui.LaunchMorphTransition;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.SmartTextAppearance;
+import fr.neamar.kiss.ui.HistoryAppearanceMath;
 import fr.neamar.kiss.ui.TextOverflowMode;
 import fr.neamar.kiss.ui.TileVisualStyle;
 import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
@@ -125,6 +126,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     private int cachedLabelContrast = 100;
     private int cachedBodyContrast = 100;
     private int cachedRowSpacing = 4;
+    private int cachedGlobalTextPercent = 100;
 
     // History results may finish loading while a native/custom history renderer is moving.
     // Keep only the newest pending publication and apply it once after scrolling is idle.
@@ -180,7 +182,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (hardScrollFreeze) return view;
 
         // Scale only this recycled/new row, never the complete launcher hierarchy.
-        if (renderContext instanceof MainActivity) {
+        if (renderContext instanceof MainActivity && !isVerticalHistory()) {
             ((MainActivity) renderContext).applyGlobalTextScaleToSubtree(view);
         }
 
@@ -751,6 +753,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         cachedResizeShortcutIcons = prefs.getBoolean("smart-list-resize-shortcut-icons", true);
         cachedResizeFeatureIcons = prefs.getBoolean("smart-list-resize-feature-icons", true);
         cachedResizeContactIcons = prefs.getBoolean("smart-list-resize-contact-icons", true);
+        cachedGlobalTextPercent = safePercent(prefs, "global-text-size-percent", 100, 70, 160);
         cachedLabelSp = safePercent(prefs, "smart-list-label-size-sp", 18, 10, 40);
         cachedBodySp = safePercent(prefs, "smart-list-body-size-sp", 14, 8, 32);
         cachedLabelTypeface = typefaceFor(prefs.getString("smart-list-label-font", "sans_bold"));
@@ -772,6 +775,48 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         cachedVerticalStyleSignature = Integer.MIN_VALUE;
     }
 
+    /**
+     * SettingsActivity changes preferences while Home is paused. Some History result snapshots are
+     * deliberately not republished when unchanged, so settings must invalidate their OWN visible
+     * row styles independently of provider/database updates.
+     */
+    public void onAppearanceSettingsChanged() {
+        invalidateRenderConfig();
+        verticalStyleSignatures.clear();
+        UniversalHistoryTimestamp.invalidateAppearance();
+        rebindVisibleHistoryStyles();
+    }
+
+    /** Repair native ListView rows that were bound during a fling's lightweight fast path. */
+    public void rebindVisibleHistoryStyles() {
+        if (!(parent instanceof MainActivity)) return;
+        MainActivity activity = (MainActivity) parent;
+        if (activity.list == null || activity.list.isScrollInProgress()
+                || SearchHandler.getInstance().getLastSearchType() != Searcher.Type.HISTORY) {
+            return;
+        }
+        refreshRenderConfigIfNeeded(activity);
+        if (!isNativeVerticalHistory()) return;
+        int first = activity.list.getFirstVisiblePosition();
+        int count = activity.list.getChildCount();
+        for (int i = 0; i < count; i++) {
+            int index = first + i;
+            if (index < 0 || index >= results.size()) continue;
+            View row = activity.list.getChildAt(i);
+            if (row == null) continue;
+            Result<?> result = results.get(index);
+            int signature = 31 * cachedVerticalStyleSignature + iconPercentForRow(row, result);
+            Integer styled = verticalStyleSignatures.get(row);
+            if (styled == null || styled != signature) {
+                applyVerticalHistorySizing(row, activity, result);
+                applyVerticalHistoryPolish(row, activity);
+                verticalStyleSignatures.put(row, signature);
+            }
+            applyVerticalHistoryWidth(row, activity.list, activity, cachedHistoryWidthPercent);
+            UniversalHistoryTimestamp.bind(row, result, activity);
+        }
+    }
+
     private int verticalStyleSignature() {
         int result = 17;
         result = 31 * result + cachedRowPercent;
@@ -785,6 +830,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         result = 31 * result + (cachedResizeShortcutIcons ? 1 : 0);
         result = 31 * result + (cachedResizeFeatureIcons ? 1 : 0);
         result = 31 * result + (cachedResizeContactIcons ? 1 : 0);
+        result = 31 * result + cachedGlobalTextPercent;
         result = 31 * result + cachedLabelSp;
         result = 31 * result + cachedBodySp;
         result = 31 * result + cachedLabelContrast;
@@ -818,7 +864,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 state = new TextStyleState(text);
                 baseTextStyles.put(text, state);
             }
-            text.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
+            text.setTextSize(TypedValue.COMPLEX_UNIT_SP,
+                    HistoryAppearanceMath.scaledTextSp(sizeSp, cachedGlobalTextPercent));
             text.setTypeface(typeface);
             int selectedColor = resolveConfiguredTextColor(colorValue, state.textColor);
             int contrasted = applyContrast(selectedColor, state.textColor, contrast);
@@ -905,8 +952,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             baseIconScaleTypes.put(icon, icon.getScaleType());
         }
 
-        int wantedWidth = Math.max(1, Math.round(base[0] * percent / 100f));
-        int wantedHeight = Math.max(1, Math.round(base[1] * percent / 100f));
+        int wantedWidth = HistoryAppearanceMath.scaledIconPx(base[0], percent);
+        int wantedHeight = HistoryAppearanceMath.scaledIconPx(base[1], percent);
 
         /*
          * setLayoutParams() calls requestLayout(). Doing it again when a recycled row already has

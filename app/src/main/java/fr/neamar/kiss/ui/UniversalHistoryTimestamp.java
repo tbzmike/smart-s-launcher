@@ -44,7 +44,8 @@ public final class UniversalHistoryTimestamp {
     private static final String VIEW_TAG = "smart_s_universal_history_timestamp";
     private static final LruCache<String, CharSequence> FORMATTED_CACHE = new LruCache<>(512);
     private static final AtomicLong STATS_GENERATION = new AtomicLong();
-    private static final WeakHashMap<TextView, Boolean> STYLED_VIEWS = new WeakHashMap<>();
+    private static final WeakHashMap<TextView, Long> STYLED_VIEWS = new WeakHashMap<>();
+    private static final AtomicLong APPEARANCE_GENERATION = new AtomicLong();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
     private static volatile AppUsageTodayStore.Snapshot usageSnapshot;
 
@@ -72,9 +73,11 @@ public final class UniversalHistoryTimestamp {
         if (timestampView.getVisibility() != View.VISIBLE) {
             timestampView.setVisibility(View.VISIBLE);
         }
-        if (!STYLED_VIEWS.containsKey(timestampView)) {
+        long generation = APPEARANCE_GENERATION.get();
+        Long previous = STYLED_VIEWS.get(timestampView);
+        if (previous == null || previous != generation) {
             SmartTextAppearance.applyHistoryMetadata(timestampView);
-            STYLED_VIEWS.put(timestampView, Boolean.TRUE);
+            STYLED_VIEWS.put(timestampView, generation);
         }
     }
 
@@ -165,6 +168,11 @@ public final class UniversalHistoryTimestamp {
             if (eventTime > 0L) return eventTime;
         }
         return stats == null ? 0L : Math.max(0L, stats.lastLaunchTime);
+    }
+
+    /** Invalidate only styling, not the saved history metadata and UsageStats snapshot. */
+    public static void invalidateAppearance() {
+        APPEARANCE_GENERATION.incrementAndGet();
     }
 
     public static void invalidateStats() {

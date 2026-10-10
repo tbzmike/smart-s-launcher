@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.163 - unified date scrubber for Usage and Notifications
-        versionCode 591
-        versionName "3.30.163"
+        // Smart S Launcher 3.30.164 - history appearance wiring and warm-start performance
+        versionCode 592
+        versionName "3.30.164"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

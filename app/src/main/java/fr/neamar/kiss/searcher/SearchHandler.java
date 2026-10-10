@@ -140,7 +140,18 @@ public class SearchHandler {
         }
 
         if (type == Searcher.Type.HISTORY) {
-            refreshHistorySeed(activity);
+            // A cold Home must show previously resolved history immediately, then let the
+            // authoritative search reconcile without blocking the first interactive frame.
+            if (!isRefresh && (activity.adapter == null || activity.adapter.isEmpty())) {
+                if (!publishWarmHomeResultSnapshot(activity, generation)) {
+                    publishHomeHistoryPreview(activity, generation, historyQuerySeed);
+                    refreshHistorySeedAndPublish(activity, generation);
+                } else {
+                    refreshHistorySeed(activity);
+                }
+            } else {
+                refreshHistorySeed(activity);
+            }
         }
 
         if (type == Searcher.Type.QUERY && !isRefresh) {

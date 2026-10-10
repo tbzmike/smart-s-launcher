@@ -539,6 +539,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         AppProvider.setLauncherUiVisible(true);
         // Resume a system-paused update only when the launcher is visibly foreground.
         AppUpdater.resumePendingDownload(this);
+        // Reapply saved appearance values without a full History query or activity recreation.
+        // The adapter detects whether the visible rows need new measurements.
+        if (adapter != null) adapter.onAppearanceSettingsChanged();
+
         // Settings may have changed while the launcher was paused. Synchronize input mode
         // before any later focus request can give Android IME a chance to appear.
         if (searchEditText != null) searchEditText.syncKeyboardMode();
@@ -590,6 +594,13 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         } else if (refreshDeferredBackground
                 && SearchHandler.getInstance().getLastSearchType() != null) {
             updateSearchRecords(true, searchEditText.getText().toString());
+        } else if (adapter != null && !adapter.isEmpty()
+                && searchEditText != null && searchEditText.length() == 0
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                && !isViewingAllApps()) {
+            // Return to an already-displayed Home without cancelling the current worker and
+            // requerying the same SQLite history. Background provider changes take the refresh
+            // branch above, and new launches explicitly reorder History when they occur.
         } else {
             updateSearchRecords(false, searchEditText.getText().toString());
         }

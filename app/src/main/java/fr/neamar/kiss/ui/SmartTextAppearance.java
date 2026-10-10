@@ -53,7 +53,9 @@ public final class SmartTextAppearance {
         int renderedColor = applyTextColorInverter(view.getContext(),
                 applyContrast(selectedColor, themeColor, contrast));
 
-        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, size);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP,
+                HistoryAppearanceMath.scaledTextSp(size,
+                        readInt(prefs, "global-text-size-percent", 100, 70, 160)));
         view.setTypeface(typefaceFor(font));
         view.setTextColor(renderedColor);
         view.setAlpha(1f);
