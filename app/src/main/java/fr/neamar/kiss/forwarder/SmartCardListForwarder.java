@@ -501,6 +501,7 @@ final class SmartCardListForwarder extends Forwarder {
             }
         }
 
+        lastPresentationSignature = presentationSignature();
         if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
             // Restore only a focus state that existed before this rebuild. This is not an
             // unconditional IME reopen: it simply prevents card-tree replacement from ending
@@ -1072,7 +1073,6 @@ final class SmartCardListForwarder extends Forwarder {
 
         // Dynamic cards are the only new hierarchy that needs the global text multiplier.
         mainActivity.applyGlobalTextScaleToSubtree(wrapper);
-        lastPresentationSignature = presentationSignature();
         return wrapper;
     }
 
