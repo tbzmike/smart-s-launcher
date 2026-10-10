@@ -18,7 +18,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TimeZone;
-import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import fr.neamar.kiss.KissApplication;
@@ -44,7 +43,6 @@ public final class UniversalHistoryTimestamp {
     private static final String VIEW_TAG = "smart_s_universal_history_timestamp";
     private static final LruCache<String, CharSequence> FORMATTED_CACHE = new LruCache<>(512);
     private static final AtomicLong STATS_GENERATION = new AtomicLong();
-    private static final WeakHashMap<TextView, Boolean> STYLED_VIEWS = new WeakHashMap<>();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
     private static volatile AppUsageTodayStore.Snapshot usageSnapshot;
 
@@ -72,17 +70,18 @@ public final class UniversalHistoryTimestamp {
         if (timestampView.getVisibility() != View.VISIBLE) {
             timestampView.setVisibility(View.VISIBLE);
         }
-        if (!STYLED_VIEWS.containsKey(timestampView)) {
-            SmartTextAppearance.applyHistoryMetadata(timestampView);
-            STYLED_VIEWS.put(timestampView, Boolean.TRUE);
-        }
+        // Global scaling and search typography can touch the same recycled view between binds.
+        // Reapply the dedicated metadata preferences after those owners instead of treating a
+        // once-styled TextView as permanently configured.
+        SmartTextAppearance.applyHistoryMetadata(timestampView);
     }
 
     /** True only while launcher rows belong to the normal empty-query History/Home surface. */
     public static boolean isHistorySurface(@NonNull Context context) {
         if (!(context instanceof MainActivity)) return false;
         MainActivity activity = (MainActivity) context;
-        return activity.searchEditText == null || activity.searchEditText.length() == 0;
+        return !activity.isViewingAllApps()
+                && (activity.searchEditText == null || activity.searchEditText.length() == 0);
     }
 
     private static void clearTimestamp(View row) {
@@ -169,8 +168,8 @@ public final class UniversalHistoryTimestamp {
 
     public static void invalidateStats() {
         STATS_GENERATION.incrementAndGet();
-        launchStats = null;
-        usageSnapshot = null;
+        // Keep the last published values visible while the idle loader obtains a replacement.
+        // A cancelled refresh must not turn valid timestamps into "unavailable" indefinitely.
         synchronized (FORMATTED_CACHE) {
             FORMATTED_CACHE.evictAll();
         }

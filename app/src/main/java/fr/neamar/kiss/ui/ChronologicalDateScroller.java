@@ -140,7 +140,8 @@ public final class ChronologicalDateScroller {
         updateLabel(target);
         thumb.bubbleText = section.getText().toString();
         // Date label must stay visible while the UI jumps to the selected history section.
-        jump.jumpTo(target, section.getHeight() + dp(section.getContext(), 8));
+        // reserveHeaderSpace already keeps the content below the date chip.
+        jump.jumpTo(target, dp(section.getContext(), 8));
     }
 
     private static GradientDrawable round(int color, float radius) {

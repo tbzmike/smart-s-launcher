@@ -222,7 +222,8 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
 
         // Keep the selected date near the top so the user immediately sees the rows represented
         // by the bubble, just like date-aware photo fast scrollers.
-        list.setSelectionFromTop(position, sectionLabel.getHeight() + dp(activity, 10));
+        // The header already has its own space outside the ListView.
+        list.setSelectionFromTop(position, dp(activity, 10));
         fastScroll.setBubbleText(labelForPosition(position));
         sectionLabel.setText(labelForPosition(position));
     }

@@ -84,9 +84,9 @@ jobs:
           name: release
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           archive: false
-  android-166:
-    name: Compare 153 and 166 on Android ${{ matrix.api }}
-    if: ${{ startsWith(github.ref, 'refs/heads/feature/3.30.166-from-153') }}
+  android-167:
+    name: Compare 153 and 167 on Android ${{ matrix.api }}
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.167-timestamp-stability') }}
     needs: [test, apk]
     runs-on: ubuntu-24.04
     timeout-minutes: 50
@@ -119,7 +119,7 @@ jobs:
           ram-size: 2048M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash scripts/verify_166_android.sh
+          script: bash scripts/verify_167_android.sh
       - name: Upload Android verification evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
@@ -128,10 +128,10 @@ jobs:
           path: verification-results
           archive: true
           if-no-files-found: ignore
-  signed-166:
-    name: Sign verified 3.30.166 APK
-    if: ${{ startsWith(github.ref, 'refs/heads/feature/3.30.166-from-153') }}
-    needs: [test, apk, android-166]
+  signed-167:
+    name: Sign verified 3.30.167 APK
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.167-timestamp-stability') }}
+    needs: [test, apk, android-167]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -153,14 +153,14 @@ jobs:
           SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYSTORE="$RUNNER_TEMP/smart-s-166-release.p12"
+          KEYSTORE="$RUNNER_TEMP/smart-s-167-release.p12"
           trap 'rm -f "$KEYSTORE"' EXIT
           BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null
           printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
           chmod 600 "$KEYSTORE"
           mkdir -p verified-apk
-          OUT="verified-apk/Smart-S-Launcher-3.30.166.apk"
+          OUT="verified-apk/Smart-S-Launcher-3.30.167.apk"
           "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
             --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
@@ -170,8 +170,8 @@ jobs:
           CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' verified-apk/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
           test "$CERT" = '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53'
           "$BUILD_TOOLS/aapt" dump badging "$OUT" > verified-apk/package-badging.txt
-          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='594'" | grep -F "versionName='3.30.166'"
-          sha256sum "$OUT" | tee verified-apk/Smart-S-Launcher-3.30.166.sha256
+          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='595'" | grep -F "versionName='3.30.167'"
+          sha256sum "$OUT" | tee verified-apk/Smart-S-Launcher-3.30.167.sha256
           git rev-parse HEAD > verified-apk/source-commit.txt
           cp "$BUILD_TOOLS/lib/apksigner.jar" verified-apk/apksigner.jar
       - name: Enable KVM for signed release verification
@@ -189,7 +189,7 @@ jobs:
           ram-size: 2048M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash scripts/verify_signed_166_android.sh
+          script: bash scripts/verify_signed_167_android.sh
       - name: Upload signed release verification evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
@@ -200,7 +200,7 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         with:
-          name: Smart-S-Launcher-3.30.166-signed
+          name: Smart-S-Launcher-3.30.167-signed
           path: verified-apk
           archive: true
           if-no-files-found: error

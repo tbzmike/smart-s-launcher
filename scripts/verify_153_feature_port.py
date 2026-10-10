@@ -15,6 +15,7 @@ allowed = {
     "app/src/main/java/fr/neamar/kiss/DataHandler.java",
     "app/src/main/java/fr/neamar/kiss/IndexingSettingsActivity.java",
     "app/src/main/java/fr/neamar/kiss/IconsHandler.java",
+    "app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java",
     "app/src/main/java/fr/neamar/kiss/MainActivity.java",
     "app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java",
     "app/src/main/java/fr/neamar/kiss/SettingsActivity.java",
@@ -45,7 +46,7 @@ for name in originals:
         raise AssertionError(f"Unrelated baseline file changed: {name}")
 
 for name in [
-    "adapter/RecordAdapter.java", "searcher/SearchHandler.java", "searcher/HistorySearcher.java",
+    "searcher/SearchHandler.java", "searcher/HistorySearcher.java",
     "ui/GlobalTextStyler.java", "ui/SmartTextAppearance.java", "ui/AutoMarqueeTextView.java",
     "ui/SearchEditText.java", "ui/BuiltInQwertyKeyboard.java", "ui/BuiltInKeyboardSizing.java",
     "forwarder/ForwarderManager.java", "forwarder/HistoryDisplayForwarder.java",
@@ -56,8 +57,7 @@ for name in [
     path = f"app/src/main/java/fr/neamar/kiss/{name}"
     assert (ROOT / path).read_bytes() == git("show", f"{BASE}:{path}"), path
 
-for name in ["MainActivity.java", "DataHandler.java", "ui/UniversalHistoryTimestamp.java",
-             "forwarder/HistoryVisualEnhancer.java"]:
+for name in ["MainActivity.java", "DataHandler.java"]:
     path = f"app/src/main/java/fr/neamar/kiss/{name}"
     patch = git("diff", "--unified=0", BASE, "--", path).decode()
     removed = [line for line in patch.splitlines() if line.startswith("-") and not line.startswith("---")]
@@ -71,10 +71,25 @@ assert (ROOT / icons_path).read_text() == original_icons.replace(
     "if (!dir.exists() && !dir.mkdir())",
     "if (!dir.isDirectory() && !dir.mkdir() && !dir.isDirectory())")
 build = (ROOT / "app/build.gradle").read_text()
-assert 'versionName "3.30.166"' in build and "versionCode 594" in build
+assert 'versionName "3.30.167"' in build and "versionCode 595" in build
 for name in ["searcher/AppSourceMetadataUpdater.java", "searcher/SemanticHnswIndex.java",
              "searcher/AppMetadataSyncJobService.java", "ui/HistoryDateNavigator.java",
              "ui/ChronologicalDateScroller.java"]:
     assert (ROOT / f"app/src/main/java/fr/neamar/kiss/{name}").is_file(), name
 print(f"PASS: {unchanged} original files byte-identical; feature changes restricted to allowlist.")
-print("PASS: original row sizing, styling, history workers, renderers and notification actions retained.")
+adapter_path = "app/src/main/java/fr/neamar/kiss/adapter/RecordAdapter.java"
+original_adapter = git("show", f"{BASE}:{adapter_path}").decode()
+expected_adapter = original_adapter.replace(
+    "// No notification enrichment, overflow traversal, timestamp formatting, style traversal,\n"
+    "        // width mutation, click rewiring or bell work is allowed in the fling hot path.",
+    "// Keep timestamp identity correct even for a new row or a row recycled from search.\n"
+    "        // Its binder uses the shared in-memory snapshot; database/usage loading stays at idle.\n"
+    "        // Notification enrichment, overflow/style traversal, width mutation and bell work remain\n"
+    "        // outside the fling hot path.").replace(
+    "if (hardScrollFreeze) return view;",
+    "if (hardScrollFreeze) {\n"
+    "            UniversalHistoryTimestamp.bind(view, result, renderContext);\n"
+    "            return view;\n        }").replace(
+    "                UniversalHistoryTimestamp.bind(view, result, context);\n", "")
+assert (ROOT / adapter_path).read_text() == expected_adapter, "Unrelated adapter behavior changed"
+print("PASS: original row/icon sizing and notification actions retained; timestamp binding is the only adapter fix.")

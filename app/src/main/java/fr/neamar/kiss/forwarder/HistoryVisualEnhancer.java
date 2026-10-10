@@ -68,6 +68,7 @@ final class HistoryVisualEnhancer {
         // frozen. Re-apply only cached metadata to the now-visible rows; no database/UsageStats
         // work is started by the act of scrolling.
         applyToVisibleNativeRows();
+        if (refreshPending) requestRefresh();
     }
 
     void onDestroy() {
@@ -103,11 +104,11 @@ final class HistoryVisualEnhancer {
     private void onScrollStarted() {
         if (destroyed) return;
 
-        // Scrolling is render-only. Cancel any metadata/database/UsageStats work immediately and
-        // drop it. The act of scrolling must never create deferred work that fires when motion stops.
-        // A real resume or dataset change can request fresh metadata later.
+        // Cancel database/UsageStats work during motion, but retain an existing resume/data-change
+        // request. Completing that request at idle prevents an interrupted initial load from
+        // leaving app timestamps unavailable until the next lifecycle event.
         generation++;
-        refreshPending = false;
+        refreshPending = refreshPending || inFlight != null;
         historyDisplayForwarder.cancelWhenScrollIdle(refreshAtIdle);
         CancellationSignal signal = cancellationSignal;
         if (signal != null) signal.cancel();
@@ -137,6 +138,8 @@ final class HistoryVisualEnhancer {
                 && now - lastLoadUptime < MIN_RELOAD_INTERVAL_MS) {
             refreshPending = false;
             UniversalHistoryTimestamp.updateEnrichment(cachedStats, cachedUsage);
+            applyToVisibleNativeRows();
+            activity.onHistoryDateMetadataLoaded();
             return;
         }
 
@@ -162,7 +165,7 @@ final class HistoryVisualEnhancer {
 
                 AppUsageTodayStore.Snapshot finalUsage = usage;
                 activity.runOnUiThread(() ->
-                        finishRefresh(taskGeneration, stats, finalUsage));
+                        finishRefresh(taskGeneration, requestedGeneration, stats, finalUsage));
             } catch (OperationCanceledException ignored) {
                 // Expected when the user starts scrolling.
             }
@@ -194,11 +197,18 @@ final class HistoryVisualEnhancer {
     }
 
     private void finishRefresh(long taskGeneration,
+                               long requestedStatsGeneration,
                                Map<String, LaunchStatsProvider.LaunchStats> stats,
                                AppUsageTodayStore.Snapshot usage) {
         if (destroyed || taskGeneration != generation) return;
         inFlight = null;
         cancellationSignal = null;
+        if (requestedStatsGeneration != UniversalHistoryTimestamp.statsGeneration()) {
+            // A launch during this read belongs to a newer snapshot. Do not mark old query data
+            // as fresh for the new generation, otherwise later refreshes would reuse it for a minute.
+            requestRefresh();
+            return;
+        }
         if (!UniversalHistoryTimestamp.isHistorySurface(activity)) {
             // A History load can finish after the user has started typing. Never decorate the
             // current QUERY tree with data loaded for the previous History surface.
@@ -213,7 +223,7 @@ final class HistoryVisualEnhancer {
         cachedStats = stats == null ? java.util.Collections.emptyMap() : stats;
         cachedUsage = usage;
         lastLoadUptime = SystemClock.uptimeMillis();
-        lastStatsGeneration = UniversalHistoryTimestamp.statsGeneration();
+        lastStatsGeneration = requestedStatsGeneration;
         forceReload = false;
         hasLoadedSnapshot = true;
         UniversalHistoryTimestamp.updateEnrichment(cachedStats, cachedUsage);

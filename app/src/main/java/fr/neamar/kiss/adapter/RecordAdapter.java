@@ -172,12 +172,17 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
 
         // HARD scroll freeze for native Vertical List. Result.display() performs only the minimum
         // identity/text bind; every optional decorator below is skipped until a later normal bind.
-        // No notification enrichment, overflow traversal, timestamp formatting, style traversal,
-        // width mutation, click rewiring or bell work is allowed in the fling hot path.
+        // Keep timestamp identity correct even for a new row or a row recycled from search.
+        // Its binder uses the shared in-memory snapshot; database/usage loading stays at idle.
+        // Notification enrichment, overflow/style traversal, width mutation and bell work remain
+        // outside the fling hot path.
         boolean hardScrollFreeze = cachedVerticalHistory
                 && parent instanceof fr.neamar.kiss.ui.AnimatedListView
                 && ((fr.neamar.kiss.ui.AnimatedListView) parent).isScrollInProgress();
-        if (hardScrollFreeze) return view;
+        if (hardScrollFreeze) {
+            UniversalHistoryTimestamp.bind(view, result, renderContext);
+            return view;
+        }
 
         // Scale only this recycled/new row, never the complete launcher hierarchy.
         if (renderContext instanceof MainActivity) {
@@ -209,7 +214,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                     verticalStyleSignatures.put(view, signature);
                 }
                 applyVerticalHistoryWidth(view, parent, context, cachedHistoryWidthPercent);
-                UniversalHistoryTimestamp.bind(view, result, context);
             } else {
                 restoreVerticalHistoryAppearance(view);
                 verticalStyleSignatures.remove(view);
