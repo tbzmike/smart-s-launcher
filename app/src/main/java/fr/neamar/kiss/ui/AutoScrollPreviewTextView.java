@@ -96,6 +96,9 @@ public class AutoScrollPreviewTextView extends TextView {
         if (next != autoExpand) {
             autoExpand = next;
             appliedBehaviorMode = -1;
+            cancelScrollStep();
+            firstVisibleLine = 0;
+            scrollTo(0, 0);
         }
     }
 
@@ -190,6 +193,9 @@ public class AutoScrollPreviewTextView extends TextView {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        // The preference may have changed while this row remained attached or recycled.
+        // Synchronize it before calculating the compact two-line/full-height measurement.
+        refreshOverflowMode();
         applyConfiguredBehavior();
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 
