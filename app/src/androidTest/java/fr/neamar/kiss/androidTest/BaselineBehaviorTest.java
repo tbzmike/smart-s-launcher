@@ -39,6 +39,8 @@ import fr.neamar.kiss.adapter.RecordAdapter;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.SearchPojo;
+import fr.neamar.kiss.pojo.SearchPojoType;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
@@ -48,6 +50,11 @@ import fr.neamar.kiss.utils.UserHandle;
 public class BaselineBehaviorTest {
     @Before public void resetProfile() {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        // Keep the rendering comparison independent of 153's known cold-cache mkdir race.
+        for (String name : new String[]{"icons", "custom_icons"}) {
+            File directory = new File(context.getCacheDir(), name);
+            assertTrue(directory.isDirectory() || directory.mkdirs() || directory.isDirectory());
+        }
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         assertTrue(prefs.edit().clear()
                 .putBoolean("semantic-search-enabled", false)
@@ -124,8 +131,12 @@ public class BaselineBehaviorTest {
 
     private static boolean containsCalculator(MainActivity activity) {
         for (int i = 0; i < activity.adapter.getCount(); i++) {
-            String name = activity.adapter.getItem(i).getPojo().getName();
-            if (name != null && name.contains("= 2")) return true;
+            Pojo pojo = activity.adapter.getItem(i).getPojo();
+            if (pojo instanceof SearchPojo) {
+                SearchPojo search = (SearchPojo) pojo;
+                if (search.type == SearchPojoType.CALCULATOR_QUERY
+                        && search.query != null && search.query.contains("= 2")) return true;
+            }
         }
         return false;
     }

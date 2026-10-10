@@ -567,7 +567,7 @@ public class IconsHandler {
 
     private File getIconsCacheDir() {
         File dir = new File(this.ctx.getCacheDir(), "icons");
-        if (!dir.exists() && !dir.mkdir())
+        if (!dir.isDirectory() && !dir.mkdir() && !dir.isDirectory())
             throw new IllegalStateException("failed to create path " + dir.getPath());
         return dir;
     }
@@ -579,7 +579,7 @@ public class IconsHandler {
 
     private File getCustomIconsDir() {
         File dir = new File(this.ctx.getCacheDir(), "custom_icons");
-        if (!dir.exists() && !dir.mkdir())
+        if (!dir.isDirectory() && !dir.mkdir() && !dir.isDirectory())
             throw new IllegalStateException("failed to create path " + dir.getPath());
         return dir;
     }

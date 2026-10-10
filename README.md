@@ -22,6 +22,11 @@ settings-search highlighting, and date navigation in native Home history, Notifi
 and chronological App Usage views. The original row adapter, history loading, text styling,
 keyboard, card/wheel renderers and notification actions remain unchanged.
 
+Android verification exposed an existing 3.30.153 cold-cache race when concurrent icon workers
+created the same directory. Two directory-creation checks now accept a directory another worker
+has just created; icon rendering is unchanged. The comparison fixtures pre-create those cache
+directories on both versions, and a separate concurrent test covers the corrected cold-cache path.
+
 Semantic search remains optional. Its existing dimension choices are 64, 128 and 256, with 128
 as the default. Description refresh does not change the user's semantic or description settings.
 Metadata requests are deduplicated by app revision; newer pending updates survive older fetch

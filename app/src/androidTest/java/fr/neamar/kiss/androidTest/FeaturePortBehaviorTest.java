@@ -29,15 +29,24 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.DataActivityViewerActivity;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.IconsHandler;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.SettingsActivity;
 import fr.neamar.kiss.SettingsFragment;
@@ -60,6 +69,46 @@ public class FeaturePortBehaviorTest {
                 .putBoolean(AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, false)
                 .putString("smart-history-layout", "vertical").commit();
         ((JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE)).cancel(0x53534D44);
+    }
+
+    @Test public void coldIconCacheCreationDoesNotCrashConcurrentIconWorkers() throws Exception {
+        IconsHandler icons = KissApplication.getApplication(context).getIconsHandler();
+        ExecutorService workers = Executors.newFixedThreadPool(8);
+        try {
+            for (String name : new String[]{"getIconsCacheDir", "getCustomIconsDir"}) {
+                Method create = IconsHandler.class.getDeclaredMethod(name);
+                create.setAccessible(true);
+                File directory = (File) create.invoke(icons);
+                deleteCache(directory);
+                for (int round = 0; round < 30; round++) {
+                    CountDownLatch ready = new CountDownLatch(8);
+                    CountDownLatch start = new CountDownLatch(1);
+                    List<Future<File>> results = new ArrayList<>();
+                    for (int worker = 0; worker < 8; worker++) {
+                        results.add(workers.submit(() -> {
+                            ready.countDown();
+                            assertTrue(start.await(5, TimeUnit.SECONDS));
+                            return (File) create.invoke(icons);
+                        }));
+                    }
+                    try { assertTrue(ready.await(5, TimeUnit.SECONDS)); }
+                    finally { start.countDown(); }
+                    for (Future<File> result : results) assertTrue(result.get(5, TimeUnit.SECONDS).isDirectory());
+                    if (round < 29) assertTrue(directory.delete());
+                }
+            }
+        } finally {
+            workers.shutdownNow();
+        }
+    }
+
+    private static void deleteCache(File directory) {
+        File[] children = directory.listFiles();
+        if (children != null) for (File child : children) {
+            if (child.isDirectory()) deleteCache(child);
+            else assertTrue(child.delete());
+        }
+        assertTrue(directory.delete());
     }
 
     @Test public void dateControlHasOneOwnerAndDoesNotCoverHistoryRows() throws Exception {

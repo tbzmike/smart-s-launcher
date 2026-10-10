@@ -14,6 +14,7 @@ allowed = {
     "app/src/main/java/fr/neamar/kiss/AppUsageActivity.java",
     "app/src/main/java/fr/neamar/kiss/DataHandler.java",
     "app/src/main/java/fr/neamar/kiss/IndexingSettingsActivity.java",
+    "app/src/main/java/fr/neamar/kiss/IconsHandler.java",
     "app/src/main/java/fr/neamar/kiss/MainActivity.java",
     "app/src/main/java/fr/neamar/kiss/NotificationHistoryActivity.java",
     "app/src/main/java/fr/neamar/kiss/SettingsActivity.java",
@@ -63,6 +64,12 @@ for name in ["MainActivity.java", "DataHandler.java", "ui/UniversalHistoryTimest
     assert not removed, f"Original behavior removed from {name}: {removed}"
 
 assert not (ROOT / "app/src/main/java/fr/neamar/kiss/ui/HistoryAppearanceMath.java").exists()
+icons_path = "app/src/main/java/fr/neamar/kiss/IconsHandler.java"
+original_icons = git("show", f"{BASE}:{icons_path}").decode()
+assert original_icons.count("if (!dir.exists() && !dir.mkdir())") == 2
+assert (ROOT / icons_path).read_text() == original_icons.replace(
+    "if (!dir.exists() && !dir.mkdir())",
+    "if (!dir.isDirectory() && !dir.mkdir() && !dir.isDirectory())")
 build = (ROOT / "app/build.gradle").read_text()
 assert 'versionName "3.30.166"' in build and "versionCode 594" in build
 for name in ["searcher/AppSourceMetadataUpdater.java", "searcher/SemanticHnswIndex.java",
