@@ -44,6 +44,12 @@ jobs:
           APK="$(find run-artifacts -type f -name 'app-debug.apk' -print -quit)"
           test -n "$APK"
           cp "$APK" app-debug.apk
+          # A signed production APK is published only when the same green run includes
+          # the original-certificate signing job (which itself depends on Android tests).
+          SIGNED="$(find run-artifacts -type f -name 'Smart-S-Launcher-3.30.168.apk' -print -quit)"
+          if [ -n "$SIGNED" ]; then
+            cp "$SIGNED" SmartSLauncher.apk
+          fi
 
       - name: Prepare verified green manifest
         shell: bash
@@ -65,15 +71,17 @@ jobs:
 
           version = version_match.group(1)
           code = int(code_match.group(1))
+          signed = Path("SmartSLauncher.apk").exists()
           data = {
               "version": version,
               "versionCode": code,
               "runId": int(os.environ["SOURCE_RUN_ID"]),
               "runNumber": int(os.environ["SOURCE_RUN_NUMBER"]),
               "sha": os.environ["SOURCE_SHA"],
-              "variant": "debug",
-              "apkName": "app-debug.apk",
-              "apkUrl": f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}/app-debug.apk"
+              "variant": "signed_release" if signed else "debug",
+              "apkName": "SmartSLauncher.apk" if signed else "app-debug.apk",
+              "apkUrl": (f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}/SmartSLauncher.apk"
+                         if signed else f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{version}/app-debug.apk")
           }
           Path("latest-green.json").write_text(
               json.dumps(data, separators=(",", ":")) + "\n",
@@ -125,13 +133,14 @@ jobs:
           set -euo pipefail
           VERSION="$(python3 -c 'import json; print(json.load(open("latest-green.json"))["version"])')"
           TAG="v${VERSION}"
+          APK_ASSETS=(latest-green.json app-debug.apk)
+          if [ -f SmartSLauncher.apk ]; then APK_ASSETS+=(SmartSLauncher.apk); fi
           gh release create "$TAG" \
             --target "$SOURCE_SHA" \
             --latest \
             --title "Smart S Launcher v${VERSION}" \
             --notes "Latest fully passed Smart S Launcher build. App testing run #${SOURCE_RUN_NUMBER} completed successfully: lint passed, unit tests passed, and APK generation passed. This public release APK is also the APK used by manual and automatic in-app updates." \
-            latest-green.json \
-            app-debug.apk
+            "${APK_ASSETS[@]}"
 
       - name: Mirror latest manifest for updater reachability
         if: ${{ steps.guard.outputs.publish == 'true' }}
