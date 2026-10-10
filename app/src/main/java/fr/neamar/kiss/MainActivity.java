@@ -1350,6 +1350,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     /** Refresh date navigation after the existing background timestamp loader finishes. */
     public void onHistoryDateMetadataLoaded() {
         if (historyDateNavigator != null) historyDateNavigator.onDataChanged();
+        if (forwarderManager != null) forwarderManager.onHistoryMetadataLoaded();
     }
 
     @Override
