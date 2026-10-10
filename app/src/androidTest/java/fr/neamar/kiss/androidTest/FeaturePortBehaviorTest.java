@@ -55,6 +55,8 @@ import fr.neamar.kiss.SettingsActivity;
 import fr.neamar.kiss.SettingsFragment;
 import fr.neamar.kiss.db.AppSourceMetadataRecord;
 import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.AppMetadataSyncScheduler;
@@ -130,10 +132,22 @@ public class FeaturePortBehaviorTest {
                 activity.searchEditText.setText("");
                 activity.displayKissBar(false);
                 SearchHandler.getInstance().cancelSearch();
+                String fixturePackage = null;
+                for (AppPojo app : KissApplication.getApplication(activity).getDataHandler().getApplications()) {
+                    if (!app.isExcludedFromHistory() && !app.isDisabled()) {
+                        fixturePackage = app.packageName;
+                        break;
+                    }
+                }
+                assertNotNull("No installed app eligible for history fixtures", fixturePackage);
                 // Feed the real history loader. Adapter-only rows disappear legitimately when
                 // a queued lifecycle/provider refresh reads the otherwise empty history DB.
+                // The launcher itself is excluded from history, so use an eligible installed app.
                 for (Result<?> result : BaselineBehaviorTest.fixtures(activity, true)) {
-                    Pojo pojo = result.getPojo();
+                    NotificationPojo sample = (NotificationPojo) result.getPojo();
+                    Pojo pojo = new NotificationPojo(sample.id, fixturePackage, sample.appName,
+                            sample.groupKey, sample.exactNotificationId, sample.notificationCount,
+                            sample.latestTitle, sample.latestText, sample.postTime);
                     DBHelper.removeFromHistory(activity, pojo.getHistoryId());
                     RecentLaunchTracker.remember(pojo);
                     DBHelper.insertHistory(activity, "", pojo.getHistoryId());
