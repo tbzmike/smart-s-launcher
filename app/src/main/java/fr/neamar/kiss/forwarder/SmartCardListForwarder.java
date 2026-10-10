@@ -37,6 +37,8 @@ import fr.neamar.kiss.ui.AutoScrollPreviewTextView;
 import fr.neamar.kiss.ui.NotificationBellStyle;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.ui.ScrollIdleGate;
+import fr.neamar.kiss.ui.SmartTextAppearance;
+import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.ui.TextOverflowMode;
 
 /**
@@ -74,6 +76,7 @@ final class SmartCardListForwarder extends Forwarder {
     private boolean rebuildQueuedAllowActiveQueryReuse;
     private final Set<String> animatedCardIds = new HashSet<>();
     private String lastAnimationScope = null;
+    private int lastPresentationSignature = Integer.MIN_VALUE;
     private final Runnable rebuildAfterIdle = () -> {
         rebuildQueued = false;
         boolean allowReuse = rebuildQueuedAllowActiveQueryReuse;
@@ -137,7 +140,16 @@ final class SmartCardListForwarder extends Forwarder {
         if (isEnabled() && column != null && (!wasVisible || column.getChildCount() == 0)) {
             rebuild();
         } else if (isEnabled() && column != null && column.getChildCount() > 0) {
-            replayVisibleCardsIfAnimationConfigChanged();
+            if (lastPresentationSignature != presentationSignature()) {
+                // Existing cards are retained across Home visits. A change in Settings must
+                // rebind those exact cards once; ordinary resumes reuse the retained tree.
+                column.removeAllViews();
+                historyCardSignatures.clear();
+                activeQueryCardSignatures.clear();
+                rebuild();
+            } else {
+                replayVisibleCardsIfAnimationConfigChanged();
+            }
         }
     }
 
@@ -692,10 +704,77 @@ final class SmartCardListForwarder extends Forwarder {
         }
     }
 
+    private int presentationSignature() {
+        String[] keys = {
+                "smart-list-card-height-percent", "smart-list-card-icon-percent",
+                "smart-list-card-name-percent", "smart-list-card-spacing-dp",
+                "smart-list-icon-size-percent", "smart-list-notification-icon-size-percent",
+                "smart-list-shortcut-icon-size-percent", "smart-list-contact-icon-size-percent",
+                "smart-list-feature-icon-size-percent", "smart-list-resize-notification-icons",
+                "smart-list-resize-shortcut-icons", "smart-list-resize-contact-icons",
+                "smart-list-resize-feature-icons", "smart-list-label-size-sp",
+                "smart-list-body-size-sp", "smart-history-meta-size-sp",
+                "smart-history-meta-font", "smart-history-meta-color",
+                "global-text-size-percent"
+        };
+        Map<String, ?> values = prefs.getAll();
+        int hash = 17;
+        for (String key : keys) {
+            Object value = values.get(key);
+            hash = 31 * hash + (value == null ? 0 : value.hashCode());
+        }
+        return hash;
+    }
+
+    private int configuredCardIconPercent(Result<?> result) {
+        int normal = prefInt("smart-list-icon-size-percent", 110, 50, 240);
+        String key = null;
+        String enabled = null;
+        if (result.getPojo() instanceof NotificationPojo) {
+            key = "smart-list-notification-icon-size-percent";
+            enabled = "smart-list-resize-notification-icons";
+        } else if (result.getPojo() instanceof ShortcutPojo) {
+            key = "smart-list-shortcut-icon-size-percent";
+            enabled = "smart-list-resize-shortcut-icons";
+        } else if (result.getPojo() instanceof CommunicationPojo
+                || result.getPojo() instanceof fr.neamar.kiss.pojo.ContactsPojo
+                || result.getPojo() instanceof fr.neamar.kiss.pojo.PhonePojo) {
+            key = "smart-list-contact-icon-size-percent";
+            enabled = "smart-list-resize-contact-icons";
+        } else if (result.getPojo() instanceof fr.neamar.kiss.pojo.SettingPojo) {
+            key = "smart-list-feature-icon-size-percent";
+            enabled = "smart-list-resize-feature-icons";
+        }
+        if (key != null) {
+            normal = prefs.getBoolean(enabled, true)
+                    ? prefInt(key, normal, 50, 240) : 100;
+        }
+        int card = prefInt("smart-list-card-icon-percent", 100, 60, 180);
+        return Math.max(50, Math.min(240, Math.round(normal * card / 100f)));
+    }
+
+    void refreshHistoryMetadata() {
+        if (!isEnabled() || column == null || mainActivity.adapter == null
+                || isScrollInProgress() || !UniversalHistoryTimestamp.isHistorySurface(mainActivity)) {
+            return;
+        }
+        for (int i = 0; i < column.getChildCount(); i++) {
+            View row = column.getChildAt(i);
+            if (i >= mainActivity.adapter.getCount()) break;
+            TextView timestamp = row.findViewById(R.id.item_history_meta);
+            if (timestamp == null) continue;
+            CharSequence content = UniversalHistoryTimestamp.describe(
+                    mainActivity.adapter.getItem(i), mainActivity);
+            if (!TextUtils.equals(timestamp.getText(), content)) timestamp.setText(content);
+            SmartTextAppearance.applyHistoryMetadata(timestamp);
+            mainActivity.applyGlobalTextScaleToSubtree(timestamp);
+        }
+    }
+
     private View createCardItem(View source, Result<?> result, int adapterPosition,
                                 Map<String, NotificationHistoryRecord> latestNotifications) {
         int heightPercent = prefInt("smart-list-card-height-percent", 100, 70, 170);
-        int iconPercent = prefInt("smart-list-card-icon-percent", 100, 60, 180);
+        int iconPercent = configuredCardIconPercent(result);
         int radiusDp = prefInt("smart-list-card-radius-dp", 22, 6, 40);
         int elevationDp = prefInt("smart-list-card-elevation-dp", 9, 0, 24);
         int namePercent = prefInt("smart-list-card-name-percent", 100, 70, 170);
@@ -778,7 +857,8 @@ final class SmartCardListForwarder extends Forwarder {
             fallback.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
             iconView = fallback;
         }
-        int iconSize = Math.min(dp(88), dp(66) * iconPercent / 100);
+        // Do not cap the icon at 88dp: that silently discarded the large-icon setting.
+        int iconSize = Math.max(dp(32), dp(66) * iconPercent / 100);
         LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
         iconLp.rightMargin = dp(14);
         mainRow.addView(iconView, iconLp);
@@ -800,7 +880,8 @@ final class SmartCardListForwarder extends Forwarder {
         AutoMarqueeTextView cardTitle = new AutoMarqueeTextView(mainActivity);
         cardTitle.setText(label);
         cardTitle.setTextColor(Color.WHITE);
-        cardTitle.setTextSize(16f * namePercent / 100f);
+        cardTitle.setTextSize(prefInt("smart-list-label-size-sp", 18, 10, 40)
+                * namePercent / 100f);
         cardTitle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         cardTitle.setShadowLayer(dp(2), 0f, dp(1), Color.argb(180, 0, 0, 0));
         NotificationBellStyle.apply(cardTitle,
@@ -812,11 +893,22 @@ final class SmartCardListForwarder extends Forwarder {
             AutoMarqueeTextView meta = new AutoMarqueeTextView(mainActivity);
             meta.setText(subtitle);
             meta.setTextColor(Color.argb(220, 250, 250, 250));
-            meta.setTextSize(13f);
+            meta.setTextSize(prefInt("smart-list-body-size-sp", 14, 8, 32));
             meta.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
             meta.setShadowLayer(dp(1), 0f, dp(1), Color.argb(160, 0, 0, 0));
             center.addView(meta, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, textRowHeight(dp(27))));
+        }
+
+        if (UniversalHistoryTimestamp.isHistorySurface(mainActivity)) {
+            // A single dedicated timestamp slot, not a second injected overlay. Refresh
+            // this in place when asynchronous History statistics become available.
+            AutoMarqueeTextView timestamp = new AutoMarqueeTextView(mainActivity);
+            timestamp.setId(R.id.item_history_meta);
+            timestamp.setText(UniversalHistoryTimestamp.describe(result, mainActivity));
+            SmartTextAppearance.applyHistoryMetadata(timestamp);
+            center.addView(timestamp, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
         TextView messageView = null;
@@ -980,6 +1072,7 @@ final class SmartCardListForwarder extends Forwarder {
 
         // Dynamic cards are the only new hierarchy that needs the global text multiplier.
         mainActivity.applyGlobalTextScaleToSubtree(wrapper);
+        lastPresentationSignature = presentationSignature();
         return wrapper;
     }
 
