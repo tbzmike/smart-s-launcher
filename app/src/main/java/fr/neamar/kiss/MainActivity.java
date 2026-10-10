@@ -599,6 +599,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             displayKissBar(false);
         }
 
+        if (adapter != null) adapter.invalidateHistoryPresentation();
+        fr.neamar.kiss.ui.UniversalHistoryTimestamp.invalidatePresentation();
         forwarderManager.onResume();
 
         // Pasting shared text via intent-filter into kiss search bar
@@ -866,6 +868,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     private static final String PREF_GLOBAL_TEXT_SIZE_PERCENT = "global-text-size-percent";
     private static final int TAG_GLOBAL_TEXT_BASELINE = 0x4b495353;
+    private static final int TAG_GLOBAL_TEXT_APPLIED = 0x4b495354;
 
     private void showGlobalTextSizeDialog() {
         final int min = 70;
@@ -916,7 +919,6 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         if (view == null) return;
         int percent = Math.max(70, Math.min(160,
                 prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100)));
-        if (percent == 100) return;
         applyGlobalTextScale(view, percent / 100f);
     }
 
@@ -929,17 +931,24 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         if (view instanceof TextView) {
             TextView textView = (TextView) view;
             Object baseline = textView.getTag(TAG_GLOBAL_TEXT_BASELINE);
+            Object applied = textView.getTag(TAG_GLOBAL_TEXT_APPLIED);
+            float currentPx = textView.getTextSize();
+            // Another style owner (History or XML result binding) can replace the text
+            // size after the last pass. That new value becomes the baseline: never reuse
+            // an obsolete baseline or compound the scale with each recycled bind.
             float basePx;
-            if (baseline instanceof Float) {
+            if (baseline instanceof Float && applied instanceof Float
+                    && Math.abs(currentPx - (Float) applied) <= 0.5f) {
                 basePx = (Float) baseline;
             } else {
-                basePx = textView.getTextSize();
+                basePx = currentPx;
                 textView.setTag(TAG_GLOBAL_TEXT_BASELINE, basePx);
             }
             float targetPx = basePx * scale;
-            if (Math.abs(textView.getTextSize() - targetPx) > 0.5f) {
+            if (Math.abs(currentPx - targetPx) > 0.5f) {
                 textView.setTextSize(TypedValue.COMPLEX_UNIT_PX, targetPx);
             }
+            textView.setTag(TAG_GLOBAL_TEXT_APPLIED, targetPx);
         }
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
