@@ -75,6 +75,8 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
     private EditText search;
     private Button updateDescriptions;
     private ActivityAdapter adapter;
+    private boolean loading;
+    private boolean reloadRequested;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -226,12 +228,37 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
 
     private void reload() {
         if (status == null || isFinishing() || isDestroyed()) return;
+        if (loading) {
+            reloadRequested = true;
+            return;
+        }
+        loading = true;
         status.setText("Loading app-description data…");
         if (updateDescriptions != null) {
             updateDescriptions.setEnabled(!AppSourceMetadataUpdater.isRunning());
         }
 
         executor.execute(() -> {
+            try {
+                loadDescriptionData();
+            } catch (RuntimeException error) {
+                android.util.Log.w("DataActivityViewer", "Unable to load metadata", error);
+                runOnUiThread(() -> {
+                    if (!isFinishing() && !isDestroyed()) status.setText("Unable to load app-description data.");
+                });
+            } finally {
+                runOnUiThread(() -> {
+                    loading = false;
+                    if (reloadRequested) {
+                        reloadRequested = false;
+                        reload();
+                    }
+                });
+            }
+        });
+    }
+
+    private void loadDescriptionData() {
             List<SemanticActivityRecord> loaded =
                     new ArrayList<>(DBHelper.getSemanticActivity(this, LOAD_LIMIT));
             Map<String, AppSourceMetadataRecord> metadata =
@@ -313,7 +340,6 @@ public final class DataActivityViewerActivity extends AppCompatActivity {
                 }
                 applyFilter();
             });
-        });
     }
 
     private void applyFilter() {

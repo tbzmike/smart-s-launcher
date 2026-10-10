@@ -133,6 +133,7 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/heads/feature/3.30.166-from-153') }}
     needs: [test, apk, android-166]
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -141,7 +142,7 @@ jobs:
         run: python3 scripts/verify_153_feature_port.py
       - uses: actions/download-artifact@v8
         with:
-          name: release
+          name: app-release-unsigned.apk
           path: unsigned-release
       - name: Sign and verify package identity
         shell: bash
@@ -173,6 +174,30 @@ jobs:
           sha256sum "$OUT" | tee verified-apk/Smart-S-Launcher-3.30.166.sha256
           git rev-parse HEAD > verified-apk/source-commit.txt
           cp "$BUILD_TOOLS/lib/apksigner.jar" verified-apk/apksigner.jar
+      - name: Enable KVM for signed release verification
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Launch and search with final signed release
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash scripts/verify_signed_166_android.sh
+      - name: Upload signed release verification evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-release-android-verification
+          path: verification-results
+          archive: true
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         with:
           name: Smart-S-Launcher-3.30.166-signed

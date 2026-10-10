@@ -22,6 +22,11 @@ PY
 git worktree add --detach "$BASELINE_DIR" 145b42e7f4f954068b087f7958f62d47c0f10905
 cp app/src/androidTest/java/fr/neamar/kiss/androidTest/BaselineBehaviorTest.java \
   "$BASELINE_DIR/app/src/androidTest/java/fr/neamar/kiss/androidTest/"
+# The runner shares Kotlin/AndroidX dependencies with the app. Retain their test-only APIs in
+# both instrumentation builds; the separately built, signed release keeps normal optimization.
+for test_project in "$BASELINE_DIR" "$ROOT_DIR"; do
+  printf '\n# Instrumentation-only retention\n-dontshrink\n-dontoptimize\n' >> "$test_project/app/proguard-rules.pro"
+done
 (
   cd "$BASELINE_DIR"
   bash ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace
@@ -52,6 +57,7 @@ print("PASS: all row text/icon measurements match 3.30.153 through five lifecycl
 (root / "baseline-comparison.txt").write_text("PASS: all measured row text/icon sizes match 3.30.153.\n")
 PY
 run_test fr.neamar.kiss.androidTest.FeaturePortBehaviorTest "$RESULT_DIR/features-166.log"
+adb pull "/sdcard/Android/data/$APP_PACKAGE/files/verification-screenshots" "$RESULT_DIR/screenshots"
 adb logcat -d > "$RESULT_DIR/logcat.txt"
 python3 - "$RESULT_DIR/logcat.txt" <<'PY'
 import sys

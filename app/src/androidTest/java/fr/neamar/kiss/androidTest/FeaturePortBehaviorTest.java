@@ -7,8 +7,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -25,6 +27,8 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
@@ -58,14 +62,19 @@ public class FeaturePortBehaviorTest {
         ((JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE)).cancel(0x53534D44);
     }
 
-    @Test public void dateControlHasOneOwnerAndDoesNotCoverHistoryRows() {
+    @Test public void dateControlHasOneOwnerAndDoesNotCoverHistoryRows() throws Exception {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             BaselineBehaviorTest.awaitHistory(scenario);
             scenario.onActivity(activity -> {
                 SearchHandler.getInstance().cancelSearch();
                 activity.adapter.updateResults(activity, BaselineBehaviorTest.fixtures(activity, true), false, "");
+                activity.list.setSelection(0);
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            BaselineBehaviorTest.await(scenario, activity -> {
+                View label = findDescription(activity.listContainer, "History date section");
+                return label != null && label.getHeight() > 0 && activity.list.getChildCount() > 0;
+            }, "laid-out history date control");
             scenario.onActivity(activity -> {
                 View label = findDescription(activity.listContainer, "History date section");
                 View thumb = findDescription(activity.listContainer, "History date fast scroll");
@@ -75,6 +84,26 @@ public class FeaturePortBehaviorTest {
                 assertEquals(View.VISIBLE, label.getVisibility());
                 assertTrue(activity.list.getTop() >= label.getBottom());
             });
+            screenshot("history-date-control.png");
+            scenario.onActivity(activity -> {
+                View thumb = findDescription(activity.listContainer, "History date fast scroll");
+                float density = activity.getResources().getDisplayMetrics().density;
+                float x = thumb.getWidth() - 2 * density;
+                long now = SystemClock.uptimeMillis();
+                MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, 29 * density, 0);
+                MotionEvent move = MotionEvent.obtain(now, now + 100, MotionEvent.ACTION_MOVE, x, thumb.getHeight() - 1, 0);
+                MotionEvent up = MotionEvent.obtain(now, now + 110, MotionEvent.ACTION_UP, x, thumb.getHeight() - 1, 0);
+                try {
+                    assertTrue(thumb.dispatchTouchEvent(down));
+                    assertTrue(thumb.dispatchTouchEvent(move));
+                    assertTrue(thumb.dispatchTouchEvent(up));
+                } finally {
+                    down.recycle(); move.recycle(); up.recycle();
+                }
+            });
+            BaselineBehaviorTest.await(scenario, activity -> activity.list.getFirstVisiblePosition() > 0,
+                    "date scrubber moved through history");
+            screenshot("history-date-scrubbed.png");
             for (String layout : new String[]{"vertical_cards", "wheel_3d"}) {
                 prefs.edit().putString("smart-history-layout", layout).commit();
                 scenario.recreate();
@@ -164,7 +193,7 @@ public class FeaturePortBehaviorTest {
         assertTrue(next.get(record.packageName).contains("OCR"));
     }
 
-    @Test public void semanticSettingsAreReachableAndPreferenceKeysAreUnique() {
+    @Test public void semanticSettingsAreReachableAndPreferenceKeysAreUnique() throws Exception {
         try (ActivityScenario<SettingsActivity> scenario = ActivityScenario.launch(SettingsActivity.class)) {
             scenario.onActivity(activity -> {
                 SettingsFragment fragment = new SettingsFragment();
@@ -180,6 +209,8 @@ public class FeaturePortBehaviorTest {
                 }
                 assertUnique(fragment.getPreferenceScreen(), new HashSet<>());
             });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            screenshot("semantic-settings.png");
         }
     }
 
@@ -218,6 +249,18 @@ public class FeaturePortBehaviorTest {
             Preference preference = group.getPreference(i);
             if (preference.getKey() != null) assertTrue("Duplicate setting: " + preference.getKey(), keys.add(preference.getKey()));
             if (preference instanceof PreferenceGroup) assertUnique((PreferenceGroup) preference, keys);
+        }
+    }
+
+    private void screenshot(String name) throws Exception {
+        Bitmap image = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+        assertNotNull("Could not capture verification screen", image);
+        File directory = new File(context.getExternalFilesDir(null), "verification-screenshots");
+        assertTrue(directory.isDirectory() || directory.mkdirs());
+        try (FileOutputStream output = new FileOutputStream(new File(directory, name))) {
+            assertTrue(image.compress(Bitmap.CompressFormat.PNG, 100, output));
+        } finally {
+            image.recycle();
         }
     }
 
