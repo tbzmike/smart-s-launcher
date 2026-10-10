@@ -137,6 +137,8 @@ final class HistoryVisualEnhancer {
                 && now - lastLoadUptime < MIN_RELOAD_INTERVAL_MS) {
             refreshPending = false;
             UniversalHistoryTimestamp.updateEnrichment(cachedStats, cachedUsage);
+            applyToVisibleNativeRows();
+            activity.onHistoryDateMetadataLoaded();
             return;
         }
 
