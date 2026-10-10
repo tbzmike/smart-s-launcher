@@ -60,9 +60,13 @@ public final class HistoryLongTextRegressionTest {
 
                 assertTrue(prefs.edit().putString("smart-text-overflow-mode", "auto_scroll").commit());
                 measure(text, px);
-                assertEquals("Saved mode should update without reconstructing the view",
-                        1, text.getLineCount());
+                // TextView can retain the old multi-line Layout object even as
+                // maxLines and measured compact height have already switched.
+                assertEquals("Compact marquee must enforce one visible line",
+                        1, text.getMaxLines());
                 assertEquals(TextUtils.TruncateAt.MARQUEE, text.getEllipsize());
+                assertTrue("Long text must not keep the old expanded tile height",
+                        text.getMeasuredHeight() <= text.getLineHeight() * 2);
 
                 measure(message, px);
                 assertTrue("Compact preview must fit inside a two-line viewport",
