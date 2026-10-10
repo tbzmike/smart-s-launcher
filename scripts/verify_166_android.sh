@@ -6,6 +6,11 @@ RESULT_DIR="$ROOT_DIR/verification-results"
 APP_PACKAGE="com.tbzmike.smartslauncher.debug"
 RUNNER="$APP_PACKAGE.test/androidx.test.runner.AndroidJUnitRunner"
 mkdir -p "$RESULT_DIR"
+collect_evidence() {
+  adb logcat -d > "$RESULT_DIR/logcat.txt" || true
+  adb pull "/sdcard/Android/data/$APP_PACKAGE/files/verification-screenshots" "$RESULT_DIR/screenshots" || true
+}
+trap collect_evidence EXIT
 
 run_test() {
   local test_class="$1" log_file="$2"

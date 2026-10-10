@@ -347,8 +347,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         hnsw.setTitle("HNSW fast semantic retrieval");
         hnsw.setSummary("Pre-index searchable records in the background and retrieve only nearest semantic candidates instead of scanning every record while you type.");
         hnsw.setDefaultValue(true);
-        hnsw.setDependency("semantic-search-enabled");
         category.addPreference(hnsw);
+        hnsw.setDependency("semantic-search-enabled");
 
         ListPreference hnswDepth = new ListPreference(requireContext());
         hnswDepth.setKey(SemanticHnswIndex.PREF_HNSW_EF_SEARCH);
@@ -362,16 +362,16 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         hnswDepth.setEntryValues(new CharSequence[]{"48", "96", "160", "224"});
         hnswDepth.setDefaultValue("96");
         hnswDepth.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        hnswDepth.setDependency(SemanticHnswIndex.PREF_HNSW_ENABLED);
         category.addPreference(hnswDepth);
+        hnswDepth.setDependency(SemanticHnswIndex.PREF_HNSW_ENABLED);
 
         SwitchPreference sourceDescriptions = new SwitchPreference(requireContext());
         sourceDescriptions.setKey(AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS);
         sourceDescriptions.setTitle("Use app-store descriptions for semantic search");
         sourceDescriptions.setSummary("Add locally cached Play Store, F-Droid, Aptoide or other discovered catalog descriptions to each app's semantic vector. Search itself stays offline.");
         sourceDescriptions.setDefaultValue(true);
-        sourceDescriptions.setDependency("semantic-search-enabled");
         category.addPreference(sourceDescriptions);
+        sourceDescriptions.setDependency("semantic-search-enabled");
 
         Preference sourceStatus = new Preference(requireContext());
         sourceStatus.setKey("semantic-app-source-status");
@@ -426,8 +426,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         model.setEntryValues(new CharSequence[]{SemanticEmbeddingScorer.MODEL_ID});
         model.setDefaultValue(SemanticEmbeddingScorer.MODEL_ID);
         model.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        model.setDependency("semantic-search-enabled");
         category.addPreference(model);
+        model.setDependency("semantic-search-enabled");
 
         ListPreference dimensions = new ListPreference(requireContext());
         dimensions.setKey("semantic-embedding-dimensions");
@@ -436,8 +436,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         dimensions.setEntryValues(new CharSequence[]{"64", "128", "256"});
         dimensions.setDefaultValue("128");
         dimensions.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        dimensions.setDependency("semantic-search-enabled");
         category.addPreference(dimensions);
+        dimensions.setDependency("semantic-search-enabled");
 
         ListPreference threshold = new ListPreference(requireContext());
         threshold.setKey("semantic-threshold");
@@ -446,8 +446,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         threshold.setEntryValues(new CharSequence[]{"0.26", "0.34", "0.42", "0.52"});
         threshold.setDefaultValue("0.34");
         threshold.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
-        threshold.setDependency("semantic-search-enabled");
         category.addPreference(threshold);
+        threshold.setDependency("semantic-search-enabled");
 
         Preference status = new Preference(requireContext());
         status.setKey("semantic-hnsw-status");
@@ -460,7 +460,6 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         rebuild.setKey("semantic-hnsw-rebuild");
         rebuild.setTitle("Rebuild semantic HNSW index");
         rebuild.setSummary("Recompute candidate vectors and the HNSW graph now. Normal search remains available while the replacement index builds.");
-        rebuild.setDependency("semantic-search-enabled");
         rebuild.setOnPreferenceClickListener(preference -> {
             SemanticHnswIndex.getInstance().scheduleRebuild(getDataHandler(), prefs);
             Preference currentStatus = findPreference("semantic-hnsw-status");
@@ -470,6 +469,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
             return true;
         });
         category.addPreference(rebuild);
+        rebuild.setDependency("semantic-search-enabled");
 
         Preference info = new Preference(requireContext());
         info.setKey("semantic-model-info");

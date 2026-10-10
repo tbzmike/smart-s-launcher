@@ -5,6 +5,7 @@ import static org.junit.Assert.*;
 import android.app.job.JobScheduler;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Bitmap;
@@ -41,6 +42,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.DataActivityViewerActivity;
@@ -65,6 +67,8 @@ public class FeaturePortBehaviorTest {
     @Before public void setUp() {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        assertEquals(PackageManager.PERMISSION_GRANTED, context.getPackageManager()
+                .checkPermission("android.permission.ACCESS_NETWORK_STATE", context.getPackageName()));
         prefs.edit().putBoolean("semantic-search-enabled", false)
                 .putBoolean(AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, false)
                 .putString("smart-history-layout", "vertical").commit();
@@ -113,16 +117,23 @@ public class FeaturePortBehaviorTest {
 
     @Test public void dateControlHasOneOwnerAndDoesNotCoverHistoryRows() throws Exception {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            BaselineBehaviorTest.await(scenario, activity -> KissApplication.getApplication(activity)
+                    .getDataHandler().isAllProvidersLoaded(), "providers for date control");
             BaselineBehaviorTest.awaitHistory(scenario);
             scenario.onActivity(activity -> {
+                activity.searchEditText.setText("");
+                activity.displayKissBar(false);
                 SearchHandler.getInstance().cancelSearch();
                 activity.adapter.updateResults(activity, BaselineBehaviorTest.fixtures(activity, true), false, "");
                 activity.list.setSelection(0);
+                activity.onHistoryDateMetadataLoaded();
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             BaselineBehaviorTest.await(scenario, activity -> {
                 View label = findDescription(activity.listContainer, "History date section");
-                return label != null && label.getHeight() > 0 && activity.list.getChildCount() > 0;
+                return label != null && label.getVisibility() == View.VISIBLE
+                        && label.getHeight() > 0 && activity.adapter.getCount() == 24
+                        && activity.list.getChildCount() > 0;
             }, "laid-out history date control");
             scenario.onActivity(activity -> {
                 View label = findDescription(activity.listContainer, "History date section");
@@ -177,31 +188,43 @@ public class FeaturePortBehaviorTest {
     }
 
     @Test public void chronologicalHeaderRestoresNonChronologicalLayoutAndDoesNotDuplicateViews() {
-        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
-            FrameLayout host = new FrameLayout(context);
-            ListView content = new ListView(context);
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -1);
-            params.topMargin = 7;
-            host.addView(content, params);
-            ChronologicalDateScroller scroller = new ChronologicalDateScroller(context, host);
-            for (int i = 0; i < 20; i++) {
-                scroller.setSource(40, position -> System.currentTimeMillis(), (position, offset) -> {});
-            }
-            assertEquals(3, host.getChildCount());
-            assertTrue(((FrameLayout.LayoutParams) content.getLayoutParams()).topMargin > 7);
-            TextView header = (TextView) host.getChildAt(1);
-            header.setTextSize(40);
-            for (int pass = 0; pass < 2; pass++) {
-                host.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
-                        View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.EXACTLY));
-                host.layout(0, 0, 1080, 1600);
-            }
-            assertTrue("Large date label covers chronological rows", content.getTop() >= header.getBottom());
-            scroller.setSource(0, null, null);
-            assertEquals(7, ((FrameLayout.LayoutParams) content.getLayoutParams()).topMargin);
-            assertEquals(View.GONE, host.getChildAt(1).getVisibility());
-            assertEquals(View.GONE, host.getChildAt(2).getVisibility());
-        });
+        // A window is needed for the follow-up layout requested when the header height changes.
+        try (ActivityScenario<SettingsActivity> scenario = ActivityScenario.launch(SettingsActivity.class)) {
+            FrameLayout[] host = new FrameLayout[1];
+            ChronologicalDateScroller[] scroller = new ChronologicalDateScroller[1];
+            scenario.onActivity(activity -> {
+                host[0] = new FrameLayout(activity);
+                ListView content = new ListView(activity);
+                FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -1);
+                params.topMargin = 7;
+                host[0].addView(content, params);
+                scroller[0] = new ChronologicalDateScroller(activity, host[0]);
+                for (int i = 0; i < 20; i++) {
+                    scroller[0].setSource(40, position -> System.currentTimeMillis(), (position, offset) -> {});
+                }
+                assertEquals(3, host[0].getChildCount());
+                assertTrue(((FrameLayout.LayoutParams) content.getLayoutParams()).topMargin > 7);
+                ((TextView) host[0].getChildAt(1)).setTextSize(40);
+                activity.setContentView(host[0]);
+            });
+            AtomicBoolean laidOut = new AtomicBoolean();
+            long deadline = SystemClock.uptimeMillis() + 30_000L;
+            do {
+                scenario.onActivity(activity -> {
+                    View content = host[0].getChildAt(0), header = host[0].getChildAt(1);
+                    laidOut.set(header.getHeight() > 0 && content.getTop() >= header.getBottom());
+                });
+                if (laidOut.get()) break;
+                SystemClock.sleep(50);
+            } while (SystemClock.uptimeMillis() < deadline);
+            assertTrue("Large date label covers chronological rows", laidOut.get());
+            scenario.onActivity(activity -> {
+                scroller[0].setSource(0, null, null);
+                assertEquals(7, ((FrameLayout.LayoutParams) host[0].getChildAt(0).getLayoutParams()).topMargin);
+                assertEquals(View.GONE, host[0].getChildAt(1).getVisibility());
+                assertEquals(View.GONE, host[0].getChildAt(2).getVisibility());
+            });
+        }
     }
 
     @Test public void queuedUpdateDeduplicatesBroadcastsAndPreservesNewerRequest() {
