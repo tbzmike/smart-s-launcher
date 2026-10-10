@@ -188,7 +188,7 @@ final class HistoryVisualEnhancer {
             View child = activity.list.getChildAt(i);
             Result<?> result = activity.adapter.getItem(position);
             if (child != null && result != null) {
-                UniversalHistoryTimestamp.bind(child, result, activity);
+                activity.adapter.rebindVisibleHistoryPresentation(child, result, activity);
             }
         }
     }
