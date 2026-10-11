@@ -30,13 +30,16 @@ public abstract class ResultWithTags<T extends PojoWithTags> extends Result<T> {
     protected void buildPopupMenu(Context context, ArrayAdapter<ListPopup.Item> adapter) {
         super.buildPopupMenu(context, adapter);
 
-        adapter.add(new ListPopup.Item(context, R.string.menu_tags_edit));
+        if (supportsTagEditing()) adapter.add(new ListPopup.Item(context, R.string.menu_tags_edit));
     }
 
 
+    /** Some system results (notifications and frozen placeholders) do not represent editable shortcuts. */
+    protected boolean supportsTagEditing() { return true; }
+
     @Override
     boolean popupMenuClickHandler(Context context, RecordAdapter parent, @StringRes int stringId, View parentView) {
-        if (stringId == R.string.menu_tags_edit) {
+        if (stringId == R.string.menu_tags_edit && supportsTagEditing()) {
             launchEditTagsDialog(context, parent, pojo);
             return true;
         }
