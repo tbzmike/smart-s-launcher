@@ -21,7 +21,8 @@ jobs:
     if: >-
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch != 'updater-channel'
+      github.event.workflow_run.head_branch != 'updater-channel' &&
+      github.event.workflow_run.head_branch != 'feature/3.30.169-pixel-history-shortcut-tags'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout exact tested source
