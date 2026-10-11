@@ -108,8 +108,16 @@ public class AutoScrollPreviewTextView extends TextView {
 
     /** Re-evaluate a retained/recycled preview before the adapter measures it. */
     public void refreshConfiguredBehavior() {
+        boolean modeChanged = autoExpand != TextOverflowMode.isAutoExpandForHistory(getContext());
         refreshOverflowMode();
         applyConfiguredBehavior();
+        if (modeChanged && getText() != null) {
+            // Rebuild TextView's cached StaticLayout/BoringLayout. Merely altering
+            // maxLines and ellipsize leaves a retained marquee's old one-line
+            // Layout in place on some Android versions after returning to Expand.
+            setTextKeepState(getText());
+            requestLayout();
+        }
     }
 
     @Override
