@@ -74,8 +74,11 @@ public final class HistoryLongTextRegressionTest {
                         text.getMeasuredHeight() <= text.getLineHeight() * 2);
 
                 measure(message, px);
-                assertTrue("Compact preview must fit inside a two-line viewport",
-                        message.getMeasuredHeight() <= message.getLineHeight() * 3);
+                int twoLineViewport = message.getLineHeight() * 2
+                        + message.getCompoundPaddingTop() + message.getCompoundPaddingBottom();
+                assertTrue("Compact preview must fit two lines plus configured padding: "
+                        + message.getMeasuredHeight() + " > " + twoLineViewport,
+                        message.getMeasuredHeight() <= twoLineViewport);
 
                 assertTrue(prefs.edit().putString("smart-text-overflow-mode", "auto_expand").commit());
                 measure(text, px);
