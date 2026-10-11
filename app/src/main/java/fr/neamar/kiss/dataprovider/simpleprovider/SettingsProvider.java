@@ -141,11 +141,15 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
     private SettingPojo createPojo(String name, String packageName, String settingName, @DrawableRes int resId) {
         SettingPojo pojo = new SettingPojo(getId(settingName), settingName, packageName, resId);
         pojo.setName(name, true);
+        pojo.setTags(KissApplication.getApplication(context).getDataHandler()
+                .getTagsHandler().getTags(pojo.id));
         return pojo;
     }
     private SettingPojo createPojo(String name, String settingName, @DrawableRes int resId) {
         SettingPojo pojo = new SettingPojo(getId(settingName), settingName, resId);
         pojo.setName(name, true);
+        pojo.setTags(KissApplication.getApplication(context).getDataHandler()
+                .getTagsHandler().getTags(pojo.id));
         return pojo;
     }
 
