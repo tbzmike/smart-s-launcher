@@ -73,6 +73,7 @@ public final class HistoryLongTextRegressionTest {
                 assertTrue("Long text must not keep the old expanded tile height",
                         text.getMeasuredHeight() <= text.getLineHeight() * 2);
 
+                message.refreshConfiguredBehavior();
                 measure(message, px);
                 int twoLineViewport = message.getLineHeight() * 2
                         + message.getCompoundPaddingTop() + message.getCompoundPaddingBottom();
@@ -83,6 +84,7 @@ public final class HistoryLongTextRegressionTest {
                 assertTrue(prefs.edit().putString("smart-text-overflow-mode", "auto_expand").commit());
                 measure(text, px);
                 assertTrue("Switching back must restore every wrapped line", text.getLineCount() > 2);
+                message.refreshConfiguredBehavior();
                 measure(message, px);
                 assertTrue("Switching back restores full preview height",
                         message.getMeasuredHeight() >= message.getLineHeight() * 3);
