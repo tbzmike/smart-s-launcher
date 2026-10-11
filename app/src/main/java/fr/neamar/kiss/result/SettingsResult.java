@@ -48,12 +48,19 @@ import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 
-public class SettingsResult extends Result<SettingPojo> {
+public class SettingsResult extends ResultWithTags<SettingPojo> {
     private static final String TAG = SettingsResult.class.getSimpleName();
     private static final int ANDROID_UID_USER_RANGE = 100000;
     private static final String FEATURE_SCHEME = "feature://";
     private static final String HIDDEN_TARGETS = "hidden-launch-targets";
     private boolean launchSucceeded;
+
+    @Override
+    protected boolean supportsTagEditing() {
+        // Settings and installed-system feature actions are system shortcuts. Allow
+        // their own tags, but not transient notification tiles or disabled placeholders.
+        return !(pojo instanceof NotificationPojo) && !(pojo instanceof DisabledAppPojo);
+    }
     private volatile Drawable icon;
 
     SettingsResult(@NonNull SettingPojo pojo) {
