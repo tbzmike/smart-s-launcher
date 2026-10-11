@@ -71,6 +71,14 @@
                 tools:text="@string/stub_setting" />
         </LinearLayout>
 
+        <fr.neamar.kiss.ui.AutoMarqueeTextView
+            android:id="@+id/item_setting_tag"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="?attr/resultSubtitleSize"
+            android:visibility="gone" />
+
         <include layout="@layout/item_history_metadata" />
     </LinearLayout>
 </LinearLayout>
