@@ -91,6 +91,8 @@ public class SettingsResult extends ResultWithTags<SettingPojo> {
 
         TextView settingName = view.findViewById(R.id.item_setting_name);
         displayHighlighted(pojo.normalizedName, pojo.getName(), fuzzyScore, settingName, context);
+        TextView tagsView = view.findViewById(R.id.item_setting_tag);
+        if (tagsView != null) displayTags(context, fuzzyScore, tagsView);
 
         ImageView settingIcon = view.findViewById(R.id.item_setting_icon);
         if (!isHideIcons(context)) setAsyncDrawable(settingIcon);
