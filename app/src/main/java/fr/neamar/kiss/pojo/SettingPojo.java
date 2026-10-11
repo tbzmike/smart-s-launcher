@@ -2,7 +2,7 @@ package fr.neamar.kiss.pojo;
 
 import androidx.annotation.DrawableRes;
 
-public class SettingPojo extends Pojo {
+public class SettingPojo extends PojoWithTags {
     public final String settingName;
     public final String packageName;
     public final @DrawableRes int icon;
