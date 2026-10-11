@@ -216,7 +216,14 @@ public class AutoScrollPreviewTextView extends TextView {
         } else {
             contentHeight = getLineHeight() * VISIBLE_LINES;
         }
-        int cappedHeight = getCompoundPaddingTop() + getCompoundPaddingBottom() + contentHeight;
+        // A retained TextView can report a stale layout's second-line bottom after
+        // switching out of Auto Expand. Bound the compact preview to two actual
+        // line heights; keep the full layout intact for stepped scrolling.
+        int compactLineHeight = Math.max(1, getLineHeight());
+        int compactContentHeight = Math.min(contentHeight,
+                compactLineHeight * VISIBLE_LINES);
+        int cappedHeight = getCompoundPaddingTop() + getCompoundPaddingBottom()
+                + compactContentHeight;
         int desiredHeight = Math.min(getMeasuredHeight(), cappedHeight);
         int mode = View.MeasureSpec.getMode(heightMeasureSpec);
         int size = View.MeasureSpec.getSize(heightMeasureSpec);
