@@ -79,8 +79,16 @@ public class AutoMarqueeTextView extends TextView {
 
     /** Called by recycled rows when the saved overflow setting changes. */
     public void refreshConfiguredBehavior() {
+        boolean modeChanged = autoExpand != TextOverflowMode.isAutoExpandForHistory(getContext());
         refreshOverflowMode();
         applyConfiguredBehavior();
+        if (modeChanged && getText() != null) {
+            // Rebuild TextView's cached StaticLayout/BoringLayout. Merely altering
+            // maxLines and ellipsize leaves a retained marquee's old one-line
+            // Layout in place on some Android versions after returning to Expand.
+            setTextKeepState(getText());
+            requestLayout();
+        }
     }
 
     @Override
