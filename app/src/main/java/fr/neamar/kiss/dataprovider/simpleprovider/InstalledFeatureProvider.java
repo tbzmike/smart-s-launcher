@@ -86,6 +86,8 @@ public final class InstalledFeatureProvider extends SimpleProvider<SettingPojo> 
                 String id = SCHEME + componentKey;
                 SettingPojo pojo = new SettingPojo(id, activity.name, activity.packageName, R.drawable.setting_apps);
                 pojo.setName(label + " · " + appLabel, true);
+                pojo.setTags(fr.neamar.kiss.KissApplication.getApplication(context)
+                        .getDataHandler().getTagsHandler().getTags(pojo.id));
                 features.add(new FeatureRecord(pojo, label));
                 if (features.size() >= MAX_FEATURES) return;
             }
@@ -135,7 +137,13 @@ public final class InstalledFeatureProvider extends SimpleProvider<SettingPojo> 
             // Deliberately match only the feature label. The appended app name is display-only,
             // so searching "Instagram" returns Instagram's real launcher rather than its internals.
             MatchInfo matchInfo = SmartMatcher.match(context, query, record.normalizedLabel, record.label);
-            if (pojo.updateMatchingRelevance(matchInfo, false) && !searcher.addResult(pojo)) return;
+            boolean match = pojo.updateMatchingRelevance(matchInfo, false);
+            if (pojo.getNormalizedTags() != null) {
+                MatchInfo tagMatch = SmartMatcher.match(context, query,
+                        pojo.getNormalizedTags(), record.label);
+                match = pojo.updateMatchingRelevance(tagMatch, match);
+            }
+            if (match && !searcher.addResult(pojo)) return;
         }
     }
 
