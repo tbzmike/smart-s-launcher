@@ -99,7 +99,17 @@ public class AutoScrollPreviewTextView extends TextView {
             cancelScrollStep();
             firstVisibleLine = 0;
             scrollTo(0, 0);
+            // Without a requestLayout Android can reuse the full-height measurement
+            // of the previous mode, leaving a compact preview as tall as expanded text.
+            requestLayout();
+            invalidate();
         }
+    }
+
+    /** Re-evaluate a retained/recycled preview before the adapter measures it. */
+    public void refreshConfiguredBehavior() {
+        refreshOverflowMode();
+        applyConfiguredBehavior();
     }
 
     @Override
