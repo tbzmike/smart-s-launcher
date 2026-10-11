@@ -77,6 +77,7 @@ public class Favorites extends Forwarder {
     @Nullable private ItemTouchHelper favoriteTouchHelper;
     private String lastRenderedMode;
     private int lastPixelLimit = -1;
+    @Nullable private RecyclerView.ItemAnimator originalBarAnimator;
 
     // Pixel prediction must never block HOME rendering. The previous synchronous launch-stats
     // query ran from onResume/onFavoriteChange and could hold the main thread for several seconds.
@@ -360,6 +361,7 @@ public class Favorites extends Forwarder {
         favoriteTouchHelper = new ItemTouchHelper(new ItemMoveCallback(favoriteAdapter));
         favoriteTouchHelper.attachToRecyclerView(mainActivity.favoritesBar);
         mainActivity.favoritesBar.setAdapter(favoriteAdapter);
+        originalBarAnimator = mainActivity.favoritesBar.getItemAnimator();
 
         if (prefs.getBoolean("first-run-favorites", true)) {
             if (DBHelper.getHistoryLength(mainActivity) == 0) addDefaultAppsToFavs();
@@ -396,8 +398,9 @@ public class Favorites extends Forwarder {
             // Draw something immediately from already-loaded in-memory state. No SQLite, usage
             // query or package scan is allowed to delay HOME.
             List<Pojo> pinned = dataHandler.getFavoritesIncludingDisabled();
-            List<Pojo> immediate = buildPixelFavorites(
-                    dataHandler, pinned, pixelLimit, Collections.emptyMap(), null);
+            // Preserve the last predicted slots while usage statistics reload. Replacing
+            // the dock with pinned-only content on every HOME visit made its size jump.
+            List<Pojo> immediate = stablePixelPreview(dataHandler, pinned, pixelLimit);
             applyFavorites(immediate, mode, pixelLimit);
 
             // Prediction runs only for Pixel mode, at background priority, after HOME gets a chance
@@ -410,6 +413,32 @@ public class Favorites extends Forwarder {
         applyFavorites(dataHandler.getFavorites(), mode, pixelLimit);
     }
 
+    /** Reconcile current pins with last visible predictions without any disk or usage query. */
+    private List<Pojo> stablePixelPreview(DataHandler dataHandler,
+                                          List<Pojo> pinned, int requestedLimit) {
+        int limit = PixelFavoritesPolicy.clampMaxApps(requestedLimit);
+        List<Pojo> selected = new ArrayList<>(limit);
+        java.util.Set<String> used = new java.util.HashSet<>();
+        for (Pojo pojo : pinned) {
+            if (pojo == null) continue;
+            String key = AppIdentityResolver.canonicalSelectionKey(mainActivity, dataHandler, pojo);
+            if (TextUtils.isEmpty(key) || !used.add(key)) continue;
+            selected.add(pojo);
+            if (selected.size() >= limit) return selected;
+        }
+        if (MODE_PIXEL.equals(lastRenderedMode) && lastPixelLimit == limit) {
+            for (Result<?> previous : favoriteAdapter.results) {
+                Pojo pojo = previous.getPojo();
+                if (pojo == null) continue;
+                String key = AppIdentityResolver.canonicalSelectionKey(mainActivity, dataHandler, pojo);
+                if (TextUtils.isEmpty(key) || !used.add(key)) continue;
+                selected.add(pojo);
+                if (selected.size() >= limit) break;
+            }
+        }
+        return selected;
+    }
+
     private void applyFavorites(List<Pojo> displayed, String mode, int pixelLimit) {
         List<Result<?>> results = new ArrayList<>(displayed.size());
         for (Pojo pojo : displayed) {
@@ -418,8 +447,16 @@ public class Favorites extends Forwarder {
 
         RecyclerView favoritesBar = mainActivity.favoritesBar;
         if (favoritesBar.getLayoutManager() instanceof GridLayoutManager) {
-            ((GridLayoutManager) favoritesBar.getLayoutManager())
-                    .setSpanCount(Math.max(displayed.size(), 1));
+            int slots = MODE_PIXEL.equals(mode) ? pixelLimit : Math.max(displayed.size(), 1);
+            GridLayoutManager grid = (GridLayoutManager) favoritesBar.getLayoutManager();
+            if (grid.getSpanCount() != slots) grid.setSpanCount(slots);
+        }
+        // Pixel predictions can refresh asynchronously. Replacing the row with default
+        // RecyclerView change animations caused disappearing icons and multiple bar shifts.
+        if (MODE_PIXEL.equals(mode)) {
+            if (favoritesBar.getItemAnimator() != null) favoritesBar.setItemAnimator(null);
+        } else if (favoritesBar.getItemAnimator() == null && originalBarAnimator != null) {
+            favoritesBar.setItemAnimator(originalBarAnimator);
         }
         favoriteAdapter.setFavorites(results);
         lastRenderedMode = mode;
@@ -706,6 +743,23 @@ public class Favorites extends Forwarder {
 
     private void onClick(View v, Result<?> result) {
         Pojo pojo = result.getPojo();
+        if (isPixelMode()) {
+            // Pixel dock launches are direct. An overlapping tile-to-window animation could
+            // swallow a rapid second tap; that prevented the launch *and* its history write.
+            mainActivity.prepareExplicitHistoryLaunchReorder();
+            result.launch(mainActivity, v, mainActivity);
+            // Result.launch has already recorded a successful target exactly once.
+            // Refresh the visible History only while HOME still owns the screen. If the
+            // app has paused, MainActivity.onResume performs the normal authoritative load.
+            mainActivity.list.post(() -> {
+                if (resumed && isPixelMode() && !mainActivity.isFinishing()
+                        && mainActivity.searchEditText.length() == 0) {
+                    mainActivity.updateSearchRecords();
+                }
+            });
+            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            return;
+        }
         RecentLaunchTracker.remember(pojo);
         boolean morphLaunch = pojo instanceof AppPojo
                 || pojo instanceof ShortcutPojo
