@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.Set;
 
 import fr.neamar.kiss.NotificationHistoryActivity;
+import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
@@ -182,6 +183,12 @@ public class SettingsProvider extends SimpleProvider<SettingPojo> {
                 if (hidden.contains(pojo.id)) continue;
                 MatchInfo matchInfo = SmartMatcher.match(context, query, pojo.normalizedName, pojo.getName());
                 boolean match = pojo.updateMatchingRelevance(matchInfo, false);
+                // System settings actions are shortcuts with editable, searchable tags.
+                if (pojo.getNormalizedTags() != null) {
+                    MatchInfo tagMatch = SmartMatcher.match(context, query,
+                            pojo.getNormalizedTags(), pojo.getName());
+                    match = pojo.updateMatchingRelevance(tagMatch, match);
+                }
                 if (!match && FuzzyFactory.isFuzzyEnabled(context)) {
                     matchInfo = fr.neamar.kiss.utils.fuzzy.TypoTolerance.match(context, query, settingName);
                     match = pojo.updateMatchingRelevance(matchInfo, match);
