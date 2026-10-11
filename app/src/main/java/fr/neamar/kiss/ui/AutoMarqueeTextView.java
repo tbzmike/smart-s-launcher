@@ -86,7 +86,9 @@ public class AutoMarqueeTextView extends TextView {
             // Rebuild TextView's cached StaticLayout/BoringLayout. Merely altering
             // maxLines and ellipsize leaves a retained marquee's old one-line
             // Layout in place on some Android versions after returning to Expand.
-            setTextKeepState(getText());
+            CharSequence current = getText();
+            setText(null);
+            setText(current);
             requestLayout();
         }
     }
