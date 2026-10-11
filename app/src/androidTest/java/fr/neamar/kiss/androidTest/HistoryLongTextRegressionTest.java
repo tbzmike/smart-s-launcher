@@ -135,6 +135,13 @@ public final class HistoryLongTextRegressionTest {
     }
 
     private static void measure(View view, int width) {
+        // Framework marquee layout requires LayoutParams, just as every actual
+        // inflated History TextView has. The bare unit fixture otherwise crashes
+        // inside Android TextView.makeNewLayout() after switching modes.
+        if (view.getLayoutParams() == null) {
+            view.setLayoutParams(new FrameLayout.LayoutParams(width,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
         view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
         view.layout(0, 0, width, view.getMeasuredHeight());
