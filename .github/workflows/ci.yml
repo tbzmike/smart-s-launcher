@@ -454,7 +454,7 @@ jobs:
           git commit -qm "Publish signed Smart S Launcher 3.30.168"
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin HEAD:updater-channel
-android-169:
+  android-169:
     name: Verify long text, timestamps and scrollbar on Android 35
     if: ${{ startsWith(github.ref, 'refs/heads/feature/3.30.169-pixel-history-shortcut-tags') }}
     needs: [test, apk]
