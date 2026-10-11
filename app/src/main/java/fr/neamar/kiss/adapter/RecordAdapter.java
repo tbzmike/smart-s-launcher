@@ -455,6 +455,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (text instanceof AutoMarqueeTextView || text instanceof AutoScrollPreviewTextView) {
             if (text instanceof AutoMarqueeTextView) {
                 ((AutoMarqueeTextView) text).refreshConfiguredBehavior();
+            } else if (text instanceof AutoScrollPreviewTextView) {
+                ((AutoScrollPreviewTextView) text).refreshConfiguredBehavior();
             }
             text.setFocusable(false);
             text.setFocusableInTouchMode(false);
@@ -500,6 +502,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (text instanceof AutoMarqueeTextView || text instanceof AutoScrollPreviewTextView) {
             if (text instanceof AutoMarqueeTextView) {
                 ((AutoMarqueeTextView) text).refreshConfiguredBehavior();
+            } else if (text instanceof AutoScrollPreviewTextView) {
+                ((AutoScrollPreviewTextView) text).refreshConfiguredBehavior();
             }
             text.setFocusable(false);
             text.setFocusableInTouchMode(false);
