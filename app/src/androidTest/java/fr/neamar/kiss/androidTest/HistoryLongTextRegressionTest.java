@@ -82,6 +82,10 @@ public final class HistoryLongTextRegressionTest {
                         message.getMeasuredHeight() <= twoLineViewport);
 
                 assertTrue(prefs.edit().putString("smart-text-overflow-mode", "auto_expand").commit());
+                // Detached fixture views have no Settings/onResume notification. Real
+                // History rows are explicitly rebound by the adapter on this change.
+                // Trigger that same presentation binding in both directions.
+                text.refreshConfiguredBehavior();
                 measure(text, px);
                 assertTrue("Switching back must restore every wrapped line", text.getLineCount() > 2);
                 message.refreshConfiguredBehavior();
