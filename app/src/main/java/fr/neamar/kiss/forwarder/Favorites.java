@@ -49,6 +49,7 @@ import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.ShortcutPojo;
+import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.preference.UiEditLock;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.ui.LaunchMorphTransition;
@@ -681,6 +682,37 @@ public class Favorites extends Forwarder {
             }
         }
 
+        // Predict genuine user, dynamic and system launch shortcuts too. They have
+        // independent history identities; ordinary app aliases retain canonical app
+        // deduplication. Resolve only successful, recent shortcut launches, off the UI thread.
+        if (pinnedKeys.size() < max && launchStats != null && !launchStats.isEmpty()) {
+            List<Map.Entry<String, LaunchStatsProvider.LaunchStats>> shortcutHistory =
+                    new ArrayList<>(launchStats.entrySet());
+            shortcutHistory.sort((left, right) -> {
+                int rank = PixelFavoritesPolicy.comparePrediction(
+                        predictionSignal(left.getValue(), 0L),
+                        predictionSignal(right.getValue(), 0L));
+                return rank != 0 ? rank : left.getKey().compareTo(right.getKey());
+            });
+            int checked = 0;
+            for (Map.Entry<String, LaunchStatsProvider.LaunchStats> entry : shortcutHistory) {
+                if (++checked > 96 || pinnedKeys.size() + rankedKeys.size() >= max * 5) break;
+                String historyId = entry.getKey();
+                if (TextUtils.isEmpty(historyId) || !(historyId.startsWith(ShortcutPojo.SCHEME)
+                        || historyId.startsWith("setting://")
+                        || historyId.startsWith("feature://"))) continue;
+                LaunchStatsProvider.LaunchStats stat = entry.getValue();
+                if (stat == null || stat.totalLaunches <= 0) continue;
+                Pojo candidate = dataHandler.getPojo(historyId);
+                if (!(candidate instanceof ShortcutPojo || candidate instanceof SettingPojo)) continue;
+                String key = AppIdentityResolver.canonicalSelectionKey(
+                        mainActivity, dataHandler, candidate);
+                if (TextUtils.isEmpty(key) || pojoByKey.containsKey(key)) continue;
+                rankedKeys.add(key);
+                pojoByKey.put(key, candidate);
+            }
+        }
+
         List<String> selectedKeys = PixelFavoritesPolicy.select(
                 pinnedKeys, rankedKeys, max);
         List<Pojo> selected = new ArrayList<>(selectedKeys.size());
@@ -744,25 +776,33 @@ public class Favorites extends Forwarder {
     private void onClick(View v, Result<?> result) {
         Pojo pojo = result.getPojo();
         if (isPixelMode()) {
-            // Pixel dock launches are direct. An overlapping tile-to-window animation could
-            // swallow a rapid second tap; that prevented the launch *and* its history write.
+            RecentLaunchTracker.remember(pojo);
             mainActivity.prepareExplicitHistoryLaunchReorder();
-            result.launch(mainActivity, v, mainActivity);
-            // Result.launch has already recorded a successful target exactly once.
-            // Refresh the visible History only while HOME still owns the screen. If the
-            // app has paused, MainActivity.onResume performs the normal authoritative load.
-            mainActivity.list.post(() -> {
-                if (resumed && isPixelMode() && !mainActivity.isFinishing()
-                        && mainActivity.searchEditText.length() == 0) {
-                    mainActivity.updateSearchRecords();
-                }
-            });
+            Runnable launch = () -> {
+                result.launch(mainActivity, v, mainActivity);
+                // Result.launch records the target exactly once. Refresh only after
+                // launching; normal onResume will refresh again if Home was paused.
+                mainActivity.list.post(() -> {
+                    if (resumed && isPixelMode() && !mainActivity.isFinishing()
+                            && mainActivity.searchEditText.length() == 0) {
+                        mainActivity.updateSearchRecords();
+                    }
+                });
+            };
+            boolean animatedTarget = pojo instanceof AppPojo
+                    || pojo instanceof ShortcutPojo
+                    || pojo instanceof SettingPojo
+                    || pojo instanceof DisabledAppPojo;
+            if (!animatedTarget || !LaunchMorphTransition.start(mainActivity, v, launch)) {
+                launch.run();
+            }
             v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
             return;
         }
         RecentLaunchTracker.remember(pojo);
         boolean morphLaunch = pojo instanceof AppPojo
                 || pojo instanceof ShortcutPojo
+                || pojo instanceof SettingPojo
                 || pojo instanceof DisabledAppPojo;
         if (morphLaunch) {
             Runnable launch = () -> result.launch(mainActivity, v, mainActivity);
