@@ -150,7 +150,7 @@ public final class AppUpdater {
         }
     }
 
-    private static final class ReleaseAsset {
+    static final class ReleaseAsset {
         final String name;
         final String downloadUrl;
         final long size;
