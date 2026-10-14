@@ -840,12 +840,34 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                     Toast.LENGTH_LONG).show();
             return true;
         } else if (itemId == R.id.load_avatars) {
-            Toast.makeText(this, "Loading avatars for recent history…", Toast.LENGTH_SHORT).show();
-            NotificationAvatarSupport.loadHistoryAvatarsAsync(this, (scanned, linked, fresh) -> {
-                updateSearchRecords();
-                Toast.makeText(this, "Avatar scan complete: " + linked + " of " + scanned
-                        + " history items linked to cached identity images", Toast.LENGTH_LONG).show();
+            boolean started = NotificationAvatarSupport.loadHistoryAvatarsAsync(this,
+                    new NotificationAvatarSupport.LoadCallback() {
+                @Override public void onProgress(int scanned, int linked) {
+                    if (scanned % 2000 == 0) {
+                        Toast.makeText(MainActivity.this,
+                                "Avatar scan: checked " + scanned + " history entries; "
+                                        + linked + " pictures found", Toast.LENGTH_SHORT).show();
+                    }
+                }
+                @Override public void onFinished(int scanned, int linked, int fresh) {
+                    updateSearchRecords();
+                    Toast.makeText(MainActivity.this,
+                            "Avatar scan finished: checked " + scanned + " history entries. "
+                                    + linked + " have photos; " + (scanned - linked)
+                                    + " have no Android-accessible photo. New: " + fresh,
+                            Toast.LENGTH_LONG).show();
+                }
+                @Override public void onFailed(int scanned, int linked) {
+                    Toast.makeText(MainActivity.this,
+                            "Avatar scan stopped before completion after " + scanned
+                                    + " entries (" + linked + " photos). Try again.",
+                            Toast.LENGTH_LONG).show();
+                }
             });
+            Toast.makeText(this, started
+                            ? "Scanning all saved notification avatars in the background…"
+                            : "Avatar scan is already running",
+                    Toast.LENGTH_LONG).show();
             return true;
         } else if (itemId == R.id.preferences) {
             startActivity(new Intent(this, SettingsActivity.class));
