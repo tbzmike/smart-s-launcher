@@ -34,11 +34,17 @@ final class HistoryDisplayForwarder extends Forwarder {
     private LinearLayout wheelColumn;
     private TextView wheelOlder;
     private TextView wheelNewer;
-    private final BoundedHistoryWindow wheelWindow = new BoundedHistoryWindow();
+    private final WheelHistoryWindow wheelWindow = new WheelHistoryWindow();
     private int lastWheelWindowStart = -1;
     private final ArrayList<Integer> wheelViewTypes = new ArrayList<>();
     private final Runnable rebuildWheelWhenIdle = this::rebuildWheelNow;
     private boolean wheelTransformFramePosted;
+    private boolean wheelRebuildPosted;
+    private boolean programmaticWheelScroll;
+    private final Runnable flushWheelRebuild = () -> {
+        wheelRebuildPosted = false;
+        if (WHEEL_3D.equals(activeMode)) runWhenScrollIdle(rebuildWheelWhenIdle);
+    };
     private View edgeEffect;
     private String activeMode = VERTICAL;
     private boolean wheelHasBeenEntered;
@@ -78,6 +84,7 @@ final class HistoryDisplayForwarder extends Forwarder {
             mainActivity.list.cancelWhenScrollIdle(animateVerticalRowsWhenIdle);
         }
         if (wheelScroller != null) {
+            wheelScroller.removeCallbacks(flushWheelRebuild);
             wheelScroller.scrollIdleGate.cancel(rebuildWheelWhenIdle);
             wheelScroller.scrollIdleGate.destroy();
         }
@@ -88,6 +95,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         wheelColumn = null;
         wheelViewTypes.clear();
         wheelWindow.reset();
+        wheelRebuildPosted = false;
         wheelOlder = null;
         wheelNewer = null;
     }
@@ -260,6 +268,8 @@ final class HistoryDisplayForwarder extends Forwarder {
 
     private void clearHiddenWheelTree() {
         if (wheelColumn == null) return;
+        if (wheelScroller != null) wheelScroller.removeCallbacks(flushWheelRebuild);
+        wheelRebuildPosted = false;
         resetWheelTransforms();
         if (wheelColumn.getChildCount() > 0) wheelColumn.removeAllViews();
         wheelViewTypes.clear();
@@ -281,7 +291,11 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private void rebuildWheel() {
-        runWhenScrollIdle(rebuildWheelWhenIdle);
+        // Providers can publish multiple result/metadata snapshots in one frame.
+        // Coalesce rather than repeatedly inflate and remeasure the entire 3D hierarchy.
+        if (!WHEEL_3D.equals(activeMode) || wheelScroller == null || wheelRebuildPosted) return;
+        wheelRebuildPosted = true;
+        wheelScroller.postDelayed(flushWheelRebuild, 64L);
     }
 
     private void rebuildWheelNow() {
@@ -358,19 +372,10 @@ final class HistoryDisplayForwarder extends Forwarder {
                     mainActivity.getResources().getDisplayMetrics().density * 8000f);
             bindResultInteraction(shell, position);
 
-            long uniqueId = mainActivity.adapter.getItem(position).getUniqueId();
-            final int animationIndex = Math.max(0, count - 1 - position);
-            if (newVisual && SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
-                    && animatedWheelItems.add(uniqueId)) {
-                SmartAnimationEngine.reset(source);
-                final View animatedSource = source;
-                source.post(() -> {
-                    if (animatedSource.getParent() instanceof WheelItemShell
-                            && WHEEL_3D.equals(activeMode)) {
-                        SmartAnimationEngine.animateTileListItem(animatedSource, animationIndex);
-                    }
-                });
-            }
+            // 3D transforms run on the shell; never stack a second tile animation on
+            // each nested content view during an initial/history rebuild. That many
+            // hardware layers caused severe churn on GPU-constrained devices.
+            if (newVisual) SmartAnimationEngine.reset(source);
         }
 
         while (wheelColumn.getChildCount() > count) {
@@ -422,34 +427,10 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private void animateVisibleWheelRows() {
-        if (!WHEEL_3D.equals(activeMode) || wheelScroller == null || wheelColumn == null
-                || mainActivity.adapter == null || wheelScroller.scrollIdleGate.isScrolling()) {
-            return;
-        }
-
-        if (!SmartAnimationEngine.isEnabled(mainActivity)) {
-            resetVisibleWheelContentAnimations();
-            return;
-        }
-
-        int viewportTop = wheelScroller.getScrollY();
-        int viewportBottom = viewportTop + wheelScroller.getHeight();
-        int visibleIndex = 0;
-        int count = Math.min(wheelColumn.getChildCount(), mainActivity.adapter.getCount());
-        for (int position = 0; position < count; position++) {
-            View shell = wheelColumn.getChildAt(position);
-            if (shell.getBottom() < viewportTop || shell.getTop() > viewportBottom) continue;
-            int absolute = wheelWindow.start(mainActivity.adapter.getCount()) + position;
-            if (absolute < 0 || absolute >= mainActivity.adapter.getCount()) continue;
-            long uniqueId = mainActivity.adapter.getItem(absolute).getUniqueId();
-            if (animatedWheelItems.add(uniqueId)) {
-                View content = wheelContent(shell);
-                if (content != null) {
-                    SmartAnimationEngine.animateTileListItem(content, visibleIndex);
-                }
-            }
-            visibleIndex++;
-        }
+        // Wheel shells already animate geometrically as they scroll. Independently
+        // animating every nested TextView/row here caused repeated allocations and
+        // competing hardware layers. Keep Wheel animation to one bounded transform pass.
+        if (WHEEL_3D.equals(activeMode)) scheduleWheelTransforms();
     }
 
     private void scheduleVisibleVerticalAnimations() {
@@ -568,7 +549,12 @@ final class HistoryDisplayForwarder extends Forwarder {
         int target = Math.round(child.getTop() + child.getHeight() / 2f
                 - wheelScroller.getHeight() / 2f);
         int max = Math.max(0, wheelColumn.getHeight() - wheelScroller.getHeight());
-        wheelScroller.scrollTo(0, Math.max(0, Math.min(max, target)));
+        programmaticWheelScroll = true;
+        try {
+            wheelScroller.scrollTo(0, Math.max(0, Math.min(max, target)));
+        } finally {
+            programmaticWheelScroll = false;
+        }
     }
 
     private void scheduleWheelTransforms() {
@@ -697,7 +683,10 @@ final class HistoryDisplayForwarder extends Forwarder {
         @Override
         protected void onScrollChanged(int l, int t, int oldl, int oldt) {
             super.onScrollChanged(l, t, oldl, oldt);
-            scrollIdleGate.onScrollChanged();
+            // Centering an item programmatically is not a user scroll. Sending it
+            // through the global scroll gate cancels in-flight History searches,
+            // leaving Wheel blank after returning Home.
+            if (!programmaticWheelScroll) scrollIdleGate.onScrollChanged();
             scheduleWheelTransforms();
         }
 
