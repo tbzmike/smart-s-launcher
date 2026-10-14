@@ -46,9 +46,11 @@ public final class LaunchMorphTransition {
      */
     public static boolean start(Context context, View source, Runnable launchAction) {
         if (context == null || source == null || launchAction == null) return false;
-        if (!SmartAnimationEngine.isEnabled(context) || !source.isShown()
+        if (!SmartAnimationEngine.isLaunchAnimationEnabled(context) || !source.isShown()
                 || source.getWidth() <= 1 || source.getHeight() <= 1) return false;
-        if (!RUNNING.compareAndSet(false, true)) return true;
+        // A second tap must never be silently swallowed while a previous overlay
+        // is winding down. Tell the caller to launch normally without a second overlay.
+        if (!RUNNING.compareAndSet(false, true)) return false;
 
         Activity activity = findActivity(context);
         if (activity == null || activity.isFinishing()) {
