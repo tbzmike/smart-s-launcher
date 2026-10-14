@@ -1312,3 +1312,182 @@ jobs:
           git commit -qm "Publish signed Smart S Launcher 3.30.173"
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin HEAD:updater-channel
+
+  android-174:
+    name: Verify social avatars, centre taps and prior Android regressions
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.174-social-avatar-history') }}
+    needs: [test, apk]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Enable hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test real Android 35 history UI
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash scripts/verify_174_android.sh
+      - name: Preserve Android verification logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: history-174-android-35-evidence
+          path: verification-results
+          archive: true
+          if-no-files-found: ignore
+
+  signed-174:
+    name: Sign installable Smart S Launcher 3.30.174
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.174-social-avatar-history') }}
+    needs: [test, apk, android-174]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: app-release-unsigned.apk
+          path: unsigned-release
+      - name: Sign and verify original app identity
+        shell: bash
+        env:
+          SMART_S_SIGNING_KEY_B64: ${{ secrets.SMART_S_SIGNING_KEY_B64 }}
+          SMART_S_SIGNING_STORE_PASSWORD: ${{ secrets.SMART_S_SIGNING_STORE_PASSWORD }}
+          SMART_S_SIGNING_KEY_ALIAS: ${{ secrets.SMART_S_SIGNING_KEY_ALIAS }}
+          SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/smart-s-174-release.p12"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          SDK="$ANDROID_HOME/build-tools/34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null
+          test -n "$SMART_S_SIGNING_KEY_B64"
+          printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
+          chmod 602 "$KEYSTORE"
+          mkdir -p verified-apk
+          OUT="verified-apk/Smart-S-Launcher-3.30.174.apk"
+          "$SDK/apksigner" sign --ks "$KEYSTORE" --ks-type PKCS12 \
+            --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
+            --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
+            --key-pass env:SMART_S_SIGNING_KEY_PASSWORD \
+            --out "$OUT" unsigned-release/app-release-unsigned.apk
+          "$SDK/apksigner" verify --verbose --print-certs "$OUT" | tee verified-apk/apk-verification.txt
+          CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' verified-apk/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test "$CERT" = '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53'
+          "$SDK/aapt" dump badging "$OUT" > verified-apk/package-badging.txt
+          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='602'" | grep -F "versionName='3.30.174'"
+          sha256sum "$OUT" | tee verified-apk/Smart-S-Launcher-3.30.174.sha256
+          git rev-parse HEAD > verified-apk/source-commit.txt
+      - name: Publish signed APK build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.174-signed
+          path: verified-apk
+          archive: true
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-signed-174:
+    name: Publish Android-verified and originally signed 3.30.174
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.174-social-avatar-history') }}
+    needs: [signed-174, apk]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: Smart-S-Launcher-3.30.174-signed
+          path: signed
+      - uses: actions/download-artifact@v8
+        with:
+          name: app-debug.apk
+          path: debug
+      - name: Prepare Android verified signed release
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cp signed/Smart-S-Launcher-3.30.174.apk SmartSLauncher.apk
+          cp debug/app-debug.apk SmartSLauncher-debug.apk
+          test -s SmartSLauncher.apk
+          test -s SmartSLauncher-debug.apk
+          python3 - <<'PY'
+          import zipfile
+          for name in ("SmartSLauncher.apk", "SmartSLauncher-debug.apk"):
+              assert zipfile.is_zipfile(name) and zipfile.ZipFile(name).testzip() is None
+          PY
+          grep -F "versionCode='602'" signed/package-badging.txt
+          grep -F "versionName='3.30.174'" signed/package-badging.txt
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          base = "https://github.com/tbzmike/smart-s-launcher/releases/download/v3.30.174/"
+          apk = Path("SmartSLauncher.apk")
+          debug = Path("SmartSLauncher-debug.apk")
+          prod = {"apkName": apk.name, "apkUrl": base + apk.name,
+                  "size": apk.stat().st_size,
+                  "sha256": hashlib.sha256(apk.read_bytes()).hexdigest()}
+          dev = {"apkName": debug.name, "apkUrl": base + debug.name,
+                 "size": debug.stat().st_size,
+                 "sha256": hashlib.sha256(debug.read_bytes()).hexdigest()}
+          manifest = {
+              "version": "3.30.174", "versionCode": 602,
+              "runId": int(os.environ["SOURCE_RUN_ID"]),
+              "sha": os.environ["SOURCE_SHA"], "variant": "signed_release",
+              "apkName": prod["apkName"], "apkUrl": prod["apkUrl"], "sha256": prod["sha256"],
+              "production": prod, "debug": dev
+          }
+          Path("latest-green.json").write_text(json.dumps(manifest, separators=(',', ':')) + '\n')
+          PY
+      - name: Publish installable signed APK after tests pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v3.30.174"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber SmartSLauncher.apk SmartSLauncher-debug.apk latest-green.json
+          else
+            gh release create "$TAG" --latest --target "$GITHUB_SHA" \
+              --title "Smart S Launcher v3.30.174" \
+              --notes "Smart S Launcher 3.30.174: full paginated social avatar scan, Android-exposed photo matching across notification IDs for search, cards and History, lossless startup capture; preserves 3.30.173 centre taps and prior UI. Android 35 tested, debug and original-signed production APKs." \
+              SmartSLauncher.apk SmartSLauncher-debug.apk latest-green.json
+          fi
+      - name: Update in-app updater to signed APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUSH_DIR="$RUNNER_TEMP/smart-s-174-updater"
+          mkdir -p "$PUSH_DIR"
+          cp latest-green.json "$PUSH_DIR/"
+          cd "$PUSH_DIR"
+          git init -q
+          git checkout -qb updater-channel
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest-green.json
+          git commit -qm "Publish signed Smart S Launcher 3.30.174"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin HEAD:updater-channel
