@@ -584,6 +584,10 @@ final class HistoryDisplayForwarder extends Forwarder {
         float radius = Math.max(dp(160), wheelScroller.getHeight() * 0.52f);
         float overscan = wheelScroller.getHeight() * 0.35f;
         float density = mainActivity.getResources().getDisplayMetrics().density;
+        String configuredScroll = SmartAnimationEngine.isLaunchAnimationEnabled(mainActivity)
+                ? SmartAnimationEngine.getStyle(mainActivity, "smart-animation-scroll", "classic")
+                : "none";
+        WheelScrollStylePolicy.Profile motion = WheelScrollStylePolicy.forStyle(configuredScroll);
 
         int childCount = wheelColumn.getChildCount();
         int first = firstWheelChildNear(viewportTop - overscan);
@@ -598,12 +602,15 @@ final class HistoryDisplayForwarder extends Forwarder {
             child.setPivotX(child.getWidth() / 2f);
             child.setPivotY(child.getHeight() / 2f);
             child.setCameraDistance(density * 8000f);
-            child.setRotationX(-normalized * 72f);
-            float scale = 1f - 0.20f * distance;
+            child.setRotationX(-normalized * motion.tilt);
+            child.setRotationY(-normalized * motion.yaw);
+            child.setRotation(-normalized * motion.twist);
+            float scale = 1f - motion.depth * distance;
             child.setScaleX(scale);
             child.setScaleY(scale);
-            child.setAlpha(Math.max(0.22f, 1f - 0.78f * distance));
-            child.setTranslationY(-normalized * distance * dp(22));
+            child.setAlpha(Math.max(0.22f, 1f - motion.fade * distance));
+            child.setTranslationX(normalized * distance * dp(Math.round(motion.sideways)));
+            child.setTranslationY(-normalized * distance * dp(Math.round(motion.lift)));
             child.setTranslationZ((1f - distance) * dp(18));
         }
     }
