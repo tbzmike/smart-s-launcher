@@ -32,7 +32,9 @@ import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -178,11 +180,19 @@ public final class NotificationAvatarSupport {
                             SmartStateStore.queryAvatarHistoryPage(
                                     app, HISTORY_SCAN_LIMIT, scanned);
                     if (records.isEmpty()) break;
+                    // A page may contain hundreds of notifications for one person.
+                    // Batch the preference writes and file touches rather than
+                    // scheduling hundreds of disk commits on each page.
+                    SharedPreferences.Editor batchEditor = prefs(app).edit();
+                    Set<String> touchedPaths = new HashSet<>();
                     for (NotificationHistoryRecord record : records) {
                         if (record == null) continue;
-                        if (!TextUtils.isEmpty(record.notificationId)
-                                && avatarPath(app, record.notificationId) != null) {
-                            touchAvatar(app, record.notificationId);
+                        String directPath = TextUtils.isEmpty(record.notificationId)
+                                ? null : avatarPath(app, record.notificationId);
+                        if (directPath != null) {
+                            touchedPaths.add(directPath);
+                            batchEditor.putLong(record.notificationId + "|seen",
+                                    System.currentTimeMillis());
                             linked++;
                             continue;
                         }
@@ -197,14 +207,15 @@ public final class NotificationAvatarSupport {
                             }
                         }
                         if (cached != null && !TextUtils.isEmpty(record.notificationId)) {
-                            prefs(app).edit()
-                                    .putString(record.notificationId + "|image", cached)
-                                    .putLong(record.notificationId + "|seen", System.currentTimeMillis())
-                                    .apply();
-                            touchFile(cached);
+                            batchEditor.putString(record.notificationId + "|image", cached);
+                            batchEditor.putLong(record.notificationId + "|seen",
+                                    System.currentTimeMillis());
+                            touchedPaths.add(cached);
                             linked++;
                         }
                     }
+                    batchEditor.apply();
+                    for (String path : touchedPaths) touchFile(path);
                     scanned += records.size();
                     if (callback != null) {
                         int n = scanned, matches = linked;
