@@ -35,7 +35,7 @@ run_test fr.neamar.kiss.androidTest.PixelDockTagRegressionTest \
   verification-results/pixel-dock-tags-172.log
 run_test fr.neamar.kiss.androidTest.HistoryRendererPagingRegressionTest \
   verification-results/wheel-cards-paging-172.log
-run_test fr.neamar.kiss.androidTest.HomeReturnAnimationRegressionTest \\
+run_test fr.neamar.kiss.androidTest.HomeReturnAnimationRegressionTest \
   verification-results/home-return-animations-172.log
 adb logcat -d > verification-results/logcat.txt || true
 echo "PASS: animation Home-return, Pixel/Shortcut, Wheel/Cards/List Android 35 regressions"
