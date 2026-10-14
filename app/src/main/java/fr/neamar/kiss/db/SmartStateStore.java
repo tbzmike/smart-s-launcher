@@ -270,6 +270,29 @@ public final class SmartStateStore {
         });
     }
 
+    /**
+     * Page ALL saved notification records for an explicit manual avatar scan.
+     * Uses small stable batches: never read the entire history into memory or
+     * impose the old 200-record global scan limit.
+     */
+    @NonNull
+    public static List<NotificationHistoryRecord> queryAvatarHistoryPage(
+            @NonNull Context context, int batchSize, int offset) {
+        final int page = Math.max(1, Math.min(200, batchSize));
+        final int skip = Math.max(0, offset);
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            List<NotificationHistoryRecord> results = new ArrayList<>(page);
+            try (Cursor cursor = recoveryDb.query("notification_history",
+                    notificationProjection(), null, null, null, null,
+                    "post_time DESC, _id DESC", page + " OFFSET " + skip)) {
+                while (cursor.moveToNext()) {
+                    results.add(readNotificationRecord(cursor));
+                }
+            }
+            return results;
+        });
+    }
+
     public static void updateNotificationRoute(@NonNull Context context, long dbId,
                                                @Nullable String routeUri) {
         DatabaseRecovery.runVoid(context, recoveryDb -> {
