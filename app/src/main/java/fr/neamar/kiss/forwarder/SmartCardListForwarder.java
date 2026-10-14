@@ -65,6 +65,10 @@ final class SmartCardListForwarder extends Forwarder {
     private FrameLayout container;
     private ScrollView scroller;
     private LinearLayout column;
+    private TextView olderCardPage;
+    private TextView newerCardPage;
+    private final BoundedHistoryWindow cardWindow = new BoundedHistoryWindow();
+    private String lastCardWindowQuery = "";
     private View edgeEffect;
     private boolean pendingDataSetRefresh;
     private boolean forceNextHistoryRebuild;
@@ -128,8 +132,60 @@ final class SmartCardListForwarder extends Forwarder {
         container.addView(scroller, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
                 Gravity.BOTTOM));
+        olderCardPage = createCardPageControl("↑ Older cards", Gravity.TOP,
+                () -> pageCards(true));
+        newerCardPage = createCardPageControl("↓ Newer cards", Gravity.BOTTOM,
+                () -> pageCards(false));
         migrateLegacySelection();
         applyState(true);
+    }
+
+    private TextView createCardPageControl(String text, int gravity, Runnable action) {
+        TextView control = new TextView(mainActivity);
+        control.setText(text);
+        control.setTextSize(13f);
+        control.setTextColor(Color.WHITE);
+        control.setGravity(Gravity.CENTER);
+        control.setPadding(dp(14), dp(8), dp(14), dp(8));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.rgb(58, 64, 75));
+        background.setCornerRadius(dp(18));
+        control.setBackground(background);
+        control.setElevation(dp(5));
+        control.setVisibility(View.GONE);
+        control.setOnClickListener(v -> action.run());
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                gravity | Gravity.CENTER_HORIZONTAL);
+        if (gravity == Gravity.TOP) lp.topMargin = dp(8);
+        else lp.bottomMargin = dp(8);
+        container.addView(control, lp);
+        return control;
+    }
+
+    private void pageCards(boolean older) {
+        if (!isEnabled() || mainActivity.adapter == null) return;
+        int total = mainActivity.adapter.getCount();
+        if (older) cardWindow.older(total);
+        else cardWindow.newer(total);
+        rebuild();
+        if (scroller != null) scroller.post(() -> {
+            if (isEnabled() && column != null && scroller != null) {
+                scroller.scrollTo(0, Math.max(0, column.getHeight() - scroller.getHeight()));
+            }
+        });
+    }
+
+    private void updateCardPaging(int total) {
+        boolean enabled = isEnabled() && column != null;
+        if (olderCardPage != null) olderCardPage.setVisibility(enabled
+                && cardWindow.hasOlder(total) ? View.VISIBLE : View.GONE);
+        if (newerCardPage != null) newerCardPage.setVisibility(enabled
+                && cardWindow.hasNewer(total) ? View.VISIBLE : View.GONE);
+        if (enabled) {
+            if (olderCardPage != null) olderCardPage.bringToFront();
+            if (newerCardPage != null) newerCardPage.bringToFront();
+        }
     }
 
     void onResume() {
@@ -193,6 +249,9 @@ final class SmartCardListForwarder extends Forwarder {
         accentCache.clear();
         container = null;
         scroller = null;
+        olderCardPage = null;
+        newerCardPage = null;
+        cardWindow.reset();
         column = null;
         edgeEffect = null;
         pendingDataSetRefresh = false;
@@ -395,10 +454,13 @@ final class SmartCardListForwarder extends Forwarder {
                 lastAnimationScope = null;
                 SmartAnimationEngine.animateWindowSwitch(null, scroller);
             }
+            updateCardPaging(mainActivity.adapter == null ? 0 : mainActivity.adapter.getCount());
             if (force) rebuild();
         } else {
             boolean wasVisible = scroller.getVisibility() == View.VISIBLE;
             scroller.setVisibility(View.GONE);
+            if (olderCardPage != null) olderCardPage.setVisibility(View.GONE);
+            if (newerCardPage != null) newerCardPage.setVisibility(View.GONE);
             if (wasVisible && column != null) {
                 // Do not keep a second complete card hierarchy attached behind Vertical List/3D
                 // Wheel. Hidden AutoMarquee/preview views retain callbacks and memory even though
@@ -411,6 +473,7 @@ final class SmartCardListForwarder extends Forwarder {
                 pendingDataSetRefresh = false;
                 forceNextHistoryRebuild = false;
                 renderedActiveQuery = false;
+                cardWindow.reset();
             }
             if (HistoryDisplayForwarder.VERTICAL.equals(
                     prefs.getString(HistoryDisplayForwarder.PREF_LAYOUT, HistoryDisplayForwarder.VERTICAL))) {
@@ -456,6 +519,15 @@ final class SmartCardListForwarder extends Forwarder {
         cancelDeferredRefreshIdleProbe();
         pendingDataSetRefresh = false;
         boolean activeQuery = isActiveQuery();
+        String currentQuery = activeQuery ? mainActivity.searchEditText.getText().toString() : "";
+        if (!TextUtils.equals(currentQuery, lastCardWindowQuery)) {
+            cardWindow.reset();
+            lastCardWindowQuery = currentQuery;
+        }
+        int allResults = mainActivity.adapter.getCount();
+        int windowStart = cardWindow.start(allResults);
+        int windowEnd = cardWindow.end(allResults);
+        updateCardPaging(allResults);
         String animationScope = animationScope(activeQuery);
         if (!TextUtils.equals(lastAnimationScope, animationScope)) {
             animatedCardIds.clear();
@@ -484,8 +556,8 @@ final class SmartCardListForwarder extends Forwarder {
             activeQueryCardSignatures.clear();
             historyCardSignatures.clear();
             column.removeAllViews();
-            int count = mainActivity.adapter.getCount();
-            for (int position = 0; position < count; position++) {
+            int count = windowEnd - windowStart;
+            for (int position = windowStart; position < windowEnd; position++) {
                 Result<?> result = mainActivity.adapter.getItem(position);
                 View source = mainActivity.adapter.getView(position, null, column);
                 View item = createCardItem(source, result, position, latestNotifications);
@@ -531,8 +603,10 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         Map<String, String> nextSignatures = new HashMap<>();
-        int targetCount = mainActivity.adapter.getCount();
-        for (int position = 0; position < targetCount; position++) {
+        int start = cardWindow.start(mainActivity.adapter.getCount());
+        int end = cardWindow.end(mainActivity.adapter.getCount());
+        int targetCount = end - start;
+        for (int position = start; position < end; position++) {
             Result<?> result = mainActivity.adapter.getItem(position);
             String id = result.getPojoId();
             String signature = cardSignature(result);
@@ -550,8 +624,8 @@ final class SmartCardListForwarder extends Forwarder {
                 desired = createCardItem(
                         source, result, position, Collections.emptyMap());
             }
-            placeCardChild(desired, position);
-            int animationIndex = Math.max(0, targetCount - 1 - position);
+            placeCardChild(desired, position - start);
+            int animationIndex = Math.max(0, end - 1 - position);
             if (created && SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
                     && animatedCardIds.add(id)) {
                 SmartAnimationEngine.animateTileListItem(desired, animationIndex);
@@ -591,8 +665,10 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         Map<String, String> nextSignatures = new HashMap<>();
-        int targetCount = mainActivity.adapter.getCount();
-        for (int position = 0; position < targetCount; position++) {
+        int start = cardWindow.start(mainActivity.adapter.getCount());
+        int end = cardWindow.end(mainActivity.adapter.getCount());
+        int targetCount = end - start;
+        for (int position = start; position < end; position++) {
             Result<?> result = mainActivity.adapter.getItem(position);
             if (result == null) continue;
             String id = result.getPojoId();
@@ -610,8 +686,8 @@ final class SmartCardListForwarder extends Forwarder {
                 View source = mainActivity.adapter.getView(position, null, column);
                 desired = createCardItem(source, result, position, Collections.emptyMap());
             }
-            placeCardChild(desired, position);
-            int animationIndex = Math.max(0, targetCount - 1 - position);
+            placeCardChild(desired, position - start);
+            int animationIndex = Math.max(0, end - 1 - position);
             if (created && SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
                     && animatedCardIds.add(id)) {
                 SmartAnimationEngine.animateTileListItem(desired, animationIndex);
