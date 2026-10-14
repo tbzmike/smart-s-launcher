@@ -41,12 +41,12 @@ final class HistoryDisplayForwarder extends Forwarder {
     private boolean wheelTransformFramePosted;
     private boolean wheelRebuildPosted;
     private boolean programmaticWheelScroll;
+    private View edgeEffect;
+    private String activeMode = VERTICAL;
     private final Runnable flushWheelRebuild = () -> {
         wheelRebuildPosted = false;
         if (WHEEL_3D.equals(activeMode)) runWhenScrollIdle(rebuildWheelWhenIdle);
     };
-    private View edgeEffect;
-    private String activeMode = VERTICAL;
     private boolean wheelHasBeenEntered;
     private String lastWheelQuery = "";
     private long lastWheelPriorityId = Long.MIN_VALUE;
