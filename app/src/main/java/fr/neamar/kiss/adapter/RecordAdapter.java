@@ -344,6 +344,32 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             icon.setOnClickListener(launch);
             icon.setOnLongClickListener(menu);
         }
+
+        // Labels in app, user shortcut and system shortcut rows can become independently
+        // touch-consuming after styling/long-press setup. The row's OnClickListener
+        // cannot receive those events. Give only ordinary launch text the same direct
+        // action; preserve notification deep links, icons and any actual buttons.
+        if (result.getPojo() instanceof AppPojo
+                || result.getPojo() instanceof ShortcutPojo
+                || result.getPojo() instanceof SettingPojo) {
+            int[] launchTextIds = {
+                    R.id.item_app_name, R.id.item_app_tag,
+                    R.id.item_shortcut_tag, R.id.item_setting_name,
+                    R.id.item_setting_prefix, R.id.item_history_meta
+            };
+            for (int id : launchTextIds) {
+                View child = row.findViewById(id);
+                if (!(child instanceof TextView) || child instanceof Button || child == row) {
+                    continue;
+                }
+                // Use the full row as the launch-animation origin. A narrow marquee
+                // TextView is otherwise a poor or zero-width animation source.
+                child.setOnClickListener(v -> launch.onClick(row));
+                child.setOnLongClickListener(menu);
+                child.setFocusable(false);
+                child.setFocusableInTouchMode(false);
+            }
+        }
     }
 
     private void configureNotificationTileClick(View view, Result<?> result) {
