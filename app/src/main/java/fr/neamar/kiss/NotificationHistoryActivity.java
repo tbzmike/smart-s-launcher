@@ -342,7 +342,8 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         identity.setScaleType(ImageView.ScaleType.CENTER_CROP);
         int identitySize = dp(48);
         android.graphics.drawable.Drawable identityDrawable =
-                NotificationIdentityIcon.resolve(this, record.notificationId, record.packageName);
+                NotificationIdentityIcon.resolve(this, record.notificationId, record.packageName,
+                        record.title, record.shortcutId);
         if (identityDrawable != null) identity.setImageDrawable(identityDrawable);
         identityHeader.addView(identity, new LinearLayout.LayoutParams(identitySize, identitySize));
         TextView app = new TextView(this);
@@ -448,7 +449,8 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
             android.graphics.drawable.Drawable identityDrawable =
                     NotificationIdentityIcon.resolve(
-                            NotificationHistoryActivity.this, record.notificationId, record.packageName);
+                            NotificationHistoryActivity.this, record.notificationId, record.packageName,
+                            record.title, record.shortcutId);
             if (identityDrawable != null) {
                 icon.setImageDrawable(identityDrawable);
                 if (!AppLaunchUtils.isPackageEnabled(NotificationHistoryActivity.this, record.packageName)
