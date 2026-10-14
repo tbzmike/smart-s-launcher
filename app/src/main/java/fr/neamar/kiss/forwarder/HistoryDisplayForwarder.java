@@ -1,6 +1,8 @@
 package fr.neamar.kiss.forwarder;
 
 import android.text.TextUtils;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -8,6 +10,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -29,6 +32,10 @@ final class HistoryDisplayForwarder extends Forwarder {
     private FrameLayout container;
     private WheelScrollView wheelScroller;
     private LinearLayout wheelColumn;
+    private TextView wheelOlder;
+    private TextView wheelNewer;
+    private final BoundedHistoryWindow wheelWindow = new BoundedHistoryWindow();
+    private int lastWheelWindowStart = -1;
     private final ArrayList<Integer> wheelViewTypes = new ArrayList<>();
     private final Runnable rebuildWheelWhenIdle = this::rebuildWheelNow;
     private boolean wheelTransformFramePosted;
@@ -80,6 +87,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         wheelScroller = null;
         wheelColumn = null;
         wheelViewTypes.clear();
+        wheelWindow.reset();
+        wheelOlder = null;
+        wheelNewer = null;
     }
 
     void onDataSetChanged() {
@@ -168,6 +178,53 @@ final class HistoryDisplayForwarder extends Forwarder {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
                 Gravity.BOTTOM);
         container.addView(wheelScroller, params);
+
+        // Navigation is a lightweight overlay, NOT an extra ListView adapter item.
+        // The expensive wheel hierarchy stays bounded, while every older result
+        // remains reachable through explicit page controls.
+        wheelOlder = createWheelPageControl("↑ Older history", Gravity.TOP,
+                () -> changeWheelPage(true));
+        wheelNewer = createWheelPageControl("↓ Newer history", Gravity.BOTTOM,
+                () -> changeWheelPage(false));
+    }
+
+    private TextView createWheelPageControl(String label, int gravity, Runnable onClick) {
+        TextView control = new TextView(mainActivity);
+        control.setText(label);
+        control.setTextSize(13f);
+        control.setTextColor(Color.WHITE);
+        control.setGravity(Gravity.CENTER);
+        control.setPadding(dp(14), dp(8), dp(14), dp(8));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.rgb(58, 64, 75));
+        background.setCornerRadius(dp(18));
+        control.setBackground(background);
+        control.setElevation(dp(5));
+        control.setVisibility(View.GONE);
+        control.setOnClickListener(v -> onClick.run());
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                gravity | Gravity.CENTER_HORIZONTAL);
+        if (gravity == Gravity.TOP) lp.topMargin = dp(8);
+        else lp.bottomMargin = dp(8);
+        container.addView(control, lp);
+        return control;
+    }
+
+    private void changeWheelPage(boolean older) {
+        if (!WHEEL_3D.equals(activeMode) || mainActivity.adapter == null) return;
+        int total = mainActivity.adapter.getCount();
+        if (older) wheelWindow.older(total);
+        else wheelWindow.newer(total);
+        wheelHasBeenEntered = false;
+        rebuildWheelNow();
+    }
+
+    private void updateWheelPaging(int total) {
+        if (wheelOlder != null) wheelOlder.setVisibility(WHEEL_3D.equals(activeMode)
+                && wheelWindow.hasOlder(total) ? View.VISIBLE : View.GONE);
+        if (wheelNewer != null) wheelNewer.setVisibility(WHEEL_3D.equals(activeMode)
+                && wheelWindow.hasNewer(total) ? View.VISIBLE : View.GONE);
     }
 
     private void applyMode() {
@@ -188,6 +245,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (edgeEffect != null) edgeEffect.setVisibility(vertical ? View.VISIBLE : View.GONE);
         if (wheelScroller != null) wheelScroller.setVisibility(wheel ? View.VISIBLE : View.GONE);
         if (!wheel) clearHiddenWheelTree();
+        updateWheelPaging(mainActivity.adapter == null ? 0 : mainActivity.adapter.getCount());
 
         if (!TextUtils.equals(previousMode, activeMode)) {
             animatedVerticalItems.clear();
@@ -210,6 +268,8 @@ final class HistoryDisplayForwarder extends Forwarder {
         wheelHasBeenEntered = false;
         lastWheelQuery = "";
         lastWheelPriorityId = Long.MIN_VALUE;
+        wheelWindow.reset();
+        lastWheelWindowStart = -1;
     }
 
     private boolean visibilityMatches(String mode) {
@@ -229,12 +289,17 @@ final class HistoryDisplayForwarder extends Forwarder {
             return;
         }
 
-        final int count = mainActivity.adapter.getCount();
+        final int total = mainActivity.adapter.getCount();
         String currentQuery = mainActivity.searchEditText == null
                 ? "" : mainActivity.searchEditText.getText().toString().trim();
+        if (!currentQuery.equals(lastWheelQuery)) wheelWindow.reset();
+        final int start = wheelWindow.start(total);
+        final int end = wheelWindow.end(total);
+        final int count = end - start;
+        final boolean pageChanged = lastWheelWindowStart != start;
         long currentPriorityId = count > 0
-                ? mainActivity.adapter.getItem(count - 1).getUniqueId() : Long.MIN_VALUE;
-        boolean refocusFront = !wheelHasBeenEntered
+                ? mainActivity.adapter.getItem(end - 1).getUniqueId() : Long.MIN_VALUE;
+        boolean refocusFront = pageChanged || !wheelHasBeenEntered
                 || !currentQuery.equals(lastWheelQuery)
                 || currentPriorityId != lastWheelPriorityId;
         String wheelAnimationSignature =
@@ -246,11 +311,12 @@ final class HistoryDisplayForwarder extends Forwarder {
             lastWheelAnimationSignature = wheelAnimationSignature;
         }
 
-        for (int position = 0; position < count; position++) {
+        for (int local = 0; local < count; local++) {
+            int position = start + local;
             int viewType = mainActivity.adapter.getItemViewType(position);
-            View existingNode = position < wheelColumn.getChildCount()
-                    ? wheelColumn.getChildAt(position) : null;
-            int oldType = position < wheelViewTypes.size() ? wheelViewTypes.get(position) : -1;
+            View existingNode = local < wheelColumn.getChildCount()
+                    ? wheelColumn.getChildAt(local) : null;
+            int oldType = local < wheelViewTypes.size() ? wheelViewTypes.get(local) : -1;
 
             View reusable = oldType == viewType ? wheelContent(existingNode) : null;
             View source = mainActivity.adapter.getView(position, reusable, mainActivity.list);
@@ -270,10 +336,10 @@ final class HistoryDisplayForwarder extends Forwarder {
                 shell.setLayoutParams(wheelParams);
             } else {
                 if (existingNode != null && existingNode.getParent() == wheelColumn) {
-                    wheelColumn.removeViewAt(position);
+                    wheelColumn.removeViewAt(local);
                 }
                 shell = new WheelItemShell();
-                wheelColumn.addView(shell, position, wheelParams);
+                wheelColumn.addView(shell, local, wheelParams);
             }
 
             if (source.getParent() != shell) {
@@ -285,8 +351,8 @@ final class HistoryDisplayForwarder extends Forwarder {
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
 
-            while (wheelViewTypes.size() <= position) wheelViewTypes.add(-1);
-            wheelViewTypes.set(position, viewType);
+            while (wheelViewTypes.size() <= local) wheelViewTypes.add(-1);
+            wheelViewTypes.set(local, viewType);
             resetWheelTransform(shell);
             shell.setCameraDistance(
                     mainActivity.getResources().getDisplayMetrics().density * 8000f);
@@ -318,6 +384,8 @@ final class HistoryDisplayForwarder extends Forwarder {
         wheelHasBeenEntered = true;
         lastWheelQuery = currentQuery;
         lastWheelPriorityId = currentPriorityId;
+        lastWheelWindowStart = start;
+        updateWheelPaging(total);
         wheelScroller.post(() -> {
             if (refocusFront && count > 0) centerWheelItem(count - 1);
             scheduleWheelTransforms();
@@ -371,7 +439,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         for (int position = 0; position < count; position++) {
             View shell = wheelColumn.getChildAt(position);
             if (shell.getBottom() < viewportTop || shell.getTop() > viewportBottom) continue;
-            long uniqueId = mainActivity.adapter.getItem(position).getUniqueId();
+            int absolute = wheelWindow.start(mainActivity.adapter.getCount()) + position;
+            if (absolute < 0 || absolute >= mainActivity.adapter.getCount()) continue;
+            long uniqueId = mainActivity.adapter.getItem(absolute).getUniqueId();
             if (animatedWheelItems.add(uniqueId)) {
                 View content = wheelContent(shell);
                 if (content != null) {
