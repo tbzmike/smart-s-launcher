@@ -49,6 +49,8 @@ public final class AppUpdater {
 
     static final String RELEASE_API =
             "https://api.github.com/repos/tbzmike/smart-s-launcher/releases/latest";
+    static final String CHANNEL_MANIFEST_URL =
+            "https://raw.githubusercontent.com/tbzmike/smart-s-launcher/updater-channel/latest-green.json";
     static final String DEBUG_ASSET_NAME = "SmartSLauncher-debug.apk";
     static final String RELEASE_ASSET_NAME = "SmartSLauncher.apk";
     private static final String EXPECTED_DOWNLOAD_HOST = "github.com";
@@ -477,66 +479,118 @@ public final class AppUpdater {
     }
 
     private static ReleaseAsset fetchLatestRelease() throws Exception {
-        String expectedAssetName = expectedReleaseAssetName(BuildConfig.DEBUG);
-        HttpURLConnection connection = (HttpURLConnection) new URL(RELEASE_API).openConnection();
+        Exception primaryFailure;
+        try {
+            HttpURLConnection connection = openMetadataConnection(RELEASE_API);
+            try {
+                int code = connection.getResponseCode();
+                if (code < 200 || code >= 300) {
+                    throw new IOException("GitHub release API returned HTTP " + code);
+                }
+                return parseGitHubLatestRelease(readAll(connection), BuildConfig.DEBUG);
+            } finally {
+                connection.disconnect();
+            }
+        } catch (Exception error) {
+            primaryFailure = error;
+        }
+
+        // Some carriers and DNS resolvers intermittently block api.github.com even
+        // though the GitHub release CDN is reachable. The signed CI workflow updates
+        // this manifest only after publishing BOTH app package/signing variants.
+        try {
+            HttpURLConnection connection = openMetadataConnection(CHANNEL_MANIFEST_URL);
+            try {
+                int code = connection.getResponseCode();
+                if (code < 200 || code >= 300) {
+                    throw new IOException("Updater manifest returned HTTP " + code);
+                }
+                return parseChannelManifest(readAll(connection), BuildConfig.DEBUG);
+            } finally {
+                connection.disconnect();
+            }
+        } catch (Exception fallbackFailure) {
+            IOException failure = new IOException(
+                    "Both update sources unavailable. GitHub: " + safeMessage(primaryFailure)
+                            + "; updater channel: " + safeMessage(fallbackFailure));
+            failure.addSuppressed(primaryFailure);
+            throw failure;
+        }
+    }
+
+    private static HttpURLConnection openMetadataConnection(String url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setInstanceFollowRedirects(true);
         connection.setConnectTimeout(METADATA_CONNECT_TIMEOUT_MS);
         connection.setReadTimeout(METADATA_READ_TIMEOUT_MS);
         connection.setRequestMethod("GET");
-        connection.setRequestProperty("Accept", "application/vnd.github+json");
-        connection.setRequestProperty("X-GitHub-Api-Version", "2026-03-10");
-        connection.setRequestProperty("User-Agent", "Smart-S-Launcher-Android/" + BuildConfig.VERSION_NAME);
+        connection.setRequestProperty("Accept", "application/vnd.github+json, application/json");
+        connection.setRequestProperty("User-Agent",
+                "Smart-S-Launcher-Android/" + BuildConfig.VERSION_NAME);
         connection.connect();
+        return connection;
+    }
 
-        try {
-            int code = connection.getResponseCode();
-            if (code < 200 || code >= 300) {
-                throw new IOException("GitHub returned HTTP " + code);
-            }
-
-            String body = readAll(connection);
-            JSONObject root = new JSONObject(body);
-            if (root.optBoolean("draft", false) || root.optBoolean("prerelease", false)) {
-                throw new IOException("Latest release is not a published stable release");
-            }
-
-            JSONArray assets = root.optJSONArray("assets");
-            if (assets == null) throw new IOException("Release has no APK assets");
-
-            JSONObject selected = null;
-            for (int i = 0; i < assets.length(); i++) {
-                JSONObject candidate = assets.optJSONObject(i);
-                if (candidate != null
-                        && expectedAssetName.equals(candidate.optString("name"))
-                        && "uploaded".equals(candidate.optString("state"))) {
-                    selected = candidate;
-                    break;
-                }
-            }
-            if (selected == null) {
-                throw new IOException("Release does not contain " + expectedAssetName);
-            }
-
-            long size = selected.optLong("size", -1L);
-            if (size <= 0L) throw new IOException("Release APK has an invalid size");
-
-            String rawDigest = selected.optString("digest", "");
-            if (!rawDigest.toLowerCase(Locale.ROOT).startsWith("sha256:")) {
+    /** Parse a release without network access, so both signing channels can be tested. */
+    static ReleaseAsset parseGitHubLatestRelease(String json, boolean debug) throws Exception {
+        String expectedAssetName = expectedReleaseAssetName(debug);
+        JSONObject root = new JSONObject(json);
+        if (root.optBoolean("draft", false) || root.optBoolean("prerelease", false)) {
+            throw new IOException("Latest release is not a published stable release");
+        }
+        JSONArray assets = root.optJSONArray("assets");
+        if (assets == null) throw new IOException("Release has no APK assets");
+        for (int i = 0; i < assets.length(); i++) {
+            JSONObject asset = assets.optJSONObject(i);
+            if (asset == null || !expectedAssetName.equals(asset.optString("name"))
+                    || !"uploaded".equals(asset.optString("state"))) continue;
+            String digest = asset.optString("digest", "");
+            if (!digest.toLowerCase(Locale.ROOT).startsWith("sha256:")) {
                 throw new IOException("Release APK has no SHA-256 digest");
             }
-            String sha = rawDigest.substring(rawDigest.indexOf(':') + 1)
-                    .toLowerCase(Locale.ROOT);
-            if (!sha.matches("[0-9a-f]{64}")) {
-                throw new IOException("Release APK has an invalid SHA-256 digest");
-            }
-
-            String downloadUrl = selected.optString("browser_download_url", "");
-            validateDownloadUrl(downloadUrl, expectedAssetName);
-            return new ReleaseAsset(expectedAssetName, downloadUrl, size, sha,
-                    selected.optString("updated_at", ""));
-        } finally {
-            connection.disconnect();
+            return verifiedReleaseAsset(expectedAssetName,
+                    asset.optString("browser_download_url", ""),
+                    asset.optLong("size", -1L),
+                    digest.substring(digest.indexOf(':') + 1),
+                    asset.optString("updated_at", ""));
         }
+        throw new IOException("The latest release is missing the "
+                + (debug ? "debug" : "production") + " APK (" + expectedAssetName + ")");
+    }
+
+    /** A separately published, digest-verified backup for GitHub API/DNS failures. */
+    static ReleaseAsset parseChannelManifest(String json, boolean debug) throws Exception {
+        JSONObject root = new JSONObject(json);
+        String version = root.optString("version", "");
+        if (!version.matches("[0-9]+[.][0-9]+[.][0-9]+")) {
+            throw new IOException("Updater channel has an invalid release version");
+        }
+        JSONObject asset = root.optJSONObject(debug ? "debug" : "production");
+        if (asset == null && !debug) asset = root; // Backward-compatible signed manifest
+        if (asset == null) throw new IOException("Updater channel has no debug APK metadata");
+        String expectedName = expectedReleaseAssetName(debug);
+        if (!expectedName.equals(asset.optString("apkName", ""))) {
+            throw new IOException("Updater channel has the wrong APK variant");
+        }
+        String url = asset.optString("apkUrl", "");
+        String versionPath = "/download/v" + version + "/";
+        if (!url.contains(versionPath)) {
+            throw new IOException("Updater channel APK URL does not match release " + version);
+        }
+        return verifiedReleaseAsset(expectedName, url, asset.optLong("size", -1L),
+                asset.optString("sha256", ""), root.optString("publishedAt", ""));
+    }
+
+    private static ReleaseAsset verifiedReleaseAsset(String name, String url,
+                                                     long size, String sha,
+                                                     String updatedAt) throws IOException {
+        if (size <= 0L) throw new IOException("Release APK has an invalid size");
+        String normalizedSha = sha.toLowerCase(Locale.ROOT);
+        if (!normalizedSha.matches("[0-9a-f]{64}")) {
+            throw new IOException("Release APK has no valid SHA-256 digest");
+        }
+        validateDownloadUrl(url, name);
+        return new ReleaseAsset(name, url, size, normalizedSha, updatedAt);
     }
 
     private static String readAll(HttpURLConnection connection) throws IOException {
