@@ -700,9 +700,7 @@ public class Favorites extends Forwarder {
             for (Map.Entry<String, LaunchStatsProvider.LaunchStats> entry : shortcutHistory) {
                 if (++checked > 96 || pinnedKeys.size() + rankedKeys.size() >= max * 5) break;
                 String historyId = entry.getKey();
-                if (TextUtils.isEmpty(historyId) || !(historyId.startsWith(ShortcutPojo.SCHEME)
-                        || historyId.startsWith("setting://")
-                        || historyId.startsWith("feature://"))) continue;
+                if (!PixelShortcutPredictionPolicy.isShortcutHistoryId(historyId)) continue;
                 LaunchStatsProvider.LaunchStats stat = entry.getValue();
                 if (stat == null || stat.totalLaunches <= 0) continue;
                 Pojo candidate = dataHandler.getPojo(historyId);
