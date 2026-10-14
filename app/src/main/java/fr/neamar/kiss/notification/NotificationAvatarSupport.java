@@ -91,6 +91,7 @@ public final class NotificationAvatarSupport {
     public interface LoadCallback {
         void onFinished(int scanned, int linked, int freshlyResolved);
         default void onProgress(int scanned, int linked) { }
+        default void onFailed(int scanned, int linked) { }
     }
 
     private NotificationAvatarSupport() { }
@@ -192,9 +193,9 @@ public final class NotificationAvatarSupport {
             } catch (RuntimeException error) {
                 Log.w(TAG, "Manual avatar scan stopped after " + scanned + " rows", error);
                 if (callback != null) {
-                    int n = scanned, matches = linked, found = fresh;
+                    int n = scanned, matches = linked;
                     new Handler(Looper.getMainLooper()).post(
-                            () -> callback.onFinished(n, matches, found));
+                            () -> callback.onFailed(n, matches));
                 }
             } finally {
                 HISTORY_SCAN_RUNNING.set(false);
