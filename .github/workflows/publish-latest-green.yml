@@ -26,7 +26,8 @@ jobs:
       github.event.workflow_run.head_branch != 'fix/3.30.170-wheel-cards-bounded' &&
       github.event.workflow_run.head_branch != 'fix/3.30.171-wheel-updater' &&
       github.event.workflow_run.head_branch != 'fix/3.30.172-pixel-shortcuts-animations' &&
-      github.event.workflow_run.head_branch != 'fix/3.30.173-center-taps'
+      github.event.workflow_run.head_branch != 'fix/3.30.173-center-taps' &&
+      github.event.workflow_run.head_branch != 'fix/3.30.174-social-avatar-history'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout exact tested source
