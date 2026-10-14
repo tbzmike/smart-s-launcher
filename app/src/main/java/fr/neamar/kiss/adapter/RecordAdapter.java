@@ -355,7 +355,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             int[] launchTextIds = {
                     R.id.item_app_name, R.id.item_app_tag,
                     R.id.item_shortcut_tag, R.id.item_setting_name,
-                    R.id.item_setting_prefix, R.id.item_history_meta
+                    R.id.item_setting_prefix, R.id.item_setting_tag, R.id.item_history_meta
             };
             for (int id : launchTextIds) {
                 View child = row.findViewById(id);
