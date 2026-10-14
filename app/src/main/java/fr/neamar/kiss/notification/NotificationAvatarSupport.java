@@ -37,6 +37,9 @@ import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
@@ -54,7 +57,15 @@ public final class NotificationAvatarSupport {
     private static final String PREFS = "notification-avatar-history";
     private static final String DIR = "notification_avatars";
     private static final int MAX_EDGE = 256;
+    /** Per-database-read batch size, not a global limit on manual loading. */
     public static final int HISTORY_SCAN_LIMIT = 200;
+    private static final AtomicBoolean HISTORY_SCAN_RUNNING = new AtomicBoolean(false);
+    private static final ExecutorService HISTORY_SCAN_EXECUTOR =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread thread = new Thread(r, "smart-s-avatar-history-scan");
+                thread.setPriority(Thread.MIN_PRIORITY);
+                return thread;
+            });
     private static final long MAX_AGE_MS = 45L * 24L * 60L * 60L * 1000L;
     private static final int WORK_QUEUE_CAPACITY = 8;
     private static final ThreadPoolExecutor EXECUTOR = new ThreadPoolExecutor(
@@ -79,6 +90,7 @@ public final class NotificationAvatarSupport {
 
     public interface LoadCallback {
         void onFinished(int scanned, int linked, int freshlyResolved);
+        default void onProgress(int scanned, int linked) { }
     }
 
     private NotificationAvatarSupport() { }
@@ -97,64 +109,98 @@ public final class NotificationAvatarSupport {
     }
 
     /**
-     * Re-scan active notifications, then link cached conversation identities/shortcut icons to the
-     * newest 200 saved history records. No network scraping is used; everything comes from Android
-     * notification/shortcut metadata and is cached locally as PNG files.
+     * Explicit, cancellable-by-interruption background scan of ALL saved notifications,
+     * in bounded 200-row DB pages. Do not use the small automatic capture executor:
+     * its DiscardOldest policy previously dropped the user's manual request.
+     *
+     * Returns false when a manual scan is already running.
      */
-    public static void loadHistoryAvatarsAsync(@NonNull Context context,
-                                               @Nullable LoadCallback callback) {
-        if (LauncherScrollWorkGate.isScrolling()) return;
+    public static boolean loadHistoryAvatarsAsync(@NonNull Context context,
+                                                  @Nullable LoadCallback callback) {
+        if (!HISTORY_SCAN_RUNNING.compareAndSet(false, true)) return false;
         Context app = context.getApplicationContext();
-        EXECUTOR.execute(() -> {
-            int fresh = 0;
-            StatusBarNotification[] active = NotificationListener.activeNotificationsSnapshot();
-            if (active != null) {
-                for (StatusBarNotification sbn : active) {
-                    if (sbn == null) continue;
-                    if (captureNow(app, NotificationListener.getTimelineId(sbn), sbn)) fresh++;
-                }
-            }
-
-            List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
-                    app, null, null, HISTORY_SCAN_LIMIT);
+        HISTORY_SCAN_EXECUTOR.execute(() -> {
+            int scanned = 0;
             int linked = 0;
-            for (NotificationHistoryRecord record : records) {
-                if (record == null || TextUtils.isEmpty(record.notificationId)) continue;
-                if (avatarPath(app, record.notificationId) != null) {
-                    touchAvatar(app, record.notificationId);
-                    linked++;
-                    continue;
-                }
-
-                String cached = identityAvatarPath(app, record.packageName, record.title,
-                        record.shortcutId);
-                if (cached == null) {
-                    Drawable shortcut = historicalShortcutAvatar(app, record);
-                    if (shortcut != null) {
-                        cached = persistIdentityBitmap(app, record.packageName, record.title,
-                                record.shortcutId, drawableToBitmap(shortcut));
-                        if (cached != null) fresh++;
+            int fresh = 0;
+            try {
+                StatusBarNotification[] active = NotificationListener.activeNotificationsSnapshot();
+                if (active != null) {
+                    for (StatusBarNotification sbn : active) {
+                        if (sbn == null || Thread.currentThread().isInterrupted()) break;
+                        if (captureNow(app, NotificationListener.getTimelineId(sbn), sbn)) fresh++;
                     }
                 }
-                if (cached != null) {
-                    SharedPreferences.Editor editor = prefs(app).edit()
-                            .putString(record.notificationId + "|image", cached)
-                            .putLong(record.notificationId + "|seen", System.currentTimeMillis());
-                    editor.apply();
-                    touchFile(cached);
-                    linked++;
+
+                while (!Thread.currentThread().isInterrupted()) {
+                    List<NotificationHistoryRecord> records =
+                            SmartStateStore.queryAvatarHistoryPage(
+                                    app, HISTORY_SCAN_LIMIT, scanned);
+                    if (records.isEmpty()) break;
+                    for (NotificationHistoryRecord record : records) {
+                        if (record == null) continue;
+                        if (!TextUtils.isEmpty(record.notificationId)
+                                && avatarPath(app, record.notificationId) != null) {
+                            touchAvatar(app, record.notificationId);
+                            linked++;
+                            continue;
+                        }
+                        String cached = identityAvatarPath(app, record.packageName,
+                                record.title, record.shortcutId);
+                        if (cached == null) {
+                            Drawable shortcut = historicalShortcutAvatar(app, record);
+                            if (shortcut != null) {
+                                cached = persistIdentityBitmap(app, record.packageName,
+                                        record.title, record.shortcutId, drawableToBitmap(shortcut));
+                                if (cached != null) fresh++;
+                            }
+                        }
+                        if (cached != null && !TextUtils.isEmpty(record.notificationId)) {
+                            prefs(app).edit()
+                                    .putString(record.notificationId + "|image", cached)
+                                    .putLong(record.notificationId + "|seen", System.currentTimeMillis())
+                                    .apply();
+                            touchFile(cached);
+                            linked++;
+                        }
+                    }
+                    scanned += records.size();
+                    if (callback != null) {
+                        int n = scanned, matches = linked;
+                        new Handler(Looper.getMainLooper()).post(
+                                () -> callback.onProgress(n, matches));
+                    }
+                    if (records.size() < HISTORY_SCAN_LIMIT) break;
+                    // Avoid competing with real-time History scroll: the scan is an
+                    // explicit low-priority task, not a UI thread view decoration.
+                    while (LauncherScrollWorkGate.isScrolling()
+                            && !Thread.currentThread().isInterrupted()) {
+                        try { Thread.sleep(80L); }
+                        catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
                 }
-            }
-            cleanup(app);
-            app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
-            if (callback != null) {
-                int scanned = records.size();
-                int linkedFinal = linked;
-                int freshFinal = fresh;
-                new Handler(Looper.getMainLooper()).post(
-                        () -> callback.onFinished(scanned, linkedFinal, freshFinal));
+                cleanup(app);
+                app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
+                if (callback != null) {
+                    int n = scanned, matches = linked, found = fresh;
+                    new Handler(Looper.getMainLooper()).post(
+                            () -> callback.onFinished(n, matches, found));
+                }
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Manual avatar scan stopped after " + scanned + " rows", error);
+                if (callback != null) {
+                    int n = scanned, matches = linked, found = fresh;
+                    new Handler(Looper.getMainLooper()).post(
+                            () -> callback.onFinished(n, matches, found));
+                }
+            } finally {
+                HISTORY_SCAN_RUNNING.set(false);
             }
         });
+        return true;
     }
 
     private static boolean captureNow(@NonNull Context context, @NonNull String notificationId,
@@ -198,6 +244,37 @@ public final class NotificationAvatarSupport {
         MEMORY_CACHE.put(notificationId, bitmap);
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> touchAvatar(app, notificationId));
+        return new BitmapDrawable(context.getResources(), bitmap);
+    }
+
+    /**
+     * Search and History can refer to the same person with different notification IDs.
+     * Resolve by exact package + conversation shortcut first, then exact package + title.
+     * Never assume that matching text in two different social applications is the same user.
+     */
+    @Nullable
+    public static Drawable avatar(@Nullable Context context,
+                                  @Nullable String notificationId,
+                                  @Nullable String packageName,
+                                  @Nullable String title,
+                                  @Nullable String shortcutId) {
+        if (context == null) return null;
+        Drawable exact = avatar(context, notificationId);
+        if (exact != null) return exact;
+        if (LauncherScrollWorkGate.isScrolling()) return null;
+        String path = identityAvatarPath(context, packageName, title, shortcutId);
+        if (path == null) return null;
+        String cacheKey = !TextUtils.isEmpty(notificationId) ? notificationId
+                : aliasKey(packageName, title, shortcutId);
+        Bitmap bitmap = MEMORY_CACHE.get(cacheKey);
+        if (bitmap == null) {
+            bitmap = BitmapFactory.decodeFile(path);
+            if (bitmap == null) return null;
+            MEMORY_CACHE.put(cacheKey, bitmap);
+        }
+        if (!TextUtils.isEmpty(notificationId) && avatarPath(context, notificationId) == null) {
+            prefs(context).edit().putString(notificationId + "|image", path).apply();
+        }
         return new BitmapDrawable(context.getResources(), bitmap);
     }
 
