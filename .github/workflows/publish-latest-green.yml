@@ -24,7 +24,8 @@ jobs:
       github.event.workflow_run.head_branch != 'updater-channel' &&
       github.event.workflow_run.head_branch != 'feature/3.30.169-pixel-history-shortcut-tags' &&
       github.event.workflow_run.head_branch != 'fix/3.30.170-wheel-cards-bounded' &&
-      github.event.workflow_run.head_branch != 'fix/3.30.171-wheel-updater'
+      github.event.workflow_run.head_branch != 'fix/3.30.171-wheel-updater' &&
+      github.event.workflow_run.head_branch != 'fix/3.30.172-pixel-shortcuts-animations'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout exact tested source
