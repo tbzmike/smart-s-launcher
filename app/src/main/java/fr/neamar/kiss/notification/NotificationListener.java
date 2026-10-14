@@ -166,7 +166,6 @@ public class NotificationListener extends NotificationListenerService {
         for (StatusBarNotification sbn : sbns) {
             if (seedTimeline) {
                 String timelineId = getTimelineId(sbn);
-                NotificationAvatarSupport.captureAsync(this, timelineId, sbn);
                 NotificationVisualSupport.captureAsync(this, timelineId, sbn);
                 persistHistoryAsync(sbn, timelineId, false);
             }
@@ -178,6 +177,9 @@ public class NotificationListener extends NotificationListenerService {
             storeNotificationDetail(detailEditor, id, packageKey, sbn);
             timeline.add(sbn);
         }
+        // One batch replaces dozens of queue entries that used to be discarded
+        // before the avatar worker had a chance to run during startup.
+        if (seedTimeline) NotificationAvatarSupport.captureActiveSnapshotAsync(this, sbns);
         detailEditor.putStringSet(ACTIVE_NOTIFICATION_IDS, activeIds).apply();
         publishVerifiedActiveIds(activeIds);
         NotificationUnreadStore.reconcileActive(this, activeIds);
