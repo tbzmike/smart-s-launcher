@@ -90,6 +90,52 @@ public final class HistoryRendererPagingRegressionTest {
         }
     }
 
+    @Test public void wheelShowsMixedRealHistoryRowsAcrossResumeAndPageTransitions() {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(
+                InstrumentationRegistry.getInstrumentation().getTargetContext());
+        String original = prefs.getString("smart-history-layout", "vertical");
+        try {
+            assertTrue(prefs.edit().putString("smart-history-layout", "wheel_3d").commit());
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                scenario.onActivity(activity -> {
+                    try {
+                        SearchHandler.getInstance().cancelSearch();
+                        List<Result<?>> mixed = BaselineBehaviorTest.fixtures(activity, false);
+                        activity.adapter.updateResults(activity, mixed, false, "");
+                        Object forwarders = field(activity, "forwarderManager");
+                        Object wheel = field(forwarders, "historyDisplayForwarder");
+                        call(wheel, "onResume");
+                        call(wheel, "rebuildWheelNow");
+                        LinearLayout column = (LinearLayout) field(wheel, "wheelColumn");
+                        assertEquals("Wheel must display mixed app/notification History rows", 12,
+                                column.getChildCount());
+                        for (int turn = 0; turn < 5; turn++) {
+                            call(wheel, "onResume");
+                            call(wheel, "rebuildWheelNow");
+                            assertEquals("Repeated Home resume must never blank Wheel", 12,
+                                    column.getChildCount());
+                        }
+                        TextView older = (TextView) field(wheel, "wheelOlder");
+                        older.performClick();
+                        assertTrue("Older History must remain visible", column.getChildCount() > 0);
+                        prefs.edit().putString("smart-history-layout", "vertical").commit();
+                        call(wheel, "onResume");
+                        assertEquals(24, activity.adapter.getCount());
+                        prefs.edit().putString("smart-history-layout", "wheel_3d").commit();
+                        call(wheel, "onResume");
+                        call(wheel, "rebuildWheelNow");
+                        assertEquals("Wheel must populate again after leaving and returning", 12,
+                                column.getChildCount());
+                    } catch (Exception e) {
+                        throw new AssertionError("Mixed app/notification 3D Wheel test failed", e);
+                    }
+                });
+            }
+        } finally {
+            prefs.edit().putString("smart-history-layout", original).commit();
+        }
+    }
+
     private static Object field(Object owner, String name) throws Exception {
         Field f = owner.getClass().getDeclaredField(name);
         f.setAccessible(true);
