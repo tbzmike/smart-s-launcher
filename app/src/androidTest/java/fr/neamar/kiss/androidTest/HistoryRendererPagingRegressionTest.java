@@ -5,6 +5,8 @@ import static org.junit.Assert.*;
 import android.content.SharedPreferences;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
+import android.view.ViewGroup;
 import android.widget.TextView;
 
 import androidx.preference.PreferenceManager;
@@ -114,6 +116,14 @@ public final class HistoryRendererPagingRegressionTest {
                             call(wheel, "rebuildWheelNow");
                             assertEquals("Repeated Home resume must never blank Wheel", 12,
                                     column.getChildCount());
+                            for (int slot = 0; slot < column.getChildCount(); slot++) {
+                                View shell = column.getChildAt(slot);
+                                assertTrue(shell instanceof FrameLayout);
+                                View content = ((FrameLayout) shell).getChildAt(0);
+                                assertNotNull("Wheel row must contain its result view", content);
+                                assertTrue("Wheel child must have FrameLayout params, not ListView params",
+                                        content.getLayoutParams() instanceof FrameLayout.LayoutParams);
+                            }
                         }
                         TextView older = (TextView) field(wheel, "wheelOlder");
                         older.performClick();
