@@ -32,6 +32,7 @@ import fr.neamar.kiss.db.NotificationTimelineStore;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationIdentityIcon;
+import fr.neamar.kiss.notification.NotificationAvatarSupport;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.DisabledAppPojo;
 import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
@@ -241,6 +242,27 @@ public class SettingsResult extends ResultWithTags<SettingPojo> {
 
     @Override
     public Drawable getDrawable(Context context) {
+        // A cached generic app icon must not permanently hide a subsequently scanned
+        // person photo. Identity lookup is first, scoped to the original source package.
+        if (pojo instanceof NotificationPojo) {
+            NotificationPojo notification = (NotificationPojo) pojo;
+            Drawable avatar = NotificationAvatarSupport.avatar(context,
+                    notification.exactNotificationId, notification.packageName,
+                    notification.latestTitle, null);
+            if (avatar != null) {
+                icon = avatar;
+                return avatar;
+            }
+        } else if (pojo instanceof NotificationHistorySearchPojo) {
+            NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;
+            Drawable avatar = NotificationAvatarSupport.avatar(context,
+                    history.sourceNotificationId, history.sourcePackageName,
+                    history.sourceTitle, history.sourceShortcutId);
+            if (avatar != null) {
+                icon = avatar;
+                return avatar;
+            }
+        }
         Drawable cached = icon;
         if (cached != null) return cached;
 
@@ -260,7 +282,8 @@ public class SettingsResult extends ResultWithTags<SettingPojo> {
             if (pojo instanceof NotificationPojo) {
                 NotificationPojo notification = (NotificationPojo) pojo;
                 Drawable identity = NotificationIdentityIcon.resolve(
-                        context, notification.exactNotificationId, notification.packageName);
+                        context, notification.exactNotificationId, notification.packageName,
+                        notification.latestTitle, null);
                 if (identity != null) {
                     icon = identity;
                     return identity;
@@ -269,7 +292,8 @@ public class SettingsResult extends ResultWithTags<SettingPojo> {
             if (pojo instanceof NotificationHistorySearchPojo) {
                 NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;
                 Drawable identity = NotificationIdentityIcon.resolve(
-                        context, history.sourceNotificationId, history.sourcePackageName);
+                        context, history.sourceNotificationId, history.sourcePackageName,
+                        history.sourceTitle, history.sourceShortcutId);
                 if (identity != null) {
                     icon = identity;
                     return identity;
