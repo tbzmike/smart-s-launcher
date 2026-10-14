@@ -1096,7 +1096,9 @@ final class SmartCardListForwarder extends Forwarder {
         final TextView expandableMessage = messageView;
         final boolean[] messageExpanded = {false};
         final boolean directNotification = result.getPojo() instanceof NotificationPojo;
-        final boolean directShortcut = result.getPojo() instanceof ShortcutPojo;
+        final boolean directShortcut = result.getPojo() instanceof ShortcutPojo
+                || result.getPojo() instanceof AppPojo
+                || result.getPojo() instanceof fr.neamar.kiss.pojo.SettingPojo;
         View.OnClickListener launchOrExpand = v -> {
             boolean needsExpansion = expandableMessage != null
                     && messageNeedsExpansion(expandableMessage);
@@ -1139,6 +1141,22 @@ final class SmartCardListForwarder extends Forwarder {
         cardTitle.setOnClickListener(launchOrExpand);
         card.setOnLongClickListener(longPress);
         cardTitle.setOnLongClickListener(longPress);
+        // The central LinearLayout contains individually long-clickable marquee,
+        // metadata and message TextViews. These consume ACTION_UP themselves,
+        // so the outer card listener never fires when tapped in the centre.
+        // Bind the existing single launch/menu action to those actual touch targets.
+        center.setOnClickListener(launchOrExpand);
+        center.setOnLongClickListener(longPress);
+        center.setFocusable(false);
+        for (int i = 0; i < center.getChildCount(); i++) {
+            View centerChild = center.getChildAt(i);
+            if (centerChild instanceof TextView && !(centerChild instanceof Button)) {
+                centerChild.setOnClickListener(launchOrExpand);
+                centerChild.setOnLongClickListener(longPress);
+                centerChild.setFocusable(false);
+                centerChild.setFocusableInTouchMode(false);
+            }
+        }
         if (expandableMessage != null) {
             // Notification/message bodies must keep their exact linked destination. AppResult and
             // ShortcutsResult attach that listener before the TextView is re-parented here, so do
@@ -1149,6 +1167,11 @@ final class SmartCardListForwarder extends Forwarder {
                     int currentPosition = resolveAdapterPosition(result.getPojoId());
                     if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, v);
                 });
+                expandableMessage.setClickable(true);
+            } else {
+                // App and shortcut message centres must launch on the FIRST tap,
+                // rather than consume it in a long-clickable preview or expand first.
+                expandableMessage.setOnClickListener(launchOrExpand);
                 expandableMessage.setClickable(true);
             }
             expandableMessage.setOnLongClickListener(longPress);
