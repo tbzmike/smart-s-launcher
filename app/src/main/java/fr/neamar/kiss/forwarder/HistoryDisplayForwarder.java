@@ -363,6 +363,14 @@ final class HistoryDisplayForwarder extends Forwarder {
                 shell.removeAllViews();
                 shell.addView(source, new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            } else if (!(source.getLayoutParams() instanceof FrameLayout.LayoutParams)) {
+                // RecordAdapter.getView() is shared with native ListView. Rebinding a
+                // retained Wheel row can replace its FrameLayout.LayoutParams with
+                // AbsListView.LayoutParams. FrameLayout.measureChildWithMargins then
+                // throws ClassCastException before any History item can be painted.
+                // Normalize ONLY the Wheel child: never alter the adapter or ListView.
+                source.setLayoutParams(new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
 
             while (wheelViewTypes.size() <= local) wheelViewTypes.add(-1);
