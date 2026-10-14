@@ -24,14 +24,20 @@ public final class NotificationIdentityIcon {
     @Nullable
     public static Drawable resolve(Context context, @Nullable String notificationId,
                                    @Nullable String packageName) {
+        return resolve(context, notificationId, packageName, null, null);
+    }
+
+    @Nullable
+    public static Drawable resolve(Context context, @Nullable String notificationId,
+                                   @Nullable String packageName, @Nullable String title,
+                                   @Nullable String shortcutId) {
         IconsHandler icons = KissApplication.getApplication(context).getIconsHandler();
 
         // A sender/contact/profile image is the identity of the conversation/person. Never replace
         // it with the application's themed launcher icon merely because an icon pack is active.
-        if (!TextUtils.isEmpty(notificationId)) {
-            Drawable avatar = NotificationAvatarSupport.avatar(context, notificationId);
-            if (avatar != null) return avatar;
-        }
+        Drawable avatar = NotificationAvatarSupport.avatar(
+                context, notificationId, packageName, title, shortcutId);
+        if (avatar != null) return avatar;
 
         // Only the generic application fallback is themed by the selected icon pack.
         if (!TextUtils.isEmpty(packageName)) {
