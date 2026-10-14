@@ -423,7 +423,7 @@ public final class NotificationAvatarSupport {
                     aliasKey(packageName, null, shortcutId), null);
             if (validFile(shortcutPath)) return shortcutPath;
         }
-        if (!TextUtils.isEmpty(title)) {
+        if (!TextUtils.isEmpty(NotificationAvatarKeyPolicy.titleKey(packageName, title))) {
             String titlePath = preferences.getString(aliasKey(packageName, title, null), null);
             if (validFile(titlePath)) return titlePath;
         }
@@ -437,9 +437,10 @@ public final class NotificationAvatarSupport {
                                                 @Nullable String shortcutId,
                                                 @Nullable Bitmap bitmap) {
         if (bitmap == null) return null;
+        String cleanTitle = NotificationAvatarKeyPolicy.titleKey(packageName, title);
         String stableIdentity = !TextUtils.isEmpty(shortcutId)
                 ? safe(packageName) + "|shortcut|" + shortcutId
-                : safe(packageName) + "|title|" + normalize(title);
+                : safe(packageName) + "|title|" + cleanTitle;
         if (stableIdentity.endsWith("|title|")) return null;
         File file = identityFile(context, stableIdentity);
         if (!writeBitmap(file, bitmap)) return null;
@@ -448,7 +449,7 @@ public final class NotificationAvatarSupport {
         if (!TextUtils.isEmpty(shortcutId)) {
             editor.putString(aliasKey(packageName, null, shortcutId), path);
         }
-        if (!TextUtils.isEmpty(title)) {
+        if (!TextUtils.isEmpty(cleanTitle)) {
             editor.putString(aliasKey(packageName, title, null), path);
         }
         editor.apply();
@@ -460,11 +461,8 @@ public final class NotificationAvatarSupport {
         if (!TextUtils.isEmpty(shortcutId)) {
             return "alias|shortcut|" + digest(safe(packageName) + "|" + shortcutId);
         }
-        return "alias|title|" + digest(safe(packageName) + "|" + normalize(title));
-    }
-
-    private static String normalize(@Nullable String value) {
-        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        return "alias|title|" + digest(safe(packageName) + "|"
+                + NotificationAvatarKeyPolicy.titleKey(packageName, title));
     }
 
     private static String safe(@Nullable String value) {
