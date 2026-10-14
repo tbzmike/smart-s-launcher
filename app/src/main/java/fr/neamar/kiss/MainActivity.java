@@ -535,6 +535,14 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return;
         }
 
+        // Undo any in-flight exit transform before provider, card or History work.
+        // Previously the transparent root was restored only at the END of onResume,
+        // producing a black frame when Home returned with Vertical Cards selected.
+        View homeRoot = findViewById(android.R.id.content);
+        if (homeRoot != null) {
+            homeRoot.animate().cancel();
+            SmartAnimationEngine.reset(homeRoot);
+        }
         launcherUiResumed = true;
         AppProvider.setLauncherUiVisible(true);
         // Resume a system-paused update only when the launcher is visibly foreground.
