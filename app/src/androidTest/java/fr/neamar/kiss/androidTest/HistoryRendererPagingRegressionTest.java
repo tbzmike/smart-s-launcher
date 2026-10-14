@@ -51,11 +51,11 @@ public final class HistoryRendererPagingRegressionTest {
                         call(wheel, "rebuildWheelNow");
 
                         LinearLayout wheelColumn = (LinearLayout) field(wheel, "wheelColumn");
-                        assertEquals("Wheel must show one bounded page", 64, wheelColumn.getChildCount());
+                        assertEquals("Wheel stays within its separate 12-row GPU budget", 12, wheelColumn.getChildCount());
                         TextView wheelOlder = (TextView) field(wheel, "wheelOlder");
                         assertEquals(View.VISIBLE, wheelOlder.getVisibility());
                         wheelOlder.performClick();
-                        assertEquals(64, wheelColumn.getChildCount());
+                        assertEquals(12, wheelColumn.getChildCount());
                         assertEquals(150, activity.adapter.getCount());
                         assertEquals(View.VISIBLE,
                                 ((TextView) field(wheel, "wheelNewer")).getVisibility());
