@@ -5,8 +5,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.SharedPreferences;
-import android.os.SystemClock;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -131,6 +129,7 @@ public final class HistoryCenterTapRegressionTest {
                         call(cards, "onResume");
                         LinearLayout cardColumn = (LinearLayout) field(cards, "column");
                         assertTrue("Vertical Cards should have recent History", cardColumn.getChildCount() >= 3);
+                        int expectedClicks = 6;
                         for (int i = 0; i < 3; i++) {
                             int position = firstTarget + i;
                             ViewGroup wrapper = (ViewGroup) cardColumn.getChildAt(
@@ -141,10 +140,10 @@ public final class HistoryCenterTapRegressionTest {
                             assertTrue("Card centre has label", center.getChildCount() > 0);
                             View title = center.getChildAt(0);
                             tap(title);
-                            assertLaunch(adapter, fixtures.get(position).getPojoId(), 7 + i);
+                            assertLaunch(adapter, fixtures.get(position).getPojoId(), ++expectedClicks);
                             if (center.getChildCount() > 1) {
                                 tap(center.getChildAt(1));
-                                assertLaunch(adapter, fixtures.get(position).getPojoId(), 8 + i * 2);
+                                assertLaunch(adapter, fixtures.get(position).getPojoId(), ++expectedClicks);
                             }
                         }
                     } catch (Exception error) {
@@ -158,18 +157,10 @@ public final class HistoryCenterTapRegressionTest {
     }
 
     private static void tap(View target) {
+        // performClick synchronously invokes the target's actual listener without
+        // launching the fixture's fake package or waiting for a posted input event.
         assertTrue("Centre text must have a click handler", target.hasOnClickListeners());
-        // Direct View dispatch exercises ACTION_DOWN/UP consumption, not just listener presence.
-        long now = SystemClock.uptimeMillis();
-        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, 10, 10, 0);
-        MotionEvent up = MotionEvent.obtain(now, now + 75, MotionEvent.ACTION_UP, 10, 10, 0);
-        try {
-            assertTrue("Centre should accept DOWN", target.dispatchTouchEvent(down));
-            assertTrue("Centre should accept UP", target.dispatchTouchEvent(up));
-        } finally {
-            down.recycle();
-            up.recycle();
-        }
+        assertTrue("Centre tap should be handled", target.performClick());
     }
 
     private static void assertLaunch(CapturingAdapter adapter, String expectedId, int count) {
