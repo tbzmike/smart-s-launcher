@@ -57,6 +57,17 @@ public final class SmartAnimationEngine {
         }
     }
 
+    /** App/shortcut clicks remain animated even while a preceding fling settles. */
+    public static boolean isLaunchAnimationEnabled(Context context) {
+        if (!prefs(context).getBoolean("smart-animations-enabled", true)) return false;
+        try {
+            return Settings.Global.getFloat(context.getContentResolver(),
+                    Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f;
+        } catch (RuntimeException ignored) {
+            return true;
+        }
+    }
+
     private static boolean isPerformanceConstrained(Context context) {
         ActivityManager activityManager =
                 (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
@@ -167,7 +178,21 @@ public final class SmartAnimationEngine {
 
     /** Animate the launcher window whenever Home becomes visible. */
     public static void animateWindowEnter(View view) {
-        animateViewIn(view, "smart-animation-window-enter", "fade");
+        if (view == null) return;
+        view.animate().cancel();
+        reset(view);
+        if (!isLaunchAnimationEnabled(view.getContext())) return;
+        String style = getStyle(view.getContext(), "smart-animation-window-enter", "fade");
+        if ("none".equals(style)) return;
+        // Never set the entire HOME surface to alpha 0: Android can show that black
+        // frame before the card renderer's first draw on a warm Home resume.
+        applyEnterStart(view, style);
+        view.setAlpha(1f);
+        view.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                .translationX(0f).translationY(0f).rotation(0f)
+                .rotationX(0f).rotationY(0f)
+                .setDuration(duration(view.getContext()))
+                .setInterpolator(new DecelerateInterpolator()).start();
     }
 
     /**
@@ -177,7 +202,7 @@ public final class SmartAnimationEngine {
     public static void animateWindowExit(View view) {
         if (view == null) return;
         view.animate().cancel();
-        if (!isEnabled(view.getContext())) {
+        if (!isLaunchAnimationEnabled(view.getContext())) {
             reset(view);
             return;
         }
@@ -190,6 +215,9 @@ public final class SmartAnimationEngine {
                 .setDuration(Math.max(70L, duration(view.getContext()) * 3 / 4))
                 .setInterpolator(new AccelerateDecelerateInterpolator());
         applyExitStyle(view, animator, style);
+        // This is the live Home root, not a disposable overlay. It must stay opaque
+        // during Android's app switch or resuming to Vertical Cards reveals black.
+        animator.alpha(1f);
         animator.setListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
@@ -510,7 +538,9 @@ public final class SmartAnimationEngine {
 
         incoming.animate().cancel();
         reset(incoming);
-        incoming.setAlpha(0f);
+        // First-show switches (outgoing == null) occur while Home is already visible.
+        // Do not hide the new Cards/Wheel/List surface for the first animation frame.
+        incoming.setAlpha(outgoing == null ? 1f : 0f);
         if ("slide".equals(style)) incoming.setTranslationX(dp(incoming, 28));
         else if ("depth".equals(style)) {
             incoming.setScaleX(1.04f);
