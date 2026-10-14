@@ -16,6 +16,8 @@ public final class NotificationHistorySearchPojo extends SettingPojo {
     public final long historyDbId;
     public final String sourcePackageName;
     public final String sourceNotificationId;
+    public final String sourceTitle;
+    public final String sourceShortcutId;
     public final long postTime;
     public final boolean permanent;
     public final String searchQuery;
@@ -30,6 +32,8 @@ public final class NotificationHistorySearchPojo extends SettingPojo {
         historyDbId = record.dbId;
         sourcePackageName = safe(record.packageName);
         sourceNotificationId = safe(record.notificationId);
+        sourceTitle = safe(record.title);
+        sourceShortcutId = safe(record.shortcutId);
         postTime = record.postTime;
         permanent = record.permanent;
         this.searchQuery = searchQuery.trim();
