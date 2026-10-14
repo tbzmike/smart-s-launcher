@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.pojo.SettingPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.SearchHandler;
