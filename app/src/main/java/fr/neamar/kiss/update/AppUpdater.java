@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -605,13 +604,21 @@ public final class AppUpdater {
     }
 
     private static void validateDownloadUrl(String raw, String assetName) throws IOException {
-        Uri uri = Uri.parse(raw);
+        final java.net.URI uri;
+        try {
+            uri = new java.net.URI(raw);
+        } catch (java.net.URISyntaxException invalid) {
+            throw new IOException("Malformed release URL", invalid);
+        }
         boolean schemeOk = "https".equalsIgnoreCase(uri.getScheme());
         boolean hostOk = EXPECTED_DOWNLOAD_HOST.equalsIgnoreCase(uri.getHost());
         String path = uri.getPath() == null ? "" : uri.getPath();
         boolean pathOk = path.startsWith(EXPECTED_DOWNLOAD_PATH_PREFIX)
                 && path.endsWith("/" + assetName);
-        if (!schemeOk || !hostOk || !pathOk) {
+        // No userinfo/ports/query/fragment: GitHub's release URL must be exact.
+        if (!schemeOk || !hostOk || !pathOk || uri.getUserInfo() != null
+                || uri.getPort() != -1 || uri.getRawQuery() != null
+                || uri.getRawFragment() != null) {
             throw new IOException("Release APK URL is not an approved Smart S Launcher GitHub release URL");
         }
     }
