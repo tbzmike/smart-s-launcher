@@ -99,10 +99,50 @@ public final class NotificationAvatarSupport {
     /** Capture the best Android-exposed identity image and persist it for saved history. */
     public static void captureAsync(@NonNull Context context, @NonNull String notificationId,
                                     @NonNull StatusBarNotification sbn) {
-        if (TextUtils.isEmpty(notificationId) || LauncherScrollWorkGate.isScrolling()) return;
+        if (TextUtils.isEmpty(notificationId)) return;
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> {
+            // A notification posted during a fling still deserves an avatar. Wait
+            // off-main-thread until scrolling ends instead of discarding it forever.
+            while (LauncherScrollWorkGate.isScrolling()
+                    && !Thread.currentThread().isInterrupted()) {
+                try { Thread.sleep(60L); }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
             if (captureNow(app, notificationId, sbn)) {
+                cleanup(app);
+                app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
+            }
+        });
+    }
+
+    /**
+     * Startup may expose hundreds of active notifications at once. Capturing each
+     * independently previously overflowed the eight-job queue (DiscardOldest).
+     * A single low-priority batch guarantees each exposed avatar is attempted.
+     */
+    public static void captureActiveSnapshotAsync(@NonNull Context context,
+                                                   @Nullable StatusBarNotification[] active) {
+        if (active == null || active.length == 0) return;
+        Context app = context.getApplicationContext();
+        HISTORY_SCAN_EXECUTOR.execute(() -> {
+            int linked = 0;
+            for (StatusBarNotification sbn : active) {
+                if (sbn == null || Thread.currentThread().isInterrupted()) continue;
+                while (LauncherScrollWorkGate.isScrolling()
+                        && !Thread.currentThread().isInterrupted()) {
+                    try { Thread.sleep(60L); }
+                    catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+                if (captureNow(app, NotificationListener.getTimelineId(sbn), sbn)) linked++;
+            }
+            if (linked > 0) {
                 cleanup(app);
                 app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
             }
