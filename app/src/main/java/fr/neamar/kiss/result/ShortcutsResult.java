@@ -154,7 +154,10 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
         String avatarId = !active.isEmpty() ? active.get(0).id
                 : latestSaved == null ? null : latestSaved.notificationId;
-        Drawable notificationAvatar = NotificationAvatarSupport.avatar(context, avatarId);
+        Drawable notificationAvatar = NotificationAvatarSupport.avatar(
+                context, avatarId, targetPackage,
+                latestSaved == null ? null : latestSaved.title,
+                latestSaved == null ? null : latestSaved.shortcutId);
         if (notificationAvatar != null) {
             avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
             avatar.setImageDrawable(notificationAvatar);
