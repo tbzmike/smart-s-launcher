@@ -620,6 +620,7 @@ public class Favorites extends Forwarder {
         }
 
         List<String> rankedKeys = new ArrayList<>();
+        Map<String, PixelFavoritesPolicy.PredictionSignal> predictionByKey = new HashMap<>();
         boolean hasLaunchSignals = launchStats != null && !launchStats.isEmpty();
         boolean hasUsageSignals = usageSnapshot != null && usageSnapshot.available
                 && !usageSnapshot.foregroundMsByPackage.isEmpty();
@@ -677,6 +678,7 @@ public class Favorites extends Forwarder {
 
                     Pojo representative = launchablePixelRepresentative(app);
                     rankedKeys.add(key);
+                    predictionByKey.put(key, predictionSignal(stats, foregroundToday));
                     pojoByKey.put(key, representative);
                 }
             }
@@ -709,10 +711,19 @@ public class Favorites extends Forwarder {
                         mainActivity, dataHandler, candidate);
                 if (TextUtils.isEmpty(key) || pojoByKey.containsKey(key)) continue;
                 rankedKeys.add(key);
+                predictionByKey.put(key, predictionSignal(stat, 0L));
                 pojoByKey.put(key, candidate);
             }
         }
 
+        // Apps and shortcuts compete by the SAME recency/frequency signals.
+        // Putting every app ahead of shortcuts would otherwise fill every Pixel slot
+        // before any genuine shortcut was considered.
+        rankedKeys.sort((left, right) -> {
+            int rank = PixelFavoritesPolicy.comparePrediction(
+                    predictionByKey.get(left), predictionByKey.get(right));
+            return rank != 0 ? rank : left.compareTo(right);
+        });
         List<String> selectedKeys = PixelFavoritesPolicy.select(
                 pinnedKeys, rankedKeys, max);
         List<Pojo> selected = new ArrayList<>(selectedKeys.size());
