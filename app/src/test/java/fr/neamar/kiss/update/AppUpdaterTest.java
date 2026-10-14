@@ -41,6 +41,48 @@ class AppUpdaterTest {
     }
 
     @Test
+    void parsesMatchingDebugAndProductionReleaseAssets() throws Exception {
+        String sha = "a".repeat(64);
+        String json = "{\"draft\":false,\"prerelease\":false,\"assets\":["
+                + "{\"name\":\"SmartSLauncher.apk\",\"state\":\"uploaded\",\"size\":2724408,"
+                + "\"digest\":\"sha256:" + sha + "\","
+                + "\"browser_download_url\":\"https://github.com/tbzmike/smart-s-launcher/releases/download/v3.30.171/SmartSLauncher.apk\"},"
+                + "{\"name\":\"SmartSLauncher-debug.apk\",\"state\":\"uploaded\",\"size\":3780658,"
+                + "\"digest\":\"sha256:" + sha + "\","
+                + "\"browser_download_url\":\"https://github.com/tbzmike/smart-s-launcher/releases/download/v3.30.171/SmartSLauncher-debug.apk\"}]}";
+        assertEquals("SmartSLauncher-debug.apk",
+                AppUpdater.parseGitHubLatestRelease(json, true).name);
+        assertEquals(3780658L, AppUpdater.parseGitHubLatestRelease(json, true).size);
+        assertEquals("SmartSLauncher.apk",
+                AppUpdater.parseGitHubLatestRelease(json, false).name);
+    }
+
+    @Test
+    void parsesBackupManifestForBothSigningChannels() throws Exception {
+        String sha = "b".repeat(64);
+        String base = "https://github.com/tbzmike/smart-s-launcher/releases/download/v3.30.171/";
+        String json = "{\"version\":\"3.30.171\","
+                + "\"production\":{\"apkName\":\"SmartSLauncher.apk\",\"apkUrl\":\"" + base + "SmartSLauncher.apk\","
+                + "\"size\":2700000,\"sha256\":\"" + sha + "\"},"
+                + "\"debug\":{\"apkName\":\"SmartSLauncher-debug.apk\",\"apkUrl\":\"" + base + "SmartSLauncher-debug.apk\","
+                + "\"size\":3800000,\"sha256\":\"" + sha + "\"}}";
+        assertEquals("SmartSLauncher.apk", AppUpdater.parseChannelManifest(json, false).name);
+        assertEquals("SmartSLauncher-debug.apk", AppUpdater.parseChannelManifest(json, true).name);
+        assertEquals(3800000L, AppUpdater.parseChannelManifest(json, true).size);
+    }
+
+    @Test
+    void rejectsWrongSigningChannelAndStaleManifestUrls() {
+        String sha = "c".repeat(64);
+        String json = "{\"version\":\"3.30.171\",\"debug\":"
+                + "{\"apkName\":\"SmartSLauncher.apk\",\"apkUrl\":"
+                + "\"https://github.com/tbzmike/smart-s-launcher/releases/download/v3.30.170/SmartSLauncher.apk\","
+                + "\"size\":3450000,\"sha256\":\"" + sha + "\"}}";
+        org.junit.jupiter.api.Assertions.assertThrows(Exception.class,
+                () -> AppUpdater.parseChannelManifest(json, true));
+    }
+
+    @Test
     void computesDeterministicSha256(@TempDir Path tempDir) throws Exception {
         Path file = tempDir.resolve("release.apk");
         Files.write(file, "Smart S Launcher".getBytes(StandardCharsets.UTF_8));
