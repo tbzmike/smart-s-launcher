@@ -832,9 +832,12 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         cachedLabelContrast = safePercent(prefs, "smart-list-label-contrast", 100, 25, 200);
         cachedBodyContrast = safePercent(prefs, "smart-list-body-contrast", 100, 25, 200);
         cachedRowSpacing = safePercent(prefs, "smart-list-row-spacing-dp", 4, 0, 96);
-        cachedVerticalHistory = ("vertical".equals(cachedHistoryLayout)
-                || "wheel_3d".equals(cachedHistoryLayout))
-                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY;
+        // Wheel uses this adapter for BOTH History and active searches. Previously
+        // query mode skipped all four category icon sliders and showed default icons.
+        // Native Vertical List retains its existing History-only rule.
+        cachedVerticalHistory = "wheel_3d".equals(cachedHistoryLayout)
+                || ("vertical".equals(cachedHistoryLayout)
+                    && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY);
         cachedVerticalStyleSignature = verticalStyleSignature();
     }
 
