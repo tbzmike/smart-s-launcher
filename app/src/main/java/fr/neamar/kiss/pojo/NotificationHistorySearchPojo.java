@@ -15,6 +15,7 @@ public final class NotificationHistorySearchPojo extends SettingPojo {
 
     public final long historyDbId;
     public final String sourcePackageName;
+    public final String sourceConversationTitle;
     public final String sourceNotificationId;
     public final long postTime;
     public final boolean permanent;
@@ -29,6 +30,7 @@ public final class NotificationHistorySearchPojo extends SettingPojo {
                 R.drawable.setting_apps);
         historyDbId = record.dbId;
         sourcePackageName = safe(record.packageName);
+        sourceConversationTitle = safe(record.title);
         sourceNotificationId = safe(record.notificationId);
         postTime = record.postTime;
         permanent = record.permanent;
