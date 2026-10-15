@@ -543,7 +543,17 @@ final class SmartCardListForwarder extends Forwarder {
                 && mainActivity.searchEditText.hasFocus();
         applySearchFocusIsolation(activeQuery);
 
-        if (activeQuery && allowActiveQueryReuse && previouslyRenderedActiveQuery) {
+        boolean iconPreferencesChanged = lastPresentationSignature != presentationSignature();
+        if (iconPreferencesChanged && column.getChildCount() > 0) {
+            // A retained card tree has already consumed its old icon dimensions.
+            // Discard only its visible cards on a genuine settings change; do not
+            // reallocate on every dataset publication or scroll event.
+            column.removeAllViews();
+            historyCardSignatures.clear();
+            activeQueryCardSignatures.clear();
+        }
+        if (activeQuery && allowActiveQueryReuse && previouslyRenderedActiveQuery
+                && !iconPreferencesChanged) {
             reconcileActiveQueryCards();
         } else if (!activeQuery && !previouslyRenderedActiveQuery
                 && column.getChildCount() > 0) {
@@ -811,7 +821,8 @@ final class SmartCardListForwarder extends Forwarder {
         int normal = prefInt("smart-list-icon-size-percent", 110, 50, 240);
         String key = null;
         String enabled = null;
-        if (result.getPojo() instanceof NotificationPojo) {
+        if (result.getPojo() instanceof NotificationPojo
+                || result.getPojo() instanceof fr.neamar.kiss.pojo.NotificationHistorySearchPojo) {
             key = "smart-list-notification-icon-size-percent";
             enabled = "smart-list-resize-notification-icons";
         } else if (result.getPojo() instanceof ShortcutPojo) {
@@ -831,7 +842,7 @@ final class SmartCardListForwarder extends Forwarder {
                     ? prefInt(key, normal, 50, 240) : 100;
         }
         int card = prefInt("smart-list-card-icon-percent", 100, 60, 180);
-        return Math.max(50, Math.min(240, Math.round(normal * card / 100f)));
+        return HistoryIconSizing.combinedPercent(normal, card);
     }
 
     void refreshHistoryMetadata() {
@@ -936,7 +947,10 @@ final class SmartCardListForwarder extends Forwarder {
             liveIcon.setAlpha(1f);
             liveIcon.setScaleX(1f);
             liveIcon.setScaleY(1f);
-            liveIcon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            // CENTER_INSIDE never enlarges a small drawable, so even at 210% the
+            // image stayed at its original intrinsic size inside a much larger empty
+            // hit box. FIT_CENTER scales up AND down without cropping avatars.
+            liveIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
             if (liveIcon.getDrawable() == null && iconDrawable != null) {
                 liveIcon.setImageDrawable(iconDrawable);
             }
@@ -945,12 +959,16 @@ final class SmartCardListForwarder extends Forwarder {
             ImageView fallback = new ImageView(mainActivity);
             fallback.setImageDrawable(iconDrawable != null
                     ? iconDrawable : mainActivity.getPackageManager().getDefaultActivityIcon());
-            fallback.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            fallback.setScaleType(ImageView.ScaleType.FIT_CENTER);
             iconView = fallback;
         }
         // Do not cap the icon at 88dp: that silently discarded the large-icon setting.
-        int iconSize = Math.max(dp(32), dp(66) * iconPercent / 100);
+        int iconSize = dp(HistoryIconSizing.iconDp(66, iconPercent));
         LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
+        // The live layout must match the stored slider percentage, not just the
+        // larger layout box. This remains true for async avatar/photo replacements.
+        iconView.setMinimumWidth(0);
+        iconView.setMinimumHeight(0);
         iconLp.rightMargin = dp(14);
         mainRow.addView(iconView, iconLp);
         if (iconView instanceof ImageView) {
