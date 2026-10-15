@@ -192,7 +192,7 @@ public class SettingsResult extends ResultWithTags<SettingPojo> {
 
         if (!isHideIcons(context)) {
             Drawable identityIcon = NotificationIdentityIcon.resolve(
-                    context, exactNotificationId, notification.packageName);
+                    context, exactNotificationId, notification.packageName, notification.latestTitle);
             if (identityIcon != null) icon.setImageDrawable(identityIcon);
             else setAsyncDrawable(icon);
         } else icon.setImageDrawable(null);
@@ -260,7 +260,8 @@ public class SettingsResult extends ResultWithTags<SettingPojo> {
             if (pojo instanceof NotificationPojo) {
                 NotificationPojo notification = (NotificationPojo) pojo;
                 Drawable identity = NotificationIdentityIcon.resolve(
-                        context, notification.exactNotificationId, notification.packageName);
+                        context, notification.exactNotificationId,
+                        notification.packageName, notification.latestTitle);
                 if (identity != null) {
                     icon = identity;
                     return identity;
@@ -269,7 +270,8 @@ public class SettingsResult extends ResultWithTags<SettingPojo> {
             if (pojo instanceof NotificationHistorySearchPojo) {
                 NotificationHistorySearchPojo history = (NotificationHistorySearchPojo) pojo;
                 Drawable identity = NotificationIdentityIcon.resolve(
-                        context, history.sourceNotificationId, history.sourcePackageName);
+                        context, history.sourceNotificationId,
+                        history.sourcePackageName, history.sourceConversationTitle);
                 if (identity != null) {
                     icon = identity;
                     return identity;
