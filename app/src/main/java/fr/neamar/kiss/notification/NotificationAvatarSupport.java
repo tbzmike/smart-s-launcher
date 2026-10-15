@@ -202,6 +202,29 @@ public final class NotificationAvatarSupport {
     }
 
     /**
+     * Reuse another saved notification's conversation portrait when its exact notification
+     * identifier has changed. This is deliberately limited to artwork previously captured from
+     * Android notification/shortcut metadata: apps' private profile databases are inaccessible.
+     * Disk decoding is disallowed during a fling, just as with avatar(notificationId).
+     */
+    @Nullable
+    public static Drawable avatarForIdentity(@Nullable Context context,
+                                             @Nullable String notificationId,
+                                             @Nullable String packageName,
+                                             @Nullable String conversationTitle) {
+        Drawable direct = avatar(context, notificationId);
+        if (direct != null || context == null || LauncherScrollWorkGate.isScrolling()
+                || TextUtils.isEmpty(packageName) || TextUtils.isEmpty(conversationTitle)
+                || conversationTitle.trim().length() < 3) return direct;
+        String path = identityAvatarPath(context, packageName, conversationTitle, null);
+        if (path == null) return null;
+        Bitmap bitmap = BitmapFactory.decodeFile(path);
+        if (bitmap == null) return null;
+        if (!TextUtils.isEmpty(notificationId)) MEMORY_CACHE.put(notificationId, bitmap);
+        return new BitmapDrawable(context.getResources(), bitmap);
+    }
+
+    /**
      * Release only rebuildable in-memory state. Pending notification work is also discarded under
      * severe pressure so queued StatusBarNotification objects cannot keep large extras/bitmaps alive.
      */
