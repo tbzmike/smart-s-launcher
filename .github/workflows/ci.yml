@@ -23,6 +23,14 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: 21
+      - name: Warm Gradle distribution with network retries
+        run: |
+          for attempt in 1 2 3 4; do
+            if bash ./gradlew --version; then exit 0; fi
+            echo "Gradle distribution download failed; retrying attempt $attempt"
+            sleep 8
+          done
+          exit 1
       - name: Lint code
         id: lint
         continue-on-error: true
@@ -68,6 +76,14 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: 21
+      - name: Warm Gradle distribution with network retries
+        run: |
+          for attempt in 1 2 3 4; do
+            if bash ./gradlew --version; then exit 0; fi
+            echo "Gradle distribution download failed; retrying attempt $attempt"
+            sleep 8
+          done
+          exit 1
       - name: Build APKs
         run: bash ./gradlew assembleDebug assembleRelease --stacktrace
       - name: Upload debug APK
