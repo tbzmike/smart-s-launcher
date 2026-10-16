@@ -88,7 +88,7 @@ public final class HistoryOverflowIconSizingRegressionTest {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(
                 InstrumentationRegistry.getInstrumentation().getTargetContext());
         String oldLayout = prefs.getString("smart-history-layout", "vertical");
-        String oldPercent = prefs.getString("smart-list-feature-icon-size-percent", "100");
+        Object oldPercent = prefs.getAll().get("smart-list-feature-icon-size-percent");
         boolean oldResize = prefs.getBoolean("smart-list-resize-feature-icons", true);
         try {
             assertTrue(prefs.edit()
@@ -129,9 +129,19 @@ public final class HistoryOverflowIconSizingRegressionTest {
                 });
             }
         } finally {
-            prefs.edit().putString("smart-history-layout", oldLayout)
-                    .putString("smart-list-feature-icon-size-percent", oldPercent)
-                    .putBoolean("smart-list-resize-feature-icons", oldResize).commit();
+            SharedPreferences.Editor restore = prefs.edit()
+                    .putString("smart-history-layout", oldLayout)
+                    .putBoolean("smart-list-resize-feature-icons", oldResize);
+            // Real preference sliders store integers on some builds. Restore the
+            // exact prior type; never cast an Integer to String in test setup.
+            if (oldPercent instanceof Integer) {
+                restore.putInt("smart-list-feature-icon-size-percent", (Integer) oldPercent);
+            } else if (oldPercent instanceof String) {
+                restore.putString("smart-list-feature-icon-size-percent", (String) oldPercent);
+            } else if (oldPercent == null) {
+                restore.remove("smart-list-feature-icon-size-percent");
+            }
+            restore.commit();
         }
     }
 
