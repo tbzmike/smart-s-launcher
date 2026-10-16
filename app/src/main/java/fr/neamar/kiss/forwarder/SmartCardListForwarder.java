@@ -71,6 +71,7 @@ final class SmartCardListForwarder extends Forwarder {
     private TextView newerCardPage;
     private final BoundedHistoryWindow cardWindow = new BoundedHistoryWindow();
     private String lastCardWindowQuery = "";
+    private int renderingPresentationSignature = Integer.MIN_VALUE;
     private View edgeEffect;
     private boolean pendingDataSetRefresh;
     private boolean forceNextHistoryRebuild;
@@ -526,6 +527,9 @@ final class SmartCardListForwarder extends Forwarder {
             cardWindow.reset();
             lastCardWindowQuery = currentQuery;
         }
+        // Capture the visual settings once per rebuild. This also invalidates cached
+        // result views on slider changes without forcing an unrelated data refresh.
+        renderingPresentationSignature = presentationSignature();
         int allResults = mainActivity.adapter.getCount();
         int windowStart = cardWindow.start(allResults);
         int windowEnd = cardWindow.end(allResults);
@@ -577,7 +581,7 @@ final class SmartCardListForwarder extends Forwarder {
             }
         }
 
-        lastPresentationSignature = presentationSignature();
+        lastPresentationSignature = renderingPresentationSignature;
         if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
             // Restore only a focus state that existed before this rebuild. This is not an
             // unconditional IME reopen: it simply prevents card-tree replacement from ending
@@ -728,7 +732,8 @@ final class SmartCardListForwarder extends Forwarder {
                 .append(result.getClass().getName()).append('|')
                 .append(result.getPojoId()).append('|')
                 .append(pojo.getName()).append('|')
-                .append(pojo.isDisabled());
+                .append(pojo.isDisabled()).append('|')
+                .append(renderingPresentationSignature);
 
         if (pojo instanceof NotificationPojo) {
             NotificationPojo n = (NotificationPojo) pojo;
@@ -831,7 +836,10 @@ final class SmartCardListForwarder extends Forwarder {
                     ? prefInt(key, normal, 50, 240) : 100;
         }
         int card = prefInt("smart-list-card-icon-percent", 100, 60, 180);
-        return Math.max(50, Math.min(240, Math.round(normal * card / 100f)));
+        // The per-type slider is an actual percentage of its source icon size.
+        // A separate Cards multiplier may compound it; don't silently cap a
+        // 210% contact-avatar preference back to 240% when Cards zoom is enabled.
+        return Math.max(50, Math.min(432, Math.round(normal * card / 100f)));
     }
 
     void refreshHistoryMetadata() {
@@ -949,7 +957,15 @@ final class SmartCardListForwarder extends Forwarder {
             iconView = fallback;
         }
         // Do not cap the icon at 88dp: that silently discarded the large-icon setting.
-        int iconSize = Math.max(dp(32), dp(66) * iconPercent / 100);
+        // Match the source row's true 100% icon size. The old hard-coded 66dp
+        // baseline made card percentages disagree with the Vertical List's 100%.
+        ViewGroup.LayoutParams sourceIconLp = iconView.getLayoutParams();
+        int baseIcon = sourceIconLp != null && sourceIconLp.width > 0
+                ? sourceIconLp.width : dp(66);
+        int desiredIconPx = Math.round(baseIcon * iconPercent / 100f);
+        // Preserve readable text even if two independent zoom settings are maximal.
+        int maxIconPx = Math.round(mainActivity.getResources().getDisplayMetrics().widthPixels * 0.58f);
+        int iconSize = Math.max(dp(24), Math.min(maxIconPx, desiredIconPx));
         LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
         iconLp.rightMargin = dp(14);
         mainRow.addView(iconView, iconLp);
