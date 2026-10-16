@@ -9,7 +9,6 @@ import android.util.AttributeSet;
 import android.widget.TextView;
 
 import fr.neamar.kiss.R;
-import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 
@@ -21,10 +20,15 @@ import fr.neamar.kiss.searcher.Searcher;
 @SuppressLint("AppCompatCustomView")
 public class AutoMarqueeTextView extends TextView {
     private static final long SCROLL_IDLE_RETRY_MS = 320L;
+    private static final long MARQUEE_FRAME_MS = 65L;
+    private static final long MARQUEE_START_HOLD_MS = 650L;
+    private static final long MARQUEE_END_HOLD_MS = 950L;
 
     private boolean behaviorLocked;
     private boolean autoExpand;
     private int appliedBehaviorMode = -1;
+    private int marqueeOffset;
+    private final Runnable marqueeFrame = this::advanceMarquee;
     private final Rect visibleRect = new Rect();
     private final Runnable deferredLayoutRequest = () -> {
         if (isAttachedToWindow()) requestLayout();
@@ -82,6 +86,11 @@ public class AutoMarqueeTextView extends TextView {
         boolean modeChanged = autoExpand != TextOverflowMode.isAutoExpandForHistory(getContext());
         refreshOverflowMode();
         applyConfiguredBehavior();
+        if (modeChanged) {
+            removeCallbacks(marqueeFrame);
+            marqueeOffset = 0;
+            scrollTo(0, 0);
+        }
         if (modeChanged && getText() != null) {
             // Rebuild TextView's cached StaticLayout/BoringLayout. Merely altering
             // maxLines and ellipsize leaves a retained marquee's old one-line
@@ -138,7 +147,7 @@ public class AutoMarqueeTextView extends TextView {
     public void setEllipsize(TextUtils.TruncateAt where) {
         if (behaviorLocked) {
             refreshOverflowMode();
-            super.setEllipsize(isAutoExpand() ? null : TextUtils.TruncateAt.MARQUEE);
+            super.setEllipsize(null);
             return;
         }
         super.setEllipsize(where);
@@ -168,6 +177,9 @@ public class AutoMarqueeTextView extends TextView {
     protected void onDetachedFromWindow() {
         removeCallbacks(deferredLayoutRequest);
         removeCallbacks(deferredMarqueeRestart);
+        removeCallbacks(marqueeFrame);
+        marqueeOffset = 0;
+        scrollTo(0, 0);
         super.onDetachedFromWindow();
     }
 
@@ -177,13 +189,19 @@ public class AutoMarqueeTextView extends TextView {
         if (!isAttachedToWindow()) return;
         applySearchAppearanceIfNeeded();
         if (isAutoExpand()) scheduleLayoutRequest();
-        else scheduleMarqueeRestart();
+        else {
+            marqueeOffset = 0;
+            scrollTo(0, 0);
+            scheduleMarqueeRestart();
+        }
     }
 
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
         if (isAttachedToWindow() && width != oldWidth && !isAutoExpand()) {
+            marqueeOffset = 0;
+            scrollTo(0, 0);
             scheduleMarqueeRestart();
         }
     }
@@ -215,7 +233,10 @@ public class AutoMarqueeTextView extends TextView {
         try {
             super.setSingleLine(!expanded);
             super.setMaxLines(expanded ? Integer.MAX_VALUE : 1);
-            super.setEllipsize(expanded ? null : TextUtils.TruncateAt.MARQUEE);
+            // Framework MARQUEE depends on focus/selection and stops silently when a
+            // retained History row is reparented. Own one small, deterministic
+            // content scroll instead: no TextView focus or competing animations.
+            super.setEllipsize(null);
             super.setHorizontallyScrolling(!expanded);
         } finally {
             behaviorLocked = true;
@@ -268,10 +289,12 @@ public class AutoMarqueeTextView extends TextView {
     private void scheduleMarqueeRestart() {
         removeCallbacks(deferredMarqueeRestart);
         if (isAutoExpand()) {
+            removeCallbacks(marqueeFrame);
+            scrollTo(0, 0);
             setSelected(false);
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+        if (isNativeListScrolling()) {
             // Never animate text inside an active fling. Keep one cheap delayed retry so native
             // Vertical List marquee starts automatically as soon as motion has really settled.
             setSelected(false);
@@ -295,7 +318,7 @@ public class AutoMarqueeTextView extends TextView {
     }
 
     private boolean isActuallyVisibleOnScreen() {
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()
+        if (isNativeListScrolling()
                 || !isShown() || !isAttachedToWindow() || !hasWindowFocus()) return false;
         visibleRect.setEmpty();
         return getLocalVisibleRect(visibleRect)
@@ -308,36 +331,79 @@ public class AutoMarqueeTextView extends TextView {
         return list != null && list.isScrollInProgress();
     }
 
+    private int marqueeMaxOffset() {
+        if (getWidth() <= 0 || TextUtils.isEmpty(getText())) return 0;
+        int width = getWidth() - getCompoundPaddingLeft() - getCompoundPaddingRight();
+        if (width <= 0) return 0;
+        float fullTextWidth = getPaint().measureText(getText().toString());
+        return Math.max(0, (int) Math.ceil(fullTextWidth) - width);
+    }
+
     private void restartMarquee() {
         refreshOverflowMode();
         applyConfiguredBehavior();
+        removeCallbacks(marqueeFrame);
         if (isAutoExpand()) {
-            setSelected(false);
+            marqueeOffset = 0;
+            scrollTo(0, 0);
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
-            scheduleMarqueeRestart();
+        if (isNativeListScrolling()) {
+            removeCallbacks(deferredMarqueeRestart);
+            postDelayed(deferredMarqueeRestart, SCROLL_IDLE_RETRY_MS);
             return;
         }
         if (!isActuallyVisibleOnScreen()) {
-            setSelected(false);
+            // A retained row may be offscreen during an async History update. Do
+            // not spin a frame loop while hidden; Android will restart when shown.
+            if (isAttachedToWindow() && hasWindowFocus() && isShown()) {
+                postDelayed(deferredMarqueeRestart, SCROLL_IDLE_RETRY_MS);
+            }
             return;
         }
-        setSelected(false);
-        setSelected(true);
-        invalidate();
+        if (marqueeMaxOffset() == 0) {
+            marqueeOffset = 0;
+            scrollTo(0, 0);
+            return;
+        }
+        postDelayed(marqueeFrame, marqueeOffset == 0
+                ? MARQUEE_START_HOLD_MS : MARQUEE_FRAME_MS);
+    }
+
+    private void advanceMarquee() {
+        if (isAutoExpand() || !isAttachedToWindow()) return;
+        if (isNativeListScrolling() || !isActuallyVisibleOnScreen()) {
+            scheduleMarqueeRestart();
+            return;
+        }
+        int max = marqueeMaxOffset();
+        if (max <= 0) {
+            marqueeOffset = 0;
+            scrollTo(0, 0);
+            return;
+        }
+        if (marqueeOffset >= max) {
+            marqueeOffset = 0;
+            scrollTo(0, 0);
+            postDelayed(marqueeFrame, MARQUEE_END_HOLD_MS);
+            return;
+        }
+        int step = Math.max(1, (int) (getResources().getDisplayMetrics().density * 3f));
+        marqueeOffset = Math.min(max, marqueeOffset + step);
+        scrollTo(marqueeOffset, 0);
+        postDelayed(marqueeFrame, MARQUEE_FRAME_MS);
+    }
+
+    /** Used by Android regression tests to verify real movement, not just settings. */
+    public int getCurrentMarqueeOffset() {
+        return marqueeOffset;
     }
 
     @Override
-    public boolean isFocused() {
-        // Marquee activation follows actual on-screen visibility. This includes native Vertical List
-        // when idle, but remains false during list movement and for off-screen retained cards.
-        return isAutoExpand() ? super.isFocused() : isActuallyVisibleOnScreen();
-    }
-
-    @Override
-    public boolean isSelected() {
-        return isAutoExpand() ? super.isSelected() : isActuallyVisibleOnScreen();
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        if (isVisible && !isAutoExpand()) scheduleMarqueeRestart();
+        else if (!isVisible) removeCallbacks(marqueeFrame);
     }
 
     @Override
