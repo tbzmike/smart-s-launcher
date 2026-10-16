@@ -373,7 +373,7 @@ public class AutoScrollPreviewTextView extends TextView {
             scrollTo(0, 0);
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+        if (isNativeListScrolling()) {
             cancelScrollStep();
             postDelayed(deferredPreviewRestart, SCROLL_IDLE_RETRY_MS);
             return;
@@ -395,8 +395,7 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private boolean isActuallyVisibleOnScreen() {
-        if (LauncherScrollWorkGate.isScrolling()
-                || !attached || !isShown() || !hasWindowFocus() || isNativeListScrolling()) return false;
+        if (!attached || !isShown() || isNativeListScrolling()) return false;
         visibleRect.setEmpty();
         return getLocalVisibleRect(visibleRect)
                 && visibleRect.width() > 0
@@ -419,7 +418,7 @@ public class AutoScrollPreviewTextView extends TextView {
             cancelScrollStep();
             return;
         }
-        long effectiveDelay = (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling())
+        long effectiveDelay = isNativeListScrolling()
                 ? SCROLL_IDLE_RETRY_MS : delayMs;
         scrollStepScheduled = true;
         postDelayed(scrollStep, effectiveDelay);
@@ -442,7 +441,7 @@ public class AutoScrollPreviewTextView extends TextView {
             scrollTo(0, 0);
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+        if (isNativeListScrolling()) {
             scheduleScrollStep(SCROLL_IDLE_RETRY_MS);
             return;
         }
@@ -456,7 +455,7 @@ public class AutoScrollPreviewTextView extends TextView {
             cancelScrollStep();
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+        if (isNativeListScrolling()) {
             scheduleScrollStep(SCROLL_IDLE_RETRY_MS);
             return;
         }
