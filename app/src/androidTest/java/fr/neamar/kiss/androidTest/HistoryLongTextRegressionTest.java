@@ -11,6 +11,8 @@ import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.view.Gravity;
 import android.widget.TextView;
 
 import androidx.preference.PreferenceManager;
@@ -69,7 +71,8 @@ public final class HistoryLongTextRegressionTest {
                 // maxLines and measured compact height have already switched.
                 assertEquals("Compact marquee must enforce one visible line",
                         1, text.getMaxLines());
-                assertEquals(TextUtils.TruncateAt.MARQUEE, text.getEllipsize());
+                assertEquals("Custom deterministic overflow scroll does not use Android's focus-only marquee",
+                        null, text.getEllipsize());
                 assertTrue("Long text must not keep the old expanded tile height",
                         text.getMeasuredHeight() <= text.getLineHeight() * 2);
 
@@ -93,6 +96,76 @@ public final class HistoryLongTextRegressionTest {
                 assertTrue("Switching back restores full preview height",
                         message.getMeasuredHeight() >= message.getLineHeight() * 3);
             });
+        }
+    }
+
+    @Test public void autoScrollReallyMovesTextInAllThreeLayoutsAndExpandStopsMotion() {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        String oldLayout = prefs.getString("smart-history-layout", "vertical");
+        String oldMode = prefs.getString("smart-text-overflow-mode", "auto_scroll");
+        final String[] layouts = {"vertical", "vertical_cards", "wheel_3d"};
+        try {
+            assertTrue(prefs.edit().putString("smart-text-overflow-mode", "auto_scroll").commit());
+            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                final AutoMarqueeTextView[] title = new AutoMarqueeTextView[1];
+                final AutoScrollPreviewTextView[] preview = new AutoScrollPreviewTextView[1];
+                final int[] px = new int[1];
+                scenario.onActivity(activity -> {
+                    px[0] = Math.round(145 * activity.getResources().getDisplayMetrics().density);
+                    FrameLayout root = activity.findViewById(android.R.id.content);
+                    LinearLayout fixture = new LinearLayout(activity);
+                    fixture.setOrientation(LinearLayout.VERTICAL);
+                    FrameLayout.LayoutParams fixtureLp = new FrameLayout.LayoutParams(
+                            px[0], ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+                    root.addView(fixture, fixtureLp);
+                    title[0] = new AutoMarqueeTextView(activity);
+                    title[0].setText(LONG_MESSAGE);
+                    fixture.addView(title[0], new LinearLayout.LayoutParams(
+                            px[0], ViewGroup.LayoutParams.WRAP_CONTENT));
+                    preview[0] = new AutoScrollPreviewTextView(activity);
+                    preview[0].setText(LONG_MESSAGE);
+                    fixture.addView(preview[0], new LinearLayout.LayoutParams(
+                            px[0], ViewGroup.LayoutParams.WRAP_CONTENT));
+                });
+
+                for (String layout : layouts) {
+                    assertTrue(prefs.edit().putString("smart-history-layout", layout)
+                            .putString("smart-text-overflow-mode", "auto_scroll").commit());
+                    scenario.onActivity(activity -> {
+                        title[0].refreshConfiguredBehavior();
+                        preview[0].refreshConfiguredBehavior();
+                        title[0].setText(LONG_MESSAGE);
+                        preview[0].setText(LONG_MESSAGE);
+                        assertEquals("Selection must be effective for " + layout,
+                                "auto_scroll",
+                                fr.neamar.kiss.ui.TextOverflowMode.effectiveMode(activity));
+                    });
+
+                    SystemClock.sleep(3200L);
+                    InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+                    scenario.onActivity(activity -> {
+                        assertTrue("Title stayed stationary in " + layout,
+                                title[0].getCurrentMarqueeOffset() > 0);
+                        assertTrue("Two-line message did not advance in " + layout,
+                                preview[0].getScrollY() > 0);
+                    });
+
+                    assertTrue(prefs.edit().putString("smart-text-overflow-mode", "auto_expand").commit());
+                    scenario.onActivity(activity -> {
+                        title[0].refreshConfiguredBehavior();
+                        preview[0].refreshConfiguredBehavior();
+                        assertEquals("auto_expand",
+                                fr.neamar.kiss.ui.TextOverflowMode.effectiveMode(activity));
+                        assertEquals("Expanded title must be reset", 0,
+                                title[0].getCurrentMarqueeOffset());
+                        assertEquals("Expanded preview must reset", 0, preview[0].getScrollY());
+                    });
+                }
+            }
+        } finally {
+            prefs.edit().putString("smart-history-layout", oldLayout)
+                    .putString("smart-text-overflow-mode", oldMode).commit();
         }
     }
 
