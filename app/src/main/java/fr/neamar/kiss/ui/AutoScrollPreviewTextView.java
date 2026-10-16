@@ -25,7 +25,7 @@ import fr.neamar.kiss.searcher.Searcher;
 @SuppressLint("AppCompatCustomView")
 public class AutoScrollPreviewTextView extends TextView {
     private static final int VISIBLE_LINES = 2;
-    private static final long STEP_DELAY_MS = 2400L;
+    private static final long STEP_DELAY_MS = 1500L;
     private static final long RESET_DELAY_MS = 3200L;
     private static final long SCROLL_IDLE_RETRY_MS = 320L;
 
@@ -423,6 +423,14 @@ public class AutoScrollPreviewTextView extends TextView {
                 ? SCROLL_IDLE_RETRY_MS : delayMs;
         scrollStepScheduled = true;
         postDelayed(scrollStep, effectiveDelay);
+    }
+
+    /** Called once when a renderer finishes scrolling, never on each scroll frame. */
+    public void refreshAutoScrollIfVisible() {
+        if (!isAutoExpand() && isActuallyVisibleOnScreen()
+                && !scrollStepScheduled) {
+            scheduleScrollStep(STEP_DELAY_MS);
+        }
     }
 
     private void restartAutoScroll() {
