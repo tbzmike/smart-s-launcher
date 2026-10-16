@@ -271,7 +271,7 @@ public class AutoMarqueeTextView extends TextView {
             setSelected(false);
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+        if (isNativeListScrolling()) {
             // Never animate text inside an active fling. Keep one cheap delayed retry so native
             // Vertical List marquee starts automatically as soon as motion has really settled.
             setSelected(false);
@@ -295,8 +295,10 @@ public class AutoMarqueeTextView extends TextView {
     }
 
     private boolean isActuallyVisibleOnScreen() {
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()
-                || !isShown() || !isAttachedToWindow() || !hasWindowFocus()) return false;
+        // The global scroll work gate can remain active because another History
+        // renderer is moving. Only the native List row's *own* scrolling state
+        // should block this text view. The renderer calls refresh on real idle.
+        if (isNativeListScrolling() || !isShown() || !isAttachedToWindow()) return false;
         visibleRect.setEmpty();
         return getLocalVisibleRect(visibleRect)
                 && visibleRect.width() > 0
@@ -315,7 +317,7 @@ public class AutoMarqueeTextView extends TextView {
             setSelected(false);
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+        if (isNativeListScrolling()) {
             scheduleMarqueeRestart();
             return;
         }
@@ -345,8 +347,16 @@ public class AutoMarqueeTextView extends TextView {
 
     /** Retry activation when a retained card becomes visible after paging or scrolling. */
     public void refreshAutoScrollIfVisible() {
-        if (!isAutoExpand() && isActuallyVisibleOnScreen() && !super.isSelected()) {
-            scheduleMarqueeRestart();
+        if (isAutoExpand() || !isAttachedToWindow() || !isShown()
+                || isNativeListScrolling()) return;
+        visibleRect.setEmpty();
+        if (!getLocalVisibleRect(visibleRect) || visibleRect.isEmpty()) return;
+        // Explicitly activated only by a renderer's idle callback. Do not let an
+        // unrelated/stale process-wide scroll gate prevent the selected marquee.
+        // The actual TextView selected state is essential to start Android marquee.
+        if (!super.isSelected()) {
+            setSelected(true);
+            invalidate();
         }
     }
 
