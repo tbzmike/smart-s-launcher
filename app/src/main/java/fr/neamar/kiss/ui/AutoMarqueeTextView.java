@@ -20,6 +20,7 @@ import fr.neamar.kiss.searcher.Searcher;
 @SuppressLint("AppCompatCustomView")
 public class AutoMarqueeTextView extends TextView {
     private static final long SCROLL_IDLE_RETRY_MS = 320L;
+    private static final long OFFSCREEN_RECHECK_MS = 1800L;
     private static final long MARQUEE_FRAME_MS = 65L;
     private static final long MARQUEE_START_HOLD_MS = 650L;
     private static final long MARQUEE_END_HOLD_MS = 950L;
@@ -357,7 +358,7 @@ public class AutoMarqueeTextView extends TextView {
             // A retained row may be offscreen during an async History update. Do
             // not spin a frame loop while hidden; Android will restart when shown.
             if (isAttachedToWindow() && hasWindowFocus() && isShown()) {
-                postDelayed(deferredMarqueeRestart, SCROLL_IDLE_RETRY_MS);
+                postDelayed(deferredMarqueeRestart, OFFSCREEN_RECHECK_MS);
             }
             return;
         }
