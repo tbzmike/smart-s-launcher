@@ -402,6 +402,7 @@ final class HistoryDisplayForwarder extends Forwarder {
         wheelScroller.post(() -> {
             if (refocusFront && count > 0) centerWheelItem(count - 1);
             scheduleWheelTransforms();
+            onScrollIdleAnimations();
 
             // Reused wheel rows are not "newVisual". When the user changes animation style, speed
             // or the master animation toggle in Settings, explicitly replay the visible wheel rows
@@ -427,9 +428,24 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     void onScrollIdleAnimations() {
-        if (VERTICAL.equals(activeMode)) {
+        // Re-arm compact text only for visible rows after the user's fling ends.
+        // Do not allocate any new rows or start an ongoing polling process.
+        if (VERTICAL.equals(activeMode) && mainActivity.list != null) {
+            for (int i = 0; i < mainActivity.list.getChildCount(); i++) {
+                fr.neamar.kiss.ui.HistoryTextScrollActivator.refresh(
+                        mainActivity.list.getChildAt(i));
+            }
             animateVisibleVerticalRows();
         } else if (WHEEL_3D.equals(activeMode)) {
+            if (wheelColumn != null && wheelScroller != null) {
+                int top = wheelScroller.getScrollY();
+                int bottom = top + wheelScroller.getHeight();
+                for (int i = 0; i < wheelColumn.getChildCount(); i++) {
+                    View row = wheelColumn.getChildAt(i);
+                    if (row.getBottom() < top || row.getTop() > bottom) continue;
+                    fr.neamar.kiss.ui.HistoryTextScrollActivator.refresh(row);
+                }
+            }
             animateVisibleWheelRows();
         }
     }
