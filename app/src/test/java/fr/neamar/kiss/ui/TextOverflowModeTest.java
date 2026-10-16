@@ -8,14 +8,15 @@ import org.junit.jupiter.api.Test;
 
 class TextOverflowModeTest {
     @Test
-    void autoExpandAppliesToBothRequestedVerticalLayouts() {
+    void autoExpandAppliesToAllThreeHistoryLayouts() {
         assertTrue(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "vertical"));
         assertTrue(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "vertical_cards"));
+        assertTrue(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "wheel_3d"));
     }
 
     @Test
     void autoExpandDoesNotLeakIntoOtherHistoryRenderers() {
-        assertFalse(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "wheel_3d"));
+        assertFalse(TextOverflowMode.shouldExpand(TextOverflowMode.AUTO_EXPAND, "not_a_layout"));
     }
 
     @Test
