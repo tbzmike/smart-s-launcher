@@ -337,7 +337,17 @@ public class AutoMarqueeTextView extends TextView {
 
     @Override
     public boolean isSelected() {
-        return isAutoExpand() ? super.isSelected() : isActuallyVisibleOnScreen();
+        // TextView.setSelected(true) consults isSelected() to decide whether to
+        // activate its internal marquee. Reporting 'selected' merely because this
+        // View is visible makes that setter a no-op and leaves Auto Scroll frozen.
+        return super.isSelected();
+    }
+
+    /** Retry activation when a retained card becomes visible after paging or scrolling. */
+    public void refreshAutoScrollIfVisible() {
+        if (!isAutoExpand() && isActuallyVisibleOnScreen() && !super.isSelected()) {
+            scheduleMarqueeRestart();
+        }
     }
 
     @Override
