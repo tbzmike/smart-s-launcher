@@ -383,10 +383,24 @@ final class SmartCardListForwarder extends Forwarder {
                 && ((StableCardScrollView) scroller).scrollIdleGate.isScrolling();
     }
 
+    private void refreshVisibleTextScroll() {
+        if (!isEnabled() || scroller == null || column == null || isScrollInProgress()) return;
+        int top = scroller.getScrollY();
+        int bottom = top + scroller.getHeight();
+        for (int i = 0; i < column.getChildCount(); i++) {
+            View item = column.getChildAt(i);
+            if (item.getBottom() < top || item.getTop() > bottom) continue;
+            fr.neamar.kiss.ui.HistoryTextScrollActivator.refresh(item);
+        }
+    }
+
     void onScrollIdleAnimations() {
         if (!isEnabled() || scroller == null || column == null || isScrollInProgress()) {
             return;
         }
+        // Auto Scroll is a separate setting: it must work even if tile animations
+        // are disabled or only the already-retained cards are on screen.
+        refreshVisibleTextScroll();
 
         if (!SmartAnimationEngine.isEnabled(mainActivity)) {
             int top = scroller.getScrollY();
@@ -582,6 +596,9 @@ final class SmartCardListForwarder extends Forwarder {
         }
 
         lastPresentationSignature = renderingPresentationSignature;
+        // Reused cards may never get a new onAttachedToWindow callback. Once the
+        // current frame is laid out, re-arm only its visible compact text.
+        if (scroller != null) scroller.postOnAnimation(this::refreshVisibleTextScroll);
         if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
             // Restore only a focus state that existed before this rebuild. This is not an
             // unconditional IME reopen: it simply prevents card-tree replacement from ending
