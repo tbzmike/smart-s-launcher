@@ -27,6 +27,7 @@ public class AutoScrollPreviewTextView extends TextView {
     private static final long STEP_DELAY_MS = 2400L;
     private static final long RESET_DELAY_MS = 3200L;
     private static final long SCROLL_IDLE_RETRY_MS = 320L;
+    private static final long OFFSCREEN_RECHECK_MS = 1800L;
 
     private int firstVisibleLine;
     private boolean attached;
@@ -462,7 +463,7 @@ public class AutoScrollPreviewTextView extends TextView {
             // without receiving another attach or text-change callback. Do not
             // permanently lose its auto-scroll timer on a transient hidden frame.
             if (attached && isShown() && hasWindowFocus()) {
-                scheduleScrollStep(SCROLL_IDLE_RETRY_MS);
+                scheduleScrollStep(OFFSCREEN_RECHECK_MS);
             } else {
                 cancelScrollStep();
             }
