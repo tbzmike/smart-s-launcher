@@ -6,7 +6,7 @@ import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 import androidx.preference.PreferenceManager;
 
-/** Shared long-text policy for Smart S Vertical list and Vertical cards result renderers. */
+/** Shared long-text policy for Smart S Vertical List, Vertical Cards and 3D Wheel result renderers. */
 public final class TextOverflowMode {
     public static final String PREF_KEY = "smart-text-overflow-mode";
     public static final String AUTO_SCROLL = "auto_scroll";
@@ -36,7 +36,8 @@ public final class TextOverflowMode {
     }
 
     static boolean isSupportedLayout(String layout) {
-        return "vertical".equals(layout) || "vertical_cards".equals(layout);
+        return "vertical".equals(layout) || "vertical_cards".equals(layout)
+                || "wheel_3d".equals(layout);
     }
 
     /**
