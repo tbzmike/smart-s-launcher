@@ -13,7 +13,6 @@ import android.view.View;
 
 import android.widget.TextView;
 
-import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.searcher.Searcher;
 
@@ -373,7 +372,7 @@ public class AutoScrollPreviewTextView extends TextView {
             scrollTo(0, 0);
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+        if (isNativeListScrolling()) {
             cancelScrollStep();
             postDelayed(deferredPreviewRestart, SCROLL_IDLE_RETRY_MS);
             return;
@@ -395,8 +394,7 @@ public class AutoScrollPreviewTextView extends TextView {
     }
 
     private boolean isActuallyVisibleOnScreen() {
-        if (LauncherScrollWorkGate.isScrolling()
-                || !attached || !isShown() || !hasWindowFocus() || isNativeListScrolling()) return false;
+        if (!attached || !isShown() || !hasWindowFocus() || isNativeListScrolling()) return false;
         visibleRect.setEmpty();
         return getLocalVisibleRect(visibleRect)
                 && visibleRect.width() > 0
@@ -406,6 +404,13 @@ public class AutoScrollPreviewTextView extends TextView {
     private boolean isNativeListScrolling() {
         AnimatedListView list = findNativeListAncestor();
         return list != null && list.isScrollInProgress();
+    }
+
+    @Override
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        if (isVisible && attached && !isAutoExpand()) schedulePreviewRestart();
+        else if (!isVisible) cancelScrollStep();
     }
 
     private void cancelScrollStep() {
@@ -419,7 +424,7 @@ public class AutoScrollPreviewTextView extends TextView {
             cancelScrollStep();
             return;
         }
-        long effectiveDelay = (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling())
+        long effectiveDelay = (isNativeListScrolling())
                 ? SCROLL_IDLE_RETRY_MS : delayMs;
         scrollStepScheduled = true;
         postDelayed(scrollStep, effectiveDelay);
@@ -434,7 +439,7 @@ public class AutoScrollPreviewTextView extends TextView {
             scrollTo(0, 0);
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+        if (isNativeListScrolling()) {
             scheduleScrollStep(SCROLL_IDLE_RETRY_MS);
             return;
         }
@@ -448,12 +453,19 @@ public class AutoScrollPreviewTextView extends TextView {
             cancelScrollStep();
             return;
         }
-        if (LauncherScrollWorkGate.isScrolling() || isNativeListScrolling()) {
+        if (isNativeListScrolling()) {
             scheduleScrollStep(SCROLL_IDLE_RETRY_MS);
             return;
         }
         if (!isActuallyVisibleOnScreen()) {
-            cancelScrollStep();
+            // A retained Card/Wheel preview can become visible after a page move
+            // without receiving another attach or text-change callback. Do not
+            // permanently lose its auto-scroll timer on a transient hidden frame.
+            if (attached && isShown() && hasWindowFocus()) {
+                scheduleScrollStep(SCROLL_IDLE_RETRY_MS);
+            } else {
+                cancelScrollStep();
+            }
             return;
         }
         Layout layout = getLayout();
