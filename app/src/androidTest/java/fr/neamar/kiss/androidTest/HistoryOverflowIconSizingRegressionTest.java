@@ -93,7 +93,7 @@ public final class HistoryOverflowIconSizingRegressionTest {
         try {
             assertTrue(prefs.edit()
                     .putString("smart-history-layout", "vertical_cards")
-                    .putString("smart-list-feature-icon-size-percent", "100")
+                    .putInt("smart-list-feature-icon-size-percent", 100)
                     .putBoolean("smart-list-resize-feature-icons", true).commit());
             try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
                 scenario.onActivity(activity -> {
@@ -116,7 +116,7 @@ public final class HistoryOverflowIconSizingRegressionTest {
                         widths[0] = firstCardIconWidth((LinearLayout) field(cards, "column"));
                         assertTrue(widths[0] > 0);
                         assertTrue(prefs.edit()
-                                .putString("smart-list-feature-icon-size-percent", "210").commit());
+                                .putInt("smart-list-feature-icon-size-percent", 210).commit());
                         call(cards, "onResume");
                         widths[1] = firstCardIconWidth((LinearLayout) field(cards, "column"));
                         assertTrue("Vertical Cards icon-size slider must change real pixels: "
