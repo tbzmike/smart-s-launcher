@@ -106,7 +106,13 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     // One cheap gesture observer at the Activity boundary sees native List, Cards
     // and 3D Wheel alike. It never intercepts vertical scrolling or ordinary taps.
     private HomeDiscoverSwipeGesture discoverSwipeGesture;
-    private Runnable googleDiscoverLaunch = () -> GoogleDiscoverLauncher.open(this);
+    // A custom sideways Google-app window transition must not race with Smart S's
+    // generic full-window exit animation.
+    private boolean discoverSideSwipeTransition;
+    private Runnable googleDiscoverLaunch = () -> {
+        discoverSideSwipeTransition = true;
+        if (!GoogleDiscoverLauncher.open(this)) discoverSideSwipeTransition = false;
+    };
 
     /**
      * Store user preferences
@@ -645,7 +651,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     @Override
     protected void onPause() {
         // Do not delay external launches: animate our own decor while Android transfers focus.
-        SmartAnimationEngine.animateWindowExit(findViewById(android.R.id.content));
+        if (discoverSideSwipeTransition) {
+            discoverSideSwipeTransition = false;
+        } else {
+            SmartAnimationEngine.animateWindowExit(findViewById(android.R.id.content));
+        }
         launcherUiResumed = false;
         if (discoverSwipeGesture != null) discoverSwipeGesture.reset();
         if (searchEditText != null) searchEditText.removeCallbacks(homeSurfaceRecovery);
