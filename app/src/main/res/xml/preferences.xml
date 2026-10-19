@@ -355,7 +355,7 @@
         app:title="@string/title_ux">
         <PreferenceCategory
             app:key="home-discover-gestures"
-            app:title="Home gestures & Google Discover">
+            app:title="Home gestures &amp; Google Discover">
             <SwitchPreference
                 app:defaultValue="false"
                 app:key="home-swipe-right-google-discover"
