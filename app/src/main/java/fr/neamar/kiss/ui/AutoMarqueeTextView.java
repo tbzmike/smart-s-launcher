@@ -150,7 +150,7 @@ public class AutoMarqueeTextView extends TextView {
     public void setEllipsize(TextUtils.TruncateAt where) {
         if (behaviorLocked) {
             refreshOverflowMode();
-            super.setEllipsize(isAutoExpand() ? null : TextUtils.TruncateAt.MARQUEE);
+            super.setEllipsize(null);
             return;
         }
         super.setEllipsize(where);
@@ -229,7 +229,9 @@ public class AutoMarqueeTextView extends TextView {
         try {
             super.setSingleLine(!expanded);
             super.setMaxLines(expanded ? Integer.MAX_VALUE : 1);
-            super.setEllipsize(expanded ? null : TextUtils.TruncateAt.MARQUEE);
+            // Full unellipsized line stays in TextView's layout, allowing the
+            // controlled horizontal offset to reveal EVERY word, not a clipped stub.
+            super.setEllipsize(null);
             super.setHorizontallyScrolling(!expanded);
         } finally {
             behaviorLocked = true;
