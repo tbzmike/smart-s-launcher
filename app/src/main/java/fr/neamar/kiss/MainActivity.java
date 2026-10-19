@@ -28,6 +28,7 @@ import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.MotionEvent;
+import android.view.ViewConfiguration;
 import android.view.View;
 import android.view.ViewAnimationUtils;
 import android.view.ViewGroup;
@@ -72,6 +73,8 @@ import fr.neamar.kiss.ui.AnimatedListView;
 import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.ui.KeyboardScrollHider;
 import fr.neamar.kiss.ui.HistoryDateNavigator;
+import fr.neamar.kiss.ui.HomeDiscoverSwipeGesture;
+import fr.neamar.kiss.ui.GoogleDiscoverLauncher;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.SearchEditText;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
@@ -99,6 +102,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
      * Adapter to display records
      */
     public RecordAdapter adapter;
+
+    // One cheap gesture observer at the Activity boundary sees native List, Cards
+    // and 3D Wheel alike. It never intercepts vertical scrolling or ordinary taps.
+    private HomeDiscoverSwipeGesture discoverSwipeGesture;
+    private Runnable googleDiscoverLaunch = () -> GoogleDiscoverLauncher.open(this);
 
     /**
      * Store user preferences
@@ -639,6 +647,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // Do not delay external launches: animate our own decor while Android transfers focus.
         SmartAnimationEngine.animateWindowExit(findViewById(android.R.id.content));
         launcherUiResumed = false;
+        if (discoverSwipeGesture != null) discoverSwipeGesture.reset();
         if (searchEditText != null) searchEditText.removeCallbacks(homeSurfaceRecovery);
         homeSurfaceRecoveryAttempt = 0;
         forwarderManager.onPause();
@@ -1063,6 +1072,31 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
         if (mPopup != null && ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
             dismissPopup();
+            return true;
+        }
+        if (discoverSwipeGesture == null) {
+            discoverSwipeGesture = new HomeDiscoverSwipeGesture(
+                    getResources().getDisplayMetrics().density,
+                    ViewConfiguration.get(this).getScaledTouchSlop());
+        }
+        boolean discoverEnabledOnHome = prefs != null
+                && prefs.getBoolean(HomeDiscoverSwipeGesture.PREF_KEY, false)
+                && searchEditText != null && searchEditText.length() == 0
+                && !isViewingAllApps()
+                && mPopup == null
+                && (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                    || SearchHandler.getInstance().getLastSearchType() == Searcher.Type.NULL);
+        if (discoverSwipeGesture.observe(ev, discoverEnabledOnHome)) {
+            // Cancel the child gesture before leaving Home. Never let the ListView,
+            // Wheel or Card receive a stranded DOWN without an UP/CANCEL.
+            MotionEvent cancel = MotionEvent.obtain(ev);
+            cancel.setAction(MotionEvent.ACTION_CANCEL);
+            try {
+                super.dispatchTouchEvent(cancel);
+            } finally {
+                cancel.recycle();
+            }
+            googleDiscoverLaunch.run();
             return true;
         }
         return super.dispatchTouchEvent(ev);
