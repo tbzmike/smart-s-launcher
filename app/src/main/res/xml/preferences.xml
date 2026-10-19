@@ -360,7 +360,7 @@
                 app:defaultValue="false"
                 app:key="home-swipe-right-google-discover"
                 app:title="Swipe right to open Google Discover"
-                app:summary="On Home, swipe right to open the Google app (Discover when available). Overrides the usual Swipe Right action only when enabled. Requires the Google app; does not embed the Pixel Launcher feed." />
+                app:summary="Swipe from Home with a sideways Google app transition. This is a fallback, not the embedded Nova-style Discover feed, which requires a separately compatible Google Companion." />
         </PreferenceCategory>
         <PreferenceCategory
             app:key="keyboard-options"
