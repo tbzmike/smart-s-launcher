@@ -65,18 +65,22 @@ public final class HistoryOverflowIconSizingRegressionTest {
                 scenario.onActivity(activity -> {
                     title[0].refreshAutoScrollIfVisible();
                     message[0].refreshAutoScrollIfVisible();
-                    assertEquals("Marquee must be truly selected by TextView, not a fake override",
-                            true, title[0].isSelected());
-                    assertEquals(android.text.TextUtils.TruncateAt.MARQUEE, title[0].getEllipsize());
+                    assertFalse("Controlled scroll must not start another framework marquee",
+                            title[0].isSelected());
+                    assertNull("Full line must remain available to reveal horizontally",
+                            title[0].getEllipsize());
                     assertTrue("Fixture must have more than two text lines",
                             message[0].getLayout() != null
                                     && message[0].getLayout().getLineCount() > 2);
                 });
                 SystemClock.sleep(4400);
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-                scenario.onActivity(activity -> assertTrue(
-                        "The compact long-text preview must physically scroll after idle",
-                        message[0].getScrollY() > 0));
+                scenario.onActivity(activity -> {
+                    assertTrue("Compact title must physically move after idle",
+                            title[0].getScrollX() > 0);
+                    assertTrue("The compact long-text preview must physically scroll after idle",
+                            message[0].getScrollY() > 0);
+                });
             }
         } finally {
             prefs.edit().putString("smart-text-overflow-mode", oldOverflow)
