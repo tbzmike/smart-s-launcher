@@ -67,11 +67,11 @@ public final class HistoryRendererPagingRegressionTest {
                         Object cards = field(forwarders, "smartCardListForwarder");
                         call(cards, "onResume");
                         LinearLayout cardColumn = (LinearLayout) field(cards, "column");
-                        assertEquals("Cards must show one bounded page", 64, cardColumn.getChildCount());
+                        assertEquals("Cards must show one bounded page", 24, cardColumn.getChildCount());
                         TextView cardOlder = (TextView) field(cards, "olderCardPage");
                         assertEquals(View.VISIBLE, cardOlder.getVisibility());
                         cardOlder.performClick();
-                        assertTrue(cardColumn.getChildCount() <= 64);
+                        assertTrue(cardColumn.getChildCount() <= 24);
                         assertEquals(View.VISIBLE,
                                 ((TextView) field(cards, "newerCardPage")).getVisibility());
 
