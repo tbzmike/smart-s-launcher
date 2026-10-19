@@ -361,7 +361,9 @@ public class AutoMarqueeTextView extends TextView {
     }
 
     private void stopHorizontalText() {
-        removeCallbacks(horizontalFrame);
+        // TextView's constructor can dispatch onTextChanged() before this subclass's
+        // callback field has been initialized.
+        if (horizontalFrame != null) removeCallbacks(horizontalFrame);
         horizontalFramePending = false;
         if (getScrollX() != 0) scrollTo(0, 0);
     }
@@ -371,6 +373,16 @@ public class AutoMarqueeTextView extends TextView {
                 || !hasWindowFocus() || horizontalOverflowPx() < dp(3)) return;
         horizontalFramePending = true;
         postDelayed(horizontalFrame, delayMs);
+    }
+
+    @Override
+    protected void onDraw(android.graphics.Canvas canvas) {
+        super.onDraw(canvas);
+        // An attached card may become visible only after a delayed/retained render.
+        // Its earlier attach callback could not see a viewport, so arm on first draw.
+        if (!horizontalFramePending && !isAutoExpand() && getScrollX() == 0) {
+            armHorizontalText(HORIZONTAL_START_MS);
+        }
     }
 
     private void advanceHorizontalText() {
