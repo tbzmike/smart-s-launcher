@@ -1143,7 +1143,9 @@ final class SmartCardListForwarder extends Forwarder {
                 messageExpanded[0] = true;
                 return;
             }
-            pressAnimation(card);
+            // LaunchMorphTransition owns app/shortcut launch animations. Starting a
+            // separate squash/bounce animator on the SAME card immediately before
+            // launch makes the two transforms compete and causes frame drops.
             int currentPosition = resolveAdapterPosition(result.getPojoId());
             if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, card);
         };
