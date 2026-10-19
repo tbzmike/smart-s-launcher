@@ -69,7 +69,7 @@ public final class HistoryLongTextRegressionTest {
                 // maxLines and measured compact height have already switched.
                 assertEquals("Compact marquee must enforce one visible line",
                         1, text.getMaxLines());
-                assertEquals(TextUtils.TruncateAt.MARQUEE, text.getEllipsize());
+                assertEquals("Compact scroll must retain all the underlying text", null, text.getEllipsize());
                 assertTrue("Long text must not keep the old expanded tile height",
                         text.getMeasuredHeight() <= text.getLineHeight() * 2);
 
