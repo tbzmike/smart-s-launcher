@@ -1,6 +1,8 @@
 package fr.neamar.kiss.ui;
 
 import android.app.Activity;
+import android.app.ActivityOptions;
+import fr.neamar.kiss.R;
 import android.content.Intent;
 import android.widget.Toast;
 
@@ -23,7 +25,13 @@ public final class GoogleDiscoverLauncher {
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         try {
-            activity.startActivity(intent);
+            // Public Android fallback: a Google app activity with a real sideways
+            // system window transition. This is not Google's private embedded
+            // Discover page. True in-launcher feed still needs a compatible companion.
+            ActivityOptions options = ActivityOptions.makeCustomAnimation(activity,
+                    R.anim.discover_slide_in_from_left,
+                    R.anim.discover_home_out_right);
+            activity.startActivity(intent, options.toBundle());
             return true;
         } catch (RuntimeException error) {
             Toast.makeText(activity, "Unable to open Google app. Check that it is enabled.",
