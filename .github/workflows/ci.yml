@@ -1914,7 +1914,7 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null
           test -n "$SMART_S_SIGNING_KEY_B64"
           printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
-          chmod 605 "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
           mkdir -p verified-apk
           OUT="verified-apk/Smart-S-Launcher-3.30.177.apk"
           "$SDK/apksigner" sign --ks "$KEYSTORE" --ks-type PKCS12 \
