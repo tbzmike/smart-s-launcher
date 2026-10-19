@@ -69,7 +69,7 @@ final class SmartCardListForwarder extends Forwarder {
     private LinearLayout column;
     private TextView olderCardPage;
     private TextView newerCardPage;
-    private final BoundedHistoryWindow cardWindow = new BoundedHistoryWindow();
+    private final CardHistoryWindow cardWindow = new CardHistoryWindow();
     private String lastCardWindowQuery = "";
     private int renderingPresentationSignature = Integer.MIN_VALUE;
     private View edgeEffect;
@@ -416,13 +416,16 @@ final class SmartCardListForwarder extends Forwarder {
         int viewportTop = scroller.getScrollY();
         int viewportBottom = viewportTop + scroller.getHeight();
         int visibleIndex = 0;
+        int animatedThisFrame = 0;
         for (int i = 0; i < column.getChildCount(); i++) {
             View child = column.getChildAt(i);
             if (child.getBottom() < viewportTop || child.getTop() > viewportBottom) continue;
             Object tag = child.getTag();
             String id = tag instanceof String ? (String) tag : null;
-            if (id != null && animatedCardIds.add(id)) {
+            if (id != null && SmartAnimationEngine.canAnimateTileListIndex(visibleIndex)
+                    && animatedThisFrame < 3 && animatedCardIds.add(id)) {
                 SmartAnimationEngine.animateTileListItem(child, visibleIndex);
+                animatedThisFrame++;
             }
             visibleIndex++;
         }
@@ -583,10 +586,8 @@ final class SmartCardListForwarder extends Forwarder {
                 View item = createCardItem(source, result, position, latestNotifications);
                 column.addView(item);
                 int animationIndex = Math.max(0, count - 1 - position);
-                if (SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
-                        && animatedCardIds.add(result.getPojoId())) {
-                    SmartAnimationEngine.animateTileListItem(item, animationIndex);
-                }
+                // On-screen card animation is deferred until AFTER the layout frame.
+
                 if (activeQuery) {
                     activeQueryCardSignatures.put(result.getPojoId(), cardSignature(result));
                 } else {
@@ -598,7 +599,10 @@ final class SmartCardListForwarder extends Forwarder {
         lastPresentationSignature = renderingPresentationSignature;
         // Reused cards may never get a new onAttachedToWindow callback. Once the
         // current frame is laid out, re-arm only its visible compact text.
-        if (scroller != null) scroller.postOnAnimation(this::refreshVisibleTextScroll);
+        if (scroller != null) scroller.postOnAnimation(() -> {
+            refreshVisibleTextScroll();
+            onScrollIdleAnimations();
+        });
         if (preserveSearchFocus && !mainActivity.searchEditText.hasFocus()) {
             // Restore only a focus state that existed before this rebuild. This is not an
             // unconditional IME reopen: it simply prevents card-tree replacement from ending
@@ -649,10 +653,7 @@ final class SmartCardListForwarder extends Forwarder {
             }
             placeCardChild(desired, position - start);
             int animationIndex = Math.max(0, end - 1 - position);
-            if (created && SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
-                    && animatedCardIds.add(id)) {
-                SmartAnimationEngine.animateTileListItem(desired, animationIndex);
-            }
+            // No per-card entrance animation during tree reconciliation; idle handles visible items.
         }
 
         // Entries left in the map disappeared from the new query result set. Remove those exact
@@ -711,10 +712,7 @@ final class SmartCardListForwarder extends Forwarder {
             }
             placeCardChild(desired, position - start);
             int animationIndex = Math.max(0, end - 1 - position);
-            if (created && SmartAnimationEngine.canAnimateTileListIndex(animationIndex)
-                    && animatedCardIds.add(id)) {
-                SmartAnimationEngine.animateTileListItem(desired, animationIndex);
-            }
+            // No per-card entrance animation during tree reconciliation; idle handles visible items.
         }
 
         for (View stale : existingById.values()) {
