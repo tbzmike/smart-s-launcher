@@ -21,11 +21,22 @@ import fr.neamar.kiss.searcher.Searcher;
 @SuppressLint("AppCompatCustomView")
 public class AutoMarqueeTextView extends TextView {
     private static final long SCROLL_IDLE_RETRY_MS = 320L;
+    // The system marquee can remain selected but stationary in recycled History rows.
+    // Drive compact, clipped text deterministically with one main-thread callback per
+    // actually visible overflowing TextView; no background worker or perpetual polling.
+    private static final long HORIZONTAL_FRAME_MS = 80L;
+    private static final long HORIZONTAL_START_MS = 850L;
+    private static final long HORIZONTAL_RESET_MS = 1500L;
 
     private boolean behaviorLocked;
     private boolean autoExpand;
     private int appliedBehaviorMode = -1;
     private final Rect visibleRect = new Rect();
+    private boolean horizontalFramePending;
+    private final Runnable horizontalFrame = () -> {
+        horizontalFramePending = false;
+        advanceHorizontalText();
+    };
     private final Runnable deferredLayoutRequest = () -> {
         if (isAttachedToWindow()) requestLayout();
     };
@@ -71,6 +82,7 @@ public class AutoMarqueeTextView extends TextView {
             // Force measurement to rebuild the layout for the newly selected mode.
             removeCallbacks(deferredLayoutRequest);
             removeCallbacks(deferredMarqueeRestart);
+            stopHorizontalText();
             setSelected(false);
             requestLayout();
             invalidate();
@@ -166,6 +178,7 @@ public class AutoMarqueeTextView extends TextView {
 
     @Override
     protected void onDetachedFromWindow() {
+        stopHorizontalText();
         removeCallbacks(deferredLayoutRequest);
         removeCallbacks(deferredMarqueeRestart);
         super.onDetachedFromWindow();
@@ -174,6 +187,7 @@ public class AutoMarqueeTextView extends TextView {
     @Override
     protected void onTextChanged(CharSequence text, int start, int lengthBefore, int lengthAfter) {
         super.onTextChanged(text, start, lengthBefore, lengthAfter);
+        stopHorizontalText();
         if (!isAttachedToWindow()) return;
         applySearchAppearanceIfNeeded();
         if (isAutoExpand()) scheduleLayoutRequest();
@@ -245,6 +259,7 @@ public class AutoMarqueeTextView extends TextView {
         }
 
         if (isAutoExpand()) {
+            stopHorizontalText();
             applyFrameworkTextMode(true);
             setMarqueeRepeatLimit(0);
             setHorizontalFadingEdgeEnabled(false);
@@ -252,9 +267,12 @@ public class AutoMarqueeTextView extends TextView {
             return;
         }
         applyFrameworkTextMode(false);
-        setMarqueeRepeatLimit(-1);
+        // Android's built-in marquee is focus/selection sensitive and can stay
+        // completely still after the view was detached/rebound. Keep the same
+        // compact one-line layout but use controlled horizontal scrolling instead.
+        setMarqueeRepeatLimit(0);
         setHorizontalFadingEdgeEnabled(true);
-        setSelected(true);
+        setSelected(false);
     }
 
     private void scheduleLayoutRequest() {
@@ -274,6 +292,7 @@ public class AutoMarqueeTextView extends TextView {
         if (isNativeListScrolling()) {
             // Never animate text inside an active fling. Keep one cheap delayed retry so native
             // Vertical List marquee starts automatically as soon as motion has really settled.
+            stopHorizontalText();
             setSelected(false);
             postDelayed(deferredMarqueeRestart, SCROLL_IDLE_RETRY_MS);
             return;
@@ -314,27 +333,70 @@ public class AutoMarqueeTextView extends TextView {
         refreshOverflowMode();
         applyConfiguredBehavior();
         if (isAutoExpand()) {
-            setSelected(false);
+            stopHorizontalText();
             return;
         }
         if (isNativeListScrolling()) {
-            scheduleMarqueeRestart();
-            return;
+            stopHorizontalText();
+            return; // Renderer re-arms after actual scroll idle.
         }
         if (!isActuallyVisibleOnScreen()) {
-            setSelected(false);
+            stopHorizontalText();
             return;
         }
-        setSelected(false);
-        setSelected(true);
-        invalidate();
+        armHorizontalText(HORIZONTAL_START_MS);
+    }
+
+    private int horizontalOverflowPx() {
+        if (getWidth() <= 0 || getText() == null || getText().length() == 0) return 0;
+        int available = getWidth() - getCompoundPaddingLeft() - getCompoundPaddingRight();
+        if (available <= 0) return 0;
+        float measured = getPaint().measureText(getText().toString());
+        if (getLayout() != null && getLayout().getLineCount() > 0) {
+            measured = Math.max(measured, getLayout().getLineWidth(0));
+        }
+        return Math.max(0, (int) Math.ceil(measured - available));
+    }
+
+    private void stopHorizontalText() {
+        removeCallbacks(horizontalFrame);
+        horizontalFramePending = false;
+        if (getScrollX() != 0) scrollTo(0, 0);
+    }
+
+    private void armHorizontalText(long delayMs) {
+        if (horizontalFramePending || isAutoExpand() || !isActuallyVisibleOnScreen()
+                || !hasWindowFocus() || horizontalOverflowPx() < dp(3)) return;
+        horizontalFramePending = true;
+        postDelayed(horizontalFrame, delayMs);
+    }
+
+    private void advanceHorizontalText() {
+        if (isAutoExpand() || !isActuallyVisibleOnScreen() || !hasWindowFocus()) {
+            stopHorizontalText();
+            return;
+        }
+        int maxScrollX = horizontalOverflowPx();
+        if (maxScrollX < dp(3)) { stopHorizontalText(); return; }
+        int current = Math.max(0, getScrollX());
+        if (current >= maxScrollX) {
+            scrollTo(0, 0);
+            armHorizontalText(HORIZONTAL_RESET_MS);
+            return;
+        }
+        scrollTo(Math.min(maxScrollX, current + Math.max(1, dp(3))), 0);
+        armHorizontalText(HORIZONTAL_FRAME_MS);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     @Override
     public boolean isFocused() {
-        // Marquee activation follows actual on-screen visibility. This includes native Vertical List
-        // when idle, but remains false during list movement and for off-screen retained cards.
-        return isAutoExpand() ? super.isFocused() : isActuallyVisibleOnScreen();
+        // The controlled offset animation does not need Android's focus-based
+        // marquee; claiming focus here starts a second conflicting animation.
+        return super.isFocused();
     }
 
     @Override
@@ -351,13 +413,9 @@ public class AutoMarqueeTextView extends TextView {
                 || isNativeListScrolling()) return;
         visibleRect.setEmpty();
         if (!getLocalVisibleRect(visibleRect) || visibleRect.isEmpty()) return;
-        // Explicitly activated only by a renderer's idle callback. Do not let an
-        // unrelated/stale process-wide scroll gate prevent the selected marquee.
-        // The actual TextView selected state is essential to start Android marquee.
-        if (!super.isSelected()) {
-            setSelected(true);
-            invalidate();
-        }
+        // This works when the view was already selected but its old framework
+        // marquee never started after card recycling or a Home resume.
+        armHorizontalText(HORIZONTAL_START_MS);
     }
 
     @Override
