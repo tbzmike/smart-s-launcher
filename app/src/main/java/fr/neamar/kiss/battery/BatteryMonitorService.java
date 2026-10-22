@@ -350,7 +350,10 @@ public final class BatteryMonitorService extends Service {
         }
         if (!Double.isNaN(s.currentMa())) {
             double now = Math.abs(s.currentMa());
-            if (!s.isCharging()) {
+            // Check the alert cooldown BEFORE querying 24h rate history or analysing apps.
+            // Previously likelyDrainCause() ran at every sample even when the one-hour
+            // alert rate limit guaranteed no user-visible notification.
+            if (!s.isCharging() && isAlertDue("drain")) {
                 double baseline = store.averageDrainMa24h();
                 if (!Double.isNaN(baseline) && baseline > 100 && now > baseline * 2.2) {
                     String culprit = BatteryUsageAnalyzer.likelyDrainCause(this, 60L * 60L * 1000L);
@@ -359,7 +362,7 @@ public final class BatteryMonitorService extends Service {
                                     "Current drain %.0f mA is much higher than your 24h baseline %.0f mA. Likely app contributor: %s.",
                                     now, baseline, culprit));
                 }
-            } else {
+            } else if (s.isCharging() && isAlertDue("slow")) {
                 double baseline = store.averageChargeMa24h();
                 if (!Double.isNaN(baseline) && baseline > 300 && now < baseline * 0.45) {
                     maybePostRateLimited("slow", "Charging slower than usual",
@@ -378,6 +381,12 @@ public final class BatteryMonitorService extends Service {
 
     private String formatPercent(int percent) {
         return percent < 0 ? "unavailable" : percent + "%";
+    }
+
+    private boolean isAlertDue(String key) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        long last = prefs.getLong("smart-battery-alert-last-" + key, 0L);
+        return System.currentTimeMillis() - last >= 3_600_000L;
     }
 
     private void maybePostRateLimited(String key, String title, String text) {
