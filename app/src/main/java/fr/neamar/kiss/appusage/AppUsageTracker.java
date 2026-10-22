@@ -14,6 +14,7 @@ import androidx.preference.PreferenceManager;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Opt-in controller for the local app-usage timeline. */
 public final class AppUsageTracker {
@@ -21,6 +22,7 @@ public final class AppUsageTracker {
     private static final String PREF_DEFAULT_REPAIRED = "app-usage-default-repaired-v33001";
     private static final int JOB_ID = 0x53535547; // "SSUG"
     private static final long PERIOD_MS = 6L * 60L * 60L * 1000L;
+    private static final AtomicBoolean SYNC_QUEUED_OR_RUNNING = new AtomicBoolean(false);
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "smart-s-app-usage");
         t.setPriority(Thread.MIN_PRIORITY);
@@ -82,9 +84,21 @@ public final class AppUsageTracker {
     }
 
     public static void syncAsync(@NonNull Context context) {
-        if (!isEnabled(context)) return;
+        if (!isEnabled(context) || !SYNC_QUEUED_OR_RUNNING.compareAndSet(false, true)) return;
         Context appContext = context.getApplicationContext();
-        EXECUTOR.execute(() -> AppUsageSync.sync(appContext));
+        try {
+            EXECUTOR.execute(() -> {
+                try {
+                    // An option turned off after enqueuing must also cancel the pending sync.
+                    if (isEnabled(appContext)) AppUsageSync.sync(appContext);
+                } finally {
+                    SYNC_QUEUED_OR_RUNNING.set(false);
+                }
+            });
+        } catch (RuntimeException e) {
+            SYNC_QUEUED_OR_RUNNING.set(false);
+            throw e;
+        }
     }
 
     public static void syncNow(@NonNull Context context) {

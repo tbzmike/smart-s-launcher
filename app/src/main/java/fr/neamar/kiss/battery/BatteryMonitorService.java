@@ -32,9 +32,9 @@ import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 public final class BatteryMonitorService extends Service {
     public static final String ACTION_START = "fr.neamar.kiss.battery.START";
     public static final String ACTION_STOP = "fr.neamar.kiss.battery.STOP";
-    private static final String CHANNEL_LIVE = "smart_battery_live";
+    private static final String CHANNEL_LIVE = BatteryTelemetryPolicy.LIVE_CHANNEL;
     private static final String CHANNEL_ALERTS = "smart_battery_alerts";
-    private static final int LIVE_ID = 8450;
+    private static final int LIVE_ID = BatteryTelemetryPolicy.LIVE_ID;
     private static final int ALERT_ID = 8451;
 
     // Event-first telemetry: preserve useful history and alerts without continuously polling.
