@@ -42,6 +42,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.battery.BatteryTelemetryPolicy;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.NotificationTimelineStore;
@@ -158,16 +159,23 @@ public class NotificationListener extends NotificationListenerService {
             return false;
         }
 
+        boolean historyEnabled = PreferenceManager.getDefaultSharedPreferences(this)
+                .getBoolean("enable-notification-history", false);
         Map<String, Set<String>> notificationsByPackage = new HashMap<>();
         Set<String> activeIds = new HashSet<>();
         List<StatusBarNotification> timeline = new ArrayList<>();
+        List<StatusBarNotification> avatarCandidates = seedTimeline ? new ArrayList<>() : null;
         SharedPreferences.Editor detailEditor = details.edit().clear();
 
         for (StatusBarNotification sbn : sbns) {
+            // Battery monitor has its own history store; skip internal live telemetry before
+            // avatar decoding, notification history capture and user-visible notification state.
+            if (isOwnBatteryMonitorTelemetry(sbn)) continue;
             if (seedTimeline) {
+                avatarCandidates.add(sbn);
                 String timelineId = getTimelineId(sbn);
                 NotificationVisualSupport.captureAsync(this, timelineId, sbn);
-                persistHistoryAsync(sbn, timelineId, false);
+                if (historyEnabled) persistHistoryAsync(sbn, timelineId, false);
             }
             if (isNotificationTrivial(sbn)) continue;
             String packageKey = getPackageKey(sbn);
@@ -179,7 +187,8 @@ public class NotificationListener extends NotificationListenerService {
         }
         // One batch replaces dozens of queue entries that used to be discarded
         // before the avatar worker had a chance to run during startup.
-        if (seedTimeline) NotificationAvatarSupport.captureActiveSnapshotAsync(this, sbns);
+        if (seedTimeline) NotificationAvatarSupport.captureActiveSnapshotAsync(this,
+                avatarCandidates.toArray(new StatusBarNotification[0]));
         detailEditor.putStringSet(ACTIVE_NOTIFICATION_IDS, activeIds).apply();
         publishVerifiedActiveIds(activeIds);
         NotificationUnreadStore.reconcileActive(this, activeIds);
@@ -229,7 +238,7 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     @Override public void onNotificationPosted(StatusBarNotification sbn) {
-        if (sbn == null) return;
+        if (sbn == null || isOwnBatteryMonitorTelemetry(sbn)) return;
 
         String id = getTimelineId(sbn);
         Notification notification = sbn.getNotification();
@@ -273,8 +282,8 @@ public class NotificationListener extends NotificationListenerService {
         } else if (sbn.isOngoing()) {
             LAST_ONGOING_PERSIST.put(id, SystemClock.elapsedRealtime());
         }
-        if (persistThisUpdate) {
-            persistHistoryAsync(sbn, id, newTimelineEvent && historyEnabled);
+        if (historyEnabled && persistThisUpdate) {
+            persistHistoryAsync(sbn, id, newTimelineEvent);
         }
 
         // Updating the same ongoing notification (VPN progress, media status, transfers, etc.)
@@ -304,6 +313,14 @@ public class NotificationListener extends NotificationListenerService {
         if (newTimelineEvent || (visibleContentChanged && !ongoingContentOnly)) {
             sendTimelineRefresh(id, true);
         }
+    }
+
+    private boolean isOwnBatteryMonitorTelemetry(StatusBarNotification sbn) {
+        if (sbn == null || sbn.getNotification() == null) return false;
+        String channel = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? sbn.getNotification().getChannelId() : BatteryTelemetryPolicy.LIVE_CHANNEL;
+        return BatteryTelemetryPolicy.isOwnLiveNotification(
+                getPackageName(), sbn.getPackageName(), sbn.getId(), channel);
     }
 
     private void sendTimelineRefresh(String notificationId, boolean posted) {

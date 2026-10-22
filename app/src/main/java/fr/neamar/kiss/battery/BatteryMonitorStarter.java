@@ -31,7 +31,7 @@ public final class BatteryMonitorStarter {
 
     public static void ensureRunning(Context context) {
         if (!PreferenceManager.getDefaultSharedPreferences(context)
-                .getBoolean(PREF_ENABLED, true)) return;
+                .getBoolean(PREF_ENABLED, false)) return;
         Intent intent = new Intent(context, BatteryMonitorService.class)
                 .setAction(BatteryMonitorService.ACTION_START);
         try {
