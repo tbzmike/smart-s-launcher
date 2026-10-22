@@ -1,5 +1,6 @@
 # Smart S Launcher — power and lifecycle optimisation
 
+New release candidate: `3.30.179` (Android versionCode `607`).
 Base release: `v3.30.178`, commit `edb5302e299c29ae065371d836ecd8ff5735d205`.
 
 ## Changes
@@ -11,9 +12,11 @@ Base release: `v3.30.178`, commit `edb5302e299c29ae065371d836ecd8ff5735d205`.
 - Unchanged battery alert latch values are not rewritten.
 - On installations without an explicit preference, battery monitoring is opt-in.
   Users with `smart-battery-monitor-enabled=true` keep their existing monitoring.
-- Frozen-app fallback defaults to `package-only`. Previously saved explicit
-  15/30/60/300-second intervals are respected; existing users may change the
-  setting to "Package changes only".
+- Frozen-app fallback defaults to `package-only`. A one-time migration
+  retires previously persisted 15-second intervals on existing installations
+  because the previous default can be stored on first opening Settings.
+  Explicit 30/60/300-second choices and package-only remain unchanged.
+  A user can deliberately reselect 15 seconds after the upgrade if necessary.
 - Internal live battery-monitor notification updates do not become notification-history
   events and are not sent to the avatar/visual capture pipeline. Battery alerts and all
   other notifications are preserved. When notification history is off, no history

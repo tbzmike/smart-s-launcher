@@ -25,6 +25,31 @@ public final class FrozenAppPreferences {
     public static final String PREF_KEEP_HISTORY = "smart-keep-frozen-history";
 
     private static final String LEGACY_INDEX_DISABLED = "index-disabled-apps";
+    private static final String PREF_LEGACY_POWER_MIGRATED = "smart-frozen-power-migrated-v330179";
+
+    /**
+     * Version 3.30.178 silently defaulted to a full installed-app scan every 15 seconds.
+     * Existing preference screens may already have persisted that default, so changing the
+     * XML fallback alone does not stop battery-intensive polling for existing installations.
+     * Retire that legacy value once, preserving 30/60/300s and "package-only" choices.
+     * Users may explicitly select 15 seconds again after migration if they need it.
+     */
+    public static void migrateLegacyPowerPolling(@NonNull Context context) {
+        SharedPreferences preferences = prefs(context);
+        if (preferences.getBoolean(PREF_LEGACY_POWER_MIGRATED, false)) return;
+        SharedPreferences.Editor editor = preferences.edit()
+                .putBoolean(PREF_LEGACY_POWER_MIGRATED, true);
+        String existing;
+        try {
+            existing = preferences.getString(PREF_RECONCILE_INTERVAL, "package-only");
+        } catch (ClassCastException e) {
+            existing = "package-only";
+        }
+        if ("15".equals(existing)) {
+            editor.putString(PREF_RECONCILE_INTERVAL, "package-only");
+        }
+        editor.apply();
+    }
 
     private FrozenAppPreferences() { }
 

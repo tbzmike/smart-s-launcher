@@ -14,6 +14,7 @@ import fr.neamar.kiss.social.SocialContactIndexService;
 import fr.neamar.kiss.ui.GlobalTextStyler;
 import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.utils.AppIconMemoryCache;
+import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.IconPackCache;
 import fr.neamar.kiss.utils.Log;
 
@@ -140,6 +141,7 @@ public class KissApplication extends Application {
         PixelLauncherScreenOffReceiver.register(this);
         DBHelper.initDatabase(this);
         InterfaceTweaks.setDefaultNightMode(this);
+        FrozenAppPreferences.migrateLegacyPowerPolling(this);
         AppUsageTracker.repairPerformanceRegression(this);
         globalTextStyler = GlobalTextStyler.install(this);
         MediaHistoryCoordinator.install(this);
