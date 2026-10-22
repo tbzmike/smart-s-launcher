@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -41,10 +42,10 @@ public final class BatteryMonitorService extends Service {
     private static final long SAMPLE_SCREEN_ON_MS = 5L * 60_000L;
     private static final long SAMPLE_SCREEN_OFF_MS = 15L * 60_000L;
     private static final long SAMPLE_LOW_SCREEN_OFF_MS = 5L * 60_000L;
-    private static final long LIVE_ACTIVE_REFRESH_MS = 30_000L;
-    private static final long LIVE_IDLE_REFRESH_MS = 3L * 60_000L;
+    private static final long LIVE_ACTIVE_REFRESH_MS = 60_000L;
+    private static final long LIVE_IDLE_REFRESH_MS = 5L * 60_000L;
     private static final long WIDGET_REFRESH_MIN_MS = 60_000L;
-    private static final long EVENT_DEBOUNCE_MS = 1_000L;
+    private static final long EVENT_DEBOUNCE_MS = 2_500L;
     private static final long MIN_HISTORY_WRITE_MS = 2L * 60_000L;
 
     private HandlerThread workerThread;
@@ -54,7 +55,11 @@ public final class BatteryMonitorService extends Service {
     private int lastWidgetPercent = -1;
     private boolean lastWidgetCharging;
     private boolean receiverRegistered;
-    private boolean forceNextWidgetRefresh;
+    // Broadcast state belongs to the receiver thread; tiny sensor updates do not wake telemetry.
+    private int lastBroadcastPercent = -1;
+    private int lastBroadcastPlugged = -1;
+    private int lastBroadcastStatus = -1;
+    private int lastBroadcastTemperature = Integer.MIN_VALUE;
     private BatteryRateCalculator.ScreenRates cachedRates;
     private boolean cachedRatesCharging;
     private boolean cachedRatesScreenOn;
@@ -69,10 +74,11 @@ public final class BatteryMonitorService extends Service {
                 handler.postDelayed(this, 15_000L);
                 return;
             }
-            boolean forceWidgets = forceNextWidgetRefresh;
-            forceNextWidgetRefresh = false;
-            BatterySnapshot s = sampleNow(forceWidgets);
+            BatterySnapshot s = sampleNow();
             handler.postDelayed(this, nextSampleDelay(s));
+            // Sampling also publishes live notification: avoid a second near-simultaneous post.
+            handler.removeCallbacks(liveRefresher);
+            handler.postDelayed(liveRefresher, nextLiveRefreshDelay(s));
         }
     };
 
@@ -90,8 +96,30 @@ public final class BatteryMonitorService extends Service {
     private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             if (intent == null) return;
-            // ACTION_BATTERY_CHANGED may arrive in bursts. Coalesce those broadcasts into one read/write.
-            scheduleSampleNow(true);
+            String action = intent.getAction();
+            if (Intent.ACTION_BATTERY_CHANGED.equals(action)) {
+                int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                int percent = level >= 0 && scale > 0 ? Math.round(level * 100f / scale) : -1;
+                int plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1);
+                int status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                int temp = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Integer.MIN_VALUE);
+                if (!BatteryBroadcastPolicy.shouldSample(
+                        lastBroadcastPercent, lastBroadcastPlugged, lastBroadcastStatus,
+                        lastBroadcastTemperature, percent, plugged, status, temp)) return;
+                lastBroadcastPercent = percent;
+                lastBroadcastPlugged = plugged;
+                lastBroadcastStatus = status;
+                lastBroadcastTemperature = temp;
+            } else if (!Intent.ACTION_POWER_CONNECTED.equals(action)
+                    && !Intent.ACTION_POWER_DISCONNECTED.equals(action)
+                    && !Intent.ACTION_SCREEN_ON.equals(action)
+                    && !Intent.ACTION_SCREEN_OFF.equals(action)
+                    && !Intent.ACTION_BATTERY_LOW.equals(action)
+                    && !Intent.ACTION_BATTERY_OKAY.equals(action)) {
+                return;
+            }
+            scheduleSampleNow();
         }
     };
 
@@ -170,10 +198,9 @@ public final class BatteryMonitorService extends Service {
         receiverRegistered = true;
     }
 
-    private void scheduleSampleNow(boolean forceWidgets) {
-        forceNextWidgetRefresh |= forceWidgets;
-        if (LauncherScrollWorkGate.isScrolling()) {
-            // Keep the state-change hint, but do not wake telemetry while the user is scrolling.
+    private void scheduleSampleNow() {
+        if (handler == null || LauncherScrollWorkGate.isScrolling()) {
+            // Periodic sampling resumes normally after the scrolling gate clears.
             return;
         }
         handler.removeCallbacks(sampler);
@@ -203,7 +230,7 @@ public final class BatteryMonitorService extends Service {
         return stateChanged || now - lastHistoryWriteMs >= MIN_HISTORY_WRITE_MS;
     }
 
-    private BatterySnapshot sampleNow(boolean forceWidgets) {
+    private BatterySnapshot sampleNow() {
         BatterySnapshot s = BatteryMonitorEngine.read(this);
         long now = System.currentTimeMillis();
         if (shouldPersist(s, now)) {
@@ -218,7 +245,7 @@ public final class BatteryMonitorService extends Service {
         }
         NotificationManager nm = notificationManager();
         if (nm != null) nm.notify(LIVE_ID, buildLiveNotification(s));
-        maybeRefreshWidgets(s, forceWidgets);
+        maybeRefreshWidgets(s, false);
         checkAlerts(s);
         return s;
     }
@@ -309,15 +336,16 @@ public final class BatteryMonitorService extends Service {
         if (s.percent() >= 0 && s.isCharging() && s.percent() >= chargeAlarm && !chargeLatched) {
             postAlert("Charge target reached", "Battery reached " + s.percent() + "% (target " + chargeAlarm + "%).");
             p.edit().putBoolean("smart-battery-charge-alarm-latched", true).apply();
-        } else if (!s.isCharging() || (s.percent() >= 0
-                && s.percent() < Math.max(0, chargeAlarm - 3))) {
+        } else if (chargeLatched && (!s.isCharging() || (s.percent() >= 0
+                && s.percent() < Math.max(0, chargeAlarm - 3)))) {
             p.edit().putBoolean("smart-battery-charge-alarm-latched", false).apply();
         }
         if (!Float.isNaN(s.temperatureC) && s.temperatureC >= tempAlarm && !tempLatched) {
             postAlert("Battery temperature warning", String.format(Locale.US,
                     "Battery temperature is %.1f°C.", s.temperatureC));
             p.edit().putBoolean("smart-battery-temp-alarm-latched", true).apply();
-        } else if (!Float.isNaN(s.temperatureC) && s.temperatureC < tempAlarm - 2f) {
+        } else if (tempLatched && !Float.isNaN(s.temperatureC)
+                && s.temperatureC < tempAlarm - 2f) {
             p.edit().putBoolean("smart-battery-temp-alarm-latched", false).apply();
         }
         if (!Double.isNaN(s.currentMa())) {

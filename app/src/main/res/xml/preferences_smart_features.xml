@@ -198,7 +198,7 @@
             app:summary="@string/smart_package_change_monitoring_summary"
             app:title="@string/smart_package_change_monitoring" />
         <ListPreference
-            app:defaultValue="15"
+            app:defaultValue="package-only"
             app:dependency="smart-detect-frozen-apps"
             app:entries="@array/smart_frozen_refresh_entries"
             app:entryValues="@array/smart_frozen_refresh_values"

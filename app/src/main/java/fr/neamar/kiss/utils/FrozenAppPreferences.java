@@ -79,7 +79,7 @@ public final class FrozenAppPreferences {
      * Returns -1 for "Package changes only"; otherwise the configured fallback interval.
      */
     public static long reconcileDelayMs(@NonNull Context context) {
-        String value = prefs(context).getString(PREF_RECONCILE_INTERVAL, "15");
+        String value = prefs(context).getString(PREF_RECONCILE_INTERVAL, "package-only");
         if (value == null || "package-only".equals(value)) return -1L;
         try {
             long seconds = Long.parseLong(value);
