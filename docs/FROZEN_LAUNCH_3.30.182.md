@@ -10,6 +10,7 @@ Based on verified v3.30.181, versionCode 610.
 - Non-frozen shortcuts launch immediately as before. Legacy shortcuts keep their original Intent.
 - No root or polling process runs merely because the launcher is open. One zero-core worker handles user taps; its idle thread expires. Retries are bounded.
 - Root command exit code is checked, root availability and enable settings are revalidated, no infinite command wait.
+- Hidden packages are not assumed uninstalled. When the package is known from a saved shortcut or app record, authorised root enable is tried and the result is verified.
 - Saved History, favorite items and tags are never removed due to a failed frozen launch.
 - Package/shortcut providers get one refresh on successful re-enable, not two redundant scheduled refreshes.
 - All frozen-state settings remain live and independently wired, including Package changes only; that setting does not prevent launching.

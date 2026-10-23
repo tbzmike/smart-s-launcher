@@ -387,7 +387,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             appPackage = pojo.targetPackage;
         }
         final String pkg = appPackage;
-        boolean frozen = !TextUtils.isEmpty(pkg) && AppLaunchUtils.isPackageInstalled(context, pkg)
+        boolean frozen = !TextUtils.isEmpty(pkg)
                 && !AppLaunchUtils.isPackageEnabledNow(context, pkg);
 
         if (!frozen) {
@@ -445,19 +445,17 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         // Use fresh state only for the owner profile: current-user PackageManager cannot
         // accurately read a separate work/private profile's disabled state.
         boolean frozenPublisher = currentUser
-                && AppLaunchUtils.isPackageInstalled(context, pojo.packageName)
                 && !AppLaunchUtils.isPackageEnabledNow(context, pojo.packageName);
         // Launch decisions require a verified target, never label similarity. The
         // public resolveTargetPackageName() also supports UI grouping by approximate
         // names, which is too weak to authorize unfreezing another app.
         String target = iceBoxRoute && currentUser ? verifiedIceBoxTarget(context) : null;
-        boolean targetInstalled = target != null
-                && AppLaunchUtils.isPackageInstalled(context, target);
-        boolean targetEnabled = targetInstalled
+        boolean targetIdentityVerified = target != null;
+        boolean targetEnabled = targetIdentityVerified
                 && AppLaunchUtils.isPackageEnabledNow(context, target);
         boolean frozenTarget = FrozenShortcutLaunchPolicy.shouldEnableVerifiedTarget(
                 iceBoxRoute, currentUser, pojo.packageName, target,
-                targetInstalled, targetEnabled);
+                targetIdentityVerified, targetEnabled);
         Rect sourceBounds = getViewBounds(v);
 
         if (!frozenPublisher && !frozenTarget) {
@@ -522,8 +520,9 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
     @Nullable
     private String verifiedIceBoxTarget(Context context) {
         String stored = pojo.targetPackage;
-        if (!TextUtils.isEmpty(stored) && !TextUtils.equals(stored, pojo.packageName)
-                && AppLaunchUtils.isPackageInstalled(context, stored)) {
+        if (!TextUtils.isEmpty(stored) && !TextUtils.equals(stored, pojo.packageName)) {
+            // The publisher-associated package was saved before it was frozen; don't
+            // reject this identity solely because PackageManager temporarily hides it.
             return stored;
         }
         // If the publisher's live shortcut is still readable, inspect the actual

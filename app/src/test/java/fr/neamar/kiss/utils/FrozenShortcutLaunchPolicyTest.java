@@ -16,7 +16,7 @@ class FrozenShortcutLaunchPolicyTest {
         assertFalse(FrozenShortcutLaunchPolicy.shouldEnableVerifiedTarget(true, true,
                 "com.catchingnow.icebox", "com.catchingnow.icebox", true, false));
         assertFalse(FrozenShortcutLaunchPolicy.shouldEnableVerifiedTarget(true, true,
-                "com.catchingnow.icebox", "com.example.uninstalled", false, false));
+                "com.catchingnow.icebox", "com.example.unverified", false, false));
     }
 
     @Test void normalShortcutsAndDifferentProfilesMustKeepExactRoute() {

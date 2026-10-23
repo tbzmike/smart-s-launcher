@@ -136,7 +136,10 @@ public final class AppLaunchUtils {
 
     /** Enable a frozen current-user package without launching it. */
     public static boolean ensurePackageEnabled(Context context, String packageName) {
-        if (!isPackageInstalled(context, packageName)) return false;
+        if (context == null || packageName == null || packageName.isEmpty()) return false;
+        // Frozen/hidden apps can disappear from PackageManager queries. A saved known
+        // package identity should be offered to the authorised root enable command;
+        // the pm exit status and fresh query decide whether it actually exists.
         if (isPackageEnabledNow(context, packageName)) return true;
         if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()
                 || !KissApplication.getApplication(context).getRootHandler().isRootAvailable()) {
