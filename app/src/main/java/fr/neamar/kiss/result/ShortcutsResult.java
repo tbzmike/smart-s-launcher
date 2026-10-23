@@ -443,7 +443,10 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         boolean frozenPublisher = currentUser
                 && AppLaunchUtils.isPackageInstalled(context, pojo.packageName)
                 && !AppLaunchUtils.isPackageEnabledNow(context, pojo.packageName);
-        String target = iceBoxRoute && currentUser ? resolveTargetPackageName(context) : null;
+        // Launch decisions require a verified target, never label similarity. The
+        // public resolveTargetPackageName() also supports UI grouping by approximate
+        // names, which is too weak to authorize unfreezing another app.
+        String target = iceBoxRoute && currentUser ? verifiedIceBoxTarget(context) : null;
         boolean frozenTarget = iceBoxRoute && currentUser
                 && !TextUtils.isEmpty(target) && !TextUtils.equals(target, pojo.packageName)
                 && AppLaunchUtils.isPackageInstalled(context, target)
@@ -507,6 +510,19 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             }
             attemptExactLaunchAfterEnable(context, sourceBounds, 0);
         });
+    }
+
+    @Nullable
+    private String verifiedIceBoxTarget(Context context) {
+        String stored = pojo.targetPackage;
+        if (!TextUtils.isEmpty(stored) && !TextUtils.equals(stored, pojo.packageName)
+                && AppLaunchUtils.isPackageInstalled(context, stored)) {
+            return stored;
+        }
+        // If the publisher's live shortcut is still readable, inspect the actual
+        // intent chain. Missing records never trigger a name-based package guess.
+        ShortcutInfo info = getShortCut(context);
+        return info == null ? null : ShortcutUtil.resolveShortcutTargetPackage(context, info);
     }
 
     private void openEnabledIceBoxApp(Context context, String target, boolean asynchronous) {

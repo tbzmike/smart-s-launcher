@@ -373,60 +373,75 @@ public class AppResult extends ResultWithTags<AppPojo> {
     public void doLaunch(Context context, View v) {
         launchSucceeded = false;
         boolean wasFrozen = refreshLiveDisabledState(context);
-        if (wasFrozen) {
-            if (!FrozenAppPreferences.autoEnable(context)) {
-                Toast.makeText(context, "App is frozen. Auto-enable frozen apps is off.",
+        if (!wasFrozen) {
+            startEnabledApplication(context, v, false, false);
+            return;
+        }
+        if (!FrozenAppPreferences.autoEnable(context)) {
+            Toast.makeText(context, "App is frozen. Enable Auto-enable frozen apps when opened.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!pojo.userHandle.isCurrentUser()) {
+            Toast.makeText(context, "The frozen app must be enabled from its Android profile.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        // Never run su or a privileged package operation from Android's UI thread.
+        AppLaunchUtils.ensurePackageEnabledAsync(context, pojo.packageName, enabled -> {
+            if (!enabled) {
+                pojo.setDisabled(true);
+                applyFrozenIconFilter(findVisibleIcon(v));
+                Toast.makeText(context, "Unable to enable " + pojo.getName()
+                                + ". Check Smart S root permissions.",
                         Toast.LENGTH_LONG).show();
                 return;
             }
-            if (!pojo.userHandle.isCurrentUser()) {
-                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
-                return;
-            }
-            if (!AppLaunchUtils.ensurePackageEnabled(context, pojo.packageName)) {
-                pojo.setDisabled(true);
-                applyFrozenIconFilter(findVisibleIcon(v));
-                Toast.makeText(context, "Unable to enable " + pojo.getName(), Toast.LENGTH_LONG).show();
-                return;
-            }
-            // Do not reindex/refresh while launch is in progress: that can invalidate the
-            // selected frozen app/shortcut between unfreezing and LauncherApps.startMainActivity.
             pojo.setDisabled(false);
             clearVisibleDisabledFilter(v);
             clearIcon();
-        }
+            startEnabledApplication(context, v, true, true);
+        });
+    }
 
+    private void startEnabledApplication(Context context, @Nullable View v,
+                                         boolean wasFrozen, boolean asynchronous) {
         try {
             LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
             if (launcher == null) throw new ActivityNotFoundException();
             Rect sourceBounds = null;
             Bundle opts = null;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && v != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && v != null
+                    && v.getWindowToken() != null) {
                 View potentialIcon = v.findViewById(R.id.item_app_icon);
                 if (potentialIcon == null) potentialIcon = v.findViewById(R.id.favorite);
                 if (potentialIcon != null) {
                     sourceBounds = getViewBounds(potentialIcon);
                     opts = ActivityOptions.makeClipRevealAnimation(potentialIcon, 0, 0,
-                            potentialIcon.getMeasuredWidth(), potentialIcon.getMeasuredHeight()).toBundle();
+                            potentialIcon.getMeasuredWidth(),
+                            potentialIcon.getMeasuredHeight()).toBundle();
                 }
             }
             launcher.startMainActivity(getClassName(), pojo.userHandle.getRealHandle(), sourceBounds, opts);
             markLaunchSucceeded(wasFrozen, v);
             rememberSuccessfulHistoryTarget(context);
+            if (asynchronous) recordLaunch(context, null);
             if (wasFrozen) AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
-        } catch (ActivityNotFoundException | NullPointerException | SecurityException e) {
-            Log.w(TAG, "Unable to launch activity", e);
+        } catch (ActivityNotFoundException | NullPointerException | SecurityException
+                 | IllegalStateException e) {
+            Log.w(TAG, "Unable to launch exact component " + getClassName(), e);
 
-            // Immediately after IceBox/root unfreezes a package, LauncherApps can lag behind the
-            // PackageManager state. Try the package launch intent before treating the app as broken.
+            // A just-unfrozen Activity may have a new or temporarily unpublished
+            // launcher component. Resolve the canonical package launch Intent instead
+            // of removing the clicked app's tags, favorites or saved History.
             if (wasFrozen && AppLaunchUtils.launchPackage(context, pojo.packageName)) {
                 markLaunchSucceeded(true, v);
                 rememberSuccessfulHistoryTarget(context);
+                if (asynchronous) recordLaunch(context, null);
                 return;
             }
 
-            // Never remove saved History, favorites or tags because a frozen app
-            // component was unavailable during Android's asynchronous re-enable.
             if (!AppLaunchUtils.isPackageEnabledNow(context, pojo.packageName)) {
                 pojo.setDisabled(true);
                 applyFrozenIconFilter(findVisibleIcon(v));
@@ -435,7 +450,8 @@ public class AppResult extends ResultWithTags<AppPojo> {
             if (wasFrozen) {
                 AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
             }
-            Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
+            Toast.makeText(context, "Unable to open " + pojo.getName()
+                    + " after checking its frozen state.", Toast.LENGTH_LONG).show();
         }
     }
 
