@@ -25,12 +25,17 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -82,11 +87,16 @@ public final class FullBackupManager {
             List<RootSpec> roots = rootsFor(context);
             long totalBytes = Math.max(1L, countBytes(roots));
             long[] copied = {0L};
+            // Fingerprint all saved settings and SQLite files, including tag and shortcut rows.
+            Map<String, String> hashes = new LinkedHashMap<>();
+            for (RootSpec root : roots) {
+                collectFingerprints(root.livePath, root.archiveName + "/", hashes);
+            }
 
             OutputStream raw = context.getContentResolver().openOutputStream(destination, "wt");
             if (raw == null) throw new IOException("Unable to open backup destination");
             try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw, BUFFER_SIZE))) {
-                writeManifest(context, zip, roots);
+                writeManifest(context, zip, roots, hashes);
                 progress.setPercent(2);
                 for (RootSpec root : roots) {
                     addRoot(zip, root, totalBytes, copied, progress);
@@ -120,7 +130,7 @@ public final class FullBackupManager {
             extractArchive(archive, staged, archiveInfo.totalBytes, progress);
             progress.setPercent(85);
 
-            validateStaged(staged, archiveInfo.rootNames);
+            validateStaged(staged, archiveInfo.rootNames, archiveInfo.hashes);
             progress.setPercent(88);
             replacePersistentState(context, staged, archiveInfo.rootNames, progress);
             progress.complete();
@@ -150,7 +160,7 @@ public final class FullBackupManager {
         return roots;
     }
 
-    private static void checkpointDatabases(Context context) {
+    private static void checkpointDatabases(Context context) throws IOException {
         String[] names = context.databaseList();
         if (names == null) return;
         for (String name : names) {
@@ -162,9 +172,11 @@ public final class FullBackupManager {
             try {
                 db = SQLiteDatabase.openDatabase(dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
                 cursor = db.rawQuery("PRAGMA wal_checkpoint(FULL)", null);
-                if (cursor != null) cursor.moveToFirst();
+                if (cursor != null && cursor.moveToFirst() && cursor.getInt(0) != 0) {
+                    throw new IOException("Database checkpoint was busy: " + name);
+                }
             } catch (RuntimeException e) {
-                Log.w(TAG, "Could not checkpoint database before backup: " + name);
+                throw new IOException("Database checkpoint failed: " + name, e);
             } finally {
                 if (cursor != null) cursor.close();
                 if (db != null) db.close();
@@ -172,7 +184,8 @@ public final class FullBackupManager {
         }
     }
 
-    private static void writeManifest(Context context, ZipOutputStream zip, List<RootSpec> roots)
+    private static void writeManifest(Context context, ZipOutputStream zip, List<RootSpec> roots,
+                                      Map<String, String> hashes)
             throws IOException, JSONException {
         JSONObject manifest = new JSONObject();
         manifest.put("format", FORMAT);
@@ -183,11 +196,51 @@ public final class FullBackupManager {
         JSONArray rootNames = new JSONArray();
         for (RootSpec root : roots) rootNames.put(root.archiveName);
         manifest.put("roots", rootNames);
+        manifest.put("sha256", new JSONObject(hashes)); // Optional: v1 archives remain restorable.
         byte[] bytes = manifest.toString().getBytes(StandardCharsets.UTF_8);
         ZipEntry entry = new ZipEntry(MANIFEST_ENTRY);
         zip.putNextEntry(entry);
         zip.write(bytes);
         zip.closeEntry();
+    }
+
+    /** Hash each backed-up file by its exact archive path. This also covers every SharedPreferences XML. */
+    private static void collectFingerprints(File file, String path, Map<String, String> hashes)
+            throws IOException {
+        if (!file.exists()) return;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children == null) throw new IOException("Cannot list backup directory: " + file);
+            Arrays.sort(children, (a, b) -> a.getName().compareTo(b.getName()));
+            for (File child : children) {
+                collectFingerprints(child, path + child.getName()
+                        + (child.isDirectory() ? "/" : ""), hashes);
+            }
+        } else {
+            hashes.put(path, fingerprint(file));
+        }
+    }
+
+    private static String fingerprint(File file) throws IOException {
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 not available", e);
+        }
+        try (InputStream in = new BufferedInputStream(new FileInputStream(file), BUFFER_SIZE)) {
+            byte[] buffer = new byte[BUFFER_SIZE];
+            int read;
+            while ((read = in.read(buffer)) != -1) digest.update(buffer, 0, read);
+        }
+        final char[] digits = "0123456789abcdef".toCharArray();
+        byte[] data = digest.digest();
+        char[] out = new char[data.length * 2];
+        for (int i = 0; i < data.length; i++) {
+            out[2 * i] = digits[(data[i] & 255) >>> 4];
+            out[2 * i + 1] = digits[data[i] & 15];
+        }
+        return new String(out);
     }
 
     private static long countBytes(List<RootSpec> roots) {
@@ -298,6 +351,17 @@ public final class FullBackupManager {
                 throw new IOException("Backup was created by a newer Smart S version");
             }
 
+            JSONObject checksums = manifest.optJSONObject("sha256");
+            Map<String, String> hashes = new HashMap<>();
+            if (checksums != null) {
+                java.util.Iterator<String> keys = checksums.keys();
+                while (keys.hasNext()) {
+                    String name = keys.next();
+                    String hash = checksums.getString(name);
+                    if (!hash.matches("[0-9a-f]{64}")) throw new IOException("Bad fingerprint: " + name);
+                    hashes.put(name, hash);
+                }
+            }
             JSONArray roots = manifest.optJSONArray("roots");
             if (roots == null || roots.length() == 0) throw new IOException("Backup root list is missing");
             List<String> rootNames = new ArrayList<>();
@@ -318,7 +382,8 @@ public final class FullBackupManager {
                     if (totalBytes > MAX_RESTORE_BYTES) throw new IOException("Expanded backup is too large");
                 }
             }
-            return new ArchiveInfo(Collections.unmodifiableList(rootNames), Math.max(1L, totalBytes));
+            return new ArchiveInfo(Collections.unmodifiableList(rootNames),
+                    Math.max(1L, totalBytes), hashes);
         }
     }
 
@@ -397,10 +462,44 @@ public final class FullBackupManager {
                 || "external_files".equals(root);
     }
 
-    private static void validateStaged(File staged, List<String> rootNames) throws IOException {
+    private static void validateStaged(File staged, List<String> rootNames,
+                                       Map<String, String> hashes) throws IOException {
         for (String root : rootNames) {
             File dir = new File(staged, root);
-            if (!dir.exists() || !dir.isDirectory()) throw new IOException("Backup section is missing: " + root);
+            if (!dir.exists() || !dir.isDirectory()) {
+                throw new IOException("Backup section is missing: " + root);
+            }
+        }
+        // Reject truncated/changed settings and tag/shortcut database bytes before touching live data.
+        for (Map.Entry<String, String> entry : hashes.entrySet()) {
+            File file = safeTarget(staged, entry.getKey());
+            if (!file.isFile() || !entry.getValue().equals(fingerprint(file))) {
+                throw new IOException("Backup missing or corrupt: " + entry.getKey());
+            }
+        }
+        if (rootNames.contains("databases")) {
+            File source = new File(new File(staged, "databases"), "kiss.s3db");
+            if (!source.isFile()) throw new IOException("Tag and shortcut database missing");
+            SQLiteDatabase db = null;
+            try {
+                db = SQLiteDatabase.openDatabase(source.getAbsolutePath(), null,
+                        SQLiteDatabase.OPEN_READWRITE);
+                try (Cursor cursor = db.rawQuery("PRAGMA quick_check(1)", null)) {
+                    if (!cursor.moveToFirst() || !"ok".equalsIgnoreCase(cursor.getString(0))) {
+                        throw new IOException("Backup database failed integrity check");
+                    }
+                }
+                // Stable IDs in tags must remain paired with their shortcut catalog in this DB.
+                for (String table : new String[]{"tags", "shortcuts", "custom_components"}) {
+                    try (Cursor cursor = db.rawQuery("SELECT count(*) FROM " + table, null)) {
+                        if (!cursor.moveToFirst()) throw new IOException("Missing backup table: " + table);
+                    }
+                }
+            } catch (RuntimeException e) {
+                throw new IOException("Backup database failed validation", e);
+            } finally {
+                if (db != null) db.close();
+            }
         }
     }
 
@@ -428,9 +527,10 @@ public final class FullBackupManager {
                     File old = new File(context.getCacheDir(),
                             "smart-s-old-external-" + UUID.randomUUID());
                     if (root.livePath.exists()) copyDirectory(root.livePath, old);
+                    replacements.add(new Replacement(root.livePath, old));
+                    // Rollback record MUST be registered before a potentially partial copy.
                     deleteRecursively(root.livePath);
                     copyDirectory(stagedRoot, root.livePath);
-                    replacements.add(new Replacement(root.livePath, old));
                 }
                 int done = replacements.size();
                 progress.setPercent(88 + Math.min(11, done * 11 / Math.max(1, rootNames.size())));
@@ -496,10 +596,12 @@ public final class FullBackupManager {
     private static final class ArchiveInfo {
         final List<String> rootNames;
         final long totalBytes;
+        final Map<String, String> hashes;
 
-        ArchiveInfo(List<String> rootNames, long totalBytes) {
+        ArchiveInfo(List<String> rootNames, long totalBytes, Map<String, String> hashes) {
             this.rootNames = rootNames;
             this.totalBytes = totalBytes;
+            this.hashes = hashes;
         }
     }
 
