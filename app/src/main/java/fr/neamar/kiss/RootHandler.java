@@ -6,12 +6,15 @@ import android.content.SharedPreferences;
 import androidx.preference.PreferenceManager;
 
 import java.nio.charset.StandardCharsets;
+import android.os.SystemClock;
 
 import fr.neamar.kiss.utils.Log;
 
 public class RootHandler {
     private static final String TAG = RootHandler.class.getSimpleName();
     private Boolean isRootAvailable = null;
+    private long lastRootProbeElapsed;
+    private static final long DENIED_ROOT_RETRY_MS = 5_000L;
     private Boolean isRootActivated = null;
 
     RootHandler(Context ctx) { resetRootHandler(ctx); }
@@ -19,8 +22,13 @@ public class RootHandler {
     void resetRootHandler(Context ctx) { isRootActivated = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean("root-mode", false); }
 
     public boolean isRootAvailable() {
-        if (isRootAvailable == null) {
-            try { isRootAvailable = executeRootShell(null); }
+        // A denied/missing su permission must not be cached forever. Root permission can
+        // become available after a prompt, a profile switch, or a freezer state change.
+        long now = SystemClock.elapsedRealtime();
+        if (isRootAvailable == null || (!isRootAvailable
+                && now - lastRootProbeElapsed >= DENIED_ROOT_RETRY_MS)) {
+            lastRootProbeElapsed = now;
+            try { isRootAvailable = executeRootShell("test \"$(id -u)\" -eq 0"); }
             catch (Exception e) { isRootAvailable = false; }
         }
         return isRootAvailable;
@@ -54,8 +62,14 @@ public class RootHandler {
         Process p = null;
         try {
             p = Runtime.getRuntime().exec("su");
-            if (command != null && !command.trim().isEmpty()) p.getOutputStream().write((command + "\n").getBytes(StandardCharsets.UTF_8));
-            p.getOutputStream().write("exit\n".getBytes(StandardCharsets.UTF_8));
+            if (command != null && !command.trim().isEmpty()) {
+                p.getOutputStream().write((command + "\n").getBytes(StandardCharsets.UTF_8));
+                // exit without the preceding command's status always reported success for
+                // a failed 'pm enable' inside a successfully spawned su shell.
+                p.getOutputStream().write("exit $?\n".getBytes(StandardCharsets.UTF_8));
+            } else {
+                p.getOutputStream().write("exit\n".getBytes(StandardCharsets.UTF_8));
+            }
             p.getOutputStream().flush();
             p.getOutputStream().close();
             int result = p.waitFor();

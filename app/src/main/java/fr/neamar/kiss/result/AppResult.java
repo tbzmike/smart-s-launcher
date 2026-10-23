@@ -191,7 +191,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
             return false;
         }
         // Live verification is reserved for user actions; rendering trusts provider state.
-        boolean enabled = AppLaunchUtils.isPackageEnabled(context, pojo.packageName);
+        boolean enabled = AppLaunchUtils.isPackageEnabledNow(context, pojo.packageName);
         pojo.setDisabled(!enabled);
         return !enabled;
     }
@@ -389,6 +389,8 @@ public class AppResult extends ResultWithTags<AppPojo> {
                 Toast.makeText(context, "Unable to enable " + pojo.getName(), Toast.LENGTH_LONG).show();
                 return;
             }
+            // Do not reindex/refresh while launch is in progress: that can invalidate the
+            // selected frozen app/shortcut between unfreezing and LauncherApps.startMainActivity.
             pojo.setDisabled(false);
             clearVisibleDisabledFilter(v);
             clearIcon();
@@ -411,6 +413,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
             launcher.startMainActivity(getClassName(), pojo.userHandle.getRealHandle(), sourceBounds, opts);
             markLaunchSucceeded(wasFrozen, v);
             rememberSuccessfulHistoryTarget(context);
+            if (wasFrozen) AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
         } catch (ActivityNotFoundException | NullPointerException | SecurityException e) {
             Log.w(TAG, "Unable to launch activity", e);
 
@@ -422,16 +425,15 @@ public class AppResult extends ResultWithTags<AppPojo> {
                 return;
             }
 
-            // Never hide/exclude an app merely because IceBox froze it between index and tap.
-            if (!AppLaunchUtils.isPackageEnabled(context, pojo.packageName)) {
+            // Never remove saved History, favorites or tags because a frozen app
+            // component was unavailable during Android's asynchronous re-enable.
+            if (!AppLaunchUtils.isPackageEnabledNow(context, pojo.packageName)) {
                 pojo.setDisabled(true);
                 applyFrozenIconFilter(findVisibleIcon(v));
                 clearIcon();
-                KissApplication.getApplication(context).getDataHandler().reloadApps();
-            } else {
-                // Only a genuinely enabled, broken launcher component is treated as a failed app target.
-                KissApplication.getApplication(context).getDataHandler().addToExcluded(pojo);
-                removeFromHistory(context);
+            }
+            if (wasFrozen) {
+                AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
             }
             Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
         }

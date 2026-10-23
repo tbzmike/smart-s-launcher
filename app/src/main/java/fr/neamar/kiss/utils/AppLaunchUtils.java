@@ -48,6 +48,15 @@ public final class AppLaunchUtils {
         return enabled;
     }
 
+    /** Tap-time package state check bypasses the 15-second display/cache snapshot. */
+    public static boolean isPackageEnabledNow(Context context, String packageName) {
+        if (context == null || packageName == null || packageName.isEmpty()) return false;
+        boolean enabled = queryPackageEnabled(context, packageName);
+        ENABLED_STATE_CACHE.put(packageName,
+                new EnabledState(enabled, SystemClock.elapsedRealtime()));
+        return enabled;
+    }
+
     private static boolean queryPackageEnabled(Context context, String packageName) {
         PackageManager pm = context.getPackageManager();
         try {
@@ -103,9 +112,12 @@ public final class AppLaunchUtils {
     /** Enable a frozen current-user package without launching it. */
     public static boolean ensurePackageEnabled(Context context, String packageName) {
         if (!isPackageInstalled(context, packageName)) return false;
-        if (isPackageEnabled(context, packageName)) return true;
+        if (isPackageEnabledNow(context, packageName)) return true;
         if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()
-                || !KissApplication.getApplication(context).getRootHandler().isRootAvailable()) return false;
+                || !KissApplication.getApplication(context).getRootHandler().isRootAvailable()) {
+            Log.w("AppLaunchUtils", "Auto-enable requires an authorized root session: " + packageName);
+            return false;
+        }
 
         PackageManager pm = context.getPackageManager();
         ResolveInfo launcher = resolveLauncher(pm, packageName);
@@ -116,14 +128,19 @@ public final class AppLaunchUtils {
                     packageName, launcher.activityInfo.name, userId);
         }
 
-        // Root/package-manager state can take a short moment to become visible through
-        // ApplicationInfo. Record the successful unfreeze immediately and refresh the launcher
-        // so visible history/U/list/favorite rows stop showing the disabled icon state.
-        refreshLauncherAfterEnable(context, packageName);
-        return true;
+        // 'su' and 'pm enable' succeeding does not guarantee that PackageManager has
+        // published the enabled state. Do not claim success or refresh the provider until
+        // fresh, uncached PackageManager state confirms the package became launchable.
+        for (int attempt = 0; attempt < 5; attempt++) {
+            if (isPackageEnabledNow(context, packageName)) return true;
+            if (attempt < 4) SystemClock.sleep(100L);
+        }
+        Log.w("AppLaunchUtils", "Package remains frozen after enable: " + packageName);
+        return false;
     }
 
     public static boolean launchPackage(Context context, String packageName) {
+        boolean frozen = !isPackageEnabledNow(context, packageName);
         if (!ensurePackageEnabled(context, packageName)) return false;
         PackageManager pm = context.getPackageManager();
         ResolveInfo resolveInfo = resolveLauncher(pm, packageName);
@@ -136,6 +153,7 @@ public final class AppLaunchUtils {
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             context.startActivity(launchIntent);
+            if (frozen) refreshLauncherAfterEnable(context, packageName);
             return true;
         } catch (RuntimeException e) {
             Log.w("AppLaunchUtils", "Unable to launch package " + packageName, e);
