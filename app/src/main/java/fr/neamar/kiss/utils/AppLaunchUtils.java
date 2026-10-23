@@ -46,12 +46,27 @@ public final class AppLaunchUtils {
      */
     public static void ensurePackageEnabledAsync(Context context, String packageName,
                                                  Consumer<Boolean> onComplete) {
+        ensurePackageEnabledAsync(context, packageName, null, onComplete);
+    }
+
+    /**
+     * Optional saved launcher Activity is re-enabled on the same on-demand worker
+     * after the package. A freezer can disable that component independently of
+     * the package, causing LauncherApps.startMainActivity to fail.
+     */
+    public static void ensurePackageEnabledAsync(Context context, String packageName,
+                                                 ComponentName savedActivity,
+                                                 Consumer<Boolean> onComplete) {
         Context app = context.getApplicationContext();
         try {
             ENABLE_EXECUTOR.execute(() -> {
                 boolean enabled = false;
                 try {
                     enabled = ensurePackageEnabled(app, packageName);
+                    if (enabled && savedActivity != null
+                            && packageName.equals(savedActivity.getPackageName())) {
+                        reenableDisabledLauncherComponent(app, savedActivity);
+                    }
                 } catch (RuntimeException e) {
                     Log.w("AppLaunchUtils", "Enable failed for " + packageName, e);
                 }
@@ -61,6 +76,28 @@ public final class AppLaunchUtils {
         } catch (RuntimeException e) {
             Log.w("AppLaunchUtils", "Auto-enable queue unavailable", e);
             MAIN.post(() -> onComplete.accept(false));
+        }
+    }
+
+    private static void reenableDisabledLauncherComponent(Context app, ComponentName component) {
+        try {
+            PackageManager pm = app.getPackageManager();
+            android.content.pm.ActivityInfo activity = pm.getActivityInfo(
+                    component, PackageManager.MATCH_DISABLED_COMPONENTS);
+            int state = pm.getComponentEnabledSetting(component);
+            boolean disabled = !activity.enabled
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
+            if (!disabled) return;
+            int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
+            boolean restored = KissApplication.getApplication(app).getRootHandler()
+                    .enableComponent(component.getPackageName(), component.getClassName(), userId);
+            if (!restored) Log.w("AppLaunchUtils", "Launcher component could not be enabled: " + component);
+        } catch (PackageManager.NameNotFoundException | SecurityException | IllegalArgumentException e) {
+            // Stale launcher Activity after an app upgrade. Package-level fallback
+            // will resolve the current Activity without deleting the saved app.
+            Log.w("AppLaunchUtils", "Saved launcher component unavailable: " + component, e);
         }
     }
 

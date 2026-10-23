@@ -392,7 +392,8 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
         // Never run su or a privileged package operation from Android's UI thread.
         launchPending = true;
-        AppLaunchUtils.ensurePackageEnabledAsync(context, pojo.packageName, enabled -> {
+        AppLaunchUtils.ensurePackageEnabledAsync(
+                context, pojo.packageName, getClassName(), enabled -> {
             launchPending = false;
             if (!enabled) {
                 pojo.setDisabled(true);

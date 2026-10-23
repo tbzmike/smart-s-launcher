@@ -4,7 +4,7 @@ Based on verified v3.30.181, versionCode 610.
 
 ## Contract
 
-- A frozen app click, with Auto-enable frozen apps on and authorized root, checks current PackageManager state, enables the actual current-profile package on demand, verifies it became enabled, and launches it automatically.
+- A frozen app click, with Auto-enable frozen apps on and authorized root, checks current PackageManager state, enables the actual current-profile package and any independently disabled saved launcher Activity on demand, verifies the package became enabled, and launches it automatically.
 - A frozen Android shortcut enables its publisher, then retries the exact publisher/shortcut identity while the app republishes; it never records a failed attempt as success.
 - A verified IceBox app alias first uses its own exact shortcut route (preserving Device Owner/Shizuku permissions). If Android reports the exact route unavailable, it enables its verified real target via authorized root and opens that app. No display-name guessing for privileged target selection.
 - Non-frozen shortcuts launch immediately as before. Legacy shortcuts keep their original Intent.
