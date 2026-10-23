@@ -62,6 +62,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
     private volatile Drawable icon = null;
     private boolean launchSucceeded = true;
+    private boolean launchPending;
 
     AppResult(@NonNull AppPojo pojo) { super(pojo); }
 
@@ -371,6 +372,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
     @Override
     public void doLaunch(Context context, View v) {
+        if (launchPending) return;
         launchSucceeded = false;
         boolean wasFrozen = refreshLiveDisabledState(context);
         if (!wasFrozen) {
@@ -389,7 +391,9 @@ public class AppResult extends ResultWithTags<AppPojo> {
         }
 
         // Never run su or a privileged package operation from Android's UI thread.
+        launchPending = true;
         AppLaunchUtils.ensurePackageEnabledAsync(context, pojo.packageName, enabled -> {
+            launchPending = false;
             if (!enabled) {
                 pojo.setDisabled(true);
                 applyFrozenIconFilter(findVisibleIcon(v));

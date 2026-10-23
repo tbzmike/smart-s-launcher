@@ -24,7 +24,6 @@ import fr.neamar.kiss.MainActivity;
 public final class AppLaunchUtils {
     private static final int ANDROID_UID_USER_RANGE = 100000;
     private static final long ENABLED_STATE_CACHE_MS = 15000L;
-    private static final long PACKAGE_STATE_RECHECK_DELAY_MS = 450L;
     private static final ConcurrentHashMap<String, EnabledState> ENABLED_STATE_CACHE =
             new ConcurrentHashMap<>();
 
@@ -123,29 +122,16 @@ public final class AppLaunchUtils {
     }
 
     /**
-     * Refresh app/provider state and visible launcher results after a frozen app has been
-     * successfully enabled. The first refresh uses the known successful enable result so the
-     * currently visible icon immediately loses its disabled/grayscale state. A short delayed
-     * recheck then synchronizes with PackageManager after its state has had time to settle.
+     * One state refresh after a verified enable. An additional unconditional timed reload
+     * doubled the provider/History work and could invalidate an in-flight shortcut launch.
      */
     public static void refreshLauncherAfterEnable(Context context, String packageName) {
         if (context == null || packageName == null || packageName.isEmpty()) return;
-        Context appContext = context.getApplicationContext();
         markPackageEnabled(packageName);
-        notifyLauncherStateChanged(appContext);
-
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            invalidatePackageState(packageName);
-            boolean enabled = queryPackageEnabled(appContext, packageName);
-            ENABLED_STATE_CACHE.put(packageName,
-                    new EnabledState(enabled, SystemClock.elapsedRealtime()));
-            notifyLauncherStateChanged(appContext);
-        }, PACKAGE_STATE_RECHECK_DELAY_MS);
-    }
-
-    private static void notifyLauncherStateChanged(Context context) {
-        KissApplication.getApplication(context).getDataHandler().reloadApps();
-        context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
+        Context app = context.getApplicationContext();
+        KissApplication.getApplication(app).getDataHandler().reloadApps();
+        KissApplication.getApplication(app).getDataHandler().reloadShortcuts();
+        app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
     }
 
     /** Enable a frozen current-user package without launching it. */

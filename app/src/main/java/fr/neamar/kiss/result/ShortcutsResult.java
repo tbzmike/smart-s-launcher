@@ -382,6 +382,9 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         if (TextUtils.isEmpty(appPackage) && intent.getComponent() != null) {
             appPackage = intent.getComponent().getPackageName();
         }
+        if (TextUtils.isEmpty(appPackage) && !TextUtils.isEmpty(pojo.targetPackage)) {
+            appPackage = pojo.targetPackage;
+        }
         final String pkg = appPackage;
         boolean frozen = !TextUtils.isEmpty(pkg) && AppLaunchUtils.isPackageInstalled(context, pkg)
                 && !AppLaunchUtils.isPackageEnabledNow(context, pkg);
@@ -522,7 +525,8 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         // If the publisher's live shortcut is still readable, inspect the actual
         // intent chain. Missing records never trigger a name-based package guess.
         ShortcutInfo info = getShortCut(context);
-        return info == null ? null : ShortcutUtil.resolveShortcutTargetPackage(context, info);
+        String resolved = info == null ? null : ShortcutUtil.resolveShortcutTargetPackage(context, info);
+        return TextUtils.equals(resolved, pojo.packageName) ? null : resolved;
     }
 
     private void openEnabledIceBoxApp(Context context, String target, boolean asynchronous) {
@@ -587,12 +591,18 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
     @RequiresApi(Build.VERSION_CODES.O)
     private boolean tryExactShortcutLaunch(Context context, LauncherApps launcherApps,
                                            @Nullable Rect sourceBounds) {
-        ShortcutInfo shortcutInfo = getShortCut(context);
+        ShortcutInfo shortcutInfo;
+        try {
+            shortcutInfo = getShortCut(context);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Shortcut lookup unavailable for " + pojo.getOreoId(), e);
+            shortcutInfo = null;
+        }
         if (shortcutInfo != null) {
             try {
                 launcherApps.startShortcut(shortcutInfo, sourceBounds, null);
                 return true;
-            } catch (ActivityNotFoundException | IllegalStateException | SecurityException e) {
+            } catch (RuntimeException e) {
                 Log.w(TAG, "Unable to launch ShortcutInfo for " + pojo.getName(), e);
             }
         }
@@ -601,7 +611,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             launcherApps.startShortcut(pojo.packageName, pojo.getOreoId(), sourceBounds, null,
                     pojo.getUserHandle().getRealHandle());
             return true;
-        } catch (ActivityNotFoundException | IllegalStateException | SecurityException e) {
+        } catch (RuntimeException e) {
             Log.w(TAG, "Unable to launch shortcut id " + pojo.getOreoId(), e);
         }
 
@@ -614,7 +624,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                     shortcutIntent.send();
                     return true;
                 }
-            } catch (PendingIntent.CanceledException | IllegalStateException | SecurityException e) {
+            } catch (PendingIntent.CanceledException | RuntimeException e) {
                 Log.w(TAG, "Unable to send shortcut PendingIntent for " + pojo.getName(), e);
             }
         }
