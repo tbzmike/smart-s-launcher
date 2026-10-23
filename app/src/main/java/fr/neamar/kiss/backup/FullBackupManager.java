@@ -98,20 +98,18 @@ public final class FullBackupManager {
             List<RootSpec> roots = rootsFor(context);
             long totalBytes = Math.max(1L, countBytes(roots));
             long[] copied = {0L};
-            // Fingerprint all saved settings and SQLite files, including tag and shortcut rows.
+            // Fingerprints are computed while the exact archived bytes are being streamed.
             Map<String, String> hashes = new LinkedHashMap<>();
-            for (RootSpec root : roots) {
-                collectFingerprints(root.livePath, root.archiveName + "/", hashes);
-            }
 
             OutputStream raw = context.getContentResolver().openOutputStream(destination, "wt");
             if (raw == null) throw new IOException("Unable to open backup destination");
             try (ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw, BUFFER_SIZE))) {
-                writeManifest(context, zip, roots, hashes);
                 progress.setPercent(2);
                 for (RootSpec root : roots) {
-                    addRoot(zip, root, totalBytes, copied, progress);
+                    addRoot(zip, root, totalBytes, copied, progress, hashes);
                 }
+                // After all file bytes are written, their digest map is complete.
+                writeManifest(context, zip, roots, hashes);
                 zip.finish();
             }
             progress.complete();
@@ -233,23 +231,6 @@ public final class FullBackupManager {
         zip.closeEntry();
     }
 
-    /** Hash each backed-up file by its exact archive path. This also covers every SharedPreferences XML. */
-    private static void collectFingerprints(File file, String path, Map<String, String> hashes)
-            throws IOException {
-        if (!file.exists()) return;
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children == null) throw new IOException("Cannot list backup directory: " + file);
-            Arrays.sort(children, (a, b) -> a.getName().compareTo(b.getName()));
-            for (File child : children) {
-                collectFingerprints(child, path + child.getName()
-                        + (child.isDirectory() ? "/" : ""), hashes);
-            }
-        } else {
-            hashes.put(path, fingerprint(file));
-        }
-    }
-
     private static String fingerprint(File file) throws IOException {
         final MessageDigest digest;
         try {
@@ -262,14 +243,7 @@ public final class FullBackupManager {
             int read;
             while ((read = in.read(buffer)) != -1) digest.update(buffer, 0, read);
         }
-        final char[] digits = "0123456789abcdef".toCharArray();
-        byte[] data = digest.digest();
-        char[] out = new char[data.length * 2];
-        for (int i = 0; i < data.length; i++) {
-            out[2 * i] = digits[(data[i] & 255) >>> 4];
-            out[2 * i + 1] = digits[data[i] & 15];
-        }
-        return new String(out);
+        return hex(digest.digest());
     }
 
     private static long countBytes(List<RootSpec> roots) {
@@ -289,17 +263,19 @@ public final class FullBackupManager {
     }
 
     private static void addRoot(ZipOutputStream zip, RootSpec root, long totalBytes, long[] copied,
-                                BackupRestoreProgress progress) throws IOException {
+                                BackupRestoreProgress progress,
+                                Map<String, String> hashes) throws IOException {
         String prefix = root.archiveName + "/";
         ZipEntry directory = new ZipEntry(prefix);
         zip.putNextEntry(directory);
         zip.closeEntry();
         if (!root.livePath.exists()) return;
-        addPath(zip, root.livePath, prefix, totalBytes, copied, progress);
+        addPath(zip, root.livePath, prefix, totalBytes, copied, progress, hashes);
     }
 
     private static void addPath(ZipOutputStream zip, File file, String entryName, long totalBytes,
-                                long[] copied, BackupRestoreProgress progress) throws IOException {
+                                long[] copied, BackupRestoreProgress progress,
+                                Map<String, String> hashes) throws IOException {
         if (file.isDirectory()) {
             File[] children = file.listFiles();
             if (children == null) return;
@@ -310,18 +286,25 @@ public final class FullBackupManager {
                     ZipEntry dir = new ZipEntry(childName + "/");
                     zip.putNextEntry(dir);
                     zip.closeEntry();
-                    addPath(zip, child, childName + "/", totalBytes, copied, progress);
+                    addPath(zip, child, childName + "/", totalBytes, copied, progress, hashes);
                 } else {
-                    addFile(zip, child, childName, totalBytes, copied, progress);
+                    addFile(zip, child, childName, totalBytes, copied, progress, hashes);
                 }
             }
         } else {
-            addFile(zip, file, entryName, totalBytes, copied, progress);
+            addFile(zip, file, entryName, totalBytes, copied, progress, hashes);
         }
     }
 
     private static void addFile(ZipOutputStream zip, File file, String entryName, long totalBytes,
-                                long[] copied, BackupRestoreProgress progress) throws IOException {
+                                long[] copied, BackupRestoreProgress progress,
+                                Map<String, String> hashes) throws IOException {
+        final MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 not available", e);
+        }
         ZipEntry entry = new ZipEntry(entryName);
         entry.setTime(file.lastModified());
         zip.putNextEntry(entry);
@@ -330,12 +313,24 @@ public final class FullBackupManager {
             int read;
             while ((read = in.read(buffer)) != -1) {
                 zip.write(buffer, 0, read);
+                digest.update(buffer, 0, read);
                 copied[0] += read;
                 int percent = 2 + (int) Math.min(93L, (copied[0] * 93L) / totalBytes);
                 progress.setPercent(percent);
             }
         }
         zip.closeEntry();
+        hashes.put(entryName, hex(digest.digest()));
+    }
+
+    private static String hex(byte[] data) {
+        final char[] digits = "0123456789abcdef".toCharArray();
+        char[] out = new char[data.length * 2];
+        for (int i = 0; i < data.length; i++) {
+            out[2 * i] = digits[(data[i] & 255) >>> 4];
+            out[2 * i + 1] = digits[data[i] & 15];
+        }
+        return new String(out);
     }
 
     private static long queryLength(Context context, Uri source) {
