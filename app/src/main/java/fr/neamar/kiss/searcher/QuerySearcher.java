@@ -531,6 +531,8 @@ public class QuerySearcher extends Searcher {
     }
 
     public static void clearMaxResultCountCache() {
-        MAX_RESULT_COUNT = -1;
+        // Retained for callers compiled against the former API. Result limits now
+        // belong to each QuerySearcher instance, so a new query always reads the
+        // current settings automatically. No global cache remains to clear.
     }
 }
