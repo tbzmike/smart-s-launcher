@@ -6,7 +6,6 @@ import android.content.SharedPreferences;
 import androidx.preference.PreferenceManager;
 
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
 import android.os.SystemClock;
 
 import fr.neamar.kiss.utils.Log;
@@ -83,13 +82,19 @@ public class RootHandler {
             }
             p.getOutputStream().flush();
             p.getOutputStream().close();
-            if (!p.waitFor(10L, TimeUnit.SECONDS)) {
-                p.destroy();
-                throw new Exception("Root command timed out");
+            // Process.waitFor(timeout, TimeUnit) requires API 26; Smart S supports API 21.
+            // Bounded exitValue polling preserves the same timeout on older Android too.
+            long deadline = SystemClock.elapsedRealtime() + 10_000L;
+            while (SystemClock.elapsedRealtime() < deadline) {
+                try {
+                    int result = p.exitValue();
+                    if (result != 0) throw new Exception("Command execution failed " + result);
+                    return true;
+                } catch (IllegalThreadStateException running) {
+                    Thread.sleep(50L);
+                }
             }
-            int result = p.exitValue();
-            if (result != 0) throw new Exception("Command execution failed " + result);
-            return true;
+            throw new Exception("Root command timed out");
         } catch (Exception e) {
             Log.d(TAG, "Unable to execute root shell", e);
         } finally {
