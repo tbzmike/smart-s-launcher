@@ -624,6 +624,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         if (adapter != null) adapter.invalidateHistoryPresentation();
         fr.neamar.kiss.ui.UniversalHistoryTimestamp.invalidatePresentation();
         forwarderManager.onResume();
+        SearchHandler.getInstance().onLauncherResumed(this);
 
         // Pasting shared text via intent-filter into kiss search bar
         Intent receivedIntent = getIntent();

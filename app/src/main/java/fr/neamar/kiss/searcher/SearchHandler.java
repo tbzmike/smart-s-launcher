@@ -712,6 +712,23 @@ public class SearchHandler {
     public void onLauncherPaused() {
         historyScrollActive = false;
         clearPendingHistoryAfterScroll();
+        if (lastSearchType == Searcher.Type.QUERY) {
+            // An inactive launcher must not wake up to run the five-second provider scan.
+            // Resume re-arms it only if the QUERY view is still active.
+            searchGeneration.incrementAndGet();
+            cancelPendingQuery();
+            cancelRunningSearch();
+            stopHistoryAuxWorkers();
+        }
+    }
+
+    /** Re-arm a postponed QUERY only after Home has returned to the foreground. */
+    public void onLauncherResumed(@NonNull MainActivity activity) {
+        if (lastSearchType == Searcher.Type.QUERY
+                && lastSearchQuery != null && !lastSearchQuery.trim().isEmpty()
+                && pendingQuery == null && runningSearch == null) {
+            search(Searcher.Type.QUERY, activity, lastSearchQuery, true);
+        }
     }
 
     public boolean isHistoryScrollActive() {
