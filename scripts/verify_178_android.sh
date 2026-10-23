@@ -49,5 +49,7 @@ run_test fr.neamar.kiss.androidTest.VerticalCardsPerformanceRegressionTest \
   verification-results/cards-performance-178.log
 run_test fr.neamar.kiss.androidTest.HistoryAutoScrollMotionRegressionTest \
   verification-results/auto-scroll-motion-178.log
+run_test fr.neamar.kiss.androidTest.FullBackupLinkRegressionTest \
+  verification-results/backup-tag-links-180.log
 adb logcat -d > verification-results/logcat.txt || true
 echo "PASS: measured horizontal/vertical Auto Scroll motion, Auto Expand cancellation, Cards/List/Wheel/avatar/sizing and previous Android 35 regressions"
