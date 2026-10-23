@@ -42,6 +42,7 @@ import fr.neamar.kiss.preference.DefaultLauncherPreference;
 import fr.neamar.kiss.preference.DefaultSearchProviderSelectPreference;
 import fr.neamar.kiss.preference.DialogShowingPreference;
 import fr.neamar.kiss.preference.DialogShowingPreferenceDialogFragment;
+import fr.neamar.kiss.preference.BackupRestorePickerFragment;
 import fr.neamar.kiss.preference.ExportSettingsPreference;
 import fr.neamar.kiss.preference.ImportSettingsPreference;
 import fr.neamar.kiss.preference.LaunchPojoSelectPreference;
@@ -839,9 +840,15 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 new DefaultLauncherPreference().onDialogClosed(getContext(), positiveResult);
                 break;
             case "export-settings":
-                new ExportSettingsPreference().onDialogClosed(getContext(), positiveResult);
+                if (positiveResult) BackupRestorePickerFragment.show(requireActivity(), false);
                 break;
             case "import-settings":
+                if (positiveResult) BackupRestorePickerFragment.show(requireActivity(), true);
+                break;
+            case "export-clipboard-settings":
+                new ExportSettingsPreference().onDialogClosed(getContext(), positiveResult);
+                break;
+            case "import-clipboard-settings":
                 new ImportSettingsPreference().onDialogClosed(getContext(), positiveResult);
                 break;
             case "restart":
