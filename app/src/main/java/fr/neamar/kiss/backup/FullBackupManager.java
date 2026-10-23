@@ -3,6 +3,8 @@ package fr.neamar.kiss.backup;
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
+import android.content.pm.ShortcutInfo;
+import android.os.Build;
 import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.os.Handler;
@@ -48,6 +50,9 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import fr.neamar.kiss.BuildConfig;
+import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.db.ShortcutRecord;
+import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.BackupRestoreProgress;
 import fr.neamar.kiss.utils.Log;
 
@@ -85,6 +90,10 @@ public final class FullBackupManager {
     private static void backupInternal(Context context, Uri destination) {
         BackupRestoreProgress progress = BackupRestoreProgress.backup(context, 100);
         try {
+            // Android's live dynamic/manifest/pinned shortcuts are not always present in
+            // the remembered SQLite catalog. Capture their stable publisher + intent IDs
+            // before making the SQLite snapshot so restored tags can resolve those records.
+            captureCurrentShortcuts(context);
             checkpointDatabases(context);
             List<RootSpec> roots = rootsFor(context);
             long totalBytes = Math.max(1L, countBytes(roots));
@@ -147,6 +156,24 @@ public final class FullBackupManager {
             toast(context, "Restore failed. Existing Smart S data was kept whenever replacement had not completed.");
         } finally {
             deleteRecursively(working);
+        }
+    }
+
+    private static void captureCurrentShortcuts(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        try {
+            for (ShortcutInfo shortcut : ShortcutUtil.getAllShortcuts(context)) {
+                try {
+                    ShortcutRecord record = ShortcutUtil.createShortcutRecord(
+                            context, shortcut, !shortcut.isPinned());
+                    if (record != null) DBHelper.insertShortcut(context, record);
+                } catch (RuntimeException e) {
+                    // A revoked shortcut must not prevent backing up already-saved records.
+                    Log.w(TAG, "Could not capture a current publisher shortcut before backup");
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Publisher shortcuts not available; preserving saved catalog");
         }
     }
 
