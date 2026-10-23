@@ -12,6 +12,10 @@ import android.os.Process;
 import android.os.SystemClock;
 
 import java.util.List;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.concurrent.ConcurrentHashMap;
 
 import fr.neamar.kiss.KissApplication;
@@ -24,7 +28,42 @@ public final class AppLaunchUtils {
     private static final ConcurrentHashMap<String, EnabledState> ENABLED_STATE_CACHE =
             new ConcurrentHashMap<>();
 
+    // Zero core workers: automatic unfreeze runs only after a user tap, and the
+    // worker exits after idling. Root prompts never block Android's UI thread.
+    private static final ThreadPoolExecutor ENABLE_EXECUTOR = new ThreadPoolExecutor(
+            0, 1, 15L, TimeUnit.SECONDS, new LinkedBlockingQueue<>(16),
+            runnable -> {
+                Thread thread = new Thread(runnable, "smart-s-launch-enable");
+                thread.setPriority(Thread.NORM_PRIORITY - 1);
+                return thread;
+            }, new ThreadPoolExecutor.AbortPolicy());
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+
     private AppLaunchUtils() {}
+
+    /**
+     * Asynchronously confirm current-user package state and enable it only when frozen.
+     * Never report success based only on a queued root command.
+     */
+    public static void ensurePackageEnabledAsync(Context context, String packageName,
+                                                 Consumer<Boolean> onComplete) {
+        Context app = context.getApplicationContext();
+        try {
+            ENABLE_EXECUTOR.execute(() -> {
+                boolean enabled = false;
+                try {
+                    enabled = ensurePackageEnabled(app, packageName);
+                } catch (RuntimeException e) {
+                    Log.w("AppLaunchUtils", "Enable failed for " + packageName, e);
+                }
+                final boolean result = enabled;
+                MAIN.post(() -> onComplete.accept(result));
+            });
+        } catch (RuntimeException e) {
+            Log.w("AppLaunchUtils", "Auto-enable queue unavailable", e);
+            MAIN.post(() -> onComplete.accept(false));
+        }
+    }
 
     public static boolean isPackageInstalled(Context context, String packageName) {
         if (context == null || packageName == null || packageName.isEmpty()) return false;

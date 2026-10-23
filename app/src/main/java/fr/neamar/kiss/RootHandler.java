@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import androidx.preference.PreferenceManager;
 
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 import android.os.SystemClock;
 
 import fr.neamar.kiss.utils.Log;
@@ -16,9 +17,19 @@ public class RootHandler {
     private long lastRootProbeElapsed;
     private static final long DENIED_ROOT_RETRY_MS = 5_000L;
     private Boolean isRootActivated = null;
+    private final Context appContext;
 
-    RootHandler(Context ctx) { resetRootHandler(ctx); }
-    public boolean isRootActivated() { return this.isRootActivated; }
+    RootHandler(Context ctx) {
+        appContext = ctx.getApplicationContext();
+        resetRootHandler(ctx);
+    }
+
+    // Read the current setting on a user click instead of trusting the value that
+    // happened to be loaded when RootHandler was created.
+    public boolean isRootActivated() {
+        return PreferenceManager.getDefaultSharedPreferences(appContext)
+                .getBoolean("root-mode", false);
+    }
     void resetRootHandler(Context ctx) { isRootActivated = PreferenceManager.getDefaultSharedPreferences(ctx).getBoolean("root-mode", false); }
 
     public boolean isRootAvailable() {
@@ -72,7 +83,11 @@ public class RootHandler {
             }
             p.getOutputStream().flush();
             p.getOutputStream().close();
-            int result = p.waitFor();
+            if (!p.waitFor(10L, TimeUnit.SECONDS)) {
+                p.destroy();
+                throw new Exception("Root command timed out");
+            }
+            int result = p.exitValue();
             if (result != 0) throw new Exception("Command execution failed " + result);
             return true;
         } catch (Exception e) {
