@@ -477,10 +477,19 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             return;
         }
 
+        // Prefer the exact IceBox-owned route when it is still valid: IceBox may
+        // have Device Owner / Shizuku authority even if Smart S lacks root access.
+        // If Android reports that route unavailable, fall back to verified direct
+        // target enable/launch instead of simply showing the old exact-shortcut error.
+        if (iceBoxRoute && frozenTarget && !frozenPublisher
+                && tryExactShortcutLaunch(context, apps, sourceBounds)) {
+            onExactLaunchSucceeded(context, false);
+            return;
+        }
+
         launchPending = true;
-        // When an IceBox *app* shortcut targets a frozen app, enable that real app
-        // first and launch it directly. Sending IceBox's toggle shortcut after
-        // enabling the target could freeze it again instead of opening it.
+        // If the IceBox publisher route is stale, the verified saved target may
+        // still be enabled through Smart S's authorized root pathway.
         if (frozenTarget) {
             final String exactTarget = target;
             AppLaunchUtils.ensurePackageEnabledAsync(context, exactTarget, enabled -> {
