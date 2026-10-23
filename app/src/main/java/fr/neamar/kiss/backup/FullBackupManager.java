@@ -55,6 +55,8 @@ public final class FullBackupManager {
     private static final String TAG = "FullBackupManager";
     private static final String FORMAT = "smart-s-full-backup-v1";
     private static final String MANIFEST_ENTRY = "manifest.json";
+    private static final String TAG_LINKS_ENTRY = "tag-links.json";
+    private static final long MAX_TAG_LINK_BYTES = 32L * 1024L * 1024L;
     private static final long MAX_RESTORE_BYTES = 4L * 1024L * 1024L * 1024L;
     private static final int BUFFER_SIZE = 64 * 1024;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
@@ -79,6 +81,9 @@ public final class FullBackupManager {
         BackupRestoreProgress progress = BackupRestoreProgress.backup(context, 100);
         try {
             checkpointDatabases(context);
+            // Capture persistent tag identity before copying files, so the archive contains
+            // the exact publisher / intent identity needed after profile serials change.
+            JSONObject tagLinks = PortableTagLinks.capture(context);
             List<RootSpec> roots = rootsFor(context);
             long totalBytes = Math.max(1L, countBytes(roots));
             long[] copied = {0L};
@@ -91,6 +96,7 @@ public final class FullBackupManager {
                 for (RootSpec root : roots) {
                     addRoot(zip, root, totalBytes, copied, progress);
                 }
+                writeTagLinks(zip, tagLinks);
                 zip.finish();
             }
             progress.complete();
@@ -121,6 +127,7 @@ public final class FullBackupManager {
             progress.setPercent(85);
 
             validateStaged(staged, archiveInfo.rootNames);
+            validateRestoredTagLinks(staged, archiveInfo.hasTagLinks);
             progress.setPercent(88);
             replacePersistentState(context, staged, archiveInfo.rootNames, progress);
             progress.complete();
@@ -180,6 +187,7 @@ public final class FullBackupManager {
         manifest.put("versionCode", BuildConfig.VERSION_CODE);
         manifest.put("versionName", BuildConfig.VERSION_NAME);
         manifest.put("createdAt", System.currentTimeMillis());
+        manifest.put("tagLinksVersion", 1);
         JSONArray rootNames = new JSONArray();
         for (RootSpec root : roots) rootNames.put(root.archiveName);
         manifest.put("roots", rootNames);
@@ -187,6 +195,16 @@ public final class FullBackupManager {
         ZipEntry entry = new ZipEntry(MANIFEST_ENTRY);
         zip.putNextEntry(entry);
         zip.write(bytes);
+        zip.closeEntry();
+    }
+
+    private static void writeTagLinks(ZipOutputStream zip, JSONObject tagLinks) throws IOException {
+        byte[] payload = tagLinks.toString().getBytes(StandardCharsets.UTF_8);
+        if (payload.length > MAX_TAG_LINK_BYTES) {
+            throw new IOException("Too many tag links to back up safely");
+        }
+        zip.putNextEntry(new ZipEntry(TAG_LINKS_ENTRY));
+        zip.write(payload);
         zip.closeEntry();
     }
 
@@ -298,6 +316,14 @@ public final class FullBackupManager {
                 throw new IOException("Backup was created by a newer Smart S version");
             }
 
+            int tagLinksVersion = manifest.optInt("tagLinksVersion", 0);
+            if (tagLinksVersion < 0 || tagLinksVersion > 1) {
+                throw new IOException("Unknown portable tag-link schema");
+            }
+            boolean hasTagLinks = tagLinksVersion == 1;
+            if (hasTagLinks && zip.getEntry(TAG_LINKS_ENTRY) == null) {
+                throw new IOException("Full backup is missing tag-link identity data");
+            }
             JSONArray roots = manifest.optJSONArray("roots");
             if (roots == null || roots.length() == 0) throw new IOException("Backup root list is missing");
             List<String> rootNames = new ArrayList<>();
@@ -318,7 +344,8 @@ public final class FullBackupManager {
                     if (totalBytes > MAX_RESTORE_BYTES) throw new IOException("Expanded backup is too large");
                 }
             }
-            return new ArchiveInfo(Collections.unmodifiableList(rootNames), Math.max(1L, totalBytes));
+            return new ArchiveInfo(Collections.unmodifiableList(rootNames),
+                    Math.max(1L, totalBytes), hasTagLinks);
         }
     }
 
@@ -345,7 +372,11 @@ public final class FullBackupManager {
                     zip.closeEntry();
                     continue;
                 }
-                File target = safeTarget(staged, entry.getName());
+                // Extra portable metadata is never written outside the staged files root,
+                // and is only activated on the next cold start after successful restore.
+                String targetName = TAG_LINKS_ENTRY.equals(entry.getName())
+                        ? "files/" + PortableTagLinks.PENDING_FILENAME : entry.getName();
+                File target = safeTarget(staged, targetName);
                 if (entry.isDirectory()) {
                     if (!target.mkdirs() && !target.isDirectory()) throw new IOException("Unable to create " + target);
                 } else {
@@ -382,7 +413,7 @@ public final class FullBackupManager {
         if (name == null || name.isEmpty() || name.startsWith("/") || name.contains("\\") || name.contains("..")) {
             throw new IOException("Unsafe backup entry");
         }
-        if (MANIFEST_ENTRY.equals(name)) return;
+        if (MANIFEST_ENTRY.equals(name) || TAG_LINKS_ENTRY.equals(name)) return;
         for (String root : roots) {
             if (name.equals(root + "/") || name.startsWith(root + "/")) return;
         }
@@ -401,6 +432,38 @@ public final class FullBackupManager {
         for (String root : rootNames) {
             File dir = new File(staged, root);
             if (!dir.exists() || !dir.isDirectory()) throw new IOException("Backup section is missing: " + root);
+        }
+    }
+
+    private static void validateRestoredTagLinks(File staged, boolean required)
+            throws IOException, JSONException {
+        if (!required) return; // Legacy v1 backups remain supported without sidecar data.
+        File file = new File(new File(staged, "files"), PortableTagLinks.PENDING_FILENAME);
+        if (!file.isFile() || file.length() > MAX_TAG_LINK_BYTES) {
+            throw new IOException("Portable tag links are missing or oversized");
+        }
+        try (FileInputStream in = new FileInputStream(file);
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = in.read(buffer)) != -1) {
+                if (out.size() + count > MAX_TAG_LINK_BYTES) {
+                    throw new IOException("Tag links exceed safety limit");
+                }
+                out.write(buffer, 0, count);
+            }
+            JSONObject payload = new JSONObject(out.toString(StandardCharsets.UTF_8.name()));
+            JSONArray entries = payload.getJSONArray("links");
+            if (payload.optInt("schema", -1) != 1
+                    || payload.optInt("count", -1) != entries.length()) {
+                throw new IOException("Portable tag-link inventory is inconsistent");
+            }
+            for (int i = 0; i < entries.length(); i++) {
+                JSONObject item = entries.getJSONObject(i);
+                if (item.getString("id").isEmpty() || item.getString("tags").isEmpty()) {
+                    throw new IOException("Invalid tag-to-item mapping");
+                }
+            }
         }
     }
 
@@ -496,10 +559,12 @@ public final class FullBackupManager {
     private static final class ArchiveInfo {
         final List<String> rootNames;
         final long totalBytes;
+        final boolean hasTagLinks;
 
-        ArchiveInfo(List<String> rootNames, long totalBytes) {
+        ArchiveInfo(List<String> rootNames, long totalBytes, boolean hasTagLinks) {
             this.rootNames = rootNames;
             this.totalBytes = totalBytes;
+            this.hasTagLinks = hasTagLinks;
         }
     }
 

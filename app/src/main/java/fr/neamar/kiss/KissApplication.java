@@ -6,6 +6,7 @@ import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 
 import fr.neamar.kiss.db.DBHelper;
+import fr.neamar.kiss.backup.PortableTagLinks;
 import fr.neamar.kiss.appusage.AppUsageTracker;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
 import fr.neamar.kiss.notification.MediaHistoryCoordinator;
@@ -140,6 +141,7 @@ public class KissApplication extends Application {
         super.onCreate();
         PixelLauncherScreenOffReceiver.register(this);
         DBHelper.initDatabase(this);
+        PortableTagLinks.repairPending(this);
         InterfaceTweaks.setDefaultNightMode(this);
         FrozenAppPreferences.migrateLegacyPowerPolling(this);
         AppUsageTracker.repairPerformanceRegression(this);
