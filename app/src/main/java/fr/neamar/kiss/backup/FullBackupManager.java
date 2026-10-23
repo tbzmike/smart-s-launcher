@@ -307,7 +307,8 @@ public final class FullBackupManager {
             if (manifestEntry == null) throw new IOException("Not a Smart S full backup");
             JSONObject manifest = new JSONObject(readSmallEntry(zip, manifestEntry, 256 * 1024));
             if (!FORMAT.equals(manifest.optString("format"))) throw new IOException("Unsupported backup format");
-            if (!context.getPackageName().equals(manifest.optString("package"))) {
+            if (!BackupPackagePolicy.compatible(context.getPackageName(),
+                    manifest.optString("package"))) {
                 throw new IOException("Backup belongs to a different application");
             }
             int sourceVersion = manifest.optInt("versionCode", -1);

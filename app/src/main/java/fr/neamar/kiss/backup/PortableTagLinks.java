@@ -135,6 +135,12 @@ public final class PortableTagLinks {
         if (!"app".equals(kind) && !"shortcut".equals(kind)) return null;
         String pkg = item.optString("package", "");
         if (pkg.isEmpty()) return null;
+        // Debug and production Smart S variants share the same launcher code but have
+        // distinct Android package names. Reconnect only their own verified app targets.
+        if (BackupPackagePolicy.compatible(context.getPackageName(), pkg)
+                && !context.getPackageName().equals(pkg)) {
+            pkg = context.getPackageName();
+        }
         List<String> matches = new ArrayList<>();
         for (android.os.UserHandle profile : users.getUserProfiles()) {
             UserHandle user = new UserHandle(context, profile);
