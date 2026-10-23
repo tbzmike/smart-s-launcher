@@ -2031,7 +2031,7 @@ jobs:
 
   android-178:
     name: Verify moving Auto Scroll labels, preview and previous Android regressions
-    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.178-auto-scroll-text') || startsWith(github.ref, 'refs/heads/fix/3.30.178-power-work-lifecycle') }}
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.178-auto-scroll-text') || startsWith(github.ref, 'refs/heads/fix/3.30.178-power-work-lifecycle') || startsWith(github.ref, 'refs/heads/fix/3.30.180-backup-restore-integrity') }}
     needs: [test, apk]
     runs-on: ubuntu-24.04
     timeout-minutes: 45

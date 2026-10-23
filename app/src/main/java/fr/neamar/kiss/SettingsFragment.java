@@ -35,6 +35,7 @@ import fr.neamar.kiss.forwarder.InterfaceTweaks;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.pojo.TagDummyPojo;
 import fr.neamar.kiss.preference.AddSearchProviderPreference;
+import fr.neamar.kiss.preference.BackupRestorePickerFragment;
 import fr.neamar.kiss.preference.AddSearchProviderPreferenceDialogFragment;
 import fr.neamar.kiss.preference.ColorPreference;
 import fr.neamar.kiss.preference.ColorPreferenceDialogFragment;
@@ -85,6 +86,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         setPreferencesFromResource(R.xml.preferences, rootKey);
         addPixelLauncherCleanupPreference(rootKey);
         addAppUpdatePreferences(rootKey);
+        addFullBackupPreferences(rootKey);
         addSearchKeyboardPreferences();
         try {
             addSemanticSearchPreferences(rootKey);
@@ -154,6 +156,40 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         killPixelLauncher.setSummary("Uses Smart S root access to stop com.google.android.apps.nexuslauncher on every screen-off event and release its background memory. No background service is kept running for this feature.");
         killPixelLauncher.setDefaultValue(false);
         category.addPreference(killPixelLauncher);
+    }
+
+    /**
+     * Full backup is deliberately separate from the legacy clipboard "Export settings" option:
+     * it includes every preferences XML file and the entire SQLite tag/shortcut catalog.
+     */
+    private void addFullBackupPreferences(@Nullable String rootKey) {
+        PreferenceGroup parent = "advanced".equals(rootKey)
+                ? getPreferenceScreen() : findPreference("advanced");
+        if (parent == null || parent.findPreference("smart-s-full-backup-category") != null) return;
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("smart-s-full-backup-category");
+        category.setTitle("Complete backup & restore");
+        parent.addPreference(category);
+
+        Preference backup = new Preference(requireContext());
+        backup.setKey("smart-s-full-backup-file");
+        backup.setTitle("Back up ALL settings, tags and shortcuts");
+        backup.setSummary("Save a portable .ssb archive containing settings, favorites, tag links, shortcut records, History, databases and app-owned state.");
+        backup.setOnPreferenceClickListener(preference -> {
+            BackupRestorePickerFragment.show(requireActivity(), false);
+            return true;
+        });
+        category.addPreference(backup);
+
+        Preference restore = new Preference(requireContext());
+        restore.setKey("smart-s-full-restore-file");
+        restore.setTitle("Restore complete Smart S backup");
+        restore.setSummary("Validate a .ssb archive before replacing settings and linked tags/shortcuts. The launcher restarts after restore.");
+        restore.setOnPreferenceClickListener(preference -> {
+            BackupRestorePickerFragment.show(requireActivity(), true);
+            return true;
+        });
+        category.addPreference(restore);
     }
 
     private void addAppUpdatePreferences(@Nullable String rootKey) {
