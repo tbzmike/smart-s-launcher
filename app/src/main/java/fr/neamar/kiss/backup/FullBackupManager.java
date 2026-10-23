@@ -33,9 +33,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -367,20 +369,38 @@ public final class FullBackupManager {
             List<String> rootNames = new ArrayList<>();
             for (int i = 0; i < roots.length(); i++) {
                 String root = roots.getString(i);
-                if (!isAllowedRoot(root)) throw new IOException("Unknown backup root: " + root);
+                if (!isAllowedRoot(root) || rootNames.contains(root)) {
+                    throw new IOException("Unknown or repeated backup root: " + root);
+                }
                 rootNames.add(root);
             }
+            // A full backup must contain its settings AND complete tag/shortcut database.
+            if (!rootNames.contains("shared_prefs") || !rootNames.contains("databases")
+                    || !rootNames.contains("files") || !rootNames.contains("no_backup")) {
+                throw new IOException("Full backup is missing essential launcher state");
+            }
+            Set<String> archivedFiles = new HashSet<>();
+            Set<String> archivedPaths = new HashSet<>();
 
             long totalBytes = 0L;
             Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 validateEntryName(entry.getName(), rootNames);
+                if (!archivedPaths.add(entry.getName())) {
+                    throw new IOException("Duplicate archive entry: " + entry.getName());
+                }
+                if (!entry.isDirectory() && !MANIFEST_ENTRY.equals(entry.getName())) {
+                    archivedFiles.add(entry.getName());
+                }
                 long size = entry.getSize();
                 if (size > 0L) {
                     totalBytes += size;
                     if (totalBytes > MAX_RESTORE_BYTES) throw new IOException("Expanded backup is too large");
                 }
+            }
+            if (checksums != null && !archivedFiles.equals(hashes.keySet())) {
+                throw new IOException("Archive files are missing or absent from the manifest");
             }
             return new ArchiveInfo(Collections.unmodifiableList(rootNames),
                     Math.max(1L, totalBytes), hashes);
