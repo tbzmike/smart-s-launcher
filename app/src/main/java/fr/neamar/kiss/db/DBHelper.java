@@ -688,6 +688,54 @@ public class DBHelper {
         });
     }
 
+    /**
+     * Rebind restored tags and history to a uniquely verified Android app/shortcut identity.
+     * Unresolved or ambiguous IDs are deliberately preserved instead of retagging another app.
+     */
+    public static void remapRestoredLinks(@NonNull Context context,
+                                          @NonNull Map<String, String> identifiers) {
+        if (identifiers.isEmpty()) return;
+        DatabaseRecovery.runVoid(context, db -> {
+            db.beginTransaction();
+            try {
+                for (Map.Entry<String, String> link : identifiers.entrySet()) {
+                    String oldId = link.getKey();
+                    String newId = link.getValue();
+                    if (oldId.equals(newId)) continue;
+                    String oldTags = "";
+                    String targetTags = "";
+                    try (Cursor c = db.rawQuery("SELECT tag FROM tags WHERE record=?", new String[]{oldId})) {
+                        if (c.moveToFirst()) oldTags = c.getString(0);
+                    }
+                    try (Cursor c = db.rawQuery("SELECT tag FROM tags WHERE record=?", new String[]{newId})) {
+                        if (c.moveToFirst()) targetTags = c.getString(0);
+                    }
+                    if (!TextUtils.isEmpty(oldTags)) {
+                        java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>();
+                        for (String tag : targetTags.split("\\s+")) if (!tag.isEmpty()) merged.add(tag);
+                        for (String tag : oldTags.split("\\s+")) if (!tag.isEmpty()) merged.add(tag);
+                        db.delete("tags", "record=? OR record=?", new String[]{oldId, newId});
+                        ContentValues values = new ContentValues();
+                        values.put("record", newId);
+                        values.put("tag", TextUtils.join(" ", merged));
+                        db.insertOrThrow("tags", null, values);
+                    }
+                    ContentValues history = new ContentValues();
+                    history.put("record", newId);
+                    db.update("history", history, "record=?", new String[]{oldId});
+                    ContentValues component = new ContentValues();
+                    component.put("id", newId);
+                    db.update("custom_components", component,
+                            "id=? AND NOT EXISTS(SELECT 1 FROM custom_components WHERE id=?)",
+                            new String[]{oldId, newId});
+                }
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        });
+    }
+
     public static void upsertAppSourceMetadata(
             @NonNull Context context, @NonNull AppSourceMetadataRecord record) {
         DatabaseRecovery.runVoid(context, recoveryDb -> {

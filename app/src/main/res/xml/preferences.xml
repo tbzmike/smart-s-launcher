@@ -678,13 +678,21 @@
         app:key="importexport"
         app:title="@string/title_import_export">
         <fr.neamar.kiss.preference.DialogShowingPreference
-            app:dialogMessage="@string/clipboard_warning_dialog"
+            app:dialogMessage="Save a complete Smart S backup file (.ssb), including every preference store, tags and their exact apps or shortcuts, History, favorite groups, databases, and custom files."
             app:key="export-settings"
-            app:title="@string/export_settings" />
+            app:title="Full backup — all settings, tags and shortcuts" />
+        <fr.neamar.kiss.preference.DialogShowingPreference
+            app:dialogMessage="Select a full Smart S .ssb backup. It will be validated before the saved settings, tags, shortcut links, History and other persistent state replace the current state."
+            app:key="import-settings"
+            app:title="Full restore — settings, tags and shortcuts" />
+        <fr.neamar.kiss.preference.DialogShowingPreference
+            app:dialogMessage="@string/clipboard_warning_dialog"
+            app:key="export-clipboard-settings"
+            app:title="Legacy: Copy settings to clipboard" />
         <fr.neamar.kiss.preference.DialogShowingPreference
             app:dialogMessage="@string/import_settings_dialog"
-            app:key="import-settings"
-            app:title="@string/import_settings" />
+            app:key="import-clipboard-settings"
+            app:title="Legacy: Import settings from clipboard" />
     </PreferenceScreen>
     <PreferenceScreen
         app:key="advanced"

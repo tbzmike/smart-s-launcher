@@ -111,7 +111,7 @@ public final class BackupRestorePickerFragment extends Fragment {
         }
         new AlertDialog.Builder(requireContext())
                 .setTitle("Restore full Smart S backup?")
-                .setMessage("This replaces Smart S persistent launcher data from the selected .ssb backup: settings, history, shortcuts, tags, launcher databases, custom state and app-owned files. The archive is validated and staged first. Smart S restarts after a successful restore.")
+                .setMessage("This restores all saved Smart S settings, tags linked to the original apps and shortcuts, History, shortcut catalog, favorites, custom state and files. The backup is checked before replacement. Links to apps or shortcuts no longer available on this device are preserved for later instead of being reassigned incorrectly. Smart S restarts when done.")
                 .setPositiveButton("Restore full backup", (dialog, which) -> {
                     if (isAdded()) FullBackupManager.restore(requireContext(), uri);
                     removeSelf();
