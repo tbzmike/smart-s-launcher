@@ -46,6 +46,7 @@ import fr.neamar.kiss.utils.AppIdentityResolver;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
+import fr.neamar.kiss.utils.FrozenShortcutLaunchPolicy;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
@@ -450,10 +451,13 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         // public resolveTargetPackageName() also supports UI grouping by approximate
         // names, which is too weak to authorize unfreezing another app.
         String target = iceBoxRoute && currentUser ? verifiedIceBoxTarget(context) : null;
-        boolean frozenTarget = iceBoxRoute && currentUser
-                && !TextUtils.isEmpty(target) && !TextUtils.equals(target, pojo.packageName)
-                && AppLaunchUtils.isPackageInstalled(context, target)
-                && !AppLaunchUtils.isPackageEnabledNow(context, target);
+        boolean targetInstalled = target != null
+                && AppLaunchUtils.isPackageInstalled(context, target);
+        boolean targetEnabled = targetInstalled
+                && AppLaunchUtils.isPackageEnabledNow(context, target);
+        boolean frozenTarget = FrozenShortcutLaunchPolicy.shouldEnableVerifiedTarget(
+                iceBoxRoute, currentUser, pojo.packageName, target,
+                targetInstalled, targetEnabled);
         Rect sourceBounds = getViewBounds(v);
 
         if (!frozenPublisher && !frozenTarget) {
