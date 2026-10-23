@@ -5,8 +5,8 @@ python3 - <<'PY'
 from pathlib import Path
 p = Path("app/build.gradle")
 source = p.read_text()
-assert 'versionName "3.30.179"' in source
-assert 'versionCode 607' in source
+assert 'versionName "3.30.180"' in source
+assert 'versionCode 608' in source
 assert source.count('minifyEnabled true') == 2
 p.write_text(source.replace('minifyEnabled true', 'minifyEnabled false')
                    .replace('shrinkResources = true', 'shrinkResources = false'))
