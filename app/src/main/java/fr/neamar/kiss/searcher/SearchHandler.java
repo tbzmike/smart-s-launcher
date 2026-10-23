@@ -38,8 +38,7 @@ import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
 public class SearchHandler {
 
-    private static final long QUERY_DEBOUNCE_MS = 16L;
-    private static final int HISTORY_PREVIEW_SEED_LIMIT = 400;
+    private static final long QUERY_DEBOUNCE_MS = HistoryFirstSearchPolicy.DEEP_SEARCH_IDLE_DELAY_MS;
     private static volatile SearchHandler instance;
 
     public static SearchHandler getInstance() {
@@ -107,10 +106,12 @@ public class SearchHandler {
     private WeakReference<MainActivity> pendingHistoryActivity = new WeakReference<>(null);
 
     /**
-     * Up to 400 already-resolved saved history targets, oldest-to-newest. Only Pojo references are
-     * retained; these are provider-owned records, not Result/View/Drawable objects.
+     * Up to the configured History display limit of already-resolved recent targets,
+     * oldest-to-newest. This must follow preferences rather than a fixed 400-item cap.
      */
     private volatile List<Pojo> historyQuerySeed = Collections.emptyList();
+    /** Which current user-configured History limit was used to build this seed. */
+    private volatile int historyQuerySeedLimit = -1;
 
     /** Ready-to-render Home Results retained while QUERY temporarily owns the visible adapter. */
     private volatile List<Result<?>> homeResultSnapshot = Collections.emptyList();
@@ -143,14 +144,31 @@ public class SearchHandler {
             refreshHistorySeed(activity);
         }
 
-        if (type == Searcher.Type.QUERY && !isRefresh) {
-            // Typing is interactive: stop every History-only helper immediately and publish
-            // already-indexed app/shortcut matches in this same UI turn.
+        if (type == Searcher.Type.QUERY) {
+            // Stage 1: ONLY cached Home/History results and in-memory app/shortcut labels.
+            // Do not start provider, semantic, or global database scans while typing.
             stopHistoryAuxWorkers();
             lastSearchType = Searcher.Type.QUERY;
             lastSearchQuery = query;
             publishImmediateQueryPreview(activity, query, generation);
-            startSearch(type, activity, query, false, generation);
+            publishHistoryPreview(activity, query, generation);
+
+            // Stage 2: ONE delayed full search, five seconds after the latest keystroke.
+            // Every new query, Home return, pause/cancel or different search type removes
+            // this callback; generation checking also protects against stale requests.
+            final WeakReference<MainActivity> target = new WeakReference<>(activity);
+            final String capturedQuery = query;
+            final boolean capturedRefresh = isRefresh;
+            pendingQuery = () -> {
+                pendingQuery = null;
+                MainActivity current = target.get();
+                if (generation != searchGeneration.get()
+                        || lastSearchType != Searcher.Type.QUERY
+                        || !java.util.Objects.equals(capturedQuery, lastSearchQuery)
+                        || current == null || current.isFinishing() || current.isDestroyed()) return;
+                startSearch(Searcher.Type.QUERY, current, capturedQuery, capturedRefresh, generation);
+            };
+            mainHandler.postDelayed(pendingQuery, QUERY_DEBOUNCE_MS);
             return;
         }
 
@@ -300,7 +318,11 @@ public class SearchHandler {
             }
         }
 
-        if (normal.isEmpty() && launch.isEmpty()) return;
+        if (normal.isEmpty() && launch.isEmpty()) {
+            // Do not display previous-query matches for five seconds on a new query.
+            if (generation == searchGeneration.get()) activity.adapter.clear();
+            return;
+        }
         List<Pojo> visible = new ArrayList<>(Math.min(limit, normal.size() + launch.size()));
         for (Pojo pojo : normal.values()) {
             if (visible.size() >= limit) break;
@@ -367,16 +389,22 @@ public class SearchHandler {
         final WeakReference<MainActivity> activityRef = new WeakReference<>(activity);
         final String previewQuery = query == null ? "" : query;
         final List<Pojo> seedSnapshot = historyQuerySeed;
+        final int seedLimitSnapshot = historyQuerySeedLimit;
 
         historyPreviewExecutor.execute(() -> {
             if (historyScrollActive || generation != searchGeneration.get()) return;
             MainActivity currentActivity = activityRef.get();
             if (currentActivity == null) return;
 
-            List<Pojo> seed = seedSnapshot;
+            SharedPreferences settings = PreferenceManager.getDefaultSharedPreferences(currentActivity);
+            int configuredLimit = getConfiguredHistoryResultCount(settings);
+            List<Pojo> seed = seedLimitSnapshot == configuredLimit
+                    ? seedSnapshot : Collections.emptyList();
+            if (configuredLimit <= 0) return;
             if (seed.isEmpty()) {
                 seed = loadHistorySeed(currentActivity);
-                if (!seed.isEmpty()) historyQuerySeed = seed;
+                if (!seed.isEmpty() && !historyScrollActive
+                        && generation == searchGeneration.get()) historyQuerySeed = seed;
             }
             if (historyScrollActive || seed.isEmpty() || generation != searchGeneration.get()) return;
 
@@ -570,9 +598,8 @@ public class SearchHandler {
     }
 
     /**
-     * Resolve at most 400 distinct recent history records. DBHelper RECENCY already returns unique
-     * record ids; reversing gives the same oldest-to-newest presentation order used by the history
-     * adapter, with the newest/strongest matches at the end.
+     * Resolve up to the current user's History setting, without a hard-coded limit.
+     * RECENCY returns unique IDs, reversed for the oldest-to-newest Home order.
      */
     @NonNull
     private List<Pojo> loadHistorySeed(@NonNull MainActivity activity) {
@@ -586,11 +613,18 @@ public class SearchHandler {
             }
         }
 
-        int requested = HISTORY_PREVIEW_SEED_LIMIT + excluded.size();
+        int configuredLimit = HistoryFirstSearchPolicy.seedLimit(
+                getConfiguredHistoryResultCount(prefs));
+        if (configuredLimit <= 0) {
+            historyQuerySeedLimit = configuredLimit;
+            return Collections.emptyList();
+        }
+        int requested = (int) Math.min(Integer.MAX_VALUE,
+                (long) configuredLimit + excluded.size());
         if (historyScrollActive) return Collections.emptyList();
         List<ValuedHistoryRecord> records = DBHelper.getHistory(activity, requested, HistoryMode.RECENCY);
         if (historyScrollActive) return Collections.emptyList();
-        List<Pojo> seed = new ArrayList<>(Math.min(HISTORY_PREVIEW_SEED_LIMIT, records.size()));
+        List<Pojo> seed = new ArrayList<>(Math.min(configuredLimit, records.size()));
         Set<String> seen = new HashSet<>();
 
         for (ValuedHistoryRecord record : records) {
@@ -603,10 +637,11 @@ public class SearchHandler {
                     || !FrozenAppPreferences.keepInHistoryAndFavorites(activity, pojo)
                     || !seen.add(pojo.id)) continue;
             seed.add(pojo);
-            if (seed.size() >= HISTORY_PREVIEW_SEED_LIMIT) break;
+            if (seed.size() >= configuredLimit) break;
         }
 
         Collections.reverse(seed);
+        historyQuerySeedLimit = configuredLimit;
         return Collections.unmodifiableList(seed);
     }
 
@@ -677,6 +712,23 @@ public class SearchHandler {
     public void onLauncherPaused() {
         historyScrollActive = false;
         clearPendingHistoryAfterScroll();
+        if (lastSearchType == Searcher.Type.QUERY) {
+            // An inactive launcher must not wake up to run the five-second provider scan.
+            // Resume re-arms it only if the QUERY view is still active.
+            searchGeneration.incrementAndGet();
+            cancelPendingQuery();
+            cancelRunningSearch();
+            stopHistoryAuxWorkers();
+        }
+    }
+
+    /** Re-arm a postponed QUERY only after Home has returned to the foreground. */
+    public void onLauncherResumed(@NonNull MainActivity activity) {
+        if (lastSearchType == Searcher.Type.QUERY
+                && lastSearchQuery != null && !lastSearchQuery.trim().isEmpty()
+                && pendingQuery == null && runningSearch == null) {
+            search(Searcher.Type.QUERY, activity, lastSearchQuery, true);
+        }
     }
 
     public boolean isHistoryScrollActive() {
