@@ -69,6 +69,8 @@ public final class FullBackupManager {
     private static final String MANIFEST_ENTRY = "manifest.json";
     private static final long MAX_RESTORE_BYTES = 4L * 1024L * 1024L * 1024L;
     private static final int BUFFER_SIZE = 64 * 1024;
+    // File-by-file SHA-256 metadata can exceed 256 KB in installations with many saved assets.
+    private static final int MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "smart-s-full-backup");
         thread.setDaemon(true);
@@ -364,7 +366,7 @@ public final class FullBackupManager {
         try (ZipFile zip = new ZipFile(archive)) {
             ZipEntry manifestEntry = zip.getEntry(MANIFEST_ENTRY);
             if (manifestEntry == null) throw new IOException("Not a Smart S full backup");
-            JSONObject manifest = new JSONObject(readSmallEntry(zip, manifestEntry, 256 * 1024));
+            JSONObject manifest = new JSONObject(readSmallEntry(zip, manifestEntry, MAX_MANIFEST_BYTES));
             if (!FORMAT.equals(manifest.optString("format"))) throw new IOException("Unsupported backup format");
             if (!context.getPackageName().equals(manifest.optString("package"))) {
                 throw new IOException("Backup belongs to a different application");
