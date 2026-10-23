@@ -73,14 +73,27 @@ public final class HistoryOverflowIconSizingRegressionTest {
                             message[0].getLayout() != null
                                     && message[0].getLayout().getLineCount() > 2);
                 });
-                SystemClock.sleep(4400);
-                InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-                scenario.onActivity(activity -> {
-                    assertTrue("Compact title must physically move after idle",
-                            title[0].getScrollX() > 0);
-                    assertTrue("The compact long-text preview must physically scroll after idle",
-                            message[0].getScrollY() > 0);
-                });
+                // The emulator can spend the first seconds completing Home startup and focus
+                // transfer. Verify that BOTH animations physically advance when the fixture
+                // becomes visible, rather than sampling one arbitrary moment in a loop cycle.
+                boolean titleMoved = false;
+                boolean previewMoved = false;
+                for (int sample = 0; sample < 24 && (!titleMoved || !previewMoved); sample++) {
+                    SystemClock.sleep(350);
+                    final boolean[] movement = new boolean[2];
+                    scenario.onActivity(activity -> {
+                        // Refresh is the same hook the History viewport calls on its idle event.
+                        title[0].refreshAutoScrollIfVisible();
+                        message[0].refreshAutoScrollIfVisible();
+                        movement[0] = title[0].getScrollX() > 0;
+                        movement[1] = message[0].getScrollY() > 0;
+                    });
+                    titleMoved |= movement[0];
+                    previewMoved |= movement[1];
+                }
+                assertTrue("Compact title must physically move after idle", titleMoved);
+                assertTrue("The compact long-text preview must physically scroll after idle",
+                        previewMoved);
             }
         } finally {
             prefs.edit().putString("smart-text-overflow-mode", oldOverflow)
