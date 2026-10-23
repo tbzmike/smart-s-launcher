@@ -2245,3 +2245,144 @@ jobs:
           git commit -qm "Publish signed Smart S Launcher 3.30.178"
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin HEAD:updater-channel
+
+
+  sign-180-verified:
+    name: Verify and sign Smart S Launcher 3.30.180 after backup regression tests
+    if: ${{ startsWith(github.ref, 'refs/heads/feature/3.30.180-complete-backup-restore') }}
+    needs: [test, apk, android-180-backup]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: app-release-unsigned.apk
+          path: unsigned-release
+      - name: Sign and verify production identity
+        shell: bash
+        env:
+          SMART_S_SIGNING_KEY_B64: ${{ secrets.SMART_S_SIGNING_KEY_B64 }}
+          SMART_S_SIGNING_STORE_PASSWORD: ${{ secrets.SMART_S_SIGNING_STORE_PASSWORD }}
+          SMART_S_SIGNING_KEY_ALIAS: ${{ secrets.SMART_S_SIGNING_KEY_ALIAS }}
+          SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/smart-s-180-release.p12"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          SDK="$ANDROID_HOME/build-tools/34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null
+          test -n "$SMART_S_SIGNING_KEY_B64"
+          printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          mkdir -p verified-apk
+          OUT="verified-apk/SmartSLauncher.apk"
+          "$SDK/apksigner" sign --ks "$KEYSTORE" --ks-type PKCS12 \
+            --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
+            --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
+            --key-pass env:SMART_S_SIGNING_KEY_PASSWORD \
+            --out "$OUT" unsigned-release/app-release-unsigned.apk
+          "$SDK/apksigner" verify --verbose --print-certs "$OUT" | tee verified-apk/apk-verification.txt
+          CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' verified-apk/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test "$CERT" = '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53'
+          "$SDK/aapt" dump badging "$OUT" > verified-apk/package-badging.txt
+          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='608'" | grep -F "versionName='3.30.180'"
+          sha256sum "$OUT" > verified-apk/SmartSLauncher.sha256
+          git rev-parse HEAD > verified-apk/source-commit.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.180-signed
+          path: verified-apk
+          archive: true
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-180-verified:
+    name: Publish verified complete backup/restore 3.30.180
+    if: ${{ startsWith(github.ref, 'refs/heads/feature/3.30.180-complete-backup-restore') }}
+    needs: [sign-180-verified, apk]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: Smart-S-Launcher-3.30.180-signed
+          path: signed
+      - uses: actions/download-artifact@v8
+        with:
+          name: app-debug.apk
+          path: debug
+      - name: Prepare signed production and updater assets
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cp signed/SmartSLauncher.apk SmartSLauncher.apk
+          cp debug/app-debug.apk SmartSLauncher-debug.apk
+          cp SmartSLauncher.apk smart-s-launcher-3.30.180.apk
+          cp SmartSLauncher-debug.apk app-debug.apk
+          test -s SmartSLauncher.apk && test -s SmartSLauncher-debug.apk
+          grep -F "versionCode='608'" signed/package-badging.txt
+          grep -F "versionName='3.30.180'" signed/package-badging.txt
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          base = "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest/"
+          prod = Path("SmartSLauncher.apk")
+          debug = Path("SmartSLauncher-debug.apk")
+          data = {"version":"3.30.180","versionCode":608,"runId":int(os.environ["SOURCE_RUN_ID"]),
+                  "sha":os.environ["SOURCE_SHA"],"variant":"release",
+                  "apkName":prod.name,"apkUrl":base+prod.name,"releaseApkName":prod.name,
+                  "releaseApkUrl":base+prod.name,"releaseApkSize":prod.stat().st_size,
+                  "releaseApkSha256":hashlib.sha256(prod.read_bytes()).hexdigest(),
+                  "debugApkName":debug.name,"debugApkUrl":base+debug.name,
+                  "debugApkSize":debug.stat().st_size,
+                  "debugApkSha256":hashlib.sha256(debug.read_bytes()).hexdigest()}
+          Path("latest-green.json").write_text(json.dumps(data,separators=(",",":"))+"\n")
+          PY
+      - name: Update release with exact Android-verified source and signed APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v3.30.180
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$TAG"
+          gh release upload "$TAG" --clobber SmartSLauncher.apk SmartSLauncher-debug.apk \
+            smart-s-launcher-3.30.180.apk app-debug.apk latest-green.json
+          gh release edit "$TAG" --latest --target "$GITHUB_SHA" \
+            --notes "Smart S Launcher 3.30.180: complete backup and restore for settings, databases, favorites, tags, exact app and shortcut bindings; portable link reconciliation where Android verifies the same app/shortcut and profile, with ambiguous links preserved. Android 35 backup regression tests, unit tests, APK build, and production signing verified."
+      - name: Refresh stable updater assets and manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=updater-latest
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            git tag -f "$TAG" "$GITHUB_SHA"
+            git push --force origin "refs/tags/$TAG"
+            gh release upload "$TAG" --clobber SmartSLauncher.apk SmartSLauncher-debug.apk latest-green.json
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --prerelease \
+              --title "Smart S Launcher — updater latest" \
+              SmartSLauncher.apk SmartSLauncher-debug.apk latest-green.json
+          fi
+          PUSH_DIR="$RUNNER_TEMP/smart-s-180-updater"
+          mkdir -p "$PUSH_DIR"
+          cp latest-green.json "$PUSH_DIR/"
+          cd "$PUSH_DIR"
+          git init -q
+          git checkout -qb updater-channel
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest-green.json
+          git commit -qm "Publish signed Smart S Launcher 3.30.180"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin HEAD:updater-channel
