@@ -10,7 +10,6 @@ import java.lang.reflect.Field;
 
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.searcher.SearchHandler;
-import fr.neamar.kiss.searcher.Searcher;
 
 /** Ensure a rapidly changing query never executes a full provider scan prematurely. */
 public final class HistoryFirstSearch181RegressionTest {
@@ -22,7 +21,7 @@ public final class HistoryFirstSearch181RegressionTest {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {
                 SearchHandler search = SearchHandler.getInstance();
-                search.search(Searcher.Type.QUERY, activity, "firsthistoryonly181", false);
+                activity.searchEditText.setText("firsthistoryonly181");
                 try {
                     assertNotNull("Heavy search must be queued, not immediately started", pending.get(search));
                     assertNull("Provider search must not be started while typing", running.get(search));
@@ -33,7 +32,7 @@ public final class HistoryFirstSearch181RegressionTest {
             Thread.sleep(250);
             scenario.onActivity(activity -> {
                 SearchHandler search = SearchHandler.getInstance();
-                search.search(Searcher.Type.QUERY, activity, "secondhistoryonly181", false);
+                activity.searchEditText.setText("secondhistoryonly181");
                 try {
                     assertNotNull("New query replaces timer", pending.get(search));
                     assertNull("A previous generation cannot start early", running.get(search));
