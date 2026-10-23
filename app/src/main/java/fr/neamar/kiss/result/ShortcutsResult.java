@@ -57,7 +57,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     private static final String TAG = ShortcutsResult.class.getSimpleName();
     private static final String VERTICAL_CARDS = "vertical_cards";
-    private static final long ENABLE_RETRY_DELAY_MS = 500L;
+    // Retry only after a user-initiated enable; never poll in the background.
 
     private volatile Drawable icon = null;
     private volatile Drawable appDrawable = null;
@@ -352,45 +352,72 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         return pojo.isDisabled() && FrozenAppPreferences.grey(context);
     }
 
-    private boolean canAutoEnableShortcutPublisher(@NonNull Context context) {
-        // IceBox owns the shortcut launch route. Smart S must not second-guess IceBox by
-        // enabling/freezing the wrapped target package itself.
-        return ShortcutUtil.isIceBoxPublisher(context, pojo.packageName)
-                || FrozenAppPreferences.autoEnable(context);
-    }
+    private static final long[] ENABLED_SHORTCUT_RETRY_DELAYS_MS =
+            {350L, 700L, 1_200L, 2_000L, 3_000L};
+    private boolean launchPending;
 
     @Override
     protected void doLaunch(Context context, View v) {
+        if (launchPending) return; // One tap produces one enable-and-launch operation.
         launchSucceeded = false;
         if (pojo.isOreoShortcut()) {
             doOreoLaunch(context, v);
-            if (launchSucceeded) rememberSuccessfulHistoryTarget(context);
         } else {
-            try {
-                Intent intent = Intent.parseUri(pojo.intentUri, 0);
-                String packageName = intent.getPackage();
-                if (TextUtils.isEmpty(packageName) && intent.getComponent() != null) {
-                    packageName = intent.getComponent().getPackageName();
-                }
-                if (!TextUtils.isEmpty(packageName)
-                        && !ShortcutUtil.isIceBoxPublisher(context, packageName)
-                        && !AppLaunchUtils.isPackageEnabled(context, packageName)) {
-                    if (!canAutoEnableShortcutPublisher(context)) {
-                        Toast.makeText(context, "Shortcut app is frozen. Auto-enable frozen apps is off.",
-                                Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    if (!AppLaunchUtils.ensurePackageEnabled(context, packageName)) {
-                        Toast.makeText(context, "Unable to enable shortcut app.", Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                }
-                setSourceBounds(intent, v);
-                context.startActivity(intent);
-                launchSucceeded = true;
-                rememberSuccessfulHistoryTarget(context);
-            } catch (Exception e) {
-                Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
+            doLegacyShortcutLaunch(context, v);
+        }
+    }
+
+    /** A user-created shortcut must keep its original Intent, not open an unrelated app. */
+    private void doLegacyShortcutLaunch(Context context, View view) {
+        final Intent intent;
+        try {
+            intent = Intent.parseUri(pojo.intentUri, 0);
+        } catch (URISyntaxException | RuntimeException e) {
+            Log.w(TAG, "Invalid saved shortcut Intent: " + pojo.id, e);
+            notifyExactShortcutUnavailable(context);
+            return;
+        }
+
+        String appPackage = intent.getPackage();
+        if (TextUtils.isEmpty(appPackage) && intent.getComponent() != null) {
+            appPackage = intent.getComponent().getPackageName();
+        }
+        final String pkg = appPackage;
+        boolean frozen = !TextUtils.isEmpty(pkg) && AppLaunchUtils.isPackageInstalled(context, pkg)
+                && !AppLaunchUtils.isPackageEnabledNow(context, pkg);
+
+        if (!frozen) {
+            openLegacyIntent(context, view, intent, false, null);
+            return;
+        }
+        if (!FrozenAppPreferences.autoEnable(context)) {
+            showAutoEnableDisabled(context);
+            return;
+        }
+        launchPending = true;
+        AppLaunchUtils.ensurePackageEnabledAsync(context, pkg, enabled -> {
+            if (!enabled) {
+                launchPending = false;
+                showUnableToEnable(context, pkg);
+                return;
+            }
+            openLegacyIntent(context, view, intent, true, pkg);
+        });
+    }
+
+    private void openLegacyIntent(Context context, View view, Intent intent,
+                                  boolean asynchronous, @Nullable String enabledPackage) {
+        launchPending = false;
+        try {
+            setSourceBounds(intent, view);
+            context.startActivity(intent);
+            onExactLaunchSucceeded(context, asynchronous);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to open saved shortcut " + pojo.id, e);
+            notifyExactShortcutUnavailable(context);
+        } finally {
+            if (enabledPackage != null) {
+                AppLaunchUtils.refreshLauncherAfterEnable(context, enabledPackage);
             }
         }
     }
@@ -401,44 +428,144 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             return;
         }
 
-        LauncherApps launcherApps = ContextCompat.getSystemService(context, LauncherApps.class);
-        if (launcherApps == null || !launcherApps.hasShortcutHostPermission()) {
-            Toast.makeText(context, context.getString(R.string.shortcuts_no_host_permission), Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        boolean iceBoxRoute = ShortcutUtil.isIceBoxPublisher(context, pojo.packageName);
-        boolean wasDisabled = !iceBoxRoute
-                && !AppLaunchUtils.isPackageEnabled(context, pojo.packageName);
-        if (wasDisabled && !canAutoEnableShortcutPublisher(context)) {
-            Toast.makeText(context, "Shortcut app is frozen. Auto-enable frozen apps is off.",
+        LauncherApps apps = ContextCompat.getSystemService(context, LauncherApps.class);
+        if (apps == null || !apps.hasShortcutHostPermission()) {
+            Toast.makeText(context, context.getString(R.string.shortcuts_no_host_permission),
                     Toast.LENGTH_LONG).show();
             return;
         }
-        boolean enabledNow = iceBoxRoute
-                || !wasDisabled
-                || AppLaunchUtils.ensurePackageEnabled(context, pojo.packageName);
+
+        boolean currentUser = pojo.getUserHandle() != null
+                && pojo.getUserHandle().isCurrentUser();
+        boolean iceBoxRoute = ShortcutUtil.isIceBoxPublisher(context, pojo.packageName);
+        // Use fresh state only for the owner profile: current-user PackageManager cannot
+        // accurately read a separate work/private profile's disabled state.
+        boolean frozenPublisher = currentUser
+                && AppLaunchUtils.isPackageInstalled(context, pojo.packageName)
+                && !AppLaunchUtils.isPackageEnabledNow(context, pojo.packageName);
+        String target = iceBoxRoute && currentUser ? resolveTargetPackageName(context) : null;
+        boolean frozenTarget = iceBoxRoute && currentUser
+                && !TextUtils.isEmpty(target) && !TextUtils.equals(target, pojo.packageName)
+                && AppLaunchUtils.isPackageInstalled(context, target)
+                && !AppLaunchUtils.isPackageEnabledNow(context, target);
         Rect sourceBounds = getViewBounds(v);
 
-        if (enabledNow && tryExactShortcutLaunch(context, launcherApps, sourceBounds)) {
-            launchSucceeded = true;
+        if (!frozenPublisher && !frozenTarget) {
+            if (tryExactShortcutLaunch(context, apps, sourceBounds)) {
+                onExactLaunchSucceeded(context, false);
+            } else {
+                notifyExactShortcutUnavailable(context);
+            }
             return;
         }
 
-        if (wasDisabled && enabledNow) {
-            launchSucceeded = true;
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                LauncherApps retryApps = ContextCompat.getSystemService(context, LauncherApps.class);
-                if (retryApps != null && retryApps.hasShortcutHostPermission()
-                        && tryExactShortcutLaunch(context, retryApps, sourceBounds)) {
+        if (!FrozenAppPreferences.autoEnable(context)) {
+            showAutoEnableDisabled(context);
+            return;
+        }
+        if (!currentUser) {
+            Toast.makeText(context, "This profile must be unlocked to enable its shortcut.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        launchPending = true;
+        // When an IceBox *app* shortcut targets a frozen app, enable that real app
+        // first and launch it directly. Sending IceBox's toggle shortcut after
+        // enabling the target could freeze it again instead of opening it.
+        if (frozenTarget) {
+            final String exactTarget = target;
+            AppLaunchUtils.ensurePackageEnabledAsync(context, exactTarget, enabled -> {
+                if (!enabled) {
+                    launchPending = false;
+                    showUnableToEnable(context, exactTarget);
                     return;
                 }
-                notifyExactShortcutUnavailable(context);
-            }, ENABLE_RETRY_DELAY_MS);
+                if (frozenPublisher) {
+                    AppLaunchUtils.ensurePackageEnabledAsync(context, pojo.packageName, publisherOk -> {
+                        if (!publisherOk) {
+                            launchPending = false;
+                            showUnableToEnable(context, pojo.packageName);
+                            return;
+                        }
+                        openEnabledIceBoxApp(context, exactTarget, true);
+                        AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
+                    });
+                } else {
+                    openEnabledIceBoxApp(context, exactTarget, true);
+                }
+            });
             return;
         }
 
+        // Normal frozen Oreo shortcuts retain their publisher+shortcut ID.
+        AppLaunchUtils.ensurePackageEnabledAsync(context, pojo.packageName, enabled -> {
+            if (!enabled) {
+                launchPending = false;
+                showUnableToEnable(context, pojo.packageName);
+                return;
+            }
+            attemptExactLaunchAfterEnable(context, sourceBounds, 0);
+        });
+    }
+
+    private void openEnabledIceBoxApp(Context context, String target, boolean asynchronous) {
+        launchPending = false;
+        if (AppLaunchUtils.launchPackage(context, target)) {
+            onExactLaunchSucceeded(context, asynchronous);
+        } else {
+            Toast.makeText(context, "Frozen app was enabled, but could not be opened.",
+                    Toast.LENGTH_LONG).show();
+        }
+        AppLaunchUtils.refreshLauncherAfterEnable(context, target);
+    }
+
+    /**
+     * Android shortcut publication can lag after a package is enabled. Bounded retries
+     * reuse the same Handler; they do not start another database scan or polling service.
+     */
+    private void attemptExactLaunchAfterEnable(Context context, @Nullable Rect sourceBounds,
+                                               int attempt) {
+        LauncherApps launcherApps = ContextCompat.getSystemService(context, LauncherApps.class);
+        if (launcherApps != null && launcherApps.hasShortcutHostPermission()
+                && tryExactShortcutLaunch(context, launcherApps, sourceBounds)) {
+            launchPending = false;
+            onExactLaunchSucceeded(context, true);
+            AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
+            return;
+        }
+
+        if (attempt < ENABLED_SHORTCUT_RETRY_DELAYS_MS.length) {
+            new Handler(Looper.getMainLooper()).postDelayed(
+                    () -> attemptExactLaunchAfterEnable(context, sourceBounds, attempt + 1),
+                    ENABLED_SHORTCUT_RETRY_DELAYS_MS[attempt]);
+            return;
+        }
+
+        launchPending = false;
+        AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
         notifyExactShortcutUnavailable(context);
+    }
+
+    private void onExactLaunchSucceeded(Context context, boolean asynchronous) {
+        launchSucceeded = true;
+        rememberSuccessfulHistoryTarget(context);
+        if (asynchronous) {
+            // Result.launch() had already returned with launchSucceeded=false. Record
+            // only after Android accepted the real launch, never while it is pending.
+            recordLaunch(context, null);
+        }
+    }
+
+    private void showAutoEnableDisabled(Context context) {
+        Toast.makeText(context, "Frozen app detected. Turn on Auto-enable frozen apps when opened.",
+                Toast.LENGTH_LONG).show();
+    }
+
+    private void showUnableToEnable(Context context, String packageName) {
+        Toast.makeText(context, "Cannot enable " + packageName
+                        + ". Check Smart S root access and the app's frozen state.",
+                Toast.LENGTH_LONG).show();
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
