@@ -50,7 +50,7 @@ public class QuerySearcher extends Searcher {
     public static final String PREF_SEMANTIC_RERANK = "semantic-rerank-enabled";
     public static final String PREF_SEMANTIC_WEIGHT = "semantic-rerank-weight";
 
-    private static int MAX_RESULT_COUNT = -1;
+    private int maxResultCount = -1;
     private HashMap<String, Integer> knownIds;
     private final SharedPreferences prefs;
     private final Set<String> lexicalIds = new HashSet<>();
@@ -78,17 +78,17 @@ public class QuerySearcher extends Searcher {
 
     @Override
     protected int getMaxResultCount() {
-        if (MAX_RESULT_COUNT == -1) {
+        if (maxResultCount == -1) {
             try {
                 String legacyValue = prefs.getString("number-of-display-elements",
                         String.valueOf(DEFAULT_MAX_RESULTS));
-                MAX_RESULT_COUNT = Double.valueOf(prefs.getString("number-of-search-results",
-                        legacyValue)).intValue();
+                maxResultCount = Math.max(0, Double.valueOf(prefs.getString(
+                        "number-of-search-results", legacyValue)).intValue());
             } catch (NumberFormatException | ClassCastException e) {
-                MAX_RESULT_COUNT = DEFAULT_MAX_RESULTS;
+                maxResultCount = DEFAULT_MAX_RESULTS;
             }
         }
-        return MAX_RESULT_COUNT;
+        return maxResultCount;
     }
 
     @Override
