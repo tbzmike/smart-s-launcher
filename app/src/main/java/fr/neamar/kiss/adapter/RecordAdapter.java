@@ -311,8 +311,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         if (row == null || result == null || result.getPojo() instanceof NotificationPojo) return;
 
         View.OnClickListener launch = v -> {
-            int position = results.indexOf(result);
-            if (position >= 0) onClick(position, v);
+            // A History preview or delayed full search can replace Result instances
+            // between drawing this row and the tap. Never silently drop the click
+            // because the exact object is absent from the new list.
+            onResultClick(result, v);
         };
         View.OnLongClickListener menu = v -> {
             int position = results.indexOf(result);
@@ -1117,25 +1119,44 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     }
 
     public void onClick(final int position, View v) {
+        final Result<?> selected;
         try {
-            // A selection ends the search session immediately, including any semantic pass.
-            SearchHandler.getInstance().cancelSearch();
-            final Result<?> result = getItem(position);
-            RecentLaunchTracker.remember(result.getPojo());
-            promoteHistoryResult(result);
-            Pojo pojo = result.getPojo();
-            boolean morphLaunch = pojo instanceof AppPojo
-                    || pojo instanceof ShortcutPojo
-                    || pojo instanceof DisabledAppPojo;
-            if (morphLaunch) {
-                boolean started = LaunchMorphTransition.start(
-                        v.getContext(), v, () -> result.launch(v.getContext(), v, parent));
-                if (started) return;
-            }
-            result.launch(v.getContext(), v, parent);
+            // Resolve before cancelling: a coordinator update can swap the adapter
+            // during a search and make the previous position unusable.
+            selected = getItem(position);
         } catch (IndexOutOfBoundsException e) {
-            Log.w(TAG, "Unable to click", e);
+            Log.w(TAG, "Unable to click: result position changed", e);
+            return;
         }
+        onResultClick(selected, v);
+    }
+
+    private void onResultClick(final Result<?> result, View view) {
+        if (result == null || result.getPojo() == null || view == null) return;
+        boolean queryTap = SearchHandler.getInstance().getLastSearchType()
+                == Searcher.Type.QUERY;
+        SearchHandler.getInstance().cancelSearch();
+
+        // A direct tap on a displayed Search match has priority over delayed
+        // animation and provider changes. History keeps its existing morph effect.
+        // The launch itself records History only after it is accepted.
+        if (queryTap) {
+            result.launch(view.getContext(), view, parent);
+            return;
+        }
+
+        RecentLaunchTracker.remember(result.getPojo());
+        promoteHistoryResult(result);
+        Pojo pojo = result.getPojo();
+        boolean morphLaunch = pojo instanceof AppPojo
+                || pojo instanceof ShortcutPojo
+                || pojo instanceof DisabledAppPojo;
+        if (morphLaunch) {
+            boolean started = LaunchMorphTransition.start(
+                    view.getContext(), view, () -> result.launch(view.getContext(), view, parent));
+            if (started) return;
+        }
+        result.launch(view.getContext(), view, parent);
     }
 
     public void removeResult(Result<?> result) {

@@ -440,7 +440,9 @@ public class AppResult extends ResultWithTags<AppPojo> {
             // A just-unfrozen Activity may have a new or temporarily unpublished
             // launcher component. Resolve the canonical package launch Intent instead
             // of removing the clicked app's tags, favorites or saved History.
-            if (wasFrozen && AppLaunchUtils.launchPackage(context, pojo.packageName)) {
+            if (pojo.userHandle.isCurrentUser()
+                    && AppLaunchUtils.isPackageEnabledNow(context, pojo.packageName)
+                    && AppLaunchUtils.launchPackage(context, pojo.packageName)) {
                 markLaunchSucceeded(true, v);
                 rememberSuccessfulHistoryTarget(context);
                 if (asynchronous) recordLaunch(context, null);

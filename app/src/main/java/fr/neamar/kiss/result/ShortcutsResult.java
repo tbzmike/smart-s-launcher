@@ -526,6 +526,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         });
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     @Nullable
     private String verifiedIceBoxTarget(Context context) {
         String stored = pojo.targetPackage;
@@ -556,6 +557,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
      * Android shortcut publication can lag after a package is enabled. Bounded retries
      * reuse the same Handler; they do not start another database scan or polling service.
      */
+    @RequiresApi(Build.VERSION_CODES.O)
     private void attemptExactLaunchAfterEnable(Context context, @Nullable Rect sourceBounds,
                                                int attempt) {
         LauncherApps launcherApps = ContextCompat.getSystemService(context, LauncherApps.class);
