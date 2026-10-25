@@ -314,7 +314,13 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             // A History preview or delayed full search can replace Result instances
             // between drawing this row and the tap. Never silently drop the click
             // because the exact object is absent from the new list.
-            onResultClick(result, v);
+            int position = results.indexOf(result);
+            if (position >= 0) onClick(position, v);
+            else if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.QUERY) {
+                // The view was tapped while the query preview/full search replaced
+                // its Result instance. Preserve its original selected identity.
+                onResultClick(result, v);
+            }
         };
         View.OnLongClickListener menu = v -> {
             int position = results.indexOf(result);
@@ -1131,7 +1137,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         onResultClick(selected, v);
     }
 
-    private void onResultClick(final Result<?> result, View view) {
+    protected void onResultClick(final Result<?> result, View view) {
         if (result == null || result.getPojo() == null || view == null) return;
         boolean queryTap = SearchHandler.getInstance().getLastSearchType()
                 == Searcher.Type.QUERY;

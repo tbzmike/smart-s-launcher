@@ -55,5 +55,7 @@ run_test fr.neamar.kiss.androidTest.HistoryFirstSearch181RegressionTest \
   verification-results/history-first-181-regression.log
 run_test fr.neamar.kiss.androidTest.FrozenAppState182RegressionTest \
   verification-results/frozen-state-182.log
+run_test fr.neamar.kiss.androidTest.SearchedAppClick182RegressionTest \
+  verification-results/search-app-tap-182.log
 adb logcat -d > verification-results/logcat.txt || true
 echo "PASS: 3.30.181 History-first five-second delay, dynamic saved History, full backup, and  measured horizontal/vertical Auto Scroll motion, Auto Expand cancellation, Cards/List/Wheel/avatar/sizing and previous Android 35 regressions"
