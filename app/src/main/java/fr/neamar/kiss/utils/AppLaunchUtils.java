@@ -107,10 +107,13 @@ public final class AppLaunchUtils {
             // enable another Activity by guessing its label.
             app.getPackageManager().getActivityInfo(
                     component, PackageManager.MATCH_DISABLED_COMPONENTS);
-            if (!KissApplication.getApplication(app).getRootHandler().isRootActivated()
-                    || !KissApplication.getApplication(app).getRootHandler().isRootAvailable()) {
-                return false;
-            }
+            // The explicit "Auto-enable frozen apps" switch grants on-tap permission.
+            // Global root-mode controls unrelated root launcher features; it must not
+            // silently defeat the separate auto-enable option selected by the user.
+            if (!FrozenAutoEnablePolicy.canEnable(
+                    FrozenAppPreferences.autoEnable(app),
+                    () -> KissApplication.getApplication(app)
+                            .getRootHandler().isRootAvailable())) return false;
             int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
             if (!KissApplication.getApplication(app).getRootHandler().enableComponent(
                     component.getPackageName(), component.getClassName(), userId)) return false;
@@ -203,9 +206,12 @@ public final class AppLaunchUtils {
         // package identity should be offered to the authorised root enable command;
         // the pm exit status and fresh query decide whether it actually exists.
         if (isPackageEnabledNow(context, packageName)) return true;
-        if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()
-                || !KissApplication.getApplication(context).getRootHandler().isRootAvailable()) {
-            Log.w("AppLaunchUtils", "Auto-enable requires an authorized root session: " + packageName);
+        if (!FrozenAutoEnablePolicy.canEnable(
+                FrozenAppPreferences.autoEnable(context),
+                () -> KissApplication.getApplication(context)
+                        .getRootHandler().isRootAvailable())) {
+            Log.w("AppLaunchUtils",
+                    "Auto-enable not permitted or root access unavailable: " + packageName);
             return false;
         }
 

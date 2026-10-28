@@ -16,3 +16,5 @@ Base: released and signed **v3.30.183**, source commit `cdefec2afdc6b24030d572cb
 Android 35 focused `FrozenExactShortcut184RegressionTest` checks an enabled exact Activity, missing exact Activity, Intent component serialization, successful async enabled-component handling, and rejection of nonexistent Activities. Run the complete existing `verify_183_android.sh` suite through `verify_184_android.sh`, plus unit tests, compile and unchanged production signing certificate.
 
 On-device root/IceBox tests cannot be simulated by the stock emulator. After installing 3.30.184, verify a genuinely frozen package, a frozen individual shortcut Activity, a remembered Oreo shortcut, and an IceBox-published app shortcut on a rooted device, including the user's configured permission path.
+
+7. **Independent privilege gate:** The frozen-app Auto-enable switch governs the user-initiated enable action. A separate global root-mode setting does not override that choice; real root authorisation still must succeed. No root probe happens if Auto-enable is disabled.
