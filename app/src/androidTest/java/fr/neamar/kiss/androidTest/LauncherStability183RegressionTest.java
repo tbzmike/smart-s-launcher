@@ -4,11 +4,14 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.os.Process;
+import android.content.Intent;
 import androidx.test.core.app.ActivityScenario;
 import org.junit.Test;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.utils.IceBoxFallbackTargetPolicy;
 import fr.neamar.kiss.utils.ShortcutUtil;
+import fr.neamar.kiss.broadcast.PackageAddedRemovedHandler;
+import fr.neamar.kiss.utils.UserHandle;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -48,4 +51,14 @@ public final class LauncherStability183RegressionTest {
                 IceBoxFallbackTargetPolicy.uniqueExactPackage(
                         "Frozen Mail", "com.catchingnow.icebox", labels) == null);
     }
+    @Test public void malformedPackageEventsDoNotCrashHome() {
+        android.content.Context app =
+                androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                        .getTargetContext();
+        PackageAddedRemovedHandler.handleEvent(app, Intent.ACTION_PACKAGE_CHANGED,
+                new String[]{null, "", "   "}, UserHandle.OWNER, false);
+        PackageAddedRemovedHandler.handleEvent(app, Intent.ACTION_PACKAGE_CHANGED,
+                new String[]{app.getPackageName(), null}, UserHandle.OWNER, false);
+    }
+
 }
