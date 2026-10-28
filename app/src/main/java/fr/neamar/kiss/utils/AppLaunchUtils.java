@@ -57,6 +57,17 @@ public final class AppLaunchUtils {
     public static void ensurePackageEnabledAsync(Context context, String packageName,
                                                  ComponentName savedActivity,
                                                  Consumer<Boolean> onComplete) {
+        ensurePackageEnabledAsync(context, packageName, savedActivity, false, onComplete);
+    }
+
+    /**
+     * Exact shortcuts require their original Activity; app entries may fall back to
+     * the package's current launch Activity after a rename/update.
+     */
+    public static void ensurePackageEnabledAsync(Context context, String packageName,
+                                                 ComponentName savedActivity,
+                                                 boolean exactRequired,
+                                                 Consumer<Boolean> onComplete) {
         Context app = context.getApplicationContext();
         try {
             ENABLE_EXECUTOR.execute(() -> {
@@ -65,9 +76,11 @@ public final class AppLaunchUtils {
                     enabled = ensurePackageEnabled(app, packageName);
                     if (enabled && savedActivity != null
                             && packageName.equals(savedActivity.getPackageName())) {
-                        // A disabled shortcut Activity is just as unlaunchable as a disabled
-                        // package. Only report success if the exact component is enabled.
-                        enabled = reenableDisabledLauncherComponent(app, savedActivity);
+                        // Preserve app-level fallback after an Activity rename, but never
+                        // report an unavailable exact shortcut Activity as launchable.
+                        boolean componentEnabled =
+                                reenableDisabledLauncherComponent(app, savedActivity);
+                        if (exactRequired) enabled = componentEnabled;
                     }
                 } catch (RuntimeException e) {
                     Log.w("AppLaunchUtils", "Enable failed for " + packageName, e);

@@ -411,7 +411,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             return;
         }
         launchPending = true;
-        AppLaunchUtils.ensurePackageEnabledAsync(context, pkg, component, enabled -> {
+        AppLaunchUtils.ensurePackageEnabledAsync(context, pkg, component, true, enabled -> {
             if (!enabled) {
                 launchPending = false;
                 showUnableToEnable(context, pkg);

@@ -50,6 +50,21 @@ public final class FrozenExactShortcut184RegressionTest {
         assertTrue("An existing enabled shortcut does not require root", enabled.get());
     }
 
+    @Test public void missingSavedAppActivityStillAllowsPackageFallback() throws Exception {
+        Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        ComponentName gone = new ComponentName(app.getPackageName(),
+                "fr.neamar.kiss.missing.PreviousAppEntry184");
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicBoolean packageReady = new AtomicBoolean(false);
+        AppLaunchUtils.ensurePackageEnabledAsync(app, app.getPackageName(),
+                gone, false, success -> {
+                    packageReady.set(success);
+                    done.countDown();
+                });
+        assertTrue("App package fallback completes", done.await(10, TimeUnit.SECONDS));
+        assertTrue("Renamed app Activity does not block an available package", packageReady.get());
+    }
+
     @Test public void absentShortcutActivityCannotBeReportedAsLaunched() throws Exception {
         Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
         ComponentName missing = new ComponentName(app.getPackageName(),
@@ -57,7 +72,7 @@ public final class FrozenExactShortcut184RegressionTest {
         CountDownLatch finished = new CountDownLatch(1);
         AtomicBoolean enabled = new AtomicBoolean(true);
         AppLaunchUtils.ensurePackageEnabledAsync(app, app.getPackageName(),
-                missing, success -> {
+                missing, true, success -> {
                     enabled.set(success);
                     finished.countDown();
                 });
