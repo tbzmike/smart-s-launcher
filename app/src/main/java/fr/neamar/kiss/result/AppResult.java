@@ -442,7 +442,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
             // of removing the clicked app's tags, favorites or saved History.
             if (pojo.userHandle.isCurrentUser()
                     && AppLaunchUtils.isPackageEnabledNow(context, pojo.packageName)
-                    && AppLaunchUtils.launchPackage(context, pojo.packageName)) {
+                    && AppLaunchUtils.launchEnabledPackage(context, pojo.packageName)) {
                 markLaunchSucceeded(true, v);
                 rememberSuccessfulHistoryTarget(context);
                 if (asynchronous) recordLaunch(context, null);

@@ -391,8 +391,16 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             appPackage = pojo.targetPackage;
         }
         final String pkg = appPackage;
+        ComponentName component = intent.getComponent();
+        if (component != null && !TextUtils.isEmpty(pkg)
+                && !TextUtils.equals(pkg, component.getPackageName())) {
+            Log.w(TAG, "Shortcut has mismatched owner and Activity: " + pojo.id);
+            notifyExactShortcutUnavailable(context);
+            return;
+        }
         boolean frozen = !TextUtils.isEmpty(pkg)
-                && !AppLaunchUtils.isPackageEnabledNow(context, pkg);
+                && (!AppLaunchUtils.isPackageEnabledNow(context, pkg)
+                    || (component != null && !AppLaunchUtils.isActivityEnabledNow(context, component)));
 
         if (!frozen) {
             openLegacyIntent(context, view, intent, false, null);
@@ -403,7 +411,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             return;
         }
         launchPending = true;
-        AppLaunchUtils.ensurePackageEnabledAsync(context, pkg, enabled -> {
+        AppLaunchUtils.ensurePackageEnabledAsync(context, pkg, component, enabled -> {
             if (!enabled) {
                 launchPending = false;
                 showUnableToEnable(context, pkg);
@@ -479,7 +487,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             if (hostPermission && tryExactShortcutLaunch(context, apps, sourceBounds)) {
                 onExactLaunchSucceeded(context, false);
             } else if (iceBoxRoute && !TextUtils.isEmpty(target)
-                    && AppLaunchUtils.launchPackage(context, target)) {
+                    && AppLaunchUtils.launchEnabledPackage(context, target)) {
                 // Exact IceBox route was discarded; open the uniquely matched app,
                 // never substitute a different conversation or arbitrary shortcut.
                 onExactLaunchSucceeded(context, false);
@@ -543,7 +551,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             final String knownTarget = target;
             AppLaunchUtils.ensurePackageEnabledAsync(context, knownTarget, enabled -> {
                 launchPending = false;
-                if (enabled && AppLaunchUtils.launchPackage(context, knownTarget)) {
+                if (enabled && AppLaunchUtils.launchEnabledPackage(context, knownTarget)) {
                     onExactLaunchSucceeded(context, true);
                 } else {
                     notifyExactShortcutUnavailable(context);
@@ -619,7 +627,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     private void openEnabledIceBoxApp(Context context, String target, boolean asynchronous) {
         launchPending = false;
-        if (AppLaunchUtils.launchPackage(context, target)) {
+        if (AppLaunchUtils.launchEnabledPackage(context, target)) {
             onExactLaunchSucceeded(context, asynchronous);
         } else {
             Toast.makeText(context, "Frozen app was enabled, but could not be opened.",

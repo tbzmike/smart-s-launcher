@@ -65,7 +65,9 @@ public final class AppLaunchUtils {
                     enabled = ensurePackageEnabled(app, packageName);
                     if (enabled && savedActivity != null
                             && packageName.equals(savedActivity.getPackageName())) {
-                        reenableDisabledLauncherComponent(app, savedActivity);
+                        // A disabled shortcut Activity is just as unlaunchable as a disabled
+                        // package. Only report success if the exact component is enabled.
+                        enabled = reenableDisabledLauncherComponent(app, savedActivity);
                     }
                 } catch (RuntimeException e) {
                     Log.w("AppLaunchUtils", "Enable failed for " + packageName, e);
@@ -79,26 +81,49 @@ public final class AppLaunchUtils {
         }
     }
 
-    private static void reenableDisabledLauncherComponent(Context app, ComponentName component) {
+    /** Always check the selected Android Activity at tap time, never from a stale icon cache. */
+    public static boolean isActivityEnabledNow(Context context, ComponentName component) {
+        if (component == null || !isPackageEnabledNow(context, component.getPackageName())) {
+            return false;
+        }
         try {
-            PackageManager pm = app.getPackageManager();
+            PackageManager pm = context.getPackageManager();
             android.content.pm.ActivityInfo activity = pm.getActivityInfo(
                     component, PackageManager.MATCH_DISABLED_COMPONENTS);
             int state = pm.getComponentEnabledSetting(component);
-            boolean disabled = !activity.enabled
-                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
-                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
-            if (!disabled) return;
-            int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
-            boolean restored = KissApplication.getApplication(app).getRootHandler()
-                    .enableComponent(component.getPackageName(), component.getClassName(), userId);
-            if (!restored) Log.w("AppLaunchUtils", "Launcher component could not be enabled: " + component);
-        } catch (PackageManager.NameNotFoundException | SecurityException | IllegalArgumentException e) {
-            // Stale launcher Activity after an app upgrade. Package-level fallback
-            // will resolve the current Activity without deleting the saved app.
-            Log.w("AppLaunchUtils", "Saved launcher component unavailable: " + component, e);
+            if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) return true;
+            return state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && activity.enabled;
+        } catch (PackageManager.NameNotFoundException | SecurityException
+                 | IllegalArgumentException e) {
+            return false;
         }
+    }
+
+    private static boolean reenableDisabledLauncherComponent(
+            Context app, ComponentName component) {
+        if (isActivityEnabledNow(app, component)) return true;
+        try {
+            // An app update may have removed a saved component. Do not create or
+            // enable another Activity by guessing its label.
+            app.getPackageManager().getActivityInfo(
+                    component, PackageManager.MATCH_DISABLED_COMPONENTS);
+            if (!KissApplication.getApplication(app).getRootHandler().isRootActivated()
+                    || !KissApplication.getApplication(app).getRootHandler().isRootAvailable()) {
+                return false;
+            }
+            int userId = Process.myUid() / ANDROID_UID_USER_RANGE;
+            if (!KissApplication.getApplication(app).getRootHandler().enableComponent(
+                    component.getPackageName(), component.getClassName(), userId)) return false;
+            for (int attempt = 0; attempt < 5; attempt++) {
+                if (isActivityEnabledNow(app, component)) return true;
+                if (attempt < 4) SystemClock.sleep(100L);
+            }
+            Log.w("AppLaunchUtils", "Selected shortcut Activity remained disabled: " + component);
+        } catch (PackageManager.NameNotFoundException | SecurityException
+                 | IllegalArgumentException e) {
+            Log.w("AppLaunchUtils", "Selected shortcut Activity is not installed: " + component, e);
+        }
+        return false;
     }
 
     public static boolean isPackageInstalled(Context context, String packageName) {
@@ -207,6 +232,20 @@ public final class AppLaunchUtils {
     public static boolean launchPackage(Context context, String packageName) {
         boolean frozen = !isPackageEnabledNow(context, packageName);
         if (!ensurePackageEnabled(context, packageName)) return false;
+        return launchEnabledPackage(context, packageName, frozen);
+    }
+
+    /**
+     * Launch-only route for the UI thread after an async root enable has completed.
+     * Never start a second su process during a shortcut click.
+     */
+    public static boolean launchEnabledPackage(Context context, String packageName) {
+        return launchEnabledPackage(context, packageName, false);
+    }
+
+    private static boolean launchEnabledPackage(Context context, String packageName,
+                                                boolean refreshAfterEnable) {
+        if (!isPackageEnabledNow(context, packageName)) return false;
         PackageManager pm = context.getPackageManager();
         ResolveInfo resolveInfo = resolveLauncher(pm, packageName);
         Intent launchIntent = pm.getLaunchIntentForPackage(packageName);
@@ -218,7 +257,7 @@ public final class AppLaunchUtils {
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             context.startActivity(launchIntent);
-            if (frozen) refreshLauncherAfterEnable(context, packageName);
+            if (refreshAfterEnable) refreshLauncherAfterEnable(context, packageName);
             return true;
         } catch (RuntimeException e) {
             Log.w("AppLaunchUtils", "Unable to launch package " + packageName, e);
