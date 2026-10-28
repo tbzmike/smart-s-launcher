@@ -28,6 +28,8 @@ import androidx.preference.PreferenceManager;
 
 import java.net.URISyntaxException;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import fr.neamar.kiss.DataHandler;
 import fr.neamar.kiss.IconsHandler;
@@ -35,6 +37,7 @@ import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.R;
 import fr.neamar.kiss.adapter.RecordAdapter;
 import fr.neamar.kiss.db.NotificationHistoryRecord;
+import fr.neamar.kiss.db.AppCatalogRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.icons.IconPack;
 import fr.neamar.kiss.notification.NotificationAvatarSupport;
@@ -46,6 +49,7 @@ import fr.neamar.kiss.utils.AppIdentityResolver;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
+import fr.neamar.kiss.utils.IceBoxFallbackTargetPolicy;
 import fr.neamar.kiss.utils.FrozenShortcutLaunchPolicy;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
@@ -433,10 +437,12 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         }
 
         LauncherApps apps = ContextCompat.getSystemService(context, LauncherApps.class);
-        if (apps == null || !apps.hasShortcutHostPermission()) {
-            Toast.makeText(context, context.getString(R.string.shortcuts_no_host_permission),
-                    Toast.LENGTH_LONG).show();
-            return;
+        boolean hostPermission = false;
+        if (apps != null) {
+            try { hostPermission = apps.hasShortcutHostPermission(); }
+            catch (SecurityException | IllegalStateException e) {
+                Log.w(TAG, "Android shortcut host permission is unavailable", e);
+            }
         }
 
         boolean currentUser = pojo.getUserHandle() != null
@@ -449,7 +455,18 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         // Launch decisions require a verified target, never label similarity. The
         // public resolveTargetPackageName() also supports UI grouping by approximate
         // names, which is too weak to authorize unfreezing another app.
+        // An old IceBox shortcut can survive in History after Android discards its
+        // ShortcutInfo. Use its saved publisher target first; otherwise only a
+        // unique exact match in Smart S's own known app catalog is eligible.
         String target = iceBoxRoute && currentUser ? verifiedIceBoxTarget(context) : null;
+        if (iceBoxRoute && currentUser && TextUtils.isEmpty(target)) {
+            target = recoverUniqueIceBoxTarget(context);
+        }
+        if (!hostPermission && !iceBoxRoute) {
+            Toast.makeText(context, context.getString(R.string.shortcuts_no_host_permission),
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         boolean targetIdentityVerified = target != null;
         boolean targetEnabled = targetIdentityVerified
                 && AppLaunchUtils.isPackageEnabledNow(context, target);
@@ -459,7 +476,12 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         Rect sourceBounds = getViewBounds(v);
 
         if (!frozenPublisher && !frozenTarget) {
-            if (tryExactShortcutLaunch(context, apps, sourceBounds)) {
+            if (hostPermission && tryExactShortcutLaunch(context, apps, sourceBounds)) {
+                onExactLaunchSucceeded(context, false);
+            } else if (iceBoxRoute && !TextUtils.isEmpty(target)
+                    && AppLaunchUtils.launchPackage(context, target)) {
+                // Exact IceBox route was discarded; open the uniquely matched app,
+                // never substitute a different conversation or arbitrary shortcut.
                 onExactLaunchSucceeded(context, false);
             } else {
                 notifyExactShortcutUnavailable(context);
@@ -481,7 +503,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         // have Device Owner / Shizuku authority even if Smart S lacks root access.
         // If Android reports that route unavailable, fall back to verified direct
         // target enable/launch instead of simply showing the old exact-shortcut error.
-        if (iceBoxRoute && frozenTarget && !frozenPublisher
+        if (iceBoxRoute && frozenTarget && !frozenPublisher && hostPermission
                 && tryExactShortcutLaunch(context, apps, sourceBounds)) {
             onExactLaunchSucceeded(context, false);
             return;
@@ -515,6 +537,21 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             return;
         }
 
+        // If the IceBox publisher is temporarily disabled but a distinct target is
+        // already enabled, open the known target without requiring IceBox itself.
+        if (iceBoxRoute && !TextUtils.isEmpty(target)) {
+            final String knownTarget = target;
+            AppLaunchUtils.ensurePackageEnabledAsync(context, knownTarget, enabled -> {
+                launchPending = false;
+                if (enabled && AppLaunchUtils.launchPackage(context, knownTarget)) {
+                    onExactLaunchSucceeded(context, true);
+                } else {
+                    notifyExactShortcutUnavailable(context);
+                }
+            });
+            return;
+        }
+
         // Normal frozen Oreo shortcuts retain their publisher+shortcut ID.
         AppLaunchUtils.ensurePackageEnabledAsync(context, pojo.packageName, enabled -> {
             if (!enabled) {
@@ -540,6 +577,44 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         ShortcutInfo info = getShortCut(context);
         String resolved = info == null ? null : ShortcutUtil.resolveShortcutTargetPackage(context, info);
         return TextUtils.equals(resolved, pojo.packageName) ? null : resolved;
+    }
+
+    /**
+     * Historical IceBox shortcuts often lack targetPackage because earlier builds
+     * stored only publisher+shortcut-id. A unique matching app label is a bounded,
+     * deterministic fallback; any ambiguous match is rejected.
+     */
+    @Nullable
+    private String recoverUniqueIceBoxTarget(Context context) {
+        String label = fr.neamar.kiss.utils.AppIdentityResolver.cleanIceBoxLabel(pojo.getName());
+        Map<String, String> knownApps = new LinkedHashMap<>();
+        try {
+            DataHandler handler = KissApplication.getApplication(context).getDataHandler();
+            List<fr.neamar.kiss.pojo.AppPojo> loaded = handler.getApplications();
+            if (loaded != null) for (fr.neamar.kiss.pojo.AppPojo app : loaded) {
+                if (app != null && app.packageName != null && app.getName() != null) {
+                    knownApps.put(app.packageName, app.getName());
+                }
+            }
+            android.os.UserManager manager = ContextCompat.getSystemService(
+                    context, android.os.UserManager.class);
+            if (manager != null) {
+                long serial = manager.getSerialNumberForUser(android.os.Process.myUserHandle());
+                if (serial >= 0L) {
+                    for (AppCatalogRecord saved :
+                            SmartStateStore.getRememberedApps(context, serial)) {
+                        if (saved != null && saved.packageName != null
+                                && saved.label != null && !knownApps.containsKey(saved.packageName)) {
+                            knownApps.put(saved.packageName, saved.label);
+                        }
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cannot inspect remembered IceBox app catalog", e);
+        }
+        return IceBoxFallbackTargetPolicy.uniqueExactPackage(
+                label, pojo.packageName, knownApps);
     }
 
     private void openEnabledIceBoxApp(Context context, String target, boolean asynchronous) {
