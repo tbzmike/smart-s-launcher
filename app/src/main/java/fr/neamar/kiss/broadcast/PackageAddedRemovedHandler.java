@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.preference.PreferenceManager;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -28,7 +29,19 @@ import fr.neamar.kiss.utils.UserHandle;
 public class PackageAddedRemovedHandler extends BroadcastReceiver {
 
     public static void handleEvent(@NonNull Context ctx, @Nullable String action, @NonNull String[] packageNames, @NonNull UserHandle user, boolean replacing) {
-        if (packageNames.length == 1 && packageNames[0].equalsIgnoreCase(ctx.getPackageName())) return;
+        if (packageNames == null || packageNames.length == 0) return;
+        // OEM package callbacks sometimes contain null or blank entries. Never let
+        // one malformed binder event crash the main launcher process.
+        List<String> validPackages = new ArrayList<>(packageNames.length);
+        for (String packageName : packageNames) {
+            if (packageName != null && !packageName.trim().isEmpty()) {
+                validPackages.add(packageName);
+            }
+        }
+        if (validPackages.isEmpty()) return;
+        packageNames = validPackages.toArray(new String[0]);
+        if (packageNames.length == 1
+                && ctx.getPackageName().equalsIgnoreCase(packageNames[0])) return;
         if (!FrozenAppPreferences.monitorPackageChanges(ctx)) return;
 
         // Android emits package callbacks for many packages that can never appear in this

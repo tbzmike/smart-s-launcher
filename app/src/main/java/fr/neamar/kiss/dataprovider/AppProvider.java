@@ -119,9 +119,16 @@ public class AppProvider extends Provider<AppPojo>
 
         private void handleEvent(String action, String[] packageNames,
                                  android.os.UserHandle user, boolean replacing) {
-            if (!FrozenAppPreferences.monitorPackageChanges(AppProvider.this)) return;
-            PackageAddedRemovedHandler.handleEvent(AppProvider.this, action, packageNames,
-                    new UserHandle(AppProvider.this, user), replacing);
+            if (!FrozenAppPreferences.monitorPackageChanges(AppProvider.this)
+                    || packageNames == null || packageNames.length == 0 || user == null) return;
+            try {
+                PackageAddedRemovedHandler.handleEvent(AppProvider.this, action, packageNames,
+                        new UserHandle(AppProvider.this, user), replacing);
+            } catch (RuntimeException e) {
+                // Freezer, locked-profile and OEM package broadcasts are not trusted.
+                // A single failed package lookup must not kill the HOME process.
+                Log.w("AppProvider", "Package callback rejected during state transition", e);
+            }
         }
     };
 
