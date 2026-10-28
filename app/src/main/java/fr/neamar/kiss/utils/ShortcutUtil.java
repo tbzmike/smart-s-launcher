@@ -80,49 +80,53 @@ public class ShortcutUtil {
 
     @RequiresApi(Build.VERSION_CODES.O)
     public static List<ShortcutInfo> getShortcuts(Context context, String packageName) {
-        List<ShortcutInfo> shortcutInfoList = new ArrayList<>();
-
+        List<ShortcutInfo> found = new ArrayList<>();
         UserManager manager = ContextCompat.getSystemService(context, UserManager.class);
-        LauncherApps launcherApps = ContextCompat.getSystemService(context, LauncherApps.class);
-
-        if (launcherApps.hasShortcutHostPermission()) {
-            LauncherApps.ShortcutQuery shortcutQuery = new LauncherApps.ShortcutQuery();
-            shortcutQuery.setQueryFlags(FLAG_MATCH_DYNAMIC | FLAG_MATCH_MANIFEST | FLAG_MATCH_PINNED);
-
-            if (!TextUtils.isEmpty(packageName)) {
-                shortcutQuery.setPackage(packageName);
-            }
-
+        LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
+        if (manager == null || launcher == null) return found;
+        try {
+            if (!launcher.hasShortcutHostPermission()) return found;
+            LauncherApps.ShortcutQuery query = new LauncherApps.ShortcutQuery();
+            query.setQueryFlags(FLAG_MATCH_DYNAMIC | FLAG_MATCH_MANIFEST | FLAG_MATCH_PINNED);
+            if (!TextUtils.isEmpty(packageName)) query.setPackage(packageName);
             for (android.os.UserHandle profile : manager.getUserProfiles()) {
-                if (manager.isUserRunning(profile) && manager.isUserUnlocked(profile)) {
-                    List<ShortcutInfo> shortcuts = launcherApps.getShortcuts(shortcutQuery, profile);
-                    if (shortcuts != null) shortcutInfoList.addAll(shortcuts);
+                try {
+                    if (!manager.isUserRunning(profile) || !manager.isUserUnlocked(profile)) continue;
+                    List<ShortcutInfo> shortcuts = launcher.getShortcuts(query, profile);
+                    if (shortcuts != null) found.addAll(shortcuts);
+                } catch (SecurityException | IllegalStateException e) {
+                    // A locked/removed work profile must not discard shortcuts from other profiles.
+                    Log.w(TAG, "Skipping inaccessible profile during shortcut scan", e);
                 }
             }
+        } catch (SecurityException | IllegalStateException e) {
+            Log.w(TAG, "LauncherApps shortcut service unavailable", e);
         }
-        return shortcutInfoList;
+        return found;
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
+    @Nullable
     public static ShortcutInfo getShortCut(Context context, @NonNull android.os.UserHandle user,
                                            String packageName, String shortcutId) {
-        final LauncherApps launcherApps = ContextCompat.getSystemService(context, LauncherApps.class);
-
-        if (launcherApps.hasShortcutHostPermission() && !TextUtils.isEmpty(packageName)) {
+        if (TextUtils.isEmpty(packageName) || TextUtils.isEmpty(shortcutId)) return null;
+        LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
+        UserManager manager = ContextCompat.getSystemService(context, UserManager.class);
+        if (launcher == null || manager == null) return null;
+        try {
+            if (!launcher.hasShortcutHostPermission()
+                    || !manager.isUserRunning(user) || !manager.isUserUnlocked(user)) return null;
             LauncherApps.ShortcutQuery query = new LauncherApps.ShortcutQuery();
             query.setPackage(packageName);
             query.setShortcutIds(Collections.singletonList(shortcutId));
             query.setQueryFlags(FLAG_MATCH_DYNAMIC | FLAG_MATCH_MANIFEST | FLAG_MATCH_PINNED);
-
-            final UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
-            if (userManager.isUserRunning(user) && userManager.isUserUnlocked(user)) {
-                List<ShortcutInfo> shortcuts = launcherApps.getShortcuts(query, user);
-                if (shortcuts != null) {
-                    for (ShortcutInfo shortcut : shortcuts) {
-                        if (shortcut.isEnabled()) return shortcut;
-                    }
-                }
+            List<ShortcutInfo> shortcuts = launcher.getShortcuts(query, user);
+            if (shortcuts == null) return null;
+            for (ShortcutInfo shortcut : shortcuts) {
+                if (shortcut != null && shortcut.isEnabled()) return shortcut;
             }
+        } catch (SecurityException | IllegalStateException e) {
+            Log.w(TAG, "Exact shortcut temporarily unavailable", e);
         }
         return null;
     }

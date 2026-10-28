@@ -291,8 +291,14 @@ public class AppProvider extends Provider<AppPojo>
         prefs = PreferenceManager.getDefaultSharedPreferences(this);
         prefs.registerOnSharedPreferenceChangeListener(this);
         launcherApps = ContextCompat.getSystemService(this, LauncherApps.class);
-        assert launcherApps != null;
-        launcherApps.registerCallback(launcherAppsCallback);
+        if (launcherApps != null) {
+            try {
+                launcherApps.registerCallback(launcherAppsCallback);
+            } catch (SecurityException | IllegalStateException e) {
+                Log.w(TAG, "LauncherApps callback unavailable during profile transition", e);
+                launcherApps = null;
+            }
+        }
         super.onCreate();
         updateFrozenReconcileSchedule(launcherUiVisible);
     }

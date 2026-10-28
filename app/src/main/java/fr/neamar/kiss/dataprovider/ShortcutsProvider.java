@@ -33,24 +33,29 @@ import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 public class ShortcutsProvider extends Provider<ShortcutPojo> {
     private static boolean notifiedKissNotDefaultLauncher = false;
     protected static final String TAG = ShortcutsProvider.class.getSimpleName();
+    private LauncherApps launcherService;
+    private LauncherApps.Callback shortcutChangesListener;
 
     @Override
     public void onCreate() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            final LauncherApps launcher = ContextCompat.getSystemService(this, LauncherApps.class);
-            assert launcher != null;
-            launcher.registerCallback(new LauncherAppsCallback() {
+            launcherService = ContextCompat.getSystemService(this, LauncherApps.class);
+            if (launcherService != null) {
+                shortcutChangesListener = new LauncherAppsCallback() {
                 @Override
                 public void onShortcutsChanged(@NonNull String packageName, @NonNull List<ShortcutInfo> shortcuts, @NonNull android.os.UserHandle user) {
-                    if (isAnyShortcutVisible(shortcuts)) {
-                        Log.d(TAG, "Shortcuts changed for " + packageName);
-                        // Package/freezer callbacks often deliver the same shortcut change several
-                        // times while HOME is being restored. Coalesce with AppProvider's deferred
-                        // package reload instead of cancelling/restarting this provider immediately.
-                        if (!AppProvider.deferPackageReloadWhileHomeVisible(true)) {
-                            KissApplication.getApplication(ShortcutsProvider.this)
-                                    .getDataHandler().reloadShortcuts();
+                    try {
+                        if (shortcuts != null && isAnyShortcutVisible(shortcuts)) {
+                            Log.d(TAG, "Shortcuts changed for " + packageName);
+                            if (!AppProvider.deferPackageReloadWhileHomeVisible(true)) {
+                                KissApplication.getApplication(ShortcutsProvider.this)
+                                        .getDataHandler().reloadShortcuts();
+                            }
                         }
+                    } catch (SecurityException | IllegalStateException e) {
+                        // A private profile may lock or LauncherApps access may be revoked
+                        // concurrently with callback delivery. Never crash Home from binder data.
+                        Log.w(TAG, "Shortcut callback unavailable during profile transition", e);
                     }
                 }
                 private boolean isAnyShortcutVisible(List<ShortcutInfo> shortcuts) {
@@ -62,9 +67,30 @@ public class ShortcutsProvider extends Provider<ShortcutPojo> {
                     }
                     return false;
                 }
-            });
+                };
+                try {
+                    launcherService.registerCallback(shortcutChangesListener);
+                } catch (SecurityException | IllegalStateException e) {
+                    Log.w(TAG, "Unable to register LauncherApps callback", e);
+                    shortcutChangesListener = null;
+                }
+            }
         }
         super.onCreate();
+    }
+
+    @Override
+    public void onDestroy() {
+        if (launcherService != null && shortcutChangesListener != null) {
+            try {
+                launcherService.unregisterCallback(shortcutChangesListener);
+            } catch (SecurityException | IllegalStateException e) {
+                Log.w(TAG, "LauncherApps callback already unavailable on destroy", e);
+            }
+        }
+        shortcutChangesListener = null;
+        launcherService = null;
+        super.onDestroy();
     }
 
     @Override
