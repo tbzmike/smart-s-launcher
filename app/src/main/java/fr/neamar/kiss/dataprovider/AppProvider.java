@@ -29,6 +29,7 @@ import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.searcher.Searcher;
 import fr.neamar.kiss.utils.ContextualRanker;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
+import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.SemanticHints;
 import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
@@ -295,7 +296,7 @@ public class AppProvider extends Provider<AppPojo>
             try {
                 launcherApps.registerCallback(launcherAppsCallback);
             } catch (SecurityException | IllegalStateException e) {
-                Log.w(TAG, "LauncherApps callback unavailable during profile transition", e);
+                Log.w("AppProvider", "LauncherApps callback unavailable during profile transition", e);
                 launcherApps = null;
             }
         }
