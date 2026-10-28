@@ -18,6 +18,7 @@ import fr.neamar.kiss.utils.AppIconMemoryCache;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.IconPackCache;
 import fr.neamar.kiss.utils.Log;
+import fr.neamar.kiss.utils.LauncherCrashJournal;
 
 public class KissApplication extends Application {
 
@@ -136,18 +137,32 @@ public class KissApplication extends Application {
         mimeTypeCache.clearCache();
     }
 
+    /** Optional integrations must never prevent a Home Activity from launching. */
+    private void initializeOptional(String name, Runnable startup) {
+        try {
+            startup.run();
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Optional startup failed: " + name, e);
+        }
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
-        PixelLauncherScreenOffReceiver.register(this);
+        LauncherCrashJournal.install(this);
+        initializeOptional("screen-off receiver", () -> PixelLauncherScreenOffReceiver.register(this));
+
+        // The core SQLite store and Home UI remain strict: don't silently hide a
+        // broken primary database behind a deceptively empty launcher.
         DBHelper.initDatabase(this);
-        PortableTagLinks.repairPending(this);
+        initializeOptional("portable tag links", () -> PortableTagLinks.repairPending(this));
         InterfaceTweaks.setDefaultNightMode(this);
         FrozenAppPreferences.migrateLegacyPowerPolling(this);
-        AppUsageTracker.repairPerformanceRegression(this);
+        initializeOptional("usage regression migration",
+                () -> AppUsageTracker.repairPerformanceRegression(this));
         globalTextStyler = GlobalTextStyler.install(this);
-        MediaHistoryCoordinator.install(this);
-        SocialContactIndexService.maybePrompt(this);
-        AppUpdater.maybeAutoUpdate(this);
+        initializeOptional("media history", () -> MediaHistoryCoordinator.install(this));
+        initializeOptional("social suggestions", () -> SocialContactIndexService.maybePrompt(this));
+        initializeOptional("update check", () -> AppUpdater.maybeAutoUpdate(this));
     }
 }

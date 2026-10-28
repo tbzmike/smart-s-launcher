@@ -56,6 +56,7 @@ import fr.neamar.kiss.ui.SearchEditText;
 import fr.neamar.kiss.update.AppUpdater;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.Log;
+import fr.neamar.kiss.utils.LauncherCrashJournal;
 import fr.neamar.kiss.utils.Permission;
 import fr.neamar.kiss.utils.ShortcutUtil;
 
@@ -86,6 +87,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         setPreferencesFromResource(R.xml.preferences, rootKey);
         addPixelLauncherCleanupPreference(rootKey);
         addAppUpdatePreferences(rootKey);
+        addCrashDiagnosticsPreference(rootKey);
         addSearchKeyboardPreferences();
         try {
             addSemanticSearchPreferences(rootKey);
@@ -155,6 +157,32 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         killPixelLauncher.setSummary("Uses Smart S root access to stop com.google.android.apps.nexuslauncher on every screen-off event and release its background memory. No background service is kept running for this feature.");
         killPixelLauncher.setDefaultValue(false);
         category.addPreference(killPixelLauncher);
+    }
+
+    private void addCrashDiagnosticsPreference(@Nullable String rootKey) {
+        PreferenceGroup parent = "advanced".equals(rootKey)
+                ? getPreferenceScreen() : findPreference("advanced");
+        if (parent == null || parent.findPreference("smart-s-last-crash-report") != null) return;
+        Preference report = new Preference(requireContext());
+        report.setKey("smart-s-last-crash-report");
+        report.setTitle("Share last launcher crash report");
+        report.setSummary("Only when you tap: share locally saved crash details to help diagnose unexpected restarts. No automatic upload or background service.");
+        report.setOnPreferenceClickListener(preference -> {
+            String latest = LauncherCrashJournal.readLatest(requireContext());
+            if (latest == null || latest.isEmpty()) {
+                Toast.makeText(requireContext(),
+                        "No Java crash captured. Android may have restarted the launcher without a Java exception.",
+                        Toast.LENGTH_LONG).show();
+                return true;
+            }
+            Intent message = new Intent(Intent.ACTION_SEND);
+            message.setType("text/plain");
+            message.putExtra(Intent.EXTRA_SUBJECT, "Smart S Launcher crash report");
+            message.putExtra(Intent.EXTRA_TEXT, latest);
+            startActivity(Intent.createChooser(message, "Share launcher crash report"));
+            return true;
+        });
+        parent.addPreference(report);
     }
 
     private void addAppUpdatePreferences(@Nullable String rootKey) {
