@@ -584,7 +584,7 @@ public abstract class Result<T extends Pojo> {
         // Save successful normal launches in history.
         if (canAddToHistory()) {
             KissApplication.getApplication(context).getDataHandler().addToHistory(pojo.getHistoryId());
-            SearchHandler.getInstance().rememberLaunchedResult(this);
+            SearchHandler.getInstance().rememberLaunchedResult(context, this);
             AppUsageTodayStore.invalidate();
             UniversalHistoryTimestamp.invalidateStats();
         }

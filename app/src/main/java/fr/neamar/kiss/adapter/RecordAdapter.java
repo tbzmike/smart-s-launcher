@@ -1361,7 +1361,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         notifyDataSetChanged();
         if (SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
                 && (normalizedQuery.isEmpty() || "<history>".equals(normalizedQuery))) {
-            SearchHandler.getInstance().rememberHomeResults(snapshotResults());
+            SearchHandler.getInstance().rememberHomeResults(context, snapshotResults());
         }
         if (isRefresh) parent.temporarilyDisableTranscriptMode();
         parent.afterListChange();

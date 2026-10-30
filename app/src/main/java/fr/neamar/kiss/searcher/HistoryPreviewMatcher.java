@@ -4,9 +4,11 @@ import android.content.SharedPreferences;
 import android.text.TextUtils;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.MainActivity;
@@ -19,16 +21,47 @@ import fr.neamar.kiss.utils.ShortcutUtil;
 
 /** Lightweight matcher for the history-first search stage. */
 final class HistoryPreviewMatcher {
+    private static final Pattern SEPARATORS = Pattern.compile("[^\\p{L}\\p{N}]+");
+
     private HistoryPreviewMatcher() {
     }
 
+    /** Prepared once when saved History changes, rather than normalizing 803 labels per key. */
+    static final class Snapshot {
+        final List<Entry> entries;
+
+        Snapshot(List<Entry> entries) {
+            this.entries = Collections.unmodifiableList(entries);
+        }
+    }
+
+    private static final class Entry {
+        final Pojo pojo;
+        final String name;
+        final String candidate;
+
+        Entry(Pojo pojo) {
+            this.pojo = pojo;
+            this.name = normalize(pojo.getName());
+            this.candidate = candidateText(pojo);
+        }
+    }
+
+    static Snapshot prepare(List<Pojo> historySeed) {
+        List<Entry> entries = new ArrayList<>(historySeed.size());
+        for (Pojo pojo : historySeed) {
+            if (pojo != null) entries.add(new Entry(pojo));
+        }
+        return new Snapshot(entries);
+    }
+
     static List<Pojo> match(MainActivity activity, SharedPreferences prefs, String query,
-                            List<Pojo> historySeed) {
+                            Snapshot history, int historyLimit) {
         List<Pojo> matches = new ArrayList<>();
         List<Pojo> launchTargets = new ArrayList<>();
         String normalizedQuery = normalize(query);
         if (activity == null || prefs == null || normalizedQuery.isEmpty()
-                || historySeed == null || historySeed.isEmpty()) {
+                || history == null || historyLimit <= 0 || history.entries.isEmpty()) {
             return matches;
         }
 
@@ -37,8 +70,12 @@ final class HistoryPreviewMatcher {
         boolean keepFrozenSearchable = FrozenAppPreferences.keepSearchable(activity);
         boolean enableExcludedApps = prefs.getBoolean("enable-excluded-apps", false);
 
-        for (Pojo pojo : historySeed) {
-            if (Thread.currentThread().isInterrupted()) return matches;
+        // Apply the current History limit BEFORE matching. Older rows must not leak into the
+        // instant stage when the user reduces 803 to 403; the Search-results limit is separate.
+        int from = Math.max(0, history.entries.size() - historyLimit);
+        for (int i = from; i < history.entries.size(); i++) {
+            Entry entry = history.entries.get(i);
+            Pojo pojo = entry.pojo;
             if (pojo == null || excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
             if (pojo instanceof AppPojo) {
                 AppPojo app = (AppPojo) pojo;
@@ -51,8 +88,8 @@ final class HistoryPreviewMatcher {
                         && !keepFrozenSearchable) continue;
             }
 
-            String name = normalize(pojo.getName());
-            String candidate = candidateText(pojo);
+            String name = entry.name;
+            String candidate = entry.candidate;
             boolean obvious = name.startsWith(normalizedQuery)
                     || containsTokenPrefix(name, normalizedQuery);
             if (!obvious && normalizedQuery.length() >= 2) {
@@ -88,16 +125,18 @@ final class HistoryPreviewMatcher {
 
     private static boolean containsTokenPrefix(String name, String query) {
         if (name.isEmpty() || query.isEmpty() || query.indexOf(' ') >= 0) return false;
-        for (String token : name.split("\\s+")) {
-            if (token.startsWith(query)) return true;
+        int start = 0;
+        while (start < name.length()) {
+            if (name.startsWith(query, start)) return true;
+            int next = name.indexOf(' ', start);
+            if (next < 0) break;
+            start = next + 1;
         }
         return false;
     }
 
     private static String normalize(String value) {
         if (value == null) return "";
-        return value.toLowerCase(Locale.ROOT)
-                .replaceAll("[^\\p{L}\\p{N}]+", " ")
-                .trim();
+        return SEPARATORS.matcher(value.toLowerCase(Locale.ROOT)).replaceAll(" ").trim();
     }
 }

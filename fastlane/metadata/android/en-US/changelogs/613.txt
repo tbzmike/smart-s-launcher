@@ -1,0 +1,1 @@
+3.30.185: Search the configured saved History window immediately, including contacts and notifications. Full database and semantic search starts after five seconds idle. Preserve frozen-app and exact shortcut launch fixes, layouts and backup.
