@@ -51,14 +51,18 @@ public class RootHandler {
 
     public boolean enableApp(String packageName, int userId) {
         if (!isSafeName(packageName)) return false;
-        try { return executeRootShell("pm enable --user " + userId + " " + packageName); }
+        // IceBox can use pm hide as well as disable-user. pm enable alone leaves a hidden
+        // package unavailable. AppLaunchUtils verifies the actual state after this operation.
+        try { return executeRootShell("pm unhide --user " + userId + " '" + packageName
+                + "'\npm unsuspend --user " + userId + " '" + packageName
+                + "'\npm enable --user " + userId + " '" + packageName + "'"); }
         catch (Exception e) { return false; }
     }
 
     public boolean enableComponent(String packageName, String className, int userId) {
         if (!isSafeName(packageName) || !isSafeName(className)) return false;
         try {
-            return executeRootShell("pm enable --user " + userId + " " + packageName + "/" + className);
+            return executeRootShell("pm enable --user " + userId + " '" + packageName + "/" + className + "'");
         } catch (Exception e) {
             return false;
         }
@@ -68,7 +72,7 @@ public class RootHandler {
         return value != null && value.matches("[A-Za-z0-9_\\.$]+");
     }
 
-    private boolean executeRootShell(String command) {
+    protected boolean executeRootShell(String command) {
         Process p = null;
         try {
             p = Runtime.getRuntime().exec("su");

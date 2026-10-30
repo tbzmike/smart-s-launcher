@@ -180,6 +180,7 @@ public final class AppLaunchUtils {
                     packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
             int state = pm.getApplicationEnabledSetting(packageName);
             return appInfo.enabled
+                    && !PackageManagerUtils.isAppSuspended(appInfo)
                     && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
                     && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
                     && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED;
@@ -283,6 +284,22 @@ public final class AppLaunchUtils {
             invalidatePackageState(packageName);
             return false;
         }
+    }
+
+    /** A remembered ID may temporarily lose its public ShortcutInfo while its launcher is disabled. */
+    public static ComponentName resolveSingleLauncherComponent(Context context, String packageName) {
+        Intent intent = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+                .setPackage(packageName);
+        ComponentName only = null;
+        for (ResolveInfo result : context.getPackageManager().queryIntentActivities(
+                intent, PackageManager.MATCH_DISABLED_COMPONENTS)) {
+            if (result == null || result.activityInfo == null) continue;
+            ComponentName candidate = new ComponentName(
+                    result.activityInfo.packageName, result.activityInfo.name);
+            if (only != null && !only.equals(candidate)) return null;
+            only = candidate;
+        }
+        return only;
     }
 
     private static ResolveInfo resolveLauncher(PackageManager pm, String packageName) {

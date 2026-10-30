@@ -338,6 +338,13 @@ public class DBHelper {
                 null, null, null, "1")) {
             if (cursor.moveToFirst()) {
                 existing = true;
+                // LauncherApps redacts launch intents. A refresh with no new target evidence
+                // must not erase the verified IceBox target saved by an earlier import.
+                if (TextUtils.isEmpty(targetPackage)) {
+                    targetPackage = cursor.getString(1);
+                    if (targetPackage == null) targetPackage = "";
+                    shortcut.targetPackage = emptyToNull(targetPackage);
+                }
                 changed = !TextUtils.equals(shortcut.name, cursor.getString(0))
                         || !TextUtils.equals(targetPackage, cursor.getString(1));
             }

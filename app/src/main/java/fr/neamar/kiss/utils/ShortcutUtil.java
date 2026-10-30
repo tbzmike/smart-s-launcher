@@ -27,6 +27,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Set;
 
@@ -41,6 +43,15 @@ public class ShortcutUtil {
 
     private final static String TAG = ShortcutUtil.class.getSimpleName();
     private static final String ICEBOX_PACKAGE = "com.catchingnow.icebox";
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private static int matchFlags() {
+        int flags = FLAG_MATCH_DYNAMIC | FLAG_MATCH_MANIFEST | FLAG_MATCH_PINNED;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            flags |= LauncherApps.ShortcutQuery.FLAG_MATCH_CACHED;
+        }
+        return flags;
+    }
 
     public static String generateShortcutId(UserHandle userHandle, @NonNull ShortcutRecord shortcutRecord) {
         if (userHandle == null) {
@@ -87,7 +98,7 @@ public class ShortcutUtil {
         try {
             if (!launcher.hasShortcutHostPermission()) return found;
             LauncherApps.ShortcutQuery query = new LauncherApps.ShortcutQuery();
-            query.setQueryFlags(FLAG_MATCH_DYNAMIC | FLAG_MATCH_MANIFEST | FLAG_MATCH_PINNED);
+            query.setQueryFlags(matchFlags());
             if (!TextUtils.isEmpty(packageName)) query.setPackage(packageName);
             for (android.os.UserHandle profile : manager.getUserProfiles()) {
                 try {
@@ -109,6 +120,22 @@ public class ShortcutUtil {
     @Nullable
     public static ShortcutInfo getShortCut(Context context, @NonNull android.os.UserHandle user,
                                            String packageName, String shortcutId) {
+        return findShortcut(context, user, packageName, shortcutId, true);
+    }
+
+    /** Disabled metadata is still useful to re-enable the exact associated Activity at tap time. */
+    @RequiresApi(Build.VERSION_CODES.O)
+    @Nullable
+    public static ShortcutInfo getShortcutForLaunchState(Context context, android.os.UserHandle user,
+                                                         String packageName, String shortcutId) {
+        return findShortcut(context, user, packageName, shortcutId, false);
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    @Nullable
+    private static ShortcutInfo findShortcut(Context context, android.os.UserHandle user,
+                                             String packageName, String shortcutId,
+                                             boolean enabledOnly) {
         if (TextUtils.isEmpty(packageName) || TextUtils.isEmpty(shortcutId)) return null;
         LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
         UserManager manager = ContextCompat.getSystemService(context, UserManager.class);
@@ -119,16 +146,95 @@ public class ShortcutUtil {
             LauncherApps.ShortcutQuery query = new LauncherApps.ShortcutQuery();
             query.setPackage(packageName);
             query.setShortcutIds(Collections.singletonList(shortcutId));
-            query.setQueryFlags(FLAG_MATCH_DYNAMIC | FLAG_MATCH_MANIFEST | FLAG_MATCH_PINNED);
+            query.setQueryFlags(matchFlags());
             List<ShortcutInfo> shortcuts = launcher.getShortcuts(query, user);
             if (shortcuts == null) return null;
             for (ShortcutInfo shortcut : shortcuts) {
-                if (shortcut != null && shortcut.isEnabled()) return shortcut;
+                if (shortcut != null && packageName.equals(shortcut.getPackage())
+                        && shortcutId.equals(shortcut.getId())
+                        && user.equals(shortcut.getUserHandle())
+                        && (!enabledOnly || shortcut.isEnabled())) return shortcut;
             }
         } catch (SecurityException | IllegalStateException e) {
             Log.w(TAG, "Exact shortcut temporarily unavailable", e);
         }
         return null;
+    }
+
+    /**
+     * Retain an explicitly opened/saved shortcut in Android, not just in our database. Android
+     * strips getIntents() from launcher-owned ShortcutInfo, so persisting its ID alone cannot
+     * recover a dynamic shortcut after the publisher removes it. pinShortcuts REPLACES the pin
+     * set: always merge every existing pin for this package and profile.
+     */
+    @RequiresApi(Build.VERSION_CODES.O)
+    public static boolean retainShortcut(Context context, @Nullable ShortcutInfo selected) {
+        if (selected == null || !selected.isEnabled()) return false;
+        if (selected.isPinned()) return true;
+        LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
+        if (launcher == null) return false;
+        try {
+            if (!launcher.hasShortcutHostPermission()) return false;
+            LauncherApps.ShortcutQuery query = new LauncherApps.ShortcutQuery();
+            query.setPackage(selected.getPackage());
+            query.setQueryFlags(FLAG_MATCH_PINNED);
+            List<ShortcutInfo> existing = launcher.getShortcuts(query, selected.getUserHandle());
+            Set<String> ids = new LinkedHashSet<>();
+            if (existing != null) for (ShortcutInfo shortcut : existing) {
+                if (shortcut != null && shortcut.isPinned()) ids.add(shortcut.getId());
+            }
+            ids.add(selected.getId());
+            launcher.pinShortcuts(selected.getPackage(), new ArrayList<>(ids), selected.getUserHandle());
+            ShortcutInfo pinned = getShortCut(context, selected.getUserHandle(),
+                    selected.getPackage(), selected.getId());
+            return pinned != null && pinned.isPinned();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Could not retain selected Android shortcut", e);
+            return false;
+        }
+    }
+
+    /** One grouped, on-load migration for still-live IDs already present in saved History/catalog. */
+    @RequiresApi(Build.VERSION_CODES.O)
+    public static void retainRememberedShortcuts(Context context, List<ShortcutInfo> live,
+                                                 List<ShortcutRecord> saved) {
+        Set<String> savedKeys = new LinkedHashSet<>();
+        for (ShortcutRecord record : saved) {
+            if (record != null && record.packageName != null && record.intentUri != null
+                    && record.intentUri.startsWith(ShortcutPojo.OREO_PREFIX)) {
+                savedKeys.add(record.packageName + '|' + record.intentUri);
+            }
+        }
+        Map<String, List<ShortcutInfo>> groups = new LinkedHashMap<>();
+        for (ShortcutInfo info : live) {
+            // The legacy catalog has no profile column. Do not migrate an owner record into
+            // another profile that happens to publish the same ID. Explicit launches pin their
+            // own actual profile through retainShortcut().
+            if (info == null || !info.getUserHandle().equals(android.os.Process.myUserHandle())) continue;
+            String key = info.getUserHandle().toString() + '|' + info.getPackage();
+            groups.computeIfAbsent(key, ignored -> new ArrayList<>()).add(info);
+        }
+        LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
+        if (launcher == null) return;
+        for (List<ShortcutInfo> group : groups.values()) {
+            Set<String> ids = new LinkedHashSet<>();
+            boolean changed = false;
+            for (ShortcutInfo info : group) {
+                if (info.isPinned()) ids.add(info.getId());
+                if (info.isEnabled() && savedKeys.contains(info.getPackage() + '|'
+                        + ShortcutPojo.OREO_PREFIX + info.getId())) {
+                    changed |= !info.isPinned();
+                    ids.add(info.getId());
+                }
+            }
+            if (!changed) continue;
+            ShortcutInfo first = group.get(0);
+            try {
+                launcher.pinShortcuts(first.getPackage(), new ArrayList<>(ids), first.getUserHandle());
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Saved shortcut retention unavailable for " + first.getPackage(), e);
+            }
+        }
     }
 
     @RequiresApi(Build.VERSION_CODES.O)

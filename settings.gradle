@@ -21,3 +21,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "KISS"
 include ':app'
+// Optional fixture APKs used only by the shortcut launch integration checks.
+if (providers.gradleProperty('shortcutFixtures').isPresent()) include ':shortcut-fixture'

@@ -74,6 +74,9 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
         UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
         if (!waitForScrollIdle()) return oreoPojos;
         List<ShortcutInfo> shortcutInfos = ShortcutUtil.getAllShortcuts(context);
+        if (retainDisabled) {
+            ShortcutUtil.retainRememberedShortcuts(context, shortcutInfos, storedRecords);
+        }
         Set<String> liveKeys = new HashSet<>();
         Map<String, ShortcutRecord> storedByKey = new HashMap<>();
         if (retainDisabled) {
@@ -142,7 +145,7 @@ public class LoadShortcutsPojos extends LoadPojos<ShortcutPojo> {
             for (ShortcutRecord remembered : new ArrayList<>(storedByKey.values())) {
                 if (isCancelled() || !waitForScrollIdle()) break;
                 if (remembered == null || remembered.packageName == null || remembered.intentUri == null) continue;
-                if (!remembered.intentUri.contains(ShortcutPojo.OREO_PREFIX)) continue;
+                if (!remembered.intentUri.startsWith(ShortcutPojo.OREO_PREFIX)) continue;
                 if (excludedShortcutApps.contains(remembered.packageName)) continue;
 
                 String key = shortcutKey(remembered.packageName, remembered.intentUri);

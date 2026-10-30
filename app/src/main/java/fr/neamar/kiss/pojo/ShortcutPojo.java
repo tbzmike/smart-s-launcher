@@ -39,16 +39,16 @@ public final class ShortcutPojo extends PojoWithTags {
     }
 
     public boolean isOreoShortcut() {
-        return intentUri.contains(ShortcutPojo.OREO_PREFIX);
+        return intentUri != null && intentUri.startsWith(ShortcutPojo.OREO_PREFIX);
     }
 
     public String getOreoId() {
-        return intentUri.replace(ShortcutPojo.OREO_PREFIX, "");
+        return isOreoShortcut() ? intentUri.substring(OREO_PREFIX.length()) : "";
     }
 
     public String getComponentName() { return componentName; }
     public boolean isPinned() { return pinned; }
     public boolean isDynamic() { return dynamic; }
     @Override public boolean isDisabled() { return disabled; }
-    @Override public UserHandle getUserHandle() { return userHandle; }
+    @Override public UserHandle getUserHandle() { return userHandle == null ? UserHandle.OWNER : userHandle; }
 }
