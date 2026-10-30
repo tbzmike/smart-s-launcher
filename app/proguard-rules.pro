@@ -9,3 +9,6 @@
     public static int d(...);
     public static int e(...);
 }
+# Invoked by the existing authorized root shell through app_process.
+-keep class fr.neamar.kiss.shortcut.ShortcutRouteBridge { *; }
+-keep class fr.neamar.kiss.shortcut.ShortcutRouteCodec { *; }

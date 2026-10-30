@@ -58,6 +58,7 @@ import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
+import fr.neamar.kiss.shortcut.SavedShortcutRoutes;
 
 public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
@@ -367,7 +368,15 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         if (launchPending) return; // One tap produces one enable-and-launch operation.
         launchSucceeded = false;
         if (pojo.isOreoShortcut()) {
-            doOreoLaunch(context, v);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                launchPending = true;
+                if (SavedShortcutRoutes.preserveBeforeLaunch(context, pojo, () -> {
+                    launchPending = false;
+                    doOreoLaunch(context, v, true);
+                })) return;
+                launchPending = false;
+            }
+            doOreoLaunch(context, v, false);
         } else {
             doLegacyShortcutLaunch(context, v);
         }
@@ -473,7 +482,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         return true;
     }
 
-    private void doOreoLaunch(Context context, View v) {
+    private void doOreoLaunch(Context context, View v, boolean asynchronous) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             Toast.makeText(context, R.string.application_not_found, Toast.LENGTH_LONG).show();
             return;
@@ -513,7 +522,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         // can unfreeze its target using Device Owner/Shizuku without Smart S requiring root.
         if (!frozenPublisher && !disabledActivity
                 && tryExactShortcutLaunch(context, apps, sourceBounds)) {
-            onExactLaunchSucceeded(context, false);
+            onExactLaunchSucceeded(context, asynchronous);
             return;
         }
 
@@ -524,7 +533,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         if (iceBoxRoute && !TextUtils.isEmpty(target)) {
             if (AppLaunchUtils.isPackageEnabledNow(context, target)) {
                 if (AppLaunchUtils.launchEnabledPackage(context, target)) {
-                    onExactLaunchSucceeded(context, false);
+                    onExactLaunchSucceeded(context, asynchronous);
                 } else {
                     notifyExactShortcutUnavailable(context);
                 }
@@ -565,7 +574,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             return;
         }
 
-        if (!hostPermission) {
+        if (!hostPermission && !SavedShortcutRoutes.has(context, pojo)) {
             Toast.makeText(context, context.getString(R.string.shortcuts_no_host_permission),
                     Toast.LENGTH_LONG).show();
             return;
@@ -657,6 +666,23 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             return;
         }
 
+        if (SavedShortcutRoutes.has(context, pojo)) {
+            SavedShortcutRoutes.open(context, pojo, opened -> {
+                if (opened) {
+                    launchPending = false;
+                    onExactLaunchSucceeded(context, true);
+                    AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
+                } else {
+                    scheduleExactRetry(context, sourceBounds, attempt);
+                }
+            });
+            return;
+        }
+        scheduleExactRetry(context, sourceBounds, attempt);
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private void scheduleExactRetry(Context context, @Nullable Rect sourceBounds, int attempt) {
         if (attempt < ENABLED_SHORTCUT_RETRY_DELAYS_MS.length) {
             new Handler(Looper.getMainLooper()).postDelayed(
                     () -> attemptExactLaunchAfterEnable(context, sourceBounds, attempt + 1),

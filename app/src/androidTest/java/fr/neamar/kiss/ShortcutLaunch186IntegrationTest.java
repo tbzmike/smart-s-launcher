@@ -39,6 +39,8 @@ import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
+import fr.neamar.kiss.shortcut.SavedShortcutRoutes;
+import fr.neamar.kiss.shortcut.ShortcutRouteCodec;
 
 /** Cross-APK proof: publish, click, withdraw, disable/hide and open the actual saved destination. */
 public final class ShortcutLaunch186IntegrationTest {
@@ -76,10 +78,22 @@ public final class ShortcutLaunch186IntegrationTest {
         rootField = KissApplication.class.getDeclaredField("rootHandler");
         rootField.setAccessible(true);
         previousRoot = KissApplication.getApplication(context).getRootHandler();
+        for (String id : new String[]{"fixture-A", "fixture-B"}) {
+            ShortcutRecord record = new ShortcutRecord();
+            record.packageName = TARGET;
+            record.intentUri = ShortcutPojo.OREO_PREFIX + id;
+            SavedShortcutRoutes.discard(context, new ShortcutPojo(UserHandle.OWNER, record,
+                    null, true, false, false));
+        }
         // Use the emulator's authorized shell transport in place of su. The PRODUCTION enableApp
         // and enableComponent methods and their actual pm commands/state verification still run.
         rootField.set(KissApplication.getApplication(context), new RootHandler(context) {
             @Override public boolean isRootAvailable() { return true; }
+            @Override protected String executeRootRead(String command) {
+                String result = shell(command.replace("'", ""));
+                enableTrace.append("ROUTE_BRIDGE ").append(result).append('\n');
+                return result;
+            }
             @Override protected boolean executeRootShell(String command) {
                 enableCommands++;
                 String last = "";
@@ -141,7 +155,7 @@ public final class ShortcutLaunch186IntegrationTest {
         control(TARGET, "removeA");
         click(saved, false);
         assertHit("fixture-A");
-        assertEquals("Enabled shortcuts must not invoke root", 0, enableCommands);
+        assertEquals("Enabled shortcuts must not run unfreeze commands", 0, enableCommands);
     }
 
     @Test public void disabledAndHiddenNativeShortcutActuallyUnfreezesAndOpensExactTarget()
@@ -149,6 +163,8 @@ public final class ShortcutLaunch186IntegrationTest {
         ShortcutPojo saved = nativePojo(TARGET, "fixture-A", null);
         click(saved, false);
         assertHit("fixture-A");
+        assertTrue("Exact route must survive Android deleting the ID: " + enableTrace,
+                SavedShortcutRoutes.has(context, saved));
         shell("pm disable-user --user 0 " + TARGET);
         assertFalse(AppLaunchUtils.isPackageEnabledNow(context, TARGET));
         click(saved, false);
@@ -244,6 +260,22 @@ public final class ShortcutLaunch186IntegrationTest {
                 info.isPinned(), info.isDynamic(), false);
         pojo.setName(record.name);
         return pojo;
+    }
+
+    @Test public void exactRouteCodecPreservesTypedArraysAndIntentStack() throws Exception {
+        Intent first = new Intent(Intent.ACTION_VIEW).setComponent(new ComponentName(TARGET, CLASS))
+                .putExtra("longs", new long[]{1L, 9000000000000L})
+                .putExtra("strings", new String[]{"a,b", "quoted'value", null})
+                .putExtra("booleans", new boolean[]{true, false});
+        Intent second = new Intent(Intent.ACTION_VIEW).setComponent(new ComponentName(TARGET, CLASS))
+                .setData(Uri.parse("fixture://exact/deep-destination")).putExtra("destination", "exact");
+        Intent[] roundTrip = ShortcutRouteCodec.decode(ShortcutRouteCodec.encode(new Intent[]{first, second}));
+        assertEquals(2, roundTrip.length);
+        assertArrayEquals(first.getLongArrayExtra("longs"), roundTrip[0].getLongArrayExtra("longs"));
+        assertArrayEquals(first.getStringArrayExtra("strings"), roundTrip[0].getStringArrayExtra("strings"));
+        assertArrayEquals(first.getBooleanArrayExtra("booleans"), roundTrip[0].getBooleanArrayExtra("booleans"));
+        assertEquals(second.getData(), roundTrip[1].getData());
+        assertEquals("exact", roundTrip[1].getStringExtra("destination"));
     }
 
     private void click(ShortcutPojo pojo, boolean applicationContext) {

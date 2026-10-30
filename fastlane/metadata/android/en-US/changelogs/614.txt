@@ -1,1 +1,1 @@
-3.30.186: Repair Android cached/pinned shortcut launch wiring, IceBox hidden-package unfreeze, and legacy exact Intent handling. Preserve saved target metadata and all 3.30.185 search changes.
+3.30.186: Preserve exact shortcut routes through the existing root authorization so disabling/hiding apps does not sever their dynamic shortcut destinations. Repair Android pinning/cached lookup, IceBox wrappers and legacy Intents. Preserve 3.30.185 instant saved History search.

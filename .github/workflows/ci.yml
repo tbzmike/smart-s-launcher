@@ -3481,7 +3481,7 @@ jobs:
               smart-s-launcher-3.30.186.apk app-debug.apk latest-green.json
           fi
           gh release edit "$TAG" --latest --target "$GITHUB_SHA" \
-            --notes "Smart S Launcher 3.30.186: query cached Android shortcuts, retain saved IDs through real Android pinning without removing other pins, enable hidden/disabled packages and saved Activities, preserve exact legacy Intent data and extras, try valid IceBox routes before Smart S root fallback, and retain verified IceBox target metadata. Actual cross-APK shortcut destination checks, frozen/hidden transitions, unit tests and preceding Android 35 regressions passed. Preserves 3.30.185 immediate saved History search, layouts, tags, backup and original production signing identity."
+            --notes "Smart S Launcher 3.30.186: query cached Android shortcuts, retain saved IDs through Android pinning, preserve exact Intent stacks through the existing root authorization before Android deletes dynamic IDs, replay those same destinations after unfreeze, enable hidden/disabled packages and saved Activities, preserve exact legacy Intent data and extras, try valid IceBox routes before Smart S root fallback, and retain verified IceBox target metadata. Actual cross-APK shortcut destination checks, frozen/hidden transitions, unit tests and preceding Android 35 regressions passed. Preserves 3.30.185 immediate saved History search, layouts, tags, backup and original production signing identity."
       - name: Refresh stable updater assets and manifest
         shell: bash
         env:

@@ -27,7 +27,8 @@ public final class FixtureControlReceiver extends BroadcastReceiver {
     }
     private static ShortcutInfo shortcut(Context context, String id) {
         Intent exact = new Intent(Intent.ACTION_VIEW)
-                .setComponent(new ComponentName(context, FixtureTargetActivity.class))
+                .setComponent(new ComponentName(context, context.getPackageName().endsWith(".icebox")
+                        ? FixtureTargetActivity.class : FixturePrivateTargetActivity.class))
                 .setData(Uri.parse("fixture://exact/" + id))
                 .putExtra(FixtureTargetActivity.DESTINATION, id);
         return new ShortcutInfo.Builder(context, id).setShortLabel(id)

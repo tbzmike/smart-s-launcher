@@ -7,6 +7,7 @@ import androidx.preference.PreferenceManager;
 
 import java.nio.charset.StandardCharsets;
 import android.os.SystemClock;
+import java.io.ByteArrayOutputStream;
 
 import fr.neamar.kiss.utils.Log;
 
@@ -70,6 +71,45 @@ public class RootHandler {
 
     private boolean isSafeName(String value) {
         return value != null && value.matches("[A-Za-z0-9_\\.$]+");
+    }
+
+    /** Bounded read used only for the selected shortcut's root-authorized exact route. */
+    public String readPrivilegedOutput(String command) {
+        return isRootAvailable() ? executeRootRead(command) : "";
+    }
+
+    protected String executeRootRead(String command) {
+        Process process = null;
+        try {
+            process = new ProcessBuilder("su", "-c", command).start();
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            long deadline = SystemClock.elapsedRealtime() + 10000L;
+            while (SystemClock.elapsedRealtime() < deadline) {
+                while (process.getInputStream().available() > 0) {
+                    int read = process.getInputStream().read(buffer);
+                    if (read < 0) break;
+                    output.write(buffer, 0, read);
+                    if (output.size() > 524288) return "";
+                }
+                try {
+                    int exit = process.exitValue();
+                    int read;
+                    while ((read = process.getInputStream().read(buffer)) >= 0) {
+                        output.write(buffer, 0, read);
+                        if (output.size() > 524288) return "";
+                    }
+                    return exit == 0 ? output.toString("UTF-8") : "";
+                } catch (IllegalThreadStateException running) {
+                    Thread.sleep(20L);
+                }
+            }
+        } catch (Exception failure) {
+            Log.w(TAG, "Selected shortcut route bridge unavailable");
+        } finally {
+            if (process != null) process.destroy();
+        }
+        return "";
     }
 
     protected boolean executeRootShell(String command) {

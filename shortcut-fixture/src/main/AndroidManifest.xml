@@ -7,6 +7,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".FixtureTargetActivity" android:exported="true" />
+        <activity android:name=".FixturePrivateTargetActivity" android:exported="false" />
         <receiver android:name=".FixtureControlReceiver" android:exported="true" />
     </application>
 </manifest>
