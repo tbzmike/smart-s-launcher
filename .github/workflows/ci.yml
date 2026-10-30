@@ -3327,7 +3327,6 @@ jobs:
   android-186:
     name: Verify actual shortcut launches and all launcher regressions on Android 35
     if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.186-shortcut-launch-wiring') }}
-    needs: [test, apk]
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
