@@ -36,6 +36,7 @@ import androidx.annotation.StringRes;
 import androidx.preference.PreferenceManager;
 
 import java.util.ArrayList;
+import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -84,6 +85,7 @@ import fr.neamar.kiss.utils.fuzzy.FuzzyScore;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 
 public abstract class Result<T extends Pojo> {
+    private WeakReference<QueryInterface> launchOwner = new WeakReference<>(null);
 
     private static final String TAG = Result.class.getSimpleName();
     private static final int TAG_RUNNING_TASK = R.id.item_app_icon;
@@ -551,6 +553,7 @@ public abstract class Result<T extends Pojo> {
     }
 
     public final void launch(Context context, View v, @Nullable QueryInterface queryInterface) {
+        launchOwner = new WeakReference<>(queryInterface);
         Log.i(this.getClass().getSimpleName(), "Launching " + pojo.id);
 
         boolean externalTarget = queryInterface != null && isExternalLaunchTarget(pojo);
@@ -568,9 +571,20 @@ public abstract class Result<T extends Pojo> {
         // LauncherApps/PendingIntent/Setting targets can be translucent and may pause without
         // stopping MainActivity. Keep the protection only for a verified successful external launch.
         if (externalTarget) {
-            if (didLaunchExternalActivity()) queryInterface.externalResultLaunchOccurred();
+            if (didLaunchExternalActivity()) {
+                queryInterface.externalResultLaunchOccurred();
+                launchOwner.clear();
+            }
             else queryInterface.externalResultLaunchCancelled();
         }
+    }
+
+    /** Complete a deferred enable/route capture with the same Home-return and history wiring. */
+    protected final void completeAsynchronousLaunch(Context context) {
+        QueryInterface owner = launchOwner.get();
+        recordLaunch(context, owner);
+        if (owner != null && isExternalLaunchTarget(pojo)) owner.externalResultLaunchOccurred();
+        launchOwner.clear();
     }
 
     protected final void recordLaunch(Context context, @Nullable QueryInterface queryInterface) {

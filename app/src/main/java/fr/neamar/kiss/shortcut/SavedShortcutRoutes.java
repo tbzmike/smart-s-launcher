@@ -101,12 +101,32 @@ public final class SavedShortcutRoutes {
 
     public static void open(Context context, ShortcutPojo pojo, Consumer<Boolean> completed) {
         JSONObject route = read(context, pojo);
-        if (route == null) { completed.accept(false); return; }
+        if (route == null) { MAIN.post(() -> completed.accept(false)); return; }
+        openSnapshot(context, pojo, route, completed);
+    }
+
+    /** Legacy app shortcuts already contain their full exact Intent, including private targets. */
+    public static boolean openLegacy(Context context, ShortcutPojo pojo, Intent exact,
+                                      Consumer<Boolean> completed) {
+        if (!pojo.getUserHandle().isCurrentUser() || !FrozenAppPreferences.autoEnable(context)
+                || exact.getComponent() == null
+                || !pojo.packageName.equals(exact.getComponent().getPackageName())) return false;
+        try {
+            JSONObject route = new JSONObject().put("package", pojo.packageName).put("id", pojo.id)
+                    .put("user", android.os.Process.myUid() / 100000)
+                    .put("intents", ShortcutRouteCodec.encode(new Intent[]{exact}));
+            openSnapshot(context, pojo, route, completed);
+            return true;
+        } catch (Exception invalid) { return false; }
+    }
+
+    private static void openSnapshot(Context context, ShortcutPojo pojo, JSONObject route,
+                                      Consumer<Boolean> completed) {
         try {
             Intent[] intents = ShortcutRouteCodec.decode(route.getJSONArray("intents"));
             intents[0].addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivities(intents);
-            completed.accept(true);
+            MAIN.post(() -> completed.accept(true));
             return;
         } catch (Exception exactComponentNeedsPrivilege) { /* Try the same captured route with root. */ }
         Context app = context.getApplicationContext();
@@ -141,7 +161,7 @@ public final class SavedShortcutRoutes {
                 boolean result = opened;
                 MAIN.post(() -> completed.accept(result));
             });
-        } catch (RuntimeException busy) { completed.accept(false); }
+        } catch (RuntimeException busy) { MAIN.post(() -> completed.accept(false)); }
     }
 
     private static String bridgeCommand(Context context, String action, String publisher, int number,

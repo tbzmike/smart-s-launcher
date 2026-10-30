@@ -441,7 +441,17 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             onExactLaunchSucceeded(context, asynchronous);
         } catch (RuntimeException e) {
             Log.w(TAG, "Unable to open saved shortcut " + pojo.id, e);
-            if (!openKnownIceBoxTarget(context, asynchronous)) notifyExactShortcutUnavailable(context);
+            if (openKnownIceBoxTarget(context, asynchronous)) return;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                launchPending = true;
+                if (SavedShortcutRoutes.openLegacy(context, pojo, intent, opened -> {
+                    launchPending = false;
+                    if (opened) onExactLaunchSucceeded(context, true);
+                    else notifyExactShortcutUnavailable(context);
+                })) return;
+                launchPending = false;
+            }
+            notifyExactShortcutUnavailable(context);
         } finally {
             if (enabledPackage != null) {
                 AppLaunchUtils.refreshLauncherAfterEnable(context, enabledPackage);
@@ -701,7 +711,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         if (asynchronous) {
             // Result.launch() had already returned with launchSucceeded=false. Record
             // only after Android accepted the real launch, never while it is pending.
-            recordLaunch(context, null);
+            completeAsynchronousLaunch(context);
         }
     }
 
@@ -807,6 +817,12 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
 
     private void notifyExactShortcutUnavailable(Context context) {
         launchSucceeded = false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && pojo.isOreoShortcut()
+                && !SavedShortcutRoutes.has(context, pojo) && getShortCut(context) == null) {
+            Toast.makeText(context, "Android no longer exposes this saved shortcut. Add it again once to restore its exact destination.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         Toast.makeText(context, "Unable to open this exact shortcut.", Toast.LENGTH_LONG).show();
     }
 

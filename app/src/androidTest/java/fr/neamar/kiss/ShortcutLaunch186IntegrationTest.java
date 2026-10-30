@@ -190,8 +190,11 @@ public final class ShortcutLaunch186IntegrationTest {
 
     @Test public void legacyExactIntentRetainsItsDataExtrasAndEnablesDisabledComponent()
             throws Exception {
-        shell("pm disable --user 0 " + TARGET + "/" + CLASS);
-        ComponentName component = new ComponentName(TARGET, CLASS);
+        for (String activityClass : new String[]{CLASS,
+                "com.tbzmike.shortcutfixture.FixturePrivateTargetActivity"}) {
+        shell("pm enable --user 0 " + TARGET + "/" + activityClass);
+        shell("pm disable --user 0 " + TARGET + "/" + activityClass);
+        ComponentName component = new ComponentName(TARGET, activityClass);
         assertFalse(AppLaunchUtils.isActivityEnabledNow(context, component));
         Intent exact = new Intent(Intent.ACTION_VIEW).setComponent(component)
                 .setData(Uri.parse("fixture://legacy/oreo-shortcut/inside-data"))
@@ -209,6 +212,7 @@ public final class ShortcutLaunch186IntegrationTest {
         Intent hit = assertHit("legacy-exact");
         assertEquals("fixture://legacy/oreo-shortcut/inside-data", hit.getStringExtra("data"));
         assertTrue(AppLaunchUtils.isActivityEnabledNow(context, component));
+        }
     }
 
     @Test public void iceboxNativeRouteWorksAndStaleWrapperUnfreezesVerifiedTarget()
