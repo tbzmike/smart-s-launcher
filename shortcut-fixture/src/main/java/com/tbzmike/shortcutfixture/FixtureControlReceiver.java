@@ -14,16 +14,20 @@ import java.util.Collections;
 public final class FixtureControlReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context, Intent control) {
         ShortcutManager manager = context.getSystemService(ShortcutManager.class);
-        if (manager == null) return;
+        if (manager == null) { setResultCode(-1); return; }
         String mode = control.getStringExtra("mode");
         if ("removeA".equals(mode)) {
             manager.removeDynamicShortcuts(Collections.singletonList("fixture-A"));
         } else if ("clear".equals(mode)) {
             manager.removeAllDynamicShortcuts();
         } else {
-            manager.addDynamicShortcuts(Arrays.asList(shortcut(context, "fixture-A"),
-                    shortcut(context, "fixture-B")));
+            if (!manager.addDynamicShortcuts(Arrays.asList(shortcut(context, "fixture-A"),
+                    shortcut(context, "fixture-B")))) {
+                setResultCode(-1);
+                return;
+            }
         }
+        setResultCode(1); // Ordered broadcast acknowledgement: the fixture really ran.
     }
     private static ShortcutInfo shortcut(Context context, String id) {
         Intent exact = new Intent(Intent.ACTION_VIEW)

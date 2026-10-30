@@ -317,9 +317,20 @@ public final class ShortcutLaunch186IntegrationTest {
         throw new AssertionError("Published shortcut unavailable " + pkg + "/" + id);
     }
 
-    private static void control(String pkg, String mode) {
-        String out = shell("am broadcast -n " + pkg + "/" + CONTROL + " --es mode " + mode);
-        assertFalse(out, out.contains("Exception"));
+    private static void control(String pkg, String mode) throws Exception {
+        String out = "";
+        for (int attempt = 0; attempt < 8; attempt++) {
+            // Package/component enable broadcasts can kill the fixture's first process
+            // before its receiver executes. Require its acknowledgement before testing
+            // launcher behavior; an undelivered shell broadcast also reports success.
+            out = shell("am broadcast -f 0x10000020 -n " + pkg + "/" + CONTROL
+                    + " --es mode " + mode);
+            assertFalse(out, out.contains("Exception"));
+            assertFalse("Fixture rejected shortcut publication: " + out, out.contains("result=-1"));
+            if (out.contains("result=1")) return;
+            Thread.sleep(150L);
+        }
+        fail("Fixture receiver never acknowledged " + pkg + "/" + mode + ": " + out);
     }
 
     private static String shell(String command) {
