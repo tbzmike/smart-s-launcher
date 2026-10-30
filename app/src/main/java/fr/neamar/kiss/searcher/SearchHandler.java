@@ -29,8 +29,7 @@ import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
 public class SearchHandler {
 
-    private static final long QUERY_DEBOUNCE_MS = 16L;
-    private static final int HISTORY_PREVIEW_SEED_LIMIT = 400;
+    private static final long QUERY_DEBOUNCE_MS = 5000L;
     private static volatile SearchHandler instance;
 
     public static SearchHandler getInstance() {
@@ -72,7 +71,7 @@ public class SearchHandler {
     private Searcher runningSearch;
 
     /**
-     * Up to 400 already-resolved saved history targets, oldest-to-newest. Only Pojo references are
+     * Configured number of already-resolved saved history targets, oldest-to-newest. Only Pojo references are
      * retained; these are provider-owned records, not Result/View/Drawable objects.
      */
     private volatile List<Pojo> historyQuerySeed = Collections.emptyList();
@@ -198,7 +197,7 @@ public class SearchHandler {
     }
 
     /**
-     * Resolve at most 400 distinct recent history records. DBHelper RECENCY already returns unique
+     * Resolve at most the configured number of distinct recent history records. DBHelper RECENCY already returns unique
      * record ids; reversing gives the same oldest-to-newest presentation order used by the history
      * adapter, with the newest/strongest matches at the end.
      */
@@ -213,9 +212,11 @@ public class SearchHandler {
             }
         }
 
-        int requested = HISTORY_PREVIEW_SEED_LIMIT + excluded.size();
+        int historyLimit = getConfiguredHistoryResultCount(prefs);
+        if (historyLimit <= 0) return Collections.emptyList();
+        int requested = historyLimit + excluded.size();
         List<ValuedHistoryRecord> records = DBHelper.getHistory(activity, requested, HistoryMode.RECENCY);
-        List<Pojo> seed = new ArrayList<>(Math.min(HISTORY_PREVIEW_SEED_LIMIT, records.size()));
+        List<Pojo> seed = new ArrayList<>(Math.min(historyLimit, records.size()));
         Set<String> seen = new HashSet<>();
 
         for (ValuedHistoryRecord record : records) {
@@ -224,11 +225,22 @@ public class SearchHandler {
             if (pojo == null) pojo = RecentLaunchTracker.resolve(record.record);
             if (pojo == null || excluded.contains(pojo.id) || !seen.add(pojo.id)) continue;
             seed.add(pojo);
-            if (seed.size() >= HISTORY_PREVIEW_SEED_LIMIT) break;
+            if (seed.size() >= historyLimit) break;
         }
 
         Collections.reverse(seed);
         return Collections.unmodifiableList(seed);
+    }
+
+    private int getConfiguredHistoryResultCount(SharedPreferences prefs) {
+        try {
+            String legacyValue = prefs.getString("number-of-display-elements",
+                    String.valueOf(Searcher.DEFAULT_MAX_RESULTS));
+            return Math.max(0, Double.valueOf(prefs.getString("number-of-history-results",
+                    legacyValue)).intValue());
+        } catch (NumberFormatException | ClassCastException e) {
+            return Searcher.DEFAULT_MAX_RESULTS;
+        }
     }
 
     private int getConfiguredSearchResultCount(SharedPreferences prefs) {
