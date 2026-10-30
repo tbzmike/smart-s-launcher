@@ -380,7 +380,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             intent = Intent.parseUri(pojo.intentUri, 0);
         } catch (URISyntaxException | RuntimeException e) {
             Log.w(TAG, "Invalid saved shortcut Intent: " + pojo.id, e);
-            notifyExactShortcutUnavailable(context);
+            if (!openKnownIceBoxTarget(context, false)) notifyExactShortcutUnavailable(context);
             return;
         }
 
@@ -415,7 +415,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         AppLaunchUtils.ensurePackageEnabledAsync(context, pkg, component, true, enabled -> {
             if (!enabled) {
                 launchPending = false;
-                showUnableToEnable(context, pkg);
+                if (!openKnownIceBoxTarget(context, true)) showUnableToEnable(context, pkg);
                 return;
             }
             openLegacyIntent(context, view, intent, true, pkg);
@@ -432,12 +432,45 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             onExactLaunchSucceeded(context, asynchronous);
         } catch (RuntimeException e) {
             Log.w(TAG, "Unable to open saved shortcut " + pojo.id, e);
-            notifyExactShortcutUnavailable(context);
+            if (!openKnownIceBoxTarget(context, asynchronous)) notifyExactShortcutUnavailable(context);
         } finally {
             if (enabledPackage != null) {
                 AppLaunchUtils.refreshLauncherAfterEnable(context, enabledPackage);
             }
         }
+    }
+
+    /** Older IceBox releases also created legacy Intent shortcuts, not just Oreo IDs. */
+    private boolean openKnownIceBoxTarget(Context context, boolean asynchronous) {
+        if (!pojo.getUserHandle().isCurrentUser()
+                || !ShortcutUtil.isIceBoxPublisher(context, pojo.packageName)) return false;
+        String target = pojo.targetPackage;
+        if (TextUtils.isEmpty(target) || target.equals(pojo.packageName)) {
+            target = recoverUniqueIceBoxTarget(context);
+        }
+        if (TextUtils.isEmpty(target)) return false;
+        if (AppLaunchUtils.isPackageEnabledNow(context, target)) {
+            if (AppLaunchUtils.launchEnabledPackage(context, target)) {
+                onExactLaunchSucceeded(context, asynchronous);
+            } else {
+                notifyExactShortcutUnavailable(context);
+            }
+            return true;
+        }
+        if (!FrozenAppPreferences.autoEnable(context)) {
+            showAutoEnableDisabled(context);
+            return true;
+        }
+        launchPending = true;
+        final String exactTarget = target;
+        AppLaunchUtils.ensurePackageEnabledAsync(context, exactTarget, enabled -> {
+            if (enabled) openEnabledIceBoxApp(context, exactTarget, true);
+            else {
+                launchPending = false;
+                showUnableToEnable(context, exactTarget);
+            }
+        });
+        return true;
     }
 
     private void doOreoLaunch(Context context, View v) {

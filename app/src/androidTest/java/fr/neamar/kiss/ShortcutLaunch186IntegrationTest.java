@@ -213,6 +213,20 @@ public final class ShortcutLaunch186IntegrationTest {
         assertHit("main"); // IceBox app-alias route may open that verified app; chat routes may not.
         assertTrue(AppLaunchUtils.isPackageEnabledNow(context, TARGET));
         assertTrue(enableCommands > 0);
+
+        ShortcutRecord legacy = new ShortcutRecord();
+        legacy.name = stored.name;
+        legacy.packageName = ICEBOX;
+        legacy.targetPackage = TARGET;
+        legacy.intentUri = new Intent(Intent.ACTION_VIEW).setComponent(new ComponentName(
+                ICEBOX, "com.tbzmike.shortcutfixture.RemovedIceBoxActivity186")).toUri(0);
+        ShortcutPojo oldWrapper = new ShortcutPojo(null, legacy, null, true, false, false);
+        oldWrapper.setName(legacy.name);
+        shell("pm disable-user --user 0 " + TARGET);
+        click(oldWrapper, false);
+        assertHit("main");
+        assertTrue("Legacy IceBox wrappers use the same verified target enable path",
+                AppLaunchUtils.isPackageEnabledNow(context, TARGET));
     }
 
     private ShortcutPojo nativePojo(String pkg, String id, String target) throws Exception {
