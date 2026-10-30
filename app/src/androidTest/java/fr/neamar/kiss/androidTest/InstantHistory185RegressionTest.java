@@ -117,7 +117,13 @@ public final class InstantHistory185RegressionTest {
         SearchHandler search = SearchHandler.getInstance();
         search.search(Searcher.Type.HISTORY, activity, null, false);
         search.cancelSearch();
+        // A resumed warm Home may still be scrolling. The production adapter correctly
+        // defers replacement of a nonempty History viewport then; clear the old fixture
+        // so this test actually installs its declared saved window before querying it.
+        activity.adapter.clear();
         activity.adapter.updateWithPojos(activity, rows, false, "<history>");
+        assertEquals("Saved History fixture is installed before testing instant search",
+                rows.size(), activity.adapter.getCount());
     }
 
     private static void assertImmediate(MainActivity activity, String query, String expectedId) {
