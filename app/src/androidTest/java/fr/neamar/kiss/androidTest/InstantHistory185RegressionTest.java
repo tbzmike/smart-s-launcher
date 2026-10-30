@@ -93,6 +93,12 @@ public final class InstantHistory185RegressionTest {
                     assertImmediate(activity, "savedtag185", launched.id);
                     assertEmptyImmediately(activity, "nomatching185");
                     assertImmediate(activity, "just launched target185", launched.id);
+                    launched.setTags("editedtag185");
+                    assertImmediate(activity, "editedtag185", launched.id);
+                    assertEmptyImmediately(activity, "savedtag185");
+                    assertImmediate(activity, "editedtag185", launched.id);
+                    activity.adapter.removeResult(activity.adapter.getItem(0));
+                    assertEmptyImmediately(activity, "editedtag185");
                 } finally {
                     search.cancelSearch();
                     restore(prefs, original);

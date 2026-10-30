@@ -1168,6 +1168,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public void removeResult(Result<?> result) {
         parent.beforeListChange();
         results.remove(result);
+        if (result != null && result.getPojo() != null) {
+            SearchHandler.getInstance().forgetHistoryResult(result.getPojo());
+        }
         notifyDataSetChanged();
         parent.temporarilyDisableTranscriptMode();
         parent.afterListChange();

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -39,9 +40,13 @@ final class HistoryPreviewMatcher {
         final Pojo pojo;
         final String name;
         final String candidate;
+        final String sourceName;
+        final String sourceTags;
 
         Entry(Pojo pojo) {
             this.pojo = pojo;
+            this.sourceName = pojo.getName();
+            this.sourceTags = pojo instanceof PojoWithTags ? ((PojoWithTags) pojo).getTags() : null;
             this.name = normalize(pojo.getName());
             this.candidate = candidateText(pojo);
         }
@@ -65,8 +70,9 @@ final class HistoryPreviewMatcher {
             return matches;
         }
 
-        Set<String> excludedFavoriteIds = KissApplication.getApplication(activity)
-                .getDataHandler().getExcludedFavorites();
+        fr.neamar.kiss.DataHandler dataHandler = KissApplication.getApplication(activity).getDataHandler();
+        Set<String> excludedFavoriteIds = dataHandler.getExcludedFavorites();
+        Set<String> excludedHistoryIds = dataHandler.getExcludedFromHistory();
         boolean keepFrozenSearchable = FrozenAppPreferences.keepSearchable(activity);
         boolean enableExcludedApps = prefs.getBoolean("enable-excluded-apps", false);
 
@@ -76,7 +82,9 @@ final class HistoryPreviewMatcher {
         for (int i = from; i < history.entries.size(); i++) {
             Entry entry = history.entries.get(i);
             Pojo pojo = entry.pojo;
-            if (pojo == null || excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
+            if (pojo == null || excludedFavoriteIds.contains(pojo.getFavoriteId())
+                    || excludedHistoryIds.contains(pojo.id)
+                    || excludedHistoryIds.contains(pojo.getHistoryId())) continue;
             if (pojo instanceof AppPojo) {
                 AppPojo app = (AppPojo) pojo;
                 if (app.isExcluded() && !enableExcludedApps) continue;
@@ -88,6 +96,13 @@ final class HistoryPreviewMatcher {
                         && !keepFrozenSearchable) continue;
             }
 
+            String tags = pojo instanceof PojoWithTags ? ((PojoWithTags) pojo).getTags() : null;
+            if (!Objects.equals(entry.sourceName, pojo.getName())
+                    || !Objects.equals(entry.sourceTags, tags)) {
+                // Renames/tag edits can mutate a provider-owned Pojo without replacing Home rows.
+                // Re-prepare only that changed row; the normal keystroke path remains allocation-light.
+                entry = new Entry(pojo);
+            }
             String name = entry.name;
             String candidate = entry.candidate;
             boolean obvious = name.startsWith(normalizedQuery)

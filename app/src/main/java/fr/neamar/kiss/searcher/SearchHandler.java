@@ -305,6 +305,22 @@ public class SearchHandler {
         pendingLaunchedResult = result;
     }
 
+    /** Explicit user removal must invalidate cached matches before the next keystroke. */
+    public void forgetHistoryResult(@NonNull Pojo removed) {
+        List<Pojo> saved = new ArrayList<>(historyQuerySeed);
+        saved.removeIf(pojo -> java.util.Objects.equals(pojo.getHistoryId(), removed.getHistoryId()));
+        historyQuerySeed = Collections.unmodifiableList(saved);
+        historyPreviewSnapshot = HistoryPreviewMatcher.prepare(saved);
+        List<Result<?>> ready = new ArrayList<>(homeResultSnapshot);
+        ready.removeIf(result -> java.util.Objects.equals(
+                result.getPojo().getHistoryId(), removed.getHistoryId()));
+        homeResultSnapshot = Collections.unmodifiableList(ready);
+        if (pendingLaunchedResult != null && java.util.Objects.equals(
+                pendingLaunchedResult.getPojo().getHistoryId(), removed.getHistoryId())) {
+            pendingLaunchedResult = null;
+        }
+    }
+
     private void rememberHistoryPojos(@NonNull Context context, @NonNull List<Pojo> saved,
                                       @Nullable Pojo mostRecent) {
         List<Pojo> selected = selectSavedHistory(context, saved, mostRecent);
