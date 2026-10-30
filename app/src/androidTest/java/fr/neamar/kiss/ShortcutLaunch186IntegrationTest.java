@@ -56,6 +56,7 @@ public final class ShortcutLaunch186IntegrationTest {
     private Field rootField;
     private Map<String, ?> previousPrefs;
     private int enableCommands;
+    private final StringBuffer enableTrace = new StringBuffer();
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent intent) { hits.offer(intent); }
     };
@@ -66,6 +67,7 @@ public final class ShortcutLaunch186IntegrationTest {
             shell("pm unhide --user 0 " + pkg);
             shell("pm enable --user 0 " + pkg);
             shell("pm enable --user 0 " + pkg + "/" + CLASS);
+            shell("pm enable --user 0 " + pkg + "/com.tbzmike.shortcutfixture.FixtureMainActivity");
             control(pkg, "publish");
         }
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
@@ -83,7 +85,10 @@ public final class ShortcutLaunch186IntegrationTest {
                 String last = "";
                 // UiAutomation execs argv directly, unlike the production su shell. The test
                 // fixture names contain no whitespace; remove shell literal quotes for that argv.
-                for (String line : command.split("\n")) last = shell(line.replace("'", ""));
+                for (String line : command.split("\n")) {
+                    last = shell(line.replace("'", ""));
+                    enableTrace.append(line).append(" => ").append(last).append('\n');
+                }
                 return !last.contains("Exception") && !last.contains("Error:");
             }
         });
@@ -118,6 +123,7 @@ public final class ShortcutLaunch186IntegrationTest {
             shell("pm unhide --user 0 " + pkg);
             shell("pm enable --user 0 " + pkg);
             shell("pm enable --user 0 " + pkg + "/" + CLASS);
+            shell("pm enable --user 0 " + pkg + "/com.tbzmike.shortcutfixture.FixtureMainActivity");
             launcher.pinShortcuts(pkg, Collections.emptyList(), Process.myUserHandle());
             control(pkg, "clear");
             DBHelper.removeShortcuts(context, pkg);
@@ -249,6 +255,15 @@ public final class ShortcutLaunch186IntegrationTest {
 
     private Intent assertHit(String expected) throws Exception {
         Intent hit = hits.poll(12, TimeUnit.SECONDS);
+        if (hit == null) {
+            ShortcutInfo info = ShortcutUtil.getShortcutForLaunchState(context,
+                    Process.myUserHandle(), TARGET, "fixture-A");
+            fail("No actual destination reached for " + expected
+                    + "; packageEnabled=" + AppLaunchUtils.isPackageEnabledNow(context, TARGET)
+                    + "; shortcut=" + info + "; enableCommands=" + enableCommands
+                    + "\nENABLE_TRACE\n" + enableTrace
+                    + "\nROUTE_LOG\n" + shell("logcat -d -t 400 -s ShortcutsResult:V AppLaunchUtils:V ActivityTaskManager:I ActivityManager:I *:S"));
+        }
         assertNotNull("No actual destination reached for " + expected, hit);
         assertEquals(TARGET, hit.getStringExtra("publisher"));
         assertEquals("Do not replace the exact shortcut with its app home", expected,

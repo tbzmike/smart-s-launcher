@@ -21,6 +21,7 @@ adb install -r shortcut-fixture/build/outputs/apk/target/debug/shortcut-fixture-
 adb install -r shortcut-fixture/build/outputs/apk/icebox/debug/shortcut-fixture-icebox-debug.apk
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 adb logcat -c
+trap 'adb logcat -d > verification-results/logcat.txt || true' EXIT
 run_test() {
   local class="$1" log="$2"
   adb shell am instrument -w -r -e class "$class" \
@@ -33,6 +34,8 @@ assert "OK (" in result and "FAILURES!!!" not in result, result[-8000:]
 assert "INSTRUMENTATION_CODE: -1" in result, result[-8000:]
 PY
 }
+run_test fr.neamar.kiss.ShortcutLaunch186IntegrationTest \
+  verification-results/shortcut-launch-186-actual-destinations.log
 run_test fr.neamar.kiss.androidTest.HistoryAppearanceRegressionTest \
   verification-results/history-appearance-178.log
 run_test fr.neamar.kiss.androidTest.HistoryLongTextRegressionTest \
@@ -69,7 +72,5 @@ run_test fr.neamar.kiss.androidTest.FrozenExactShortcut184RegressionTest \
   verification-results/frozen-exact-shortcut-184.log
 run_test fr.neamar.kiss.androidTest.InstantHistory185RegressionTest \
   verification-results/instant-history-185.log
-run_test fr.neamar.kiss.ShortcutLaunch186IntegrationTest \
-  verification-results/shortcut-launch-186-actual-destinations.log
 adb logcat -d > verification-results/logcat.txt || true
 echo "PASS: 3.30.186 actual native and IceBox shortcut destinations, pin retention, disabled and hidden package enable, legacy exact extras, immediate configured 803/403 History window, five-second full-search delay, dynamic saved History, full backup, and  measured horizontal/vertical Auto Scroll motion, Auto Expand cancellation, Cards/List/Wheel/avatar/sizing and previous Android 35 regressions"
