@@ -11,11 +11,11 @@ import android.content.SharedPreferences;
 import android.content.pm.LauncherApps;
 import android.content.pm.ShortcutInfo;
 import android.net.Uri;
-import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
 
 import androidx.preference.PreferenceManager;
+import androidx.core.content.ContextCompat;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.After;
@@ -87,11 +87,8 @@ public final class ShortcutLaunch186IntegrationTest {
                 return !last.contains("Exception") && !last.contains("Error:");
             }
         });
-        if (Build.VERSION.SDK_INT >= 33) {
-            context.registerReceiver(receiver, new IntentFilter(HIT), Context.RECEIVER_EXPORTED);
-        } else {
-            context.registerReceiver(receiver, new IntentFilter(HIT));
-        }
+        ContextCompat.registerReceiver(context, receiver, new IntentFilter(HIT),
+                ContextCompat.RECEIVER_EXPORTED);
         scenario = ActivityScenario.launch(MainActivity.class);
         LauncherApps launcher = context.getSystemService(LauncherApps.class);
         assertNotNull(launcher);
