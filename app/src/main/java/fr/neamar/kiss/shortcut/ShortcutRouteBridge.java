@@ -57,7 +57,9 @@ public final class ShortcutRouteBridge {
                             && method.getParameterTypes().length == 2) {
                         slice = method.invoke(service, publisher, number / 100000);
                     } else continue;
-                    List<?> shortcuts = (List<?>) slice.getClass().getMethod("getList").invoke(slice);
+                    Method getList = slice.getClass().getMethod("getList");
+                    getList.setAccessible(true);
+                    List<?> shortcuts = (List<?>) getList.invoke(slice);
                     for (Object value : shortcuts) {
                         ShortcutInfo info = (ShortcutInfo) value;
                         if (publisher.equals(info.getPackage()) && id.equals(info.getId())) {
