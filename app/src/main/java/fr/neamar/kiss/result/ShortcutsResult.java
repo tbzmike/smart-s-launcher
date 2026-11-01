@@ -142,7 +142,8 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         String activeMessage = latestActive == null ? ""
                 : combineNotification(latestActive.title, latestActive.text);
         NotificationHistoryRecord latestSaved =
-                SmartStateStore.latestNotificationForPackage(context, targetPackage);
+                fr.neamar.kiss.notification.NotificationWorkPolicy.historyEnabled(context)
+                        ? SmartStateStore.latestNotificationForPackage(context, targetPackage) : null;
         String latestMessage = activeMessage.trim();
         if (latestMessage.isEmpty() && latestSaved != null) {
             latestMessage = combineNotification(latestSaved.title, latestSaved.text);

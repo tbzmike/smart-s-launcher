@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.KissApplication;
@@ -53,11 +52,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
 
     private final SmartCardListForwarder smartCardListForwarder;
     private final VerticalCardViewportController viewportController;
-    private final ExecutorService usageExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "smart-s-usage-stats");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
+    private final ExecutorService usageExecutor = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-usage-stats");
     private final AtomicBoolean refreshInFlight = new AtomicBoolean(false);
     private final AtomicBoolean statsRefreshInFlight = new AtomicBoolean(false);
     private final Runnable applySnapshotRunnable;
@@ -247,6 +242,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
     }
 
     private Map<String, String> collectShortcutTargets() {
+        if (!fr.neamar.kiss.appusage.AppUsageTracker.isEnabled(mainActivity)) return Collections.emptyMap();
         if (mainActivity.adapter == null) return Collections.emptyMap();
         HashMap<String, String> targets = new HashMap<>();
         fr.neamar.kiss.DataHandler dataHandler =
@@ -446,6 +442,7 @@ final class VerticalCardUsageForwarder extends Forwarder {
                                String packageName,
                                AppUsageTodayStore.Snapshot currentSnapshot,
                                HistoryItemUsageTodayStore.Snapshot currentShortcutSnapshot) {
+        if (!fr.neamar.kiss.appusage.AppUsageTracker.isEnabled(mainActivity)) return null;
         if (TextUtils.isEmpty(packageName)) return null;
 
         if (pojo instanceof ShortcutPojo) {

@@ -7,10 +7,11 @@ import org.junit.jupiter.api.Test;
 
 class AppUsageEnablementPolicyTest {
     @Test
-    void restoresDisabledDefaultOnlyBeforeRepairMarker() {
-        assertThat(AppUsageEnablementPolicy.shouldRestoreDefault(false, false), is(true));
-        assertThat(AppUsageEnablementPolicy.shouldRestoreDefault(false, true), is(false));
-        assertThat(AppUsageEnablementPolicy.shouldRestoreDefault(true, false), is(false));
-        assertThat(AppUsageEnablementPolicy.shouldRestoreDefault(true, true), is(false));
+    void initializesOnlyAnAbsentDefaultAndPreservesExplicitOff() {
+        assertThat(AppUsageEnablementPolicy.shouldRestoreDefault(false, false, false), is(true));
+        assertThat(AppUsageEnablementPolicy.shouldRestoreDefault(false, false, true), is(false));
+        assertThat(AppUsageEnablementPolicy.shouldRestoreDefault(false, true, true), is(false));
+        assertThat(AppUsageEnablementPolicy.shouldRestoreDefault(true, false, false), is(false));
+        assertThat(AppUsageEnablementPolicy.shouldRestoreDefault(true, true, true), is(false));
     }
 }

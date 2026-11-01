@@ -4,7 +4,8 @@ package fr.neamar.kiss.appusage;
 final class AppUsageEnablementPolicy {
     private AppUsageEnablementPolicy() { }
 
-    static boolean shouldRestoreDefault(boolean repairAlreadyApplied, boolean currentlyEnabled) {
-        return !repairAlreadyApplied && !currentlyEnabled;
+    static boolean shouldRestoreDefault(boolean repairAlreadyApplied, boolean currentlyEnabled,
+                                       boolean hasExplicitSetting) {
+        return !repairAlreadyApplied && !currentlyEnabled && !hasExplicitSetting;
     }
 }

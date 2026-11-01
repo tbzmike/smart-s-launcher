@@ -6,10 +6,11 @@ import android.app.job.JobService;
 import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 
 public final class AppUsageJobService extends JobService {
+    private Thread worker;
     @Override
     public boolean onStartJob(JobParameters params) {
         if (!AppUsageTracker.isEnabled(this) || LauncherScrollWorkGate.isScrolling()) return false;
-        Thread worker = new Thread(() -> {
+        worker = new Thread(() -> {
             try {
                 AppUsageSync.sync(getApplicationContext());
             } finally {
@@ -23,6 +24,7 @@ public final class AppUsageJobService extends JobService {
 
     @Override
     public boolean onStopJob(JobParameters params) {
-        return true;
+        if (worker != null) worker.interrupt();
+        return AppUsageTracker.isEnabled(this);
     }
 }

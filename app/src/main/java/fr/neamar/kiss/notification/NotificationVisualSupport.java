@@ -29,8 +29,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import fr.neamar.kiss.utils.LauncherScrollWorkGate;
 import fr.neamar.kiss.utils.Log;
@@ -45,11 +43,7 @@ public final class NotificationVisualSupport {
     // Non-bitmap drawables still use this generous safety bound when they must be rasterized.
     private static final int MAX_RASTER_EDGE = 4096;
     private static final long MAX_AGE_MS = 45L * 24L * 60L * 60L * 1000L;
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "smart-s-notification-visual");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
+    private static final java.util.concurrent.ThreadPoolExecutor EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-notification-visual");
 
     public static final class Snapshot {
         public final Drawable image;
@@ -74,23 +68,20 @@ public final class NotificationVisualSupport {
 
     private NotificationVisualSupport() {}
 
+    public static void cancelPendingCapture() { EXECUTOR.getQueue().clear(); }
+
     public static void captureAsync(Context context, String notificationId, StatusBarNotification sbn) {
         if (context == null || TextUtils.isEmpty(notificationId) || sbn == null) return;
         Context app = context.getApplicationContext();
+        if (!NotificationWorkPolicy.historyEnabled(app)) return;
+        long generation = NotificationWorkPolicy.generation();
         EXECUTOR.execute(() -> {
             // Preserve the visual instead of dropping it when the notification happens during a
             // fling. The low-priority worker sleeps until the frame budget is idle, so image
             // persistence cannot reintroduce the scrolling jank fixed in 3.30.140.
-            while (LauncherScrollWorkGate.isScrolling()
-                    && !Thread.currentThread().isInterrupted()) {
-                try {
-                    Thread.sleep(40L);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-            if (!Thread.currentThread().isInterrupted()) captureNow(app, notificationId, sbn);
+            if (!LauncherScrollWorkGate.awaitIdle(() -> NotificationWorkPolicy.historyEnabled(app)
+                    && generation == NotificationWorkPolicy.generation())) return;
+            captureNow(app, notificationId, sbn);
         });
     }
 

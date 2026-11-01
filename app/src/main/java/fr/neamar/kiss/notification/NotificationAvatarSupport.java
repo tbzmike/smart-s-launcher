@@ -39,7 +39,6 @@ import java.util.Locale;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -63,17 +62,13 @@ public final class NotificationAvatarSupport {
     public static final int HISTORY_SCAN_LIMIT = 200;
     private static final AtomicBoolean HISTORY_SCAN_RUNNING = new AtomicBoolean(false);
     private static final ExecutorService HISTORY_SCAN_EXECUTOR =
-            Executors.newSingleThreadExecutor(r -> {
-                Thread thread = new Thread(r, "smart-s-avatar-history-scan");
-                thread.setPriority(Thread.MIN_PRIORITY);
-                return thread;
-            });
+            fr.neamar.kiss.utils.IdleExecutors.single("smart-s-avatar-history-scan");
     private static final long MAX_AGE_MS = 45L * 24L * 60L * 60L * 1000L;
     private static final int WORK_QUEUE_CAPACITY = 8;
     private static final ThreadPoolExecutor EXECUTOR = new ThreadPoolExecutor(
             1,
             1,
-            30L,
+            10L,
             TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(WORK_QUEUE_CAPACITY),
             runnable -> new Thread(runnable, "smart-s-notification-avatar"),
@@ -98,25 +93,49 @@ public final class NotificationAvatarSupport {
 
     private NotificationAvatarSupport() { }
 
+    private static final java.util.Set<String> LIVE_REQUESTS =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    public static void onHistorySettingChanged(Context context) {
+        EXECUTOR.getQueue().clear();
+        MEMORY_CACHE.resize(NotificationWorkPolicy.historyEnabled(context)
+                ? MEMORY_CACHE_BYTES : 2 * 1024 * 1024);
+    }
+
+    private static void publishAvatarChange(Context app) {
+        app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER)
+                .putExtra(MainActivity.EXTRA_VISUALS_ONLY, true));
+    }
+
+    private static void requestLiveAvatar(Context context, String id) {
+        if (!NotificationWorkPolicy.captureAvatars(context)
+                || LIVE_REQUESTS.size() >= 64 || !LIVE_REQUESTS.add(id)) return;
+        Context app = context.getApplicationContext();
+        HISTORY_SCAN_EXECUTOR.execute(() -> {
+            try {
+                if (!LauncherScrollWorkGate.awaitIdle(
+                        () -> NotificationWorkPolicy.captureAvatars(app))) return;
+                StatusBarNotification active = NotificationListener.findActiveNotification(app, id);
+                if (active != null && captureNow(app, id, active)) publishAvatarChange(app);
+            } finally { LIVE_REQUESTS.remove(id); }
+        });
+    }
+
     /** Capture the best Android-exposed identity image and persist it for saved history. */
     public static void captureAsync(@NonNull Context context, @NonNull String notificationId,
                                     @NonNull StatusBarNotification sbn) {
         if (TextUtils.isEmpty(notificationId)) return;
         Context app = context.getApplicationContext();
+        if (!NotificationWorkPolicy.captureAvatars(app)) return;
+        long generation = NotificationWorkPolicy.generation();
         EXECUTOR.execute(() -> {
             // A notification posted during a fling still deserves an avatar. Wait
             // off-main-thread until scrolling ends instead of discarding it forever.
-            while (LauncherScrollWorkGate.isScrolling()
-                    && !Thread.currentThread().isInterrupted()) {
-                try { Thread.sleep(60L); }
-                catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
+            if (!LauncherScrollWorkGate.awaitIdle(() -> NotificationWorkPolicy.captureAvatars(app)
+                    && generation == NotificationWorkPolicy.generation())) return;
             if (captureNow(app, notificationId, sbn)) {
-                cleanup(app);
-                app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
+                if (NotificationWorkPolicy.historyEnabled(app)) cleanup(app);
+                publishAvatarChange(app);
             }
         });
     }
@@ -130,23 +149,21 @@ public final class NotificationAvatarSupport {
                                                    @Nullable StatusBarNotification[] active) {
         if (active == null || active.length == 0) return;
         Context app = context.getApplicationContext();
+        if (!NotificationWorkPolicy.captureAvatars(app)) return;
+        long generation = NotificationWorkPolicy.generation();
         HISTORY_SCAN_EXECUTOR.execute(() -> {
             int linked = 0;
+            java.util.Arrays.sort(active, java.util.Comparator.nullsLast(
+                    java.util.Comparator.comparingLong(StatusBarNotification::getPostTime)));
             for (StatusBarNotification sbn : active) {
                 if (sbn == null || Thread.currentThread().isInterrupted()) continue;
-                while (LauncherScrollWorkGate.isScrolling()
-                        && !Thread.currentThread().isInterrupted()) {
-                    try { Thread.sleep(60L); }
-                    catch (InterruptedException interrupted) {
-                        Thread.currentThread().interrupt();
-                        return;
-                    }
-                }
+                if (!LauncherScrollWorkGate.awaitIdle(() -> NotificationWorkPolicy.captureAvatars(app)
+                        && generation == NotificationWorkPolicy.generation())) return;
                 if (captureNow(app, NotificationListener.getTimelineId(sbn), sbn)) linked++;
             }
             if (linked > 0) {
-                cleanup(app);
-                app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
+                if (NotificationWorkPolicy.historyEnabled(app)) cleanup(app);
+                publishAvatarChange(app);
             }
         });
     }
@@ -171,7 +188,7 @@ public final class NotificationAvatarSupport {
                 if (active != null) {
                     for (StatusBarNotification sbn : active) {
                         if (sbn == null || Thread.currentThread().isInterrupted()) break;
-                        if (captureNow(app, NotificationListener.getTimelineId(sbn), sbn)) fresh++;
+                        if (captureNow(app, NotificationListener.getTimelineId(sbn), sbn, true)) fresh++;
                     }
                 }
 
@@ -235,7 +252,7 @@ public final class NotificationAvatarSupport {
                     }
                 }
                 cleanup(app);
-                app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
+                publishAvatarChange(app);
                 if (callback != null) {
                     int n = scanned, matches = linked, found = fresh;
                     new Handler(Looper.getMainLooper()).post(
@@ -257,6 +274,11 @@ public final class NotificationAvatarSupport {
 
     private static boolean captureNow(@NonNull Context context, @NonNull String notificationId,
                                       @NonNull StatusBarNotification sbn) {
+        return captureNow(context, notificationId, sbn, NotificationWorkPolicy.historyEnabled(context));
+    }
+
+    private static boolean captureNow(Context context, String notificationId,
+                                      StatusBarNotification sbn, boolean persist) {
         Drawable avatar = extractAvatar(context, sbn);
         if (avatar == null) return false;
         Notification notification = sbn.getNotification();
@@ -265,6 +287,11 @@ public final class NotificationAvatarSupport {
         String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && notification != null
                 ? notification.getShortcutId() : null;
         Bitmap bitmap = drawableToBitmap(avatar);
+        if (!persist) {
+            if (bitmap == null) return false;
+            MEMORY_CACHE.put(notificationId, bitmap);
+            return true;
+        }
         String path = persistIdentityBitmap(context, sbn.getPackageName(),
                 title == null ? "" : title.toString(), shortcutId, bitmap);
         if (path == null) return false;
@@ -286,6 +313,11 @@ public final class NotificationAvatarSupport {
         // A disk decode and cache touch are optional decoration. During a fling, fall back to the
         // normal app icon rather than doing bitmap/file work in this process.
         if (LauncherScrollWorkGate.isScrolling()) return null;
+        if (!NotificationWorkPolicy.historyEnabled(context)
+                && NotificationListener.isNotificationActive(context, notificationId)) {
+            requestLiveAvatar(context, notificationId);
+            return null;
+        }
         String path = avatarPath(context, notificationId);
         if (path == null) return null;
         bitmap = BitmapFactory.decodeFile(path);
@@ -313,6 +345,8 @@ public final class NotificationAvatarSupport {
         if (context == null) return null;
         Drawable exact = avatar(context, notificationId);
         if (exact != null) return exact;
+        if (!NotificationWorkPolicy.historyEnabled(context)
+                && NotificationListener.isNotificationActive(context, notificationId)) return null;
         if (LauncherScrollWorkGate.isScrolling()) return null;
         String path = identityAvatarPath(context, packageName, title, shortcutId);
         if (path == null) return null;

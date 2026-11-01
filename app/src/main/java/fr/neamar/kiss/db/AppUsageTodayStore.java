@@ -49,6 +49,10 @@ public final class AppUsageTodayStore {
     @NonNull
     public static synchronized Snapshot getToday(@NonNull Context context) {
         Context appContext = context.getApplicationContext();
+        if (!fr.neamar.kiss.appusage.AppUsageTracker.isEnabled(appContext)) {
+            invalidate();
+            return new Snapshot(false, Collections.emptyMap());
+        }
         long start = startOfToday();
         long nowElapsed = android.os.SystemClock.elapsedRealtime();
         if (cachedSnapshot != null

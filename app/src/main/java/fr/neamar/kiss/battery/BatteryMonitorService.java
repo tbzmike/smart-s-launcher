@@ -50,6 +50,7 @@ public final class BatteryMonitorService extends Service {
 
     private HandlerThread workerThread;
     private Handler handler;
+    private volatile boolean stopping;
     private BatteryHistoryStore store;
     private long lastWidgetRefreshMs;
     private int lastWidgetPercent = -1;
@@ -70,26 +71,39 @@ public final class BatteryMonitorService extends Service {
 
     private final Runnable sampler = new Runnable() {
         @Override public void run() {
+            Handler current = handler;
+            if (stopping || current == null || !BatteryMonitorStarter.isEnabled(BatteryMonitorService.this)) {
+                stopSelf();
+                return;
+            }
             if (LauncherScrollWorkGate.isScrolling()) {
-                handler.postDelayed(this, 15_000L);
+                current.postDelayed(this, 15_000L);
                 return;
             }
             BatterySnapshot s = sampleNow();
-            handler.postDelayed(this, nextSampleDelay(s));
+            if (stopping || !BatteryMonitorStarter.isEnabled(BatteryMonitorService.this)) return;
+            current.postDelayed(this, nextSampleDelay(s));
             // Sampling also publishes live notification: avoid a second near-simultaneous post.
-            handler.removeCallbacks(liveRefresher);
-            handler.postDelayed(liveRefresher, nextLiveRefreshDelay(s));
+            current.removeCallbacks(liveRefresher);
+            current.postDelayed(liveRefresher, nextLiveRefreshDelay(s));
         }
     };
 
     private final Runnable liveRefresher = new Runnable() {
         @Override public void run() {
+            Handler current = handler;
+            if (stopping || current == null || !BatteryMonitorStarter.isEnabled(BatteryMonitorService.this)) {
+                stopSelf();
+                return;
+            }
             if (LauncherScrollWorkGate.isScrolling()) {
-                handler.postDelayed(this, 15_000L);
+                current.postDelayed(this, 15_000L);
                 return;
             }
             BatterySnapshot s = refreshLiveNow();
-            handler.postDelayed(this, nextLiveRefreshDelay(s));
+            if (!stopping && BatteryMonitorStarter.isEnabled(BatteryMonitorService.this)) {
+                current.postDelayed(this, nextLiveRefreshDelay(s));
+            }
         }
     };
 
@@ -125,6 +139,11 @@ public final class BatteryMonitorService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+    }
+
+    private void initializeMonitor() {
+        if (handler != null) return;
+        stopping = false;
         store = new BatteryHistoryStore(this);
         createChannels();
         // Sampling, rate calculations, history writes and widget refreshes do not belong on the
@@ -145,8 +164,12 @@ public final class BatteryMonitorService extends Service {
             return START_NOT_STICKY;
         }
 
-        PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .putBoolean("smart-battery-monitor-enabled", true).apply();
+        // A stale START command or Android's sticky restart cannot override the OFF switch.
+        if (!BatteryMonitorStarter.isEnabled(this)) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        initializeMonitor();
 
         BatterySnapshot initial = BatteryMonitorEngine.read(this);
         startForeground(LIVE_ID, buildLiveNotification(initial));
@@ -160,6 +183,7 @@ public final class BatteryMonitorService extends Service {
     }
 
     @Override public void onDestroy() {
+        stopping = true;
         Handler localHandler = handler;
         if (localHandler != null) localHandler.removeCallbacksAndMessages(null);
         if (receiverRegistered) {
@@ -170,7 +194,11 @@ public final class BatteryMonitorService extends Service {
             }
             receiverRegistered = false;
         }
-        if (store != null) store.close();
+        BatteryHistoryStore closingStore = store;
+        if (localHandler != null) localHandler.post(() -> {
+            if (closingStore != null) closingStore.close();
+        });
+        else if (closingStore != null) closingStore.close();
         HandlerThread localThread = workerThread;
         workerThread = null;
         handler = null;

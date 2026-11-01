@@ -93,6 +93,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     public static final String EXTRA_NOTIFICATION_POSTED =
             "fr.neamar.summon.extra.NOTIFICATION_POSTED";
     public static final String REFRESH_FAVORITES = "fr.neamar.summon.REFRESH_FAVORITES";
+    public static final String EXTRA_VISUALS_ONLY = "smart_s_visuals_only";
     public static final String EXTRA_FORCE_VISIBLE_REBIND =
             "fr.neamar.summon.extra.FORCE_VISIBLE_REBIND";
 
@@ -315,7 +316,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
                     // Semantic vectors/HNSW are rebuilt once after a complete provider batch, on a
                     // low-priority worker. Search never pays this provider-wide indexing cost.
-                    SemanticHnswIndex.getInstance().scheduleRebuild(dataHandler, prefs);
+                    if (!intent.getBooleanExtra(EXTRA_VISUALS_ONLY, false)) {
+                        SemanticHnswIndex.getInstance().scheduleRebuild(dataHandler, prefs);
+                    }
 
                     boolean forceVisibleRebind =
                             intent.getBooleanExtra(EXTRA_FORCE_VISIBLE_REBIND, false);
@@ -559,6 +562,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
         launcherUiResumed = true;
         AppProvider.setLauncherUiVisible(true);
+        fr.neamar.kiss.notification.NotificationWorkPolicy.setHomeVisible(true);
+        if (!fr.neamar.kiss.notification.NotificationWorkPolicy.historyEnabled(this)) {
+            fr.neamar.kiss.notification.MediaHistoryCoordinator.refresh(this, false);
+        }
         // Resume a system-paused update only when the launcher is visibly foreground.
         AppUpdater.resumePendingDownload(this);
         // Settings may have changed while the launcher was paused. Synchronize input mode
@@ -668,6 +675,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     @Override
     protected void onStop() {
         AppProvider.setLauncherUiVisible(false);
+        fr.neamar.kiss.notification.NotificationWorkPolicy.setHomeVisible(false);
         homeLifecycleState.onStopped();
         super.onStop();
     }

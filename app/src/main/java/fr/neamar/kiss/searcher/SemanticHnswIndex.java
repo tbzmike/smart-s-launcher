@@ -15,7 +15,6 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import fr.neamar.kiss.DataHandler;
@@ -52,11 +51,7 @@ public final class SemanticHnswIndex {
 
     private static final SemanticHnswIndex INSTANCE = new SemanticHnswIndex();
 
-    private final ExecutorService buildExecutor = Executors.newSingleThreadExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "smart-s-semantic-hnsw-build");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
+    private final ExecutorService buildExecutor = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-semantic-hnsw-build");
     private final AtomicInteger requestedGeneration = new AtomicInteger();
     private final SemanticRebuildQueue rebuildQueue = new SemanticRebuildQueue(buildExecutor);
 
@@ -81,6 +76,7 @@ public final class SemanticHnswIndex {
         if (!prefs.getBoolean("semantic-search-enabled", false)
                 || !prefs.getBoolean(PREF_HNSW_ENABLED, true)) {
             requestedGeneration.incrementAndGet();
+            LauncherScrollWorkGate.signalPolicyChanged();
             snapshot = Snapshot.empty();
             building = false;
             return;
@@ -88,6 +84,7 @@ public final class SemanticHnswIndex {
 
         final int dimensions = parseDimensions(prefs);
         final int generation = requestedGeneration.incrementAndGet();
+        LauncherScrollWorkGate.signalPolicyChanged();
         final boolean useSourceDescriptions =
                 prefs.getBoolean(AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, true);
 
@@ -351,16 +348,7 @@ public final class SemanticHnswIndex {
     }
 
     private boolean waitForScrollIdle(int generation) {
-        while (LauncherScrollWorkGate.isScrolling()) {
-            if (generation != requestedGeneration.get()) return false;
-            try {
-                Thread.sleep(100L);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-        }
-        return generation == requestedGeneration.get();
+        return LauncherScrollWorkGate.awaitIdle(() -> generation == requestedGeneration.get());
     }
 
     @Nullable

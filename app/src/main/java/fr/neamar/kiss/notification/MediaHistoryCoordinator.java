@@ -16,7 +16,6 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.KissApplication;
@@ -30,11 +29,7 @@ import fr.neamar.kiss.utils.Log;
  */
 public final class MediaHistoryCoordinator implements Application.ActivityLifecycleCallbacks {
     private static final String TAG = MediaHistoryCoordinator.class.getSimpleName();
-    private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "smart-s-media-history");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
+    private static final ExecutorService EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-media-history");
     private static final AtomicBoolean REFRESH_RUNNING = new AtomicBoolean(false);
     private static final ConcurrentHashMap<String, Long> CAPTURE_FINGERPRINTS =
             new ConcurrentHashMap<>();
@@ -53,7 +48,8 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
     }
 
     public static void refresh(Context context, boolean addToHistory) {
-        if (context == null || LauncherScrollWorkGate.isScrolling()
+        if (context == null || !NotificationWorkPolicy.captureAvatars(context)
+                || LauncherScrollWorkGate.isScrolling()
                 || !REFRESH_RUNNING.compareAndSet(false, true)) return;
         Context app = context.getApplicationContext();
         EXECUTOR.execute(() -> {
@@ -66,7 +62,9 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
     }
 
     private static void refreshNow(Context context, boolean addToHistory) {
-        if (LauncherScrollWorkGate.isScrolling()) return;
+        if (LauncherScrollWorkGate.isScrolling()
+                || !NotificationWorkPolicy.captureAvatars(context)) return;
+        boolean historyEnabled = NotificationWorkPolicy.historyEnabled(context);
         NotificationListener listener = listenerInstance();
         if (listener == null) return;
         StatusBarNotification[] active;
@@ -79,9 +77,11 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
         if (active == null) return;
 
         boolean historyChanged = false;
+        java.util.List<StatusBarNotification> liveAvatars = new java.util.ArrayList<>();
         Set<String> activeIds = new HashSet<>(Math.max(4, active.length * 2));
         for (StatusBarNotification sbn : active) {
-            if (LauncherScrollWorkGate.isScrolling()) return;
+            if (LauncherScrollWorkGate.isScrolling()
+                    || !NotificationWorkPolicy.captureAvatars(context)) return;
             if (sbn == null || sbn.getNotification() == null) continue;
 
             String timelineId = NotificationListener.getTimelineId(sbn);
@@ -93,19 +93,26 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
 
             // Capturing notification visuals can decode/scale bitmaps and write JPEG files. Do that
             // only for a new or actually changed notification instead of on every Home resume.
-            if (contentChanged) {
+            if (contentChanged && historyEnabled) {
                 NotificationVisualSupport.captureAsync(context, timelineId, sbn);
+            } else if (contentChanged) {
+                liveAvatars.add(sbn);
             }
 
             if (!MediaNotificationSupport.isTransportMediaNotification(sbn.getNotification())) continue;
-            if (contentChanged) {
+            if (contentChanged && historyEnabled) {
                 MediaNotificationSupport.capture(context, sbn);
             }
             String mediaEventId = timelineId + "|" + sbn.getPostTime();
-            if (addToHistory && SEEDED_MEDIA_HISTORY.add(mediaEventId)) {
+            if (historyEnabled && addToHistory && SEEDED_MEDIA_HISTORY.add(mediaEventId)) {
                 KissApplication.getApplication(context).getDataHandler().addToHistory(timelineId);
                 historyChanged = true;
             }
+        }
+
+        if (!liveAvatars.isEmpty()) {
+            NotificationAvatarSupport.captureActiveSnapshotAsync(context,
+                    liveAvatars.toArray(new StatusBarNotification[0]));
         }
 
         // Forget ended notifications so a future notification reusing the same timeline id can be
@@ -120,6 +127,12 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
         if (historyChanged) {
             context.sendBroadcast(MainActivity.internalBroadcast(context, MainActivity.LOAD_OVER));
         }
+    }
+
+    public static void clearCaptureState() {
+        CAPTURE_FINGERPRINTS.clear();
+        SEEDED_MEDIA_HISTORY.clear();
+        lastResumeRefreshElapsed = 0L;
     }
 
     private static long captureFingerprint(StatusBarNotification sbn) {

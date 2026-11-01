@@ -7,7 +7,6 @@ import android.view.View;
 
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import fr.neamar.kiss.MainActivity;
@@ -23,11 +22,7 @@ final class HistoryVisualEnhancer {
 
     private final MainActivity activity;
     private final HistoryDisplayForwarder historyDisplayForwarder;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "smart-s-idle-history-metadata");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
+    private final ExecutorService executor = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-idle-history-metadata");
     private final Runnable refreshAtIdle = this::refreshNow;
     private final Runnable scrollStarted = this::onScrollStarted;
 

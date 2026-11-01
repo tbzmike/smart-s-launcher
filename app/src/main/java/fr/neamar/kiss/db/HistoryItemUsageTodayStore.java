@@ -42,6 +42,10 @@ public final class HistoryItemUsageTodayStore {
     public static Snapshot getToday(@NonNull Context context,
                                     @NonNull Map<String, String> targetPackageByHistoryId,
                                     boolean usageAccessAvailable) {
+        if (!usageAccessAvailable
+                || !fr.neamar.kiss.appusage.AppUsageTracker.isEnabled(context)) {
+            return new Snapshot(false, Collections.emptyMap());
+        }
         return DatabaseRecovery.run(context, recoveryDb -> {
         if (!usageAccessAvailable) {
             return new Snapshot(false, Collections.emptyMap());

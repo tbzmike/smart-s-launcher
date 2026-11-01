@@ -224,8 +224,9 @@ public final class UniversalHistoryTimestamp {
                 : stats == null ? 0L : Math.max(0, stats.totalLaunches);
 
         long foregroundMs = 0L;
-        boolean usageAvailable = usage != null && usage.available;
-        String usagePackage = usagePackage(context, pojo);
+        boolean usageEnabled = fr.neamar.kiss.appusage.AppUsageTracker.isEnabled(context);
+        boolean usageAvailable = usageEnabled && usage != null && usage.available;
+        String usagePackage = usageEnabled ? usagePackage(context, pojo) : null;
         if (!TextUtils.isEmpty(usagePackage) && usageAvailable) {
             Long value = usage.foregroundMsByPackage.get(usagePackage);
             foregroundMs = value == null ? 0L : Math.max(0L, value);
@@ -235,7 +236,7 @@ public final class UniversalHistoryTimestamp {
         if (TextUtils.isEmpty(historyId)) historyId = pojo.id;
         String locale = context.getResources().getConfiguration().locale.toLanguageTag();
         String key = historyId + '|' + timestamp + '|' + interactionsToday + '|'
-                + totalInteractions + '|' + foregroundMs + '|' + usageAvailable + '|'
+                + totalInteractions + '|' + foregroundMs + '|' + usageAvailable + '|' + usageEnabled + '|'
                 + DateFormat.is24HourFormat(context) + '|' + locale + '|'
                 + TimeZone.getDefault().getID();
         synchronized (FORMATTED_CACHE) {
@@ -270,7 +271,8 @@ public final class UniversalHistoryTimestamp {
                     .append("  •  Total launches ").append(totalInteractions);
         }
 
-        if (!TextUtils.isEmpty(usagePackage(context, pojo))) {
+        if (fr.neamar.kiss.appusage.AppUsageTracker.isEnabled(context)
+                && !TextUtils.isEmpty(usagePackage(context, pojo))) {
             text.append("  •  Used today ")
                     .append(usageAvailable ? formatDuration(foregroundMs) : "unavailable");
         }

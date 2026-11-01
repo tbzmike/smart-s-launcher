@@ -81,6 +81,8 @@ public final class MediaNotificationSupport {
 
     private MediaNotificationSupport() {}
 
+    public static void clearMemoryCache() { ART_CACHE.evictAll(); }
+
     /**
      * Capture artwork for exactly this notification post. This is called from the media-history
      * background worker, never from row binding.

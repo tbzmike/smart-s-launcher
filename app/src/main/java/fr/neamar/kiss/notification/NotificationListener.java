@@ -37,7 +37,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.KissApplication;
@@ -76,11 +75,7 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private static volatile NotificationListener instance;
-    private static final ExecutorService RECONCILE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "smart-s-notification-reconcile");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
+    private static final ExecutorService RECONCILE_EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-notification-reconcile");
     private static final AtomicBoolean RECONCILE_RUNNING = new AtomicBoolean(false);
     private static final long ONGOING_PERSIST_INTERVAL_MS = 15_000L;
     private static final ConcurrentHashMap<String, Long> LAST_ONGOING_PERSIST =
@@ -229,16 +224,17 @@ public class NotificationListener extends NotificationListenerService {
         super.onNotificationRankingUpdate(rankingMap);
         // Ranking updates can arrive repeatedly while a notification shade/app changes state. A
         // full active-notification scan plus SharedPreferences rewrite is optional during a fling.
-        if (LauncherScrollWorkGate.isScrolling()) return;
-        Set<String> before = getVerifiedActiveNotificationIds();
-        if (refreshAllNotifications(false)
-                && !before.equals(getVerifiedActiveNotificationIds())) {
-            sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
-        }
+        // Ranking callbacks do not add/remove notifications. Posted/removed callbacks and the
+        // resume reconciliation already maintain that set; ranking churn must not rewrite it.
+        if (!activeStateVerified && !LauncherScrollWorkGate.isScrolling()) startAsyncReconcile(this);
     }
 
     @Override public void onNotificationPosted(StatusBarNotification sbn) {
         if (sbn == null || isOwnBatteryMonitorTelemetry(sbn)) return;
+        boolean historyEnabled = NotificationWorkPolicy.historyEnabled(this);
+        // Progress/VPN/service ticks have no badge or live timeline row. With history OFF they
+        // require no expanded RemoteViews, image decoding, unread state or archive bookkeeping.
+        if (!historyEnabled && isNotificationTrivial(sbn)) return;
 
         String id = getTimelineId(sbn);
         Notification notification = sbn.getNotification();
@@ -267,8 +263,6 @@ public class NotificationListener extends NotificationListenerService {
             NotificationVisualSupport.captureAsync(this, id, sbn);
         }
 
-        boolean historyEnabled = PreferenceManager.getDefaultSharedPreferences(this)
-                .getBoolean("enable-notification-history", false);
         boolean persistThisUpdate = true;
         if (sbn.isOngoing() && !newTimelineEvent) {
             long now = SystemClock.elapsedRealtime();
@@ -335,7 +329,8 @@ public class NotificationListener extends NotificationListenerService {
 
     private void persistHistoryAsync(StatusBarNotification sbn, String id,
                                      boolean addToLauncherHistory) {
-        if (sbn == null || id == null || id.isEmpty()) return;
+        if (sbn == null || id == null || id.isEmpty()
+                || !NotificationWorkPolicy.historyEnabled(this)) return;
 
         // Frequent ongoing status updates are disposable while the user is actively scrolling; the
         // next update after idle will persist the newest state. Real new events are retained.
@@ -344,18 +339,11 @@ public class NotificationListener extends NotificationListenerService {
         }
 
         final Context appContext = getApplicationContext();
+        final long generation = NotificationWorkPolicy.generation();
         RECONCILE_EXECUTOR.execute(() -> {
             // Database and route-capture work must never contend with a live launcher fling.
-            while (LauncherScrollWorkGate.isScrolling()
-                    && !Thread.currentThread().isInterrupted()) {
-                try {
-                    Thread.sleep(40L);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-            if (Thread.currentThread().isInterrupted()) return;
+            if (!LauncherScrollWorkGate.awaitIdle(() -> NotificationWorkPolicy.historyEnabled(appContext)
+                    && generation == NotificationWorkPolicy.generation())) return;
             persistHistoryNow(sbn, id);
             if (addToLauncherHistory) {
                 KissApplication.getApplication(appContext).getDataHandler().addToHistory(id);
@@ -364,6 +352,7 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private void persistHistoryNow(StatusBarNotification sbn, String id) {
+        if (!NotificationWorkPolicy.historyEnabled(this)) return;
         Notification n = sbn.getNotification();
         if (n == null) return;
         rememberContentIntent(id, sbn.getPostTime(), n.contentIntent);
@@ -416,6 +405,7 @@ public class NotificationListener extends NotificationListenerService {
         Context appContext = getApplicationContext();
         RECONCILE_EXECUTOR.execute(() -> {
             try {
+                if (!NotificationWorkPolicy.historyEnabled(appContext)) return;
                 List<NotificationHistoryRecord> candidates = SmartStateStore.findRebindCandidates(
                         appContext, packageName, shortcutId, freshId, 5);
                 for (NotificationHistoryRecord candidate : candidates) {
@@ -1291,7 +1281,7 @@ public class NotificationListener extends NotificationListenerService {
         }
     }
 
-    private static StatusBarNotification findActiveNotification(Context context,
+    static StatusBarNotification findActiveNotification(Context context,
                                                                   String notificationId) {
         return findActiveNotification(context, notificationId, 0L);
     }
@@ -1378,7 +1368,7 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private StatusBarNotification findActiveByKey(String key) {
-        StatusBarNotification[] active = getActiveNotifications();
+        StatusBarNotification[] active = getActiveNotifications(new String[]{key});
         if (active == null) return null;
         for (StatusBarNotification sbn : active) if (key.equals(sbn.getKey())) return sbn;
         return null;

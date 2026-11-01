@@ -174,8 +174,7 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
 
         Button stop = new Button(this);
         stop.setText("Stop background monitor");
-        stop.setOnClickListener(v -> startService(new Intent(this, BatteryMonitorService.class)
-                .setAction(BatteryMonitorService.ACTION_STOP)));
+        stop.setOnClickListener(v -> BatteryMonitorStarter.setEnabled(this, false));
         root.addView(stop);
 
         TextView note = bodyText();

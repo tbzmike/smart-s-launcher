@@ -27,6 +27,8 @@ public final class SmartStateStore {
 
     private SmartStateStore() {}
 
+    public static void clearNotificationMemoryCache() { latestNotificationsCache = null; }
+
     static void onDatabaseRecovered() {
         latestNotificationsCache = null;
     }

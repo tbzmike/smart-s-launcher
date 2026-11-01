@@ -119,6 +119,9 @@ public class KissApplication extends Application {
             SQLiteDatabase.releaseMemory();
             mimeTypeCache.clearCache();
             NotificationAvatarSupport.trimMemory(runningCritical || backgroundSevere);
+            if (runningCritical || backgroundSevere) {
+                fr.neamar.kiss.notification.MediaNotificationSupport.clearMemoryCache();
+            }
         }
 
         if (runningCritical || backgroundSevere) {
@@ -132,6 +135,7 @@ public class KissApplication extends Application {
         super.onLowMemory();
         SQLiteDatabase.releaseMemory();
         NotificationAvatarSupport.trimMemory(true);
+        fr.neamar.kiss.notification.MediaNotificationSupport.clearMemoryCache();
         AppIconMemoryCache.clear();
         mIconPackCache.clearCache(this);
         mimeTypeCache.clearCache();
@@ -160,6 +164,8 @@ public class KissApplication extends Application {
         FrozenAppPreferences.migrateLegacyPowerPolling(this);
         initializeOptional("usage regression migration",
                 () -> AppUsageTracker.repairPerformanceRegression(this));
+        initializeOptional("optional feature controls",
+                () -> fr.neamar.kiss.notification.NotificationWorkPolicy.install(this));
         globalTextStyler = GlobalTextStyler.install(this);
         initializeOptional("media history", () -> MediaHistoryCoordinator.install(this));
         initializeOptional("social suggestions", () -> SocialContactIndexService.maybePrompt(this));

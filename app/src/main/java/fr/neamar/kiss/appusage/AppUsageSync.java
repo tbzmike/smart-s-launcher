@@ -43,18 +43,26 @@ public final class AppUsageSync {
 
     public static void sync(@NonNull Context context) {
         Context appContext = context.getApplicationContext();
+        if (cancelled(appContext)) return;
         AppUsageStore store = AppUsageStore.get(appContext);
         long now = System.currentTimeMillis();
 
         importInstalledPackages(appContext, store, now);
+        if (cancelled(appContext)) return;
         if (AppUsageTracker.hasUsageAccess(appContext)) {
             importUsageEvents(appContext, store, now);
+            if (cancelled(appContext)) return;
             importDailyUsage(appContext, store, now);
+            if (cancelled(appContext)) return;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 importDailyPhoneState(appContext, store, now);
             }
         }
-        store.prune(now);
+        if (!cancelled(appContext)) store.prune(now);
+    }
+
+    private static boolean cancelled(Context context) {
+        return Thread.currentThread().isInterrupted() || !AppUsageTracker.isEnabled(context);
     }
 
     public static void recordPackageChange(@NonNull Context context, @NonNull String action,
@@ -102,6 +110,7 @@ public final class AppUsageSync {
 
         long cutoff = now - AppUsageStore.RETENTION_MS;
         for (PackageInfo info : packages) {
+            if (cancelled(context)) return;
             if (info == null || TextUtils.isEmpty(info.packageName)) continue;
             AppUsageStore.PackageState previousState = store.getPackageState(info.packageName);
             PackageMeta meta = packageMeta(pm, info.packageName, info);
@@ -185,6 +194,7 @@ public final class AppUsageSync {
         long windowStart = begin;
 
         while (windowStart < now) {
+            if (cancelled(context)) return;
             long windowEnd = Math.min(now, windowStart + RAW_EVENT_QUERY_WINDOW_MS);
             UsageEvents events;
             try {
@@ -198,6 +208,7 @@ public final class AppUsageSync {
             if (events != null) {
                 UsageEvents.Event event = new UsageEvents.Event();
                 while (events.hasNextEvent()) {
+                    if (cancelled(context)) return;
                     events.getNextEvent(event);
                     long time = event.getTimeStamp();
                     if (time < firstAllowed || time > now) continue;
@@ -365,6 +376,7 @@ public final class AppUsageSync {
         Map<String, Long> merged = new HashMap<>();
         Map<String, PackageMeta> metas = new HashMap<>();
         for (UsageStats usage : stats) {
+            if (cancelled(context)) return;
             if (usage == null || TextUtils.isEmpty(usage.getPackageName())) continue;
             long duration = Math.max(0L, usage.getTotalTimeInForeground());
             if (duration <= 0L) continue;
@@ -377,6 +389,7 @@ public final class AppUsageSync {
             metas.computeIfAbsent(usage.getPackageName(), p -> packageMeta(pm, p, null));
         }
         for (Map.Entry<String, Long> entry : merged.entrySet()) {
+            if (cancelled(context)) return;
             int split = entry.getKey().indexOf('\n');
             long day = Long.parseLong(entry.getKey().substring(0, split));
             String pkg = entry.getKey().substring(split + 1);
@@ -409,6 +422,7 @@ public final class AppUsageSync {
         long firstDay = AppUsageStore.startOfDay(begin);
         Map<Long, PhoneAggregate> days = new HashMap<>();
         for (EventStats stat : stats) {
+            if (cancelled(context)) return;
             if (stat == null) continue;
             long stamp = stat.getFirstTimeStamp();
             long day = AppUsageStore.startOfDay(stamp > 0L ? stamp : now);
@@ -429,6 +443,7 @@ public final class AppUsageSync {
             }
         }
         for (Map.Entry<Long, PhoneAggregate> entry : days.entrySet()) {
+            if (cancelled(context)) return;
             PhoneAggregate aggregate = entry.getValue();
             store.putDailyPhoneState(entry.getKey(), aggregate.screenOnMs,
                     aggregate.screenOffMs, aggregate.unlockCount);

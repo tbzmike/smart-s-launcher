@@ -1,0 +1,1 @@
+Lower optional-feature CPU and RAM overhead: OFF switches stop usage queries, battery workers and notification picture archiving. Idle worker stacks are released; deferred work waits without polling. Live previews, avatars, instant History search, UI interactions and native/IceBox shortcuts are preserved.

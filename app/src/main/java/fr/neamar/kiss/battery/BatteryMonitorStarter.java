@@ -20,13 +20,13 @@ public final class BatteryMonitorStarter {
         if (enabled) {
             ensureRunning(appContext);
         } else {
-            try {
-                appContext.startService(new Intent(appContext, BatteryMonitorService.class)
-                        .setAction(BatteryMonitorService.ACTION_STOP));
-            } catch (RuntimeException ignored) {
-                appContext.stopService(new Intent(appContext, BatteryMonitorService.class));
-            }
+            appContext.stopService(new Intent(appContext, BatteryMonitorService.class));
         }
+    }
+
+    public static boolean isEnabled(Context context) {
+        return PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean(PREF_ENABLED, false);
     }
 
     public static void ensureRunning(Context context) {
