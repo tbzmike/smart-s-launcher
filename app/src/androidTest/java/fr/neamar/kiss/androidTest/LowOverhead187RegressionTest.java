@@ -113,7 +113,7 @@ public final class LowOverhead187RegressionTest {
 
     @Test public void batteryOffStopsTheServiceAndRejectsAStaleStart() throws Exception {
         scenario.onActivity(activity -> BatteryMonitorStarter.setEnabled(activity, true));
-        PowerTestSupport187.await("Enabled monitor starts", () -> batteryRunning());
+        PowerTestSupport187.await("Enabled monitor enters foreground", () -> batteryForeground());
         scenario.onActivity(activity -> BatteryMonitorStarter.setEnabled(activity, false));
         PowerTestSupport187.await("OFF stops the actual service", () -> !batteryRunning());
         scenario.onActivity(activity -> activity.startService(new Intent(activity, BatteryMonitorService.class)
@@ -124,11 +124,28 @@ public final class LowOverhead187RegressionTest {
         PowerTestSupport187.await("Battery worker stack is released", () ->
                 Thread.getAllStackTraces().keySet().stream().noneMatch(
                         t -> t.isAlive() && "smart-s-battery-monitor".equals(t.getName())));
+        scenario.onActivity(activity -> {
+            BatteryMonitorStarter.setEnabled(activity, true);
+            BatteryMonitorStarter.setEnabled(activity, false);
+        });
+        Thread.sleep(300L);
+        PowerTestSupport187.await("Immediate ON/OFF completes the Android handshake and stops",
+                () -> !batteryRunning());
+        assertFalse(BatteryMonitorStarter.isEnabled(app));
     }
     private boolean batteryRunning() {
         ActivityManager manager = app.getSystemService(ActivityManager.class);
         for (ActivityManager.RunningServiceInfo info : manager.getRunningServices(Integer.MAX_VALUE)) {
             if (BatteryMonitorService.class.getName().equals(info.service.getClassName())) return true;
+        }
+        return false;
+    }
+
+    private boolean batteryForeground() {
+        ActivityManager manager = app.getSystemService(ActivityManager.class);
+        for (ActivityManager.RunningServiceInfo info : manager.getRunningServices(Integer.MAX_VALUE)) {
+            if (BatteryMonitorService.class.getName().equals(info.service.getClassName())
+                    && info.foreground) return true;
         }
         return false;
     }
@@ -205,9 +222,9 @@ public final class LowOverhead187RegressionTest {
         f.setAccessible(true);
         LruCache<?, ?> cache = (LruCache<?, ?>) f.get(null);
         assertEquals(2 * 1024 * 1024, cache.maxSize());
-        prefs.edit().putBoolean(KEYS[1], true).commit();
+        scenario.onActivity(a -> prefs.edit().putBoolean(KEYS[1], true).commit());
         assertEquals(8 * 1024 * 1024, cache.maxSize());
-        prefs.edit().putBoolean(KEYS[1], false).commit();
+        scenario.onActivity(a -> prefs.edit().putBoolean(KEYS[1], false).commit());
         assertEquals(2 * 1024 * 1024, cache.maxSize());
         ThreadPoolExecutor worker = IdleExecutors.single("smart-s-187-idle-proof");
         try {

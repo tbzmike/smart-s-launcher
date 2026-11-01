@@ -49,7 +49,7 @@ public final class NotificationWorkPolicy {
                 AppUsageTracker.stopDisabledWork(app);
             } else if (BatteryMonitorStarter.PREF_ENABLED.equals(key)
                     && !BatteryMonitorStarter.isEnabled(app)) {
-                app.stopService(new Intent(app, BatteryMonitorService.class));
+                BatteryMonitorStarter.stopRunning(app);
             }
         };
         PreferenceManager.getDefaultSharedPreferences(app)
@@ -57,8 +57,5 @@ public final class NotificationWorkPolicy {
         NotificationAvatarSupport.onHistorySettingChanged(app);
         if (!historyEnabled(app)) MediaNotificationSupport.clearMemoryCache();
         AppUsageTracker.stopDisabledWork(app);
-        if (!BatteryMonitorStarter.isEnabled(app)) {
-            app.stopService(new Intent(app, BatteryMonitorService.class));
-        }
     }
 }

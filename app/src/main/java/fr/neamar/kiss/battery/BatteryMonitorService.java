@@ -145,7 +145,6 @@ public final class BatteryMonitorService extends Service {
         if (handler != null) return;
         stopping = false;
         store = new BatteryHistoryStore(this);
-        createChannels();
         // Sampling, rate calculations, history writes and widget refreshes do not belong on the
         // launcher's UI looper. Keep the monitor feature intact but isolate all recurring work on
         // a background-priority thread so it cannot steal frame time from Vertical List scrolling.
@@ -159,27 +158,46 @@ public final class BatteryMonitorService extends Service {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             PreferenceManager.getDefaultSharedPreferences(this).edit()
                     .putBoolean("smart-battery-monitor-enabled", false).apply();
-            stopForeground(true);
-            stopSelf();
+            acknowledgeDisabledStartAndStop();
             return START_NOT_STICKY;
         }
 
         // A stale START command or Android's sticky restart cannot override the OFF switch.
         if (!BatteryMonitorStarter.isEnabled(this)) {
-            stopSelf();
+            acknowledgeDisabledStartAndStop();
             return START_NOT_STICKY;
         }
+        createChannels();
+        startForeground(LIVE_ID, lifecycleNotification("Starting battery monitor"));
+        BatteryMonitorStarter.startHandled();
         initializeMonitor();
-
-        BatterySnapshot initial = BatteryMonitorEngine.read(this);
-        startForeground(LIVE_ID, buildLiveNotification(initial));
         registerStateReceiver();
 
         handler.removeCallbacks(sampler);
         handler.removeCallbacks(liveRefresher);
         handler.post(sampler);
-        handler.postDelayed(liveRefresher, nextLiveRefreshDelay(initial));
         return START_STICKY;
+    }
+
+    private void acknowledgeDisabledStartAndStop() {
+        // The OFF decision can race with a foreground start already accepted by Android. Fulfil
+        // its foreground handshake without allocating a telemetry worker or opening history.
+        createChannels();
+        try {
+            startForeground(LIVE_ID, lifecycleNotification("Stopping battery monitor"));
+        } catch (RuntimeException ignored) {
+            // An ordinary non-foreground stale start can lack foreground-start eligibility.
+        } finally {
+            BatteryMonitorStarter.startHandled();
+            stopForeground(true);
+            stopSelf();
+        }
+    }
+
+    private Notification lifecycleNotification(String title) {
+        return new NotificationCompat.Builder(this, CHANNEL_LIVE)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
+                .setContentTitle(title).setPriority(NotificationCompat.PRIORITY_MIN).build();
     }
 
     @Override public void onDestroy() {
