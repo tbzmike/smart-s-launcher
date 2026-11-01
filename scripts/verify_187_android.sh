@@ -44,6 +44,16 @@ adb shell pm clear com.tbzmike.smartslauncher.debug
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test fr.neamar.kiss.ShortcutLaunch186IntegrationTest \
   verification-results/shortcut-launch-186-actual-destinations.log
+# ActivityScenario's artificial CREATED/RESUMED transitions require a normal task. Android
+# immediately brings a default Home back when that task is paused, replacing its Intent and
+# invalidating the scenario's lifecycle owner. Native shortcut tests above use the real Home
+# role; run the existing isolated rendering/lifecycle tests with the emulator's stock Home.
+STOCK_HOME="$(adb shell cmd package query-activities --brief -a android.intent.action.MAIN \
+  -c android.intent.category.HOME | python3 -c 'import re,sys; print(next(line.strip() for line in sys.stdin if re.fullmatch(r"[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+", line.strip()) and "com.tbzmike.smartslauncher" not in line and "FallbackHome" not in line))')"
+adb shell cmd package set-home-activity --user 0 "$STOCK_HOME"
+adb shell am force-stop com.tbzmike.smartslauncher.debug
+adb shell pm clear com.tbzmike.smartslauncher.debug
+adb shell input keyevent KEYCODE_HOME
 run_test fr.neamar.kiss.androidTest.HistoryAppearanceRegressionTest \
   verification-results/history-appearance-178.log
 run_test fr.neamar.kiss.androidTest.HistoryLongTextRegressionTest \
