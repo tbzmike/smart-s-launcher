@@ -124,24 +124,8 @@ public final class ShortcutLaunch186IntegrationTest {
     }
 
     @After public void tearDown() throws Exception {
-        if (scenario != null) {
-            // The destination broadcast arrives before the fixture's finish transition is over.
-            // Return to the real Home and wait for its lifecycle instead of racing close() against
-            // a STARTED -> RESUMED transition inside ActivityScenario.
-            shell("input keyevent KEYCODE_HOME");
-            java.util.concurrent.atomic.AtomicBoolean resumed = new java.util.concurrent.atomic.AtomicBoolean();
-            for (int i = 0; i < 160 && !resumed.get(); i++) {
-                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> resumed.set(
-                        androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
-                                .getLifecycleStageOf(launcherActivity)
-                                == androidx.test.runner.lifecycle.Stage.RESUMED
-                                && launcherActivity.hasWindowFocus()));
-                if (!resumed.get()) Thread.sleep(50L);
-            }
-            assertTrue("Fixture finished and Home regained focus before cleanup", resumed.get());
-            scenario.onActivity(a -> SearchHandler.getInstance().cancelSearch());
-            scenario.close();
-        }
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(
+                () -> SearchHandler.getInstance().cancelSearch());
         if (context == null) return;
         try { context.unregisterReceiver(receiver); } catch (RuntimeException ignored) { }
         if (rootField != null) rootField.set(KissApplication.getApplication(context), previousRoot);
@@ -162,6 +146,44 @@ public final class ShortcutLaunch186IntegrationTest {
             control(pkg, "clear");
             DBHelper.removeShortcuts(context, pkg);
         }
+        if (scenario != null) {
+            // A default Home is automatically replaced when it finishes. Switch the emulator's
+            // Home role for cleanup so ActivityScenario can observe a stable DESTROYED state.
+            String stock = stockHome();
+            try {
+                String changed = shell("cmd package set-home-activity --user 0 " + stock);
+                assertFalse(changed, changed.contains("Error") || changed.contains("Exception"));
+                shell("input keyevent KEYCODE_HOME");
+                java.util.concurrent.atomic.AtomicBoolean stopped = new java.util.concurrent.atomic.AtomicBoolean();
+                for (int i = 0; i < 160 && !stopped.get(); i++) {
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                        androidx.test.runner.lifecycle.Stage stage =
+                                androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                                        .getLifecycleStageOf(launcherActivity);
+                        stopped.set(stage == androidx.test.runner.lifecycle.Stage.STOPPED
+                                || stage == androidx.test.runner.lifecycle.Stage.DESTROYED);
+                    });
+                    if (!stopped.get()) Thread.sleep(50L);
+                }
+                assertTrue("Test Home stopped before cleanup", stopped.get());
+                scenario.close();
+            } finally {
+                shell("cmd package set-home-activity --user 0 " + context.getPackageName()
+                        + "/fr.neamar.kiss.MainActivity");
+            }
+        }
+    }
+
+    private String stockHome() {
+        String homes = shell("cmd package query-activities --brief -a android.intent.action.MAIN"
+                + " -c android.intent.category.HOME");
+        for (String line : homes.split("\\n")) {
+            String component = line.trim();
+            if (component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+")
+                    && !component.startsWith(context.getPackageName() + "/")
+                    && !component.contains("FallbackHome")) return component;
+        }
+        throw new AssertionError("CI emulator must provide a stock Home for cleanup: " + homes);
     }
 
     @Test public void openedShortcutIsPinnedWithoutLosingOtherPinsAndSurvivesDynamicRemoval()
