@@ -579,6 +579,7 @@ public class NotificationListener extends NotificationListenerService {
 
         String id = getTimelineId(sbn);
         LAST_ONGOING_PERSIST.remove(id);
+        if (!NotificationWorkPolicy.historyEnabled(this)) NotificationAvatarSupport.releaseLiveAvatar(id);
         NotificationUnreadStore.markRemoved(this, id);
         removeVerifiedActiveId(id);
         Set<String> active = new HashSet<>(details.getStringSet(ACTIVE_NOTIFICATION_IDS, Collections.emptySet()));

@@ -180,6 +180,24 @@ public final class LowOverhead187RegressionTest {
         prefs.edit().putBoolean(KEYS[1], false).commit();
         assertEquals("Turning OFF preserves saved user history", saved,
                 SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size());
+        long previousPost = fixtureNotification().getPostTime();
+        PowerTestSupport187.control("notify-fresh");
+        PowerTestSupport187.await("Replacement post reached Android", () ->
+                fixtureNotification() != null && fixtureNotification().getPostTime() != previousPost);
+        StatusBarNotification fresh = fixtureNotification();
+        NotificationVisualSupport.Snapshot picture = NotificationVisualSupport.snapshot(
+                app, id, fresh.getPackageName(), fresh.getPostTime());
+        assertNotNull(picture);
+        assertTrue(picture.image instanceof android.graphics.drawable.BitmapDrawable);
+        assertEquals("OFF still shows the new live picture, not an old archived one",
+                android.graphics.Color.RED,
+                ((android.graphics.drawable.BitmapDrawable) picture.image).getBitmap().getPixel(10, 10));
+        PowerTestSupport187.await("Live avatar is refreshed after an archived notification ID is reused", () -> {
+            android.graphics.drawable.Drawable image = NotificationAvatarSupport.avatar(app, id);
+            return image instanceof android.graphics.drawable.BitmapDrawable
+                    && ((android.graphics.drawable.BitmapDrawable) image).getBitmap().getPixel(10, 10)
+                    == android.graphics.Color.RED;
+        });
     }
 
     @Test public void idleWorkersReleaseStacksAndRestartAndAvatarBudgetShrinks() throws Exception {

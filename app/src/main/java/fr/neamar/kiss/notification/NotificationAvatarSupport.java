@@ -102,6 +102,8 @@ public final class NotificationAvatarSupport {
                 ? MEMORY_CACHE_BYTES : 2 * 1024 * 1024);
     }
 
+    public static void releaseLiveAvatar(String id) { MEMORY_CACHE.remove(id); }
+
     private static void publishAvatarChange(Context app) {
         app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER)
                 .putExtra(MainActivity.EXTRA_VISUALS_ONLY, true));
@@ -126,6 +128,7 @@ public final class NotificationAvatarSupport {
                                     @NonNull StatusBarNotification sbn) {
         if (TextUtils.isEmpty(notificationId)) return;
         Context app = context.getApplicationContext();
+        if (!NotificationWorkPolicy.historyEnabled(app)) releaseLiveAvatar(notificationId);
         if (!NotificationWorkPolicy.captureAvatars(app)) return;
         long generation = NotificationWorkPolicy.generation();
         EXECUTOR.execute(() -> {

@@ -133,10 +133,13 @@ public final class NotificationVisualSupport {
     @Nullable
     public static Snapshot snapshot(Context context, String notificationId,
                                     @Nullable String packageName, long postTime) {
-        Snapshot persisted = snapshot(context, notificationId);
+        boolean archiveEnabled = NotificationWorkPolicy.historyEnabled(context);
+        // With archiving OFF a reused live notification ID may have a newer picture than its
+        // old saved file. Resolve the exact active post first; old saved records remain readable.
+        Snapshot persisted = archiveEnabled ? snapshot(context, notificationId) : null;
         if (persisted != null) return persisted;
         StatusBarNotification[] active = NotificationListener.activeNotificationsSnapshot();
-        if (active == null) return null;
+        if (active == null) return archiveEnabled ? null : snapshot(context, notificationId);
 
         for (StatusBarNotification sbn : active) {
             if (sbn == null || sbn.getNotification() == null) continue;
@@ -155,7 +158,7 @@ public final class NotificationVisualSupport {
             if (visual == null && TextUtils.isEmpty(uri) && !media) return null;
             return new Snapshot(visual, uri, mime, media);
         }
-        return null;
+        return archiveEnabled ? null : snapshot(context, notificationId);
     }
 
     public static boolean openMedia(Context context, Snapshot snapshot) {

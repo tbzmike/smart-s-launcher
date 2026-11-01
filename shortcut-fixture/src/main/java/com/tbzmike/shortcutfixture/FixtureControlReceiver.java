@@ -39,7 +39,7 @@ public final class FixtureControlReceiver extends BroadcastReceiver {
                 "power187", "Power test", android.app.NotificationManager.IMPORTANCE_LOW));
         android.graphics.Bitmap image = android.graphics.Bitmap.createBitmap(
                 256, 256, android.graphics.Bitmap.Config.ARGB_8888);
-        image.eraseColor(android.graphics.Color.BLUE);
+        image.eraseColor("notify-fresh".equals(mode) ? android.graphics.Color.RED : android.graphics.Color.BLUE);
         int count = "notify-burst".equals(mode) ? 80 : "notify-load".equals(mode) ? 32 : 1;
         for (int i = 0; i < count; i++) {
             boolean ongoing = "notify-burst".equals(mode);
