@@ -15,6 +15,8 @@ bash ./gradlew -PshortcutFixtures :app:assembleDebug :app:assembleDebugAndroidTe
   :shortcut-fixture:assembleTargetDebug :shortcut-fixture:assembleIceboxDebug --stacktrace
 adb root
 adb wait-for-device
+adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb install -r -g shortcut-fixture/build/outputs/apk/target/debug/shortcut-fixture-target-debug.apk
 adb install -r -g shortcut-fixture/build/outputs/apk/icebox/debug/shortcut-fixture-icebox-debug.apk
 adb logcat -c
@@ -31,8 +33,7 @@ assert "OK (" in result and "FAILURES!!!" not in result, result[-8000:]
 assert "INSTRUMENTATION_CODE: -1" in result, result[-8000:]
 PY
 }
-bash scripts/profile_187_android.sh
-# Restore a clean initial UI state after both profiles, independent of the benchmark's settings.
+# Functional checks come first. The isolated before/after benchmark runs after UI verification.
 adb shell am force-stop com.tbzmike.smartslauncher.debug
 adb shell pm clear com.tbzmike.smartslauncher.debug
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
@@ -79,5 +80,7 @@ run_test fr.neamar.kiss.androidTest.FrozenExactShortcut184RegressionTest \
   verification-results/frozen-exact-shortcut-184.log
 run_test fr.neamar.kiss.androidTest.InstantHistory185RegressionTest \
   verification-results/instant-history-185.log
+adb logcat -d > verification-results/ui-regression-logcat.txt || true
+bash scripts/profile_187_android.sh
 adb logcat -d > verification-results/logcat.txt || true
 echo "PASS: 3.30.187 disabled feature gates, CPU/RAM comparison, idle worker release, notification history OFF, live avatar/preview parity, actual native and IceBox shortcut destinations, pin retention, disabled and hidden package enable, legacy exact extras, immediate configured 803/403 History window, five-second full-search delay, dynamic saved History, full backup, and  measured horizontal/vertical Auto Scroll motion, Auto Expand cancellation, Cards/List/Wheel/avatar/sizing and previous Android 35 regressions"

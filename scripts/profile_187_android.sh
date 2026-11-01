@@ -14,7 +14,7 @@ p.write_text(source.replace('minifyEnabled true','minifyEnabled false')
                    .replace('shrinkResources = true','shrinkResources = false'))
 PY
 bash "$BASELINE_DIR/gradlew" -p "$BASELINE_DIR" :app:assembleDebug --stacktrace
-adb install -r -g "$BASELINE_DIR/app/build/outputs/apk/debug/app-debug.apk"
+adb install -r -d -g "$BASELINE_DIR/app/build/outputs/apk/debug/app-debug.apk"
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am force-stop "$PACKAGE"
 # Configure before Application.onCreate, so the baseline and update start with identical OFF

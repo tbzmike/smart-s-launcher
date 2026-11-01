@@ -109,7 +109,11 @@ public final class ShortcutLaunch186IntegrationTest {
         });
         ContextCompat.registerReceiver(context, receiver, new IntentFilter(HIT),
                 ContextCompat.RECEIVER_EXPORTED);
-        scenario = ActivityScenario.launch(MainActivity.class);
+        // A launcher must be tested in Android's HOME task, rather than a separate LAUNCHER
+        // task whose ActivityScenario owner is left behind when a real HOME intent arrives.
+        scenario = ActivityScenario.launch(new Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_HOME).setClass(context, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
         scenario.onActivity(activity -> launcherActivity = activity);
         LauncherApps launcher = context.getSystemService(LauncherApps.class);
         assertNotNull(launcher);
