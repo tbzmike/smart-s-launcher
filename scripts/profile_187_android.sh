@@ -32,10 +32,17 @@ cat > "$RUNNER_TEMP/power187-preferences.xml" <<'XML'
     <string name="number-of-history-results">803</string>
 </map>
 XML
-adb push "$RUNNER_TEMP/power187-preferences.xml" /data/local/tmp/power187-preferences.xml
-adb shell run-as "$PACKAGE" mkdir -p shared_prefs
-adb shell run-as "$PACKAGE" cp /data/local/tmp/power187-preferences.xml "shared_prefs/${PACKAGE}_preferences.xml"
-adb shell cmd package set-home-activity --user 0 "$PACKAGE/fr.neamar.kiss.MainActivity"
+configure_clean_profile() {
+  # Benchmark data only: give both versions the same empty archive. A production upgrade keeps
+  # the user's existing files, which would otherwise be mistaken here for new OFF-mode writes.
+  adb shell am force-stop "$PACKAGE"
+  adb shell pm clear "$PACKAGE"
+  adb push "$RUNNER_TEMP/power187-preferences.xml" /data/local/tmp/power187-preferences.xml
+  adb shell run-as "$PACKAGE" mkdir -p shared_prefs
+  adb shell run-as "$PACKAGE" cp /data/local/tmp/power187-preferences.xml "shared_prefs/${PACKAGE}_preferences.xml"
+  adb shell cmd package set-home-activity --user 0 "$PACKAGE/fr.neamar.kiss.MainActivity"
+}
+configure_clean_profile
 profile() {
   local label="$1"
   adb logcat -c
@@ -53,7 +60,7 @@ PY
 profile baseline
 adb shell am force-stop "$PACKAGE"
 adb install -r -g app/build/outputs/apk/debug/app-debug.apk
-adb shell cmd package set-home-activity --user 0 "$PACKAGE/fr.neamar.kiss.MainActivity"
+configure_clean_profile
 profile current
 python3 - <<'PY'
 import json

@@ -16,7 +16,6 @@ public final class IdleExecutors {
                         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
                         task.run();
                     }, name);
-                    thread.setPriority(Thread.MIN_PRIORITY);
                     return thread;
                 });
     }

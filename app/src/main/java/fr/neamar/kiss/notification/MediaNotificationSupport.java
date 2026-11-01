@@ -89,7 +89,8 @@ public final class MediaNotificationSupport {
      */
     public static void capture(Context context, StatusBarNotification sbn) {
         if (context == null || sbn == null || sbn.getNotification() == null
-                || LauncherScrollWorkGate.isScrolling()) return;
+                || LauncherScrollWorkGate.isScrolling()
+                || !NotificationWorkPolicy.historyEnabled(context)) return;
         Notification notification = sbn.getNotification();
         if (!isTransportMediaNotification(notification)) return;
 
