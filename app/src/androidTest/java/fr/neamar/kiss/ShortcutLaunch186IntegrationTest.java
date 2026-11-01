@@ -54,6 +54,7 @@ public final class ShortcutLaunch186IntegrationTest {
     private final LinkedBlockingQueue<Intent> hits = new LinkedBlockingQueue<>();
     private Context context;
     private ActivityScenario<MainActivity> scenario;
+    private MainActivity launcherActivity;
     private RootHandler previousRoot;
     private Field rootField;
     private Map<String, ?> previousPrefs;
@@ -109,6 +110,7 @@ public final class ShortcutLaunch186IntegrationTest {
         ContextCompat.registerReceiver(context, receiver, new IntentFilter(HIT),
                 ContextCompat.RECEIVER_EXPORTED);
         scenario = ActivityScenario.launch(MainActivity.class);
+        scenario.onActivity(activity -> launcherActivity = activity);
         LauncherApps launcher = context.getSystemService(LauncherApps.class);
         assertNotNull(launcher);
         assertTrue("CI must set Smart S as Home to exercise real Android shortcut APIs",
@@ -119,6 +121,20 @@ public final class ShortcutLaunch186IntegrationTest {
 
     @After public void tearDown() throws Exception {
         if (scenario != null) {
+            // The destination broadcast arrives before the fixture's finish transition is over.
+            // Return to the real Home and wait for its lifecycle instead of racing close() against
+            // a STARTED -> RESUMED transition inside ActivityScenario.
+            shell("input keyevent KEYCODE_HOME");
+            java.util.concurrent.atomic.AtomicBoolean resumed = new java.util.concurrent.atomic.AtomicBoolean();
+            for (int i = 0; i < 160 && !resumed.get(); i++) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> resumed.set(
+                        androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                                .getLifecycleStageOf(launcherActivity)
+                                == androidx.test.runner.lifecycle.Stage.RESUMED
+                                && launcherActivity.hasWindowFocus()));
+                if (!resumed.get()) Thread.sleep(50L);
+            }
+            assertTrue("Fixture finished and Home regained focus before cleanup", resumed.get());
             scenario.onActivity(a -> SearchHandler.getInstance().cancelSearch());
             scenario.close();
         }
