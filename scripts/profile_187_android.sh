@@ -37,6 +37,12 @@ configure_clean_profile() {
   # the user's existing files, which would otherwise be mistaken here for new OFF-mode writes.
   adb shell am force-stop "$PACKAGE"
   adb shell pm clear "$PACKAGE"
+  # Measure the visible launcher with the same install -g grants in both versions. Clearing
+  # data revokes them; leaving the Contacts dialog on top would invalidate foreground metrics.
+  for permission in READ_CONTACTS CALL_PHONE READ_PHONE_STATE READ_CALL_LOG READ_SMS \
+    ACCESS_COARSE_LOCATION ACCESS_FINE_LOCATION POST_NOTIFICATIONS; do
+    adb shell pm grant "$PACKAGE" "android.permission.$permission"
+  done
   adb push "$RUNNER_TEMP/power187-preferences.xml" /data/local/tmp/power187-preferences.xml
   adb shell run-as "$PACKAGE" mkdir -p shared_prefs
   adb shell run-as "$PACKAGE" cp /data/local/tmp/power187-preferences.xml "shared_prefs/${PACKAGE}_preferences.xml"

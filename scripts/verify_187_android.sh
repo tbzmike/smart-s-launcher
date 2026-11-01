@@ -33,14 +33,24 @@ assert "OK (" in result and "FAILURES!!!" not in result, result[-8000:]
 assert "INSTRUMENTATION_CODE: -1" in result, result[-8000:]
 PY
 }
+grant_runtime_permissions() {
+  # pm clear revokes the install -g grants. A Contacts permission dialog obscures Home and
+  # prevents ActivityScenario from resuming it during the rendering/lifecycle checks.
+  for permission in READ_CONTACTS CALL_PHONE READ_PHONE_STATE READ_CALL_LOG READ_SMS \
+    ACCESS_COARSE_LOCATION ACCESS_FINE_LOCATION POST_NOTIFICATIONS; do
+    adb shell pm grant com.tbzmike.smartslauncher.debug "android.permission.$permission"
+  done
+}
 # Functional checks come first. The isolated before/after benchmark runs after UI verification.
 adb shell am force-stop com.tbzmike.smartslauncher.debug
 adb shell pm clear com.tbzmike.smartslauncher.debug
+grant_runtime_permissions
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test fr.neamar.kiss.androidTest.LowOverhead187RegressionTest \
   verification-results/disabled-features-187.log
 adb shell am force-stop com.tbzmike.smartslauncher.debug
 adb shell pm clear com.tbzmike.smartslauncher.debug
+grant_runtime_permissions
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test fr.neamar.kiss.ShortcutLaunch186IntegrationTest \
   verification-results/shortcut-launch-186-actual-destinations.log
@@ -53,6 +63,7 @@ STOCK_HOME="$(adb shell cmd package query-activities --brief -a android.intent.a
 adb shell cmd package set-home-activity --user 0 "$STOCK_HOME"
 adb shell am force-stop com.tbzmike.smartslauncher.debug
 adb shell pm clear com.tbzmike.smartslauncher.debug
+grant_runtime_permissions
 adb shell input keyevent KEYCODE_HOME
 run_test fr.neamar.kiss.androidTest.HistoryAppearanceRegressionTest \
   verification-results/history-appearance-178.log
