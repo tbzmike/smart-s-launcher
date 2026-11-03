@@ -428,10 +428,13 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         AppLaunchUtils.ensurePackageEnabledAsync(context, pkg, component, true, enabled -> {
             if (!enabled) {
                 launchPending = false;
+                // A legacy Ice Box wrapper's removed Activity belongs to Ice Box, not
+                // the frozen target app. Recover its saved target before handing off an Intent.
+                if (openKnownIceBoxTarget(context, true)) return;
                 if (IceBoxLaunchBridge.open(context, pkg,
                         android.os.Process.myUserHandle().hashCode(), getViewBounds(view), intent)) {
                     onExactLaunchSucceeded(context, true);
-                } else if (!openKnownIceBoxTarget(context, true)) {
+                } else {
                     showUnableToEnable(context, pkg);
                 }
                 return;

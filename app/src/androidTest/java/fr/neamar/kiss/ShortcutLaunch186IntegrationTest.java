@@ -395,6 +395,15 @@ public final class ShortcutLaunch186IntegrationTest {
                 record.intentUri = ShortcutPojo.OREO_PREFIX + id;
                 ShortcutPojo saved = new ShortcutPojo(UserHandle.OWNER, record, null, true, false, false);
                 saved.setName(record.name);
+                if (id.startsWith("App_Meta_Shortcut_")) {
+                    DataHandler handler = KissApplication.getApplication(context).getDataHandler();
+                    assertFalse("Feature shortcuts remain distinct from their app",
+                            fr.neamar.kiss.utils.AppIdentityResolver.isAppAliasShortcut(
+                                    context, handler, saved));
+                    assertEquals(saved.getHistoryId(),
+                            fr.neamar.kiss.utils.AppIdentityResolver.canonicalHistoryId(
+                                    context, handler, saved));
+                }
                 shell((index++ == 0 ? "pm disable-user --user 0 " : "pm hide --user 0 ") + TARGET);
                 assertFalse(AppLaunchUtils.isPackageEnabledNow(context, TARGET));
                 click(saved, false);
