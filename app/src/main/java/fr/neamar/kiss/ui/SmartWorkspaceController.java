@@ -315,7 +315,7 @@ public final class SmartWorkspaceController {
         RelativeLayout.LayoutParams workspaceParams = new RelativeLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         workspaceParams.addRule(RelativeLayout.ALIGN_PARENT_TOP);
-        workspaceParams.addRule(RelativeLayout.ABOVE, R.id.externalFavoriteBar);
+        workspaceParams.addRule(RelativeLayout.ABOVE, R.id.searchQuickActions);
         int margin = dp(activity, 10);
         workspaceParams.setMargins(margin, margin, margin, margin);
         root.addView(workspace, 0, workspaceParams);

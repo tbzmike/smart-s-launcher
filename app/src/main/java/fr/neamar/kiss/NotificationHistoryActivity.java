@@ -187,17 +187,21 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         });
 
         TextView title = new TextView(this);
+        title.setTextColor(Color.WHITE);
         title.setText("Notification history");
         title.setTextSize(22);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         root.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView subtitle = new TextView(this);
+        subtitle.setTextColor(Color.LTGRAY);
         subtitle.setText("Saved notifications · permanent notifications are separated · tap an app icon to open the app · tap notification text to inspect the exact saved message");
         subtitle.setTextSize(13);
         root.addView(subtitle, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         search = new EditText(this);
+        search.setTextColor(Color.WHITE);
+        search.setHintTextColor(Color.LTGRAY);
         search.setSingleLine(true);
         search.setHint("Search all notifications");
         root.addView(search, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -210,6 +214,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         searchStatus = new TextView(this);
+        searchStatus.setTextColor(Color.LTGRAY);
         searchStatus.setTextSize(14);
         searchStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(searchStatus, new LinearLayout.LayoutParams(
@@ -570,12 +575,14 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             text.setOnClickListener(v -> showRecordDetail(record, query));
 
             TextView app = new TextView(NotificationHistoryActivity.this);
+            app.setTextColor(Color.WHITE);
             app.setText(highlightLiteral(record.appName, query));
             app.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             app.setTextSize(15);
             text.addView(app);
 
             TextView message = new TextView(NotificationHistoryActivity.this);
+            message.setTextColor(Color.WHITE);
             String combined = record.title;
             if (record.text != null && !record.text.isEmpty()) combined = combined == null || combined.isEmpty() ? record.text : combined + "\n" + record.text;
             if (combined == null || combined.isEmpty()) combined = "Notification";
@@ -585,6 +592,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             text.addView(message);
 
             TextView time = new TextView(NotificationHistoryActivity.this);
+            time.setTextColor(Color.LTGRAY);
             time.setText(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(record.postTime));
             time.setTextSize(11);
             text.addView(time);

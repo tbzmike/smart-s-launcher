@@ -220,17 +220,26 @@ public final class SearchQuickActions188RegressionTest {
                 activity.searchEditText.setText("database188");
             });
             HistoryTestSupport188.awaitUi(scenario, "Both action buttons are laid out", activity ->
-                    activity.findViewById(R.id.searchQuickActions).getHeight() > 0);
+                    activity.findViewById(R.id.searchQuickActions).isShown()
+                            && activity.findViewById(R.id.searchQuickActions).getHeight() > 0
+                            && !activity.findViewById(R.id.searchQuickActions).isLayoutRequested()
+                            && !((View) activity.findViewById(R.id.searchQuickActions).getParent()).isLayoutRequested()
+                            && !activity.findViewById(R.id.searchEditLayout).isLayoutRequested());
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            HistoryTestSupport188.screenshot(app, "search-actions188-" + mode);
             scenario.onActivity(activity -> {
-                Rect database = new Rect(), notifications = new Rect(), bar = new Rect();
+                Rect database = new Rect(), notifications = new Rect(), bar = new Rect(), results = new Rect();
                 assertTrue(activity.findViewById(R.id.searchDatabaseNow).getGlobalVisibleRect(database));
                 assertTrue(activity.findViewById(R.id.searchNotificationHistory).getGlobalVisibleRect(notifications));
                 assertTrue(activity.findViewById(R.id.searchEditLayout).getGlobalVisibleRect(bar));
                 assertFalse("Actions must not overlap each other", Rect.intersects(database, notifications));
-                assertTrue("Search field and keyboard remain unobstructed", database.bottom <= bar.top
+                assertTrue("Search field and keyboard remain unobstructed: " + database + ", "
+                        + notifications + ", search=" + bar, database.bottom <= bar.top
                         && notifications.bottom <= bar.top);
+                assertTrue(activity.listContainer.getGlobalVisibleRect(results));
+                assertTrue("Results do not draw beneath the buttons: " + results + ", " + database,
+                        results.bottom <= Math.min(database.top, notifications.top));
             });
-            HistoryTestSupport188.screenshot(app, "search-actions188-" + mode);
         }
     }
 

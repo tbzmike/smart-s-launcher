@@ -25,17 +25,25 @@ collect_evidence() {
   adb pull /sdcard/Android/data/com.tbzmike.smartslauncher.debug/files/verification188 verification-results/screenshots || true
 }
 trap collect_evidence EXIT
+FAILED_TESTS=()
 run_test() {
   local class="$1" log="$2"
-  adb shell am instrument -w -r -e class "$class" \
-    com.tbzmike.smartslauncher.debug.test/androidx.test.runner.AndroidJUnitRunner | tee "$log"
-  python3 - "$log" <<'PY'
+  if ! adb shell am instrument -w -r -e class "$class" \
+    com.tbzmike.smartslauncher.debug.test/androidx.test.runner.AndroidJUnitRunner | tee "$log"; then
+    FAILED_TESTS+=("$class")
+    return 0
+  fi
+  if ! python3 - "$log" <<'PY'
 import sys
 from pathlib import Path
 result = Path(sys.argv[1]).read_text()
 assert "OK (" in result and "FAILURES!!!" not in result, result[-8000:]
 assert "INSTRUMENTATION_CODE: -1" in result, result[-8000:]
 PY
+  then
+    FAILED_TESTS+=("$class")
+  fi
+  return 0
 }
 grant_runtime_permissions() {
   # pm clear revokes the install -g grants. A Contacts permission dialog obscures Home and
@@ -80,7 +88,7 @@ run_test 'fr.neamar.kiss.androidTest.NotificationRestart188RegressionTest#savedN
   verification-results/notification-after-restart-188.log
 run_test fr.neamar.kiss.androidTest.NotificationRetention188RegressionTest \
   verification-results/notification-retention-188.log
-adb pull /sdcard/Android/data/com.tbzmike.smartslauncher.debug/files/verification188 verification-results/screenshots
+adb pull /sdcard/Android/data/com.tbzmike.smartslauncher.debug/files/verification188 verification-results/screenshots || true
 adb logcat -d > verification-results/new-features-188-logcat.txt
 adb shell am force-stop com.tbzmike.smartslauncher.debug
 adb shell pm clear com.tbzmike.smartslauncher.debug
@@ -122,6 +130,10 @@ run_test fr.neamar.kiss.androidTest.FrozenExactShortcut184RegressionTest \
 run_test fr.neamar.kiss.androidTest.InstantHistory185RegressionTest \
   verification-results/instant-history-185.log
 adb logcat -d > verification-results/ui-regression-logcat.txt || true
+if (( ${#FAILED_TESTS[@]} > 0 )); then
+  printf 'FAIL: %s\n' "${FAILED_TESTS[@]}"
+  exit 1
+fi
 if [[ "${SKIP_188_PROFILE:-0}" != "1" ]]; then
   bash scripts/profile_188_android.sh
 fi
