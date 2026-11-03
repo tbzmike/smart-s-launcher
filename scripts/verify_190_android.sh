@@ -10,7 +10,7 @@ assert s.count('minifyEnabled true') == 2
 p.write_text(s.replace('minifyEnabled true','minifyEnabled false')
               .replace('shrinkResources = true','shrinkResources = false'))
 PY
-bash ./gradlew -PshortcutFixtures :app:assembleDebug :app:assembleDebugAndroidTest \
+bash ./gradlew --no-configuration-cache -PshortcutFixtures :app:assembleDebug :app:assembleDebugAndroidTest \
   :shortcut-fixture:assembleTargetDebug :shortcut-fixture:assembleIceboxDebug --stacktrace
 adb root
 adb wait-for-device

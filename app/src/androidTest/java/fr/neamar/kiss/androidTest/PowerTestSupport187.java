@@ -37,8 +37,13 @@ final class PowerTestSupport187 {
         shell("cmd notification allow_listener " + context.getPackageName()
                 + "/fr.neamar.kiss.notification.NotificationListener");
         shell("appops set " + context.getPackageName() + " GET_USAGE_STATS allow");
-        NotificationListener.requestListenerReconnect(context);
-        await("Real notification listener connected", NotificationListener::isReadyForExactNotificationLookup);
+        fr.neamar.kiss.notification.NotificationWorkPolicy.syncListener(context);
+        await("Real notification listener connected", () -> {
+            if (!NotificationListener.isReadyForExactNotificationLookup()) {
+                NotificationListener.requestListenerReconnect(context);
+            }
+            return NotificationListener.isReadyForExactNotificationLookup();
+        });
     }
     static void control(String mode) throws Exception {
         String last = "";

@@ -112,6 +112,8 @@ public class NotificationListener extends NotificationListenerService {
     private static volatile long verifiedGroupSnapshotGeneration = -1L;
     private static volatile long lastRebindRequestElapsed;
     private static final long MIN_REBIND_INTERVAL_MS = 1_000L;
+    private static Handler rebindHandler;
+    private static Runnable pendingRebind;
     private SharedPreferences prefs;
     private SharedPreferences details;
     private final Handler timelineHandler = new Handler(Looper.getMainLooper());
@@ -730,7 +732,13 @@ public class NotificationListener extends NotificationListenerService {
         HISTORY_EXECUTOR.getQueue().clear();
         RECONCILE_RUNNING.set(false);
         LAST_ONGOING_PERSIST.clear();
-        synchronized (NotificationListener.class) { lastRebindRequestElapsed = 0L; }
+        synchronized (NotificationListener.class) {
+            lastRebindRequestElapsed = 0L;
+            if (rebindHandler != null && pendingRebind != null) {
+                rebindHandler.removeCallbacks(pendingRebind);
+                pendingRebind = null;
+            }
+        }
         NotificationListener current = instance;
         if (current == null) {
             listenerConnected = false;
@@ -782,7 +790,22 @@ public class NotificationListener extends NotificationListenerService {
             synchronized (NotificationListener.class) {
                 if (lastRebindRequestElapsed != 0L
                         && now - lastRebindRequestElapsed < MIN_REBIND_INTERVAL_MS) {
+                    // Access or component state can change during the throttle window. Coalesce
+                    // one retry so the newer request is not silently lost; OFF cancels it.
+                    if (pendingRebind == null) {
+                        if (rebindHandler == null) rebindHandler = new Handler(Looper.getMainLooper());
+                        pendingRebind = () -> {
+                            synchronized (NotificationListener.class) { pendingRebind = null; }
+                            requestListenerReconnect(appContext);
+                        };
+                        rebindHandler.postDelayed(pendingRebind,
+                                MIN_REBIND_INTERVAL_MS - (now - lastRebindRequestElapsed) + 50L);
+                    }
                     return true;
+                }
+                if (rebindHandler != null && pendingRebind != null) {
+                    rebindHandler.removeCallbacks(pendingRebind);
+                    pendingRebind = null;
                 }
                 lastRebindRequestElapsed = now;
             }

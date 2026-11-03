@@ -42,7 +42,9 @@ public final class NotificationWorkPolicy {
         int current = pm.getComponentEnabledSetting(component);
         int desired = enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                 : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-        if (current != desired && !(enabled && current == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT)) {
+        // Explicitly enable even from DEFAULT. Android may still remember a previous unbind
+        // across a process restart or app-data reset and needs a component change to rediscover it.
+        if (current != desired) {
             pm.setComponentEnabledSetting(component, desired, PackageManager.DONT_KILL_APP);
         }
         if (enabled) NotificationListener.requestListenerReconnect(app);
