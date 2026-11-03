@@ -254,11 +254,24 @@ public final class NotificationRetention188RegressionTest {
     }
 
     private NotificationHistoryRecord post(String mode) throws Exception {
-        long before = NotificationTimelineStore.latestRowId(app);
+        long began = System.currentTimeMillis();
         PowerTestSupport187.control(mode);
-        PowerTestSupport187.await("Received event was durably committed", () -> latestReceived() != null
-                && latestReceived().dbId > before);
-        return latestReceived();
+        NotificationHistoryRecord[] received = new NotificationHistoryRecord[1];
+        PowerTestSupport187.await("This Android post was durably committed", () -> {
+            android.service.notification.StatusBarNotification[] active =
+                    NotificationListener.activeNotificationsSnapshot();
+            if (active == null) return false;
+            for (android.service.notification.StatusBarNotification sbn : active) {
+                if (sbn == null || !PowerTestSupport187.FIXTURE.equals(sbn.getPackageName())
+                        || sbn.getId() != 8800 || sbn.getPostTime() < began) continue;
+                String id = NotificationListener.getTimelineId(sbn);
+                if (!NotificationListener.isNotificationActive(app, id, sbn.getPostTime())) continue;
+                received[0] = NotificationTimelineStore.findExact(app, id, sbn.getPostTime());
+                if (received[0] != null) return true;
+            }
+            return false;
+        });
+        return received[0];
     }
 
     private NotificationHistoryRecord latestReceived() {

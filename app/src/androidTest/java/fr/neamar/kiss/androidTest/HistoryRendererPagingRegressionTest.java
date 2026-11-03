@@ -103,7 +103,12 @@ public final class HistoryRendererPagingRegressionTest {
                     try {
                         SearchHandler.getInstance().cancelSearch();
                         List<Result<?>> mixed = BaselineBehaviorTest.fixtures(activity, false);
+                        // Install the complete fixture even if an earlier layout left a scroll
+                        // callback pending; the test starts with a settled, controlled dataset.
+                        activity.adapter.clear();
                         activity.adapter.updateResults(activity, mixed, false, "");
+                        assertEquals("Complete mixed History fixture installed", 24,
+                                activity.adapter.getCount());
                         Object forwarders = field(activity, "forwarderManager");
                         Object wheel = field(forwarders, "historyDisplayForwarder");
                         call(wheel, "onResume");

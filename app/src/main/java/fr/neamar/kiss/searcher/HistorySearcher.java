@@ -394,7 +394,7 @@ public class HistorySearcher extends Searcher {
             if (notification == null
                     || excludedPojoById.contains(notification.id)
                     || excludedPackages.contains(notification.packageName)
-                    || NotificationTimelineState.isHiddenFromHistory(
+                    || NotificationTimelineState.isHiddenOrEarlierFromHistory(
                     activity, notification.exactNotificationId, notification.postTime)) {
                 continue;
             }
@@ -489,7 +489,7 @@ public class HistorySearcher extends Searcher {
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;
             return excludedPackages.contains(notification.packageName)
-                    || (activity != null && NotificationTimelineState.isHiddenFromHistory(
+                    || (activity != null && NotificationTimelineState.isHiddenOrEarlierFromHistory(
                     activity, notification.exactNotificationId, notification.postTime));
         }
         return false;
