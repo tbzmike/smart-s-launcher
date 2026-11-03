@@ -112,7 +112,7 @@ jobs:
           CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' verified-apk/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
           test "$CERT" = '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53'
           "$SDK/aapt" dump badging verified-apk/SmartSLauncher.apk > verified-apk/package-badging.txt
-          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='622'" | grep -F "versionName='3.30.194'"
+          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='623'" | grep -F "versionName='3.30.194'"
           sha256sum verified-apk/SmartSLauncher.apk > verified-apk/SmartSLauncher.sha256
           git rev-parse HEAD > verified-apk/source-commit.txt
       - uses: actions/upload-artifact@v7

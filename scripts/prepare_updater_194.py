@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 VERSION = "3.30.194"
-VERSION_CODE = 622
+VERSION_CODE = 623
 BASE = f"https://github.com/tbzmike/smart-s-launcher/releases/download/v{VERSION}/"
 
 
