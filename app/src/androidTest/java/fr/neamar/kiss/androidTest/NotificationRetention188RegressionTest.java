@@ -76,6 +76,30 @@ public final class NotificationRetention188RegressionTest {
         HistoryTestSupport188.screenshot(app, "received-then-dismissed-history188");
     }
 
+    @Test public void revokedListenerTokenCannotCrashLiveNotificationLookups() throws Exception {
+        java.lang.reflect.Field instanceField = NotificationListener.class.getDeclaredField("instance");
+        instanceField.setAccessible(true);
+        NotificationListener previous = (NotificationListener) instanceField.get(null);
+        assertNotNull(previous);
+        String component = app.getPackageName() + "/fr.neamar.kiss.notification.NotificationListener";
+        PowerTestSupport187.shell("cmd notification disallow_listener " + component);
+        try {
+            PowerTestSupport187.await("Listener really disconnected", () ->
+                    !NotificationListener.isReadyForExactNotificationLookup());
+            Method find = NotificationListener.class.getDeclaredMethod("findActiveByKey", String.class);
+            find.setAccessible(true);
+            assertNull(find.invoke(previous, "no-such-notification-key"));
+            Method snapshot = NotificationListener.class.getDeclaredMethod(
+                    "getActiveNotificationsSafely", String[].class);
+            snapshot.setAccessible(true);
+            snapshot.invoke(previous, new Object[]{null});
+        } finally {
+            PowerTestSupport187.shell("cmd notification allow_listener " + component);
+            PowerTestSupport187.await("Listener really reconnected",
+                    NotificationListener::isReadyForExactNotificationLookup);
+        }
+    }
+
     @Test public void receiptCommitsDuringScrollEvenWhenOptionalRouteWorkerIsBlocked() throws Exception {
         java.lang.reflect.Field f = NotificationListener.class.getDeclaredField("RECONCILE_EXECUTOR");
         f.setAccessible(true);

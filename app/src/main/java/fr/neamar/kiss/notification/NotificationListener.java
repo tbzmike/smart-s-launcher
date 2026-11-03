@@ -23,6 +23,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.RemoteViews;
 
+import androidx.annotation.Nullable;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.preference.PreferenceManager;
 
@@ -901,7 +902,7 @@ public class NotificationListener extends NotificationListenerService {
     public static boolean hasMarkAllReadAction(Context context, String groupKey) {
         NotificationListener listener = instance;
         if (listener == null) return false;
-        StatusBarNotification[] active = listener.getActiveNotifications();
+        StatusBarNotification[] active = listener.getActiveNotificationsSafely(null);
         if (active == null) return false;
         for (StatusBarNotification sbn : active) {
             if (!groupKey.equals(listener.getPackageKey(sbn))) continue;
@@ -913,7 +914,7 @@ public class NotificationListener extends NotificationListenerService {
     public static boolean markAllRead(Context context, String groupKey) {
         NotificationListener listener = instance;
         if (listener == null) return false;
-        StatusBarNotification[] active = listener.getActiveNotifications();
+        StatusBarNotification[] active = listener.getActiveNotificationsSafely(null);
         if (active == null) return false;
 
         Notification.Action markAllAction = null;
@@ -1347,7 +1348,7 @@ public class NotificationListener extends NotificationListenerService {
     public static View createNativeGroupView(Context context, String groupKey, ViewGroup parent, boolean expanded) {
         NotificationListener listener = instance;
         if (listener == null) return null;
-        StatusBarNotification[] active = listener.getActiveNotifications();
+        StatusBarNotification[] active = listener.getActiveNotificationsSafely(null);
         if (active == null) return null;
         StatusBarNotification latest = null;
         for (StatusBarNotification sbn : active) {
@@ -1400,10 +1401,21 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private StatusBarNotification findActiveByKey(String key) {
-        StatusBarNotification[] active = getActiveNotifications(new String[]{key});
+        StatusBarNotification[] active = getActiveNotificationsSafely(new String[]{key});
         if (active == null) return null;
         for (StatusBarNotification sbn : active) if (key.equals(sbn.getKey())) return sbn;
         return null;
+    }
+
+    /** Android can revoke the listener token before its disconnect callback reaches the app. */
+    private StatusBarNotification[] getActiveNotificationsSafely(@Nullable String[] keys) {
+        try {
+            return keys == null ? getActiveNotifications() : getActiveNotifications(keys);
+        } catch (RuntimeException e) {
+            // Live notification actions are temporarily unavailable; saved history stays intact.
+            Log.d(TAG, "Notification listener is not available for a live snapshot", e);
+            return null;
+        }
     }
 
     public static List<NotificationSnapshot> getGroupNotifications(Context context, String groupKey) {
