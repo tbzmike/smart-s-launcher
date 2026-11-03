@@ -49,6 +49,23 @@ reset_app() {
     adb shell pm grant com.tbzmike.smartslauncher.debug "android.permission.$permission"
   done
 }
+# The full candidate at 27ba470 passed HOME/rotation, exact shortcuts, notification retention
+# and search on API 35/36. Its only assertion failure was an asynchronous preference callback;
+# API 36 then disconnected before the final renderer test. Recheck those affected areas only.
+if [[ "${VERIFY_192_FINAL_CHECK:-0}" == "1" ]]; then
+  reset_app
+  adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
+  run_test fr.neamar.kiss.androidTest.LowOverhead187RegressionTest verification-results/disabled-features.log
+  STOCK_HOME="$(adb shell cmd package query-activities --brief -a android.intent.action.MAIN \
+    -c android.intent.category.HOME | python3 -c 'import re,sys; print(next(x.strip() for x in sys.stdin if re.fullmatch(r"[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+",x.strip()) and "com.tbzmike.smartslauncher" not in x and "FallbackHome" not in x))')"
+  adb shell cmd package set-home-activity --user 0 "$STOCK_HOME"
+  reset_app
+  adb shell input keyevent KEYCODE_HOME
+  run_test fr.neamar.kiss.androidTest.HistoryRendererPagingRegressionTest verification-results/history-layouts.log
+  if (( ${#FAILED[@]} > 0 )); then printf 'FAIL: %s\n' "${FAILED[@]}"; exit 1; fi
+  echo 'PASS: final disabled-work and History layout checks; production source unchanged from full verification run 41660507126.'
+  exit 0
+fi
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test fr.neamar.kiss.androidTest.HomeRotation192RegressionTest verification-results/home-rotation.log

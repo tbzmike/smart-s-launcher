@@ -23,6 +23,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - name: Confirm production source matches the full regression candidate
+        run: |
+          git fetch --depth=1 origin 27ba47037527546e5d30a8055b3eb87103197c57
+          git diff --exit-code 27ba47037527546e5d30a8055b3eb87103197c57 -- app/src/main app/build.gradle build.gradle settings.gradle gradle gradle.properties
       - name: Build and run checks
         run: bash ./gradlew lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
       - name: Prepare build artifacts
@@ -38,7 +42,7 @@ jobs:
           if-no-files-found: error
 
   android:
-    name: Listener shutdown and launcher regressions on Android ${{ matrix.api }}
+    name: Final disabled-work and History layout checks on Android ${{ matrix.api }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -65,7 +69,7 @@ jobs:
           ram-size: 2048M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash scripts/verify_192_android.sh
+          script: VERIFY_192_FINAL_CHECK=1 bash scripts/verify_192_android.sh
       - name: Save Android verification evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

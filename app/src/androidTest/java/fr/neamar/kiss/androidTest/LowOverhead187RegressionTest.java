@@ -113,7 +113,7 @@ public final class LowOverhead187RegressionTest {
         assertEquals(0, forbidden.attempts);
     }
 
-    @Test public void disabledUsageAndSemanticSearchDoNotQueuePackageDescriptionWork() {
+    @Test public void disabledUsageAndSemanticSearchDoNotQueuePackageDescriptionWork() throws Exception {
         String name = "com.example.disabledpower192";
         fr.neamar.kiss.searcher.AppMetadataSyncScheduler.removePackage(app, name);
         Intent changed = new Intent(Intent.ACTION_PACKAGE_ADDED,
@@ -127,8 +127,9 @@ public final class LowOverhead187RegressionTest {
         assertTrue("Opted-in semantic descriptions still receive updates",
                 fr.neamar.kiss.searcher.AppMetadataSyncScheduler.pendingPackages(app).contains(name));
         prefs.edit().putBoolean(KEYS[4], false).commit();
-        assertNull("Disabling the feature cancels its automatic network job",
-                app.getSystemService(android.app.job.JobScheduler.class).getPendingJob(0x53534D44));
+        // Background-thread preference edits dispatch their listeners onto Android's main loop.
+        PowerTestSupport187.await("Disabling the feature cancels its automatic network job", () ->
+                app.getSystemService(android.app.job.JobScheduler.class).getPendingJob(0x53534D44) == null);
         fr.neamar.kiss.searcher.AppMetadataSyncScheduler.removePackage(app, name);
     }
 
