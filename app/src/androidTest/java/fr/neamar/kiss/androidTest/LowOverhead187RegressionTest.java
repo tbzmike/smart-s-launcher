@@ -43,14 +43,16 @@ public final class LowOverhead187RegressionTest {
     private Map<String, ?> original;
     private ActivityScenario<MainActivity> scenario;
     private static final String[] KEYS = {"enable-app-usage-tracking", "enable-notification-history",
-            "smart-battery-monitor-enabled", "app-usage-default-repaired-v33001"};
+            "smart-battery-monitor-enabled", "app-usage-default-repaired-v33001",
+            "semantic-search-enabled"};
 
     @Before public void setUp() throws Exception {
         app = InstrumentationRegistry.getInstrumentation().getTargetContext();
         prefs = PreferenceManager.getDefaultSharedPreferences(app);
         original = prefs.getAll();
         prefs.edit().putBoolean(KEYS[0], false).putBoolean(KEYS[1], false)
-                .putBoolean(KEYS[2], false).putBoolean(KEYS[3], true).commit();
+                .putBoolean(KEYS[2], false).putBoolean(KEYS[3], true)
+                .putBoolean(KEYS[4], false).commit();
         LauncherScrollWorkGate.setScrolling(false);
         PowerTestSupport187.shell("appops set " + app.getPackageName() + " GET_USAGE_STATS allow");
         PowerTestSupport187.control("notify-clear");
@@ -109,6 +111,25 @@ public final class LowOverhead187RegressionTest {
         NoUsageQueries forbidden = new NoUsageQueries(app);
         assertFalse(AppUsageTodayStore.getToday(forbidden).available);
         assertEquals(0, forbidden.attempts);
+    }
+
+    @Test public void disabledUsageAndSemanticSearchDoNotQueuePackageDescriptionWork() {
+        String name = "com.example.disabledpower192";
+        fr.neamar.kiss.searcher.AppMetadataSyncScheduler.removePackage(app, name);
+        Intent changed = new Intent(Intent.ACTION_PACKAGE_ADDED,
+                android.net.Uri.parse("package:" + name));
+        new fr.neamar.kiss.appusage.AppUsagePackageReceiver().onReceive(app, changed);
+        assertFalse(fr.neamar.kiss.searcher.AppMetadataSyncScheduler.pendingPackages(app).contains(name));
+        assertNull(app.getSystemService(android.app.job.JobScheduler.class).getPendingJob(0x53534D44));
+
+        prefs.edit().putBoolean(KEYS[4], true).commit();
+        new fr.neamar.kiss.appusage.AppUsagePackageReceiver().onReceive(app, changed);
+        assertTrue("Opted-in semantic descriptions still receive updates",
+                fr.neamar.kiss.searcher.AppMetadataSyncScheduler.pendingPackages(app).contains(name));
+        prefs.edit().putBoolean(KEYS[4], false).commit();
+        assertNull("Disabling the feature cancels its automatic network job",
+                app.getSystemService(android.app.job.JobScheduler.class).getPendingJob(0x53534D44));
+        fr.neamar.kiss.searcher.AppMetadataSyncScheduler.removePackage(app, name);
     }
 
     @Test public void batteryOffStopsTheServiceAndRejectsAStaleStart() throws Exception {

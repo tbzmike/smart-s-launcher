@@ -75,6 +75,9 @@ public final class AppSourceMetadataUpdater {
 
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
     private static final AtomicBoolean AUTO_RUNNING = new AtomicBoolean(false);
+    private static final AtomicBoolean AUTO_CANCEL_REQUESTED = new AtomicBoolean(false);
+    private static volatile Thread automaticThread;
+    private static volatile ExecutorService automaticFetchPool;
     private static final ExecutorService COORDINATOR =
             fr.neamar.kiss.utils.IdleExecutors.single("smart-s-app-source-update");
 
@@ -246,12 +249,14 @@ public final class AppSourceMetadataUpdater {
 
         if (!RUNNING.compareAndSet(false, true)) return false;
         AUTO_RUNNING.set(true);
+        AUTO_CANCEL_REQUESTED.set(false);
         lastFailure = "";
 
         final Context appContext = context.getApplicationContext();
         final Set<String> requested = new HashSet<>(packages);
 
         COORDINATOR.execute(() -> {
+            automaticThread = Thread.currentThread();
             ExecutorService fetchPool = Executors.newFixedThreadPool(
                     Math.max(1, Math.min(FETCH_WORKERS, requested.size())),
                     runnable -> {
@@ -259,6 +264,7 @@ public final class AppSourceMetadataUpdater {
                         thread.setPriority(Thread.MIN_PRIORITY);
                         return thread;
                     });
+            automaticFetchPool = fetchPool;
 
             final String sessionId = "metadata-auto-" + System.currentTimeMillis();
             int autoDownloaded = 0;
@@ -268,6 +274,9 @@ public final class AppSourceMetadataUpdater {
             Set<String> completedPackages = Collections.synchronizedSet(new HashSet<>());
 
             try {
+                if (AUTO_CANCEL_REQUESTED.get()
+                        || !AppMetadataSyncScheduler.shouldRunAutomatically(appContext)
+                        || !AppMetadataSyncScheduler.isInteractive(appContext)) return;
                 try {
                     DBHelper.insertSemanticActivity(appContext, new SemanticActivityRecord(
                             System.currentTimeMillis(),
@@ -287,6 +296,7 @@ public final class AppSourceMetadataUpdater {
                         new ExecutorCompletionService<>(fetchPool);
 
                 for (String packageName : requested) {
+                    if (AUTO_CANCEL_REQUESTED.get()) break;
                     AppSourceMetadataRecord old = previous.get(packageName);
                     completionService.submit(() -> {
                         RefreshResult result = refreshOne(appContext, packageName, old, sessionId);
@@ -296,12 +306,16 @@ public final class AppSourceMetadataUpdater {
                 }
 
                 for (int i = 0; i < requested.size(); i++) {
+                    if (AUTO_CANCEL_REQUESTED.get()) break;
                     try {
                         RefreshResult result = completionService.take().get();
                         if (result == RefreshResult.DOWNLOADED) autoDownloaded++;
                         else if (result == RefreshResult.RETAINED) autoRetained++;
                         else if (result == RefreshResult.LOCAL_FALLBACK) autoLocal++;
                         else autoMissing++;
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
                     } catch (Exception e) {
                         autoMissing++;
                         Log.w(TAG, "Automatic app metadata refresh item failed", e);
@@ -309,7 +323,7 @@ public final class AppSourceMetadataUpdater {
                 }
 
                 boolean hnswScheduled = false;
-                if (prefs.getBoolean("semantic-search-enabled", false)
+                if (!AUTO_CANCEL_REQUESTED.get() && prefs.getBoolean("semantic-search-enabled", false)
                         && prefs.getBoolean(SemanticHnswIndex.PREF_HNSW_ENABLED, true)) {
                     SemanticHnswIndex.getInstance().scheduleRebuild(dataHandler, prefs);
                     hnswScheduled = true;
@@ -338,6 +352,8 @@ public final class AppSourceMetadataUpdater {
                 Log.w(TAG, "Automatic app metadata refresh failed; keeping queued requests", error);
             } finally {
                 fetchPool.shutdownNow();
+                automaticFetchPool = null;
+                automaticThread = null;
                 dataHandler.invalidateAppSourceSemanticText();
                 AUTO_RUNNING.set(false);
                 RUNNING.set(false);
@@ -359,6 +375,16 @@ public final class AppSourceMetadataUpdater {
 
     public static boolean isAutomaticRunning() {
         return AUTO_RUNNING.get();
+    }
+
+    /** Stop only automatic work; an explicit manual metadata refresh is left alone. */
+    public static void cancelAutomatic() {
+        if (!AUTO_RUNNING.get()) return;
+        AUTO_CANCEL_REQUESTED.set(true);
+        ExecutorService pool = automaticFetchPool;
+        if (pool != null) pool.shutdownNow();
+        Thread worker = automaticThread;
+        if (worker != null) worker.interrupt();
     }
 
     @NonNull

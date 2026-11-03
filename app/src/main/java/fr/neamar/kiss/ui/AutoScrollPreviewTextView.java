@@ -167,7 +167,10 @@ public class AutoScrollPreviewTextView extends TextView {
     @Override
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
-        if (!hasWindowFocus) return;
+        if (!hasWindowFocus) {
+            cancelScrollStep();
+            return;
+        }
         refreshOverflowMode();
         applyConfiguredBehavior();
         if (isAutoExpand()) {
@@ -414,6 +417,8 @@ public class AutoScrollPreviewTextView extends TextView {
 
     private void scheduleScrollStep(long delayMs) {
         if (scrollStepScheduled || !attached || isAutoExpand()) return;
+        Layout currentLayout = getLayout();
+        if (currentLayout != null && currentLayout.getLineCount() <= VISIBLE_LINES) return;
         if (!isShown() || !hasWindowFocus()) {
             cancelScrollStep();
             return;

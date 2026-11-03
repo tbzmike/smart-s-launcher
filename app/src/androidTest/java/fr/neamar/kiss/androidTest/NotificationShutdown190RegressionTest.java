@@ -28,7 +28,8 @@ public final class NotificationShutdown190RegressionTest {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(app);
         Map<String, ?> original = prefs.getAll();
         String[] keys = {"enable-notification-history", "enable-app-usage-tracking",
-                "smart-battery-monitor-enabled", "app-usage-default-repaired-v33001"};
+                "smart-battery-monitor-enabled", "app-usage-default-repaired-v33001",
+                "semantic-search-enabled"};
         PowerManager power = app.getSystemService(PowerManager.class);
         ActivityScenario<MainActivity> scenario = null;
         try {
@@ -90,6 +91,7 @@ public final class NotificationShutdown190RegressionTest {
             PowerTestSupport187.shell("input keyevent KEYCODE_WAKEUP");
             PowerTestSupport187.shell("wm dismiss-keyguard");
             PowerTestSupport187.await("Screen wakes", power::isInteractive);
+            prefs.edit().putBoolean("semantic-search-enabled", true).commit();
             fr.neamar.kiss.searcher.AppMetadataSyncScheduler.resumePending(app);
             assertNotNull("Queued package update is scheduled again on wake",
                     app.getSystemService(JobScheduler.class).getPendingJob(0x53534D44));

@@ -11,7 +11,10 @@ public final class LauncherEntryActivity extends Activity {
         try {
             Intent home = new Intent(Intent.ACTION_MAIN)
                     .addCategory(Intent.CATEGORY_HOME)
-                    .setClass(this, MainActivity.class)
+                    // A component-explicit HOME intent is classified as a normal task by
+                    // Android. Package restriction keeps the destination exact while allowing
+                    // Android to recognize and reuse the real HOME task.
+                    .setPackage(getPackageName())
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
             startActivity(home);
         } finally {

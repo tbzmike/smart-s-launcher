@@ -168,9 +168,8 @@ public class ShortcutUtil {
      * set: always merge every existing pin for this package and profile.
      */
     @RequiresApi(Build.VERSION_CODES.O)
-    public static boolean retainShortcut(Context context, @Nullable ShortcutInfo selected) {
+    public static synchronized boolean retainShortcut(Context context, @Nullable ShortcutInfo selected) {
         if (selected == null || !selected.isEnabled()) return false;
-        if (selected.isPinned()) return true;
         LauncherApps launcher = ContextCompat.getSystemService(context, LauncherApps.class);
         if (launcher == null) return false;
         try {
@@ -183,6 +182,7 @@ public class ShortcutUtil {
             if (existing != null) for (ShortcutInfo shortcut : existing) {
                 if (shortcut != null && shortcut.isPinned()) ids.add(shortcut.getId());
             }
+            if (ids.contains(selected.getId())) return true;
             ids.add(selected.getId());
             launcher.pinShortcuts(selected.getPackage(), new ArrayList<>(ids), selected.getUserHandle());
             ShortcutInfo pinned = getShortCut(context, selected.getUserHandle(),
@@ -196,7 +196,7 @@ public class ShortcutUtil {
 
     /** One grouped, on-load migration for still-live IDs already present in saved History/catalog. */
     @RequiresApi(Build.VERSION_CODES.O)
-    public static void retainRememberedShortcuts(Context context, List<ShortcutInfo> live,
+    public static synchronized void retainRememberedShortcuts(Context context, List<ShortcutInfo> live,
                                                  List<ShortcutRecord> saved) {
         Set<String> savedKeys = new LinkedHashSet<>();
         for (ShortcutRecord record : saved) {
@@ -219,17 +219,24 @@ public class ShortcutUtil {
         for (List<ShortcutInfo> group : groups.values()) {
             Set<String> ids = new LinkedHashSet<>();
             boolean changed = false;
-            for (ShortcutInfo info : group) {
-                if (info.isPinned()) ids.add(info.getId());
-                if (info.isEnabled() && savedKeys.contains(info.getPackage() + '|'
-                        + ShortcutPojo.OREO_PREFIX + info.getId())) {
-                    changed |= !info.isPinned();
-                    ids.add(info.getId());
-                }
-            }
-            if (!changed) continue;
             ShortcutInfo first = group.get(0);
             try {
+                // pinShortcuts replaces the entire set. Re-read it while holding the same lock
+                // as explicit pin/unpin and on-tap retention, rather than using a stale scan.
+                LauncherApps.ShortcutQuery query = new LauncherApps.ShortcutQuery();
+                query.setPackage(first.getPackage());
+                query.setQueryFlags(FLAG_MATCH_PINNED);
+                List<ShortcutInfo> current = launcher.getShortcuts(query, first.getUserHandle());
+                if (current != null) for (ShortcutInfo item : current) {
+                    if (item != null && item.isPinned()) ids.add(item.getId());
+                }
+                for (ShortcutInfo info : group) {
+                    if (info.isEnabled() && savedKeys.contains(info.getPackage() + '|'
+                            + ShortcutPojo.OREO_PREFIX + info.getId())) {
+                        changed |= ids.add(info.getId());
+                    }
+                }
+                if (!changed) continue;
                 launcher.pinShortcuts(first.getPackage(), new ArrayList<>(ids), first.getUserHandle());
             } catch (RuntimeException e) {
                 Log.w(TAG, "Saved shortcut retention unavailable for " + first.getPackage(), e);

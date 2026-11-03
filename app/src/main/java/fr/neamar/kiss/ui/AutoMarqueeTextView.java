@@ -445,6 +445,9 @@ public class AutoMarqueeTextView extends TextView {
             refreshOverflowMode();
             applyConfiguredBehavior();
             if (!isAutoExpand()) scheduleMarqueeRestart();
+        } else {
+            stopHorizontalText();
+            removeCallbacks(deferredMarqueeRestart);
         }
     }
 }

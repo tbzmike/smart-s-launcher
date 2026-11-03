@@ -37,6 +37,7 @@ import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
+import fr.neamar.kiss.utils.IceBoxSdkBridge;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.shortcut.SavedShortcutRoutes;
@@ -295,6 +296,18 @@ public final class ShortcutLaunch186IntegrationTest {
         assertHit("main");
         assertTrue("Legacy IceBox wrappers use the same verified target enable path",
                 AppLaunchUtils.isPackageEnabledNow(context, TARGET));
+
+        ShortcutRecord idOnly = new ShortcutRecord();
+        idOnly.name = "A renamed shortcut with no matching app label";
+        idOnly.packageName = ICEBOX;
+        idOnly.intentUri = ShortcutPojo.OREO_PREFIX + TARGET;
+        ShortcutPojo lostAndroidId = new ShortcutPojo(UserHandle.OWNER, idOnly, null, true, false, false);
+        lostAndroidId.setName(idOnly.name);
+        shell("pm disable-user --user 0 " + TARGET);
+        click(lostAndroidId, false);
+        assertHit("main");
+        assertTrue("An Ice Box app ID recovers its exact target without its old shortcut record",
+                AppLaunchUtils.isPackageEnabledNow(context, TARGET));
     }
 
     private ShortcutPojo nativePojo(String pkg, String id, String target) throws Exception {
@@ -306,6 +319,38 @@ public final class ShortcutLaunch186IntegrationTest {
                 info.isPinned(), info.isDynamic(), false);
         pojo.setName(record.name);
         return pojo;
+    }
+
+    @Test public void missingIceBoxShortcutUsesItsSdkWithoutRoot() throws Exception {
+        String iceBox = "com.catchingnow.icebox";
+        assertTrue("Test Ice Box SDK provider is installed", IceBoxSdkBridge.available(context, iceBox));
+        assertTrue("SDK access is granted for this fixture", IceBoxSdkBridge.hasPermission(context));
+        LinkedBlockingQueue<String> sdkCalls = new LinkedBlockingQueue<>();
+        BroadcastReceiver sdkReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context c, Intent request) {
+                String target = request.getStringExtra("target");
+                if (TARGET.equals(target)) shell("pm enable --user 0 " + TARGET);
+                sdkCalls.offer(target == null ? "" : target);
+            }
+        };
+        ContextCompat.registerReceiver(context, sdkReceiver,
+                new IntentFilter("com.tbzmike.shortcutfixture.ICEBOX_SDK"),
+                ContextCompat.RECEIVER_EXPORTED);
+        try {
+            ShortcutRecord record = new ShortcutRecord();
+            record.name = "Renamed Ice Box shortcut";
+            record.packageName = iceBox;
+            record.intentUri = ShortcutPojo.OREO_PREFIX + TARGET;
+            ShortcutPojo stale = new ShortcutPojo(UserHandle.OWNER, record, null, true, false, false);
+            stale.setName(record.name);
+            shell("pm disable-user --user 0 " + TARGET);
+            click(stale, false);
+            assertHit("main");
+            assertEquals("The SDK received the actual target", TARGET, sdkCalls.poll(5, TimeUnit.SECONDS));
+            assertEquals("The Ice Box SDK route does not require Smart S root", 0, enableCommands);
+        } finally {
+            context.unregisterReceiver(sdkReceiver);
+        }
     }
 
     @Test public void exactRouteCodecPreservesTypedArraysAndIntentStack() throws Exception {

@@ -72,6 +72,10 @@ public final class NotificationWorkPolicy {
                 syncListener(app);
             } else if (AppUsageTracker.PREF_ENABLED.equals(key)) {
                 AppUsageTracker.stopDisabledWork(app);
+                fr.neamar.kiss.searcher.AppMetadataSyncScheduler.syncAutomaticWork(app);
+            } else if ("semantic-search-enabled".equals(key)
+                    || "semantic-use-app-source-descriptions".equals(key)) {
+                fr.neamar.kiss.searcher.AppMetadataSyncScheduler.syncAutomaticWork(app);
             } else if (BatteryMonitorStarter.PREF_ENABLED.equals(key)
                     && !BatteryMonitorStarter.isEnabled(app)) {
                 BatteryMonitorStarter.stopRunning(app);
@@ -82,6 +86,7 @@ public final class NotificationWorkPolicy {
         NotificationAvatarSupport.onHistorySettingChanged(app);
         if (!historyEnabled(app)) MediaNotificationSupport.clearMemoryCache();
         AppUsageTracker.stopDisabledWork(app);
+        fr.neamar.kiss.searcher.AppMetadataSyncScheduler.syncAutomaticWork(app);
         if (!BatteryMonitorStarter.isEnabled(app)) BatteryMonitorStarter.stopRunning(app);
         syncListener(app);
     }

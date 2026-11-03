@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 import fr.neamar.kiss.appusage.AppMetadataRefreshPolicy;
+import fr.neamar.kiss.appusage.AppUsageTracker;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.SemanticActivityRecord;
 
@@ -37,6 +38,25 @@ public final class AppMetadataSyncScheduler {
     private static final String PREF_UPDATE_PREFIX = "app-metadata-auto-update:";
 
     private AppMetadataSyncScheduler() { }
+
+    /** Description refresh belongs to usage tracking or opted-in semantic descriptions. */
+    public static boolean shouldRunAutomatically(@NonNull Context context) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        return AppUsageTracker.isEnabled(context)
+                || (prefs.getBoolean("semantic-search-enabled", false)
+                    && prefs.getBoolean(AppSourceMetadataUpdater.PREF_USE_SOURCE_DESCRIPTIONS, true));
+    }
+
+    /** Keep pending work for later, without leaving an unused network job active. */
+    public static void syncAutomaticWork(@NonNull Context context) {
+        if (shouldRunAutomatically(context)) {
+            resumePending(context);
+        } else {
+            JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            if (scheduler != null) scheduler.cancel(JOB_ID);
+            AppSourceMetadataUpdater.cancelAutomatic();
+        }
+    }
 
     public static void enqueuePackage(@NonNull Context context,
                                       @NonNull String packageName,
@@ -160,13 +180,14 @@ public final class AppMetadataSyncScheduler {
     }
 
     public static void deferPendingWhileScreenOff(@NonNull Context context) {
-        if (isInteractive(context) || AppSourceMetadataUpdater.isAutomaticRunning()) return;
+        if (isInteractive(context)) return;
         JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if (scheduler != null) scheduler.cancel(JOB_ID);
+        AppSourceMetadataUpdater.cancelAutomatic();
     }
 
     public static void resumePending(@NonNull Context context) {
-        if (!isInteractive(context) || pendingPackages(context).isEmpty()
+        if (!shouldRunAutomatically(context) || !isInteractive(context) || pendingPackages(context).isEmpty()
                 || AppSourceMetadataUpdater.isAutomaticRunning()) return;
         JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if (scheduler != null) {
@@ -179,7 +200,7 @@ public final class AppMetadataSyncScheduler {
 
     public static void schedule(@NonNull Context context) {
         Context appContext = context.getApplicationContext();
-        if (!isInteractive(appContext)) return;
+        if (!shouldRunAutomatically(appContext) || !isInteractive(appContext)) return;
         JobScheduler scheduler =
                 (JobScheduler) appContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if (scheduler == null) return;

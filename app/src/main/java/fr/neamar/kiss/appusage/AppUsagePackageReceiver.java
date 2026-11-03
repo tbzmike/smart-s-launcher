@@ -35,9 +35,10 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
 
         Context appContext = context.getApplicationContext();
         boolean usageEnabled = AppUsageTracker.isEnabled(appContext);
+        boolean descriptionsEnabled = AppMetadataSyncScheduler.shouldRunAutomatically(appContext);
 
         if (Intent.ACTION_PACKAGE_ADDED.equals(action) && replacing) {
-            AppMetadataSyncScheduler.enqueuePackage(
+            if (descriptionsEnabled) AppMetadataSyncScheduler.enqueuePackage(
                     appContext,
                     packageName,
                     "App update detected from PACKAGE_ADDED(replacing) fallback");
@@ -48,7 +49,7 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
             if (usageEnabled && !recordCurrentPackage(appContext, packageName, false)) {
                 AppUsageSync.recordPackageChange(appContext, action, packageName, false);
             }
-            AppMetadataSyncScheduler.enqueuePackage(
+            if (descriptionsEnabled) AppMetadataSyncScheduler.enqueuePackage(
                     appContext,
                     packageName,
                     "New app install detected by Smart S App Usage/package receiver");
@@ -58,7 +59,7 @@ public final class AppUsagePackageReceiver extends BroadcastReceiver {
             if (usageEnabled && !recordCurrentPackage(appContext, packageName, true)) {
                 AppUsageSync.recordPackageChange(appContext, action, packageName, true);
             }
-            AppMetadataSyncScheduler.enqueuePackage(
+            if (descriptionsEnabled) AppMetadataSyncScheduler.enqueuePackage(
                     appContext,
                     packageName,
                     "App update detected by Smart S App Usage/package receiver");

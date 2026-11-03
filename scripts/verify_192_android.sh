@@ -11,9 +11,11 @@ p.write_text(s.replace('minifyEnabled true','minifyEnabled false')
               .replace('shrinkResources = true','shrinkResources = false'))
 PY
 bash ./gradlew --no-configuration-cache -PshortcutFixtures :app:assembleDebug :app:assembleDebugAndroidTest \
-  :shortcut-fixture:assembleTargetDebug :shortcut-fixture:assembleIceboxDebug --stacktrace
+  :shortcut-fixture:assembleTargetDebug :shortcut-fixture:assembleIceboxDebug \
+  :shortcut-fixture:assembleIceboxSdkDebug --stacktrace
 adb root
 adb wait-for-device
+adb install -r shortcut-fixture/build/outputs/apk/iceboxSdk/debug/shortcut-fixture-iceboxSdk-debug.apk
 adb install -r -g app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb install -r -g shortcut-fixture/build/outputs/apk/target/debug/shortcut-fixture-target-debug.apk
@@ -49,6 +51,14 @@ reset_app() {
 }
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
+run_test fr.neamar.kiss.androidTest.HomeRotation192RegressionTest verification-results/home-rotation.log
+if (( ${#FAILED[@]} > 0 )); then printf 'FAIL: %s\n' "${FAILED[@]}"; exit 1; fi
+reset_app
+adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
+run_test 'fr.neamar.kiss.ShortcutLaunch186IntegrationTest#missingIceBoxShortcutUsesItsSdkWithoutRoot' verification-results/icebox-sdk.log
+if (( ${#FAILED[@]} > 0 )); then printf 'FAIL: %s\n' "${FAILED[@]}"; exit 1; fi
+reset_app
+adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test fr.neamar.kiss.androidTest.LowOverhead187RegressionTest verification-results/disabled-features.log
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
@@ -58,8 +68,6 @@ adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debu
 run_test fr.neamar.kiss.androidTest.CommunicationIndexLock191RegressionTest verification-results/database-lock-crash.log
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
-run_test fr.neamar.kiss.androidTest.HomeRotation192RegressionTest verification-results/home-rotation.log
-if (( ${#FAILED[@]} > 0 )); then printf 'FAIL: %s\n' "${FAILED[@]}"; exit 1; fi
 run_test fr.neamar.kiss.androidTest.HomeReturnAnimationRegressionTest verification-results/home-animation.log
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity

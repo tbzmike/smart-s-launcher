@@ -22,7 +22,7 @@ public final class HomeColdRestart192RegressionTest {
     @Test public void saveProcessBeforeManualRestart() throws Exception {
         Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
         Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                .setClass(app, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                .setPackage(app.getPackageName()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(home)) {
             HistoryTestSupport188.awaitUi(scenario, "Home ready before restart", a ->
                     KissApplication.getApplication(a).getDataHandler().isAllProvidersLoaded());

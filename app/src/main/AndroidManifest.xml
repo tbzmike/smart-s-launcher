@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Requested only when an Ice Box shortcut needs Ice Box to defrost its app. -->
+    <uses-permission android:name="com.catchingnow.icebox.SDK" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -44,6 +46,9 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/backup_descriptor">
+
+        <receiver android:name=".utils.IceBoxSdkBridge$AuthorizationReceiver"
+            android:exported="false" />
 
         <!-- App-drawer / Settings Open must enter the actual HOME task, not create a second
              standard task containing another MainActivity. -->

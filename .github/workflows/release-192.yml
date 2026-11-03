@@ -163,7 +163,7 @@ jobs:
           else
             gh release create "$TAG" --latest --target "$GITHUB_SHA" \
               --title "Smart S Launcher v3.30.192" \
-              --notes "Preserve the Home activity, results and icons on rotation and avoid unnecessary History reloads on repeated HOME presses. Add current Android process-exit information to shared crash diagnostics while retaining saved crash reports and prior fixes." \
+              --notes "Recover Ice Box app shortcuts using their saved package identity and Ice Box's supported unfreeze API; preserve existing Android shortcut pins. Reduce unused background metadata work, retain Home and icons during rotation, and include recent process exits in crash reports." \
               SmartSLauncher.apk SmartSLauncher-debug.apk smart-s-launcher-3.30.192.apk app-debug.apk latest-green.json
           fi
           gh release edit "$TAG" --latest --target "$GITHUB_SHA"

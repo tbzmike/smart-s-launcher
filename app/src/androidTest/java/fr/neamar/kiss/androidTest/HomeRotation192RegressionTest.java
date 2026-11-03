@@ -155,7 +155,7 @@ public final class HomeRotation192RegressionTest {
 
     private static ActivityScenario<MainActivity> launchHome(Context app) {
         Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                .setClass(app, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                .setPackage(app.getPackageName()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         return ActivityScenario.launch(home);
     }
 

@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission android:name="com.catchingnow.icebox.SDK" android:protectionLevel="normal" />
+    <application>
+        <provider android:name=".FixtureIceBoxProvider" android:exported="true"
+            android:authorities="com.catchingnow.icebox.SDK"
+            android:permission="com.catchingnow.icebox.SDK" />
+    </application>
+</manifest>

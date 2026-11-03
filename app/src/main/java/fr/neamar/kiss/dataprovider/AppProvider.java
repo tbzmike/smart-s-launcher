@@ -267,6 +267,16 @@ public class AppProvider extends Provider<AppPojo>
         return true;
     }
 
+    /** Coalesce a tap-triggered defrost refresh until Home is visible and settled. */
+    public static boolean deferLaunchRefresh(boolean reloadShortcuts) {
+        AppProvider provider = activeInstance;
+        if (provider == null) return false;
+        provider.deferredPackageReload = true;
+        provider.deferredShortcutReload |= reloadShortcuts;
+        if (launcherUiVisible) provider.scheduleDeferredPackageReload(HOME_RELOAD_GRACE_MS);
+        return true;
+    }
+
     public static void setLauncherScrolling(boolean scrolling) {
         launcherScrolling = scrolling;
         AppProvider provider = activeInstance;

@@ -52,6 +52,7 @@ import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.IceBoxFallbackTargetPolicy;
+import fr.neamar.kiss.utils.IceBoxSdkBridge;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
@@ -477,20 +478,53 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             }
             return true;
         }
-        if (!FrozenAppPreferences.autoEnable(context)) {
-            showAutoEnableDisabled(context);
-            return true;
-        }
+        enableIceBoxTarget(context, target);
+        return true;
+    }
+
+    private void enableIceBoxTarget(Context context, String target) {
         launchPending = true;
-        final String exactTarget = target;
-        AppLaunchUtils.ensurePackageEnabledAsync(context, exactTarget, enabled -> {
-            if (enabled) openEnabledIceBoxApp(context, exactTarget, true);
+        if (IceBoxSdkBridge.available(context, pojo.packageName)) {
+            if (IceBoxSdkBridge.hasPermission(context)) {
+                enableViaIceBox(context, target);
+                return;
+            }
+            if (context instanceof fr.neamar.kiss.MainActivity) {
+                ((fr.neamar.kiss.MainActivity) context).requestIceBoxAccess(granted -> {
+                    if (granted) enableViaIceBox(context, target);
+                    else enableIceBoxTargetWithRoot(context, target, true);
+                });
+                return;
+            }
+        }
+        enableIceBoxTargetWithRoot(context, target, false);
+    }
+
+    private void enableViaIceBox(Context context, String target) {
+        IceBoxSdkBridge.unfreezeAsync(context, target, enabled -> {
+            if (enabled) openEnabledIceBoxApp(context, target, true);
+            else enableIceBoxTargetWithRoot(context, target, true);
+        });
+    }
+
+    private void enableIceBoxTargetWithRoot(Context context, String target, boolean iceBoxTried) {
+        if (!FrozenAppPreferences.autoEnable(context)) {
+            launchPending = false;
+            if (iceBoxTried) Toast.makeText(context,
+                    "Allow Ice Box access to open this frozen app.", Toast.LENGTH_LONG).show();
+            else showAutoEnableDisabled(context);
+            return;
+        }
+        AppLaunchUtils.ensurePackageEnabledAsync(context, target, enabled -> {
+            if (enabled) openEnabledIceBoxApp(context, target, true);
             else {
                 launchPending = false;
-                showUnableToEnable(context, exactTarget);
+                if (iceBoxTried) Toast.makeText(context,
+                        "Ice Box could not unfreeze this app. Check its access and frozen state.",
+                        Toast.LENGTH_LONG).show();
+                else showUnableToEnable(context, target);
             }
         });
-        return true;
     }
 
     private void doOreoLaunch(Context context, View v, boolean asynchronous) {
@@ -550,20 +584,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 }
                 return;
             }
-            if (!FrozenAppPreferences.autoEnable(context)) {
-                showAutoEnableDisabled(context);
-                return;
-            }
-            launchPending = true;
-            final String knownTarget = target;
-            AppLaunchUtils.ensurePackageEnabledAsync(context, knownTarget, enabled -> {
-                if (!enabled) {
-                    launchPending = false;
-                    showUnableToEnable(context, knownTarget);
-                    return;
-                }
-                openEnabledIceBoxApp(context, knownTarget, true);
-            });
+            enableIceBoxTarget(context, target);
             return;
         }
 
@@ -599,6 +620,12 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
     @RequiresApi(Build.VERSION_CODES.O)
     @Nullable
     private String verifiedIceBoxTarget(Context context) {
+        // Ice Box app shortcuts use the exact target package as the Android shortcut ID.
+        // Unlike a label, this identity survives an app being frozen or temporarily hidden.
+        String id = pojo.getOreoId();
+        if (id.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+")
+                && !TextUtils.equals(id, pojo.packageName)
+                && isInstalledOrRememberedIceBoxTarget(context, id)) return id;
         String stored = pojo.targetPackage;
         if (!TextUtils.isEmpty(stored) && !TextUtils.equals(stored, pojo.packageName)) {
             // The publisher-associated package was saved before it was frozen; don't
@@ -610,6 +637,30 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         ShortcutInfo info = getShortCut(context);
         String resolved = info == null ? null : ShortcutUtil.resolveShortcutTargetPackage(context, info);
         return TextUtils.equals(resolved, pojo.packageName) ? null : resolved;
+    }
+
+    private boolean isInstalledOrRememberedIceBoxTarget(Context context, String target) {
+        try {
+            context.getPackageManager().getApplicationInfo(target,
+                    android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS
+                            | android.content.pm.PackageManager.MATCH_UNINSTALLED_PACKAGES);
+            return true;
+        } catch (android.content.pm.PackageManager.NameNotFoundException | RuntimeException ignored) {
+            // Ice Box can hide packages from PackageManager; consult the existing local catalog.
+        }
+        try {
+            android.os.UserManager users = ContextCompat.getSystemService(context, android.os.UserManager.class);
+            if (users != null) {
+                long serial = users.getSerialNumberForUser(android.os.Process.myUserHandle());
+                if (serial >= 0) for (AppCatalogRecord saved :
+                        SmartStateStore.getRememberedApps(context, serial)) {
+                    if (saved != null && target.equals(saved.packageName)) return true;
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cannot inspect remembered Ice Box target", e);
+        }
+        return false;
     }
 
     /**

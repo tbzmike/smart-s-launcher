@@ -54,6 +54,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import fr.neamar.kiss.adapter.RecordAdapter;
 import fr.neamar.kiss.broadcast.IncomingCallHandler;
@@ -1094,10 +1095,32 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         super.onActivityResult(requestCode, resultCode, data);
     }
 
+    private static final int ICE_BOX_PERMISSION_REQUEST = 4710;
+    private Consumer<Boolean> pendingIceBoxPermission;
+
+    /** Ask only after the user taps an Ice Box shortcut that needs defrosting. */
+    public void requestIceBoxAccess(@NonNull Consumer<Boolean> completed) {
+        if (pendingIceBoxPermission != null) { completed.accept(false); return; }
+        pendingIceBoxPermission = completed;
+        try {
+            requestPermissions(new String[]{fr.neamar.kiss.utils.IceBoxSdkBridge.PERMISSION},
+                    ICE_BOX_PERMISSION_REQUEST);
+        } catch (RuntimeException e) {
+            pendingIceBoxPermission = null;
+            completed.accept(false);
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         permissionManager.onRequestPermissionsResult(requestCode, permissions, grantResults);
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == ICE_BOX_PERMISSION_REQUEST && pendingIceBoxPermission != null) {
+            Consumer<Boolean> completed = pendingIceBoxPermission;
+            pendingIceBoxPermission = null;
+            completed.accept(grantResults.length > 0
+                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED);
+        }
     }
 
     @Override

@@ -19,7 +19,8 @@ public final class AppMetadataSyncJobService extends JobService {
     @Override
     public boolean onStartJob(JobParameters params) {
         // Keep the persistent queue for the next Home resume, without background retries.
-        if (!AppMetadataSyncScheduler.isInteractive(this)) return false;
+        if (!AppMetadataSyncScheduler.shouldRunAutomatically(this)
+                || !AppMetadataSyncScheduler.isInteractive(this)) return false;
         Map<String, Long> requests = AppMetadataSyncScheduler.pendingRequests(this);
         Set<String> pending = requests.keySet();
         if (pending.isEmpty()) return false;
@@ -49,7 +50,9 @@ public final class AppMetadataSyncJobService extends JobService {
                     }
                     AppMetadataSyncScheduler.acknowledge(this, acknowledged);
                     // Unexpected failed packages and newer revisions remain pending for retry.
-                    jobFinished(params, !AppMetadataSyncScheduler.pendingPackages(this).isEmpty());
+                    jobFinished(params, AppMetadataSyncScheduler.shouldRunAutomatically(this)
+                            && AppMetadataSyncScheduler.isInteractive(this)
+                            && !AppMetadataSyncScheduler.pendingPackages(this).isEmpty());
                 });
         if (!started) {
             // A manual refresh or another accepted job already owns the single updater.
@@ -60,7 +63,9 @@ public final class AppMetadataSyncJobService extends JobService {
 
     @Override
     public boolean onStopJob(JobParameters params) {
+        AppSourceMetadataUpdater.cancelAutomatic();
         // Pending package names remain persisted until completion, so ask JobScheduler to retry.
-        return true;
+        return AppMetadataSyncScheduler.shouldRunAutomatically(this)
+                && AppMetadataSyncScheduler.isInteractive(this);
     }
 }

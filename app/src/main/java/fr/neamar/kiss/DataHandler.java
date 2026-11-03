@@ -623,6 +623,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
      * @return true, if shortcut was pinned
      */
     public boolean pinShortcut(ShortcutPojo shortcut) {
+        synchronized (ShortcutUtil.class) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             LauncherApps launcherApps = ContextCompat.getSystemService(context, LauncherApps.class);
             if (shortcut.isOreoShortcut() &&
@@ -645,6 +646,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
             }
         }
         return false;
+        }
     }
 
     /**
@@ -655,6 +657,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
      * @return true, if shortcut was unpinned
      */
     public boolean unpinShortcut(ShortcutPojo shortcut) {
+        synchronized (ShortcutUtil.class) {
         if (!shortcut.isOreoShortcut()) {
             removeShortcut(shortcut);
         } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -679,6 +682,7 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
             }
         }
         return false;
+        }
     }
 
     /**

@@ -23,5 +23,10 @@ android {
             applicationId 'com.tbzmike.shortcutfixture.icebox'
             manifestPlaceholders = [fixtureLabel: 'Ice Box']
         }
+        iceboxSdk {
+            dimension 'route'
+            applicationId 'com.catchingnow.icebox'
+            manifestPlaceholders = [fixtureLabel: 'Ice Box SDK Fixture']
+        }
     }
 }

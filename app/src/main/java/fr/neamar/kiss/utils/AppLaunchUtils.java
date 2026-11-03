@@ -208,6 +208,7 @@ public final class AppLaunchUtils {
         if (context == null || packageName == null || packageName.isEmpty()) return;
         markPackageEnabled(packageName);
         Context app = context.getApplicationContext();
+        if (fr.neamar.kiss.dataprovider.AppProvider.deferLaunchRefresh(true)) return;
         KissApplication.getApplication(app).getDataHandler().reloadApps();
         KissApplication.getApplication(app).getDataHandler().reloadShortcuts();
         app.sendBroadcast(MainActivity.internalBroadcast(app, MainActivity.LOAD_OVER));
