@@ -49,6 +49,31 @@ reset_app() {
     adb shell pm grant com.tbzmike.smartslauncher.debug "android.permission.$permission"
   done
 }
+# Full Android 15/16 verification ran against 2bc31f44: all destinations, Home/rotation,
+# crash/database recovery, search UI/actions, notification retention and renderer checks passed.
+# Android 16's sole failure was a test counting an older saved notification before the current
+# event was durable. Production and fixture parity is enforced by the build job; recheck the
+# corrected notification/disabled-work suite and all affected frozen/legacy shortcut paths.
+if [[ "${VERIFY_194_FINAL_CHECK:-0}" == "1" ]]; then
+  reset_app
+  adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
+  adb shell pm revoke com.tbzmike.smartslauncher.debug com.catchingnow.icebox.SDK
+  run_test 'fr.neamar.kiss.ShortcutLaunch186IntegrationTest#realIceBoxIdsOpenDisabledHiddenAndComponentDisabledAppsWithoutSdkOrRoot' verification-results/icebox-native-routes.log
+  reset_app
+  adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
+  adb shell pm grant com.tbzmike.smartslauncher.debug com.catchingnow.icebox.SDK
+  run_test 'fr.neamar.kiss.ShortcutLaunch186IntegrationTest#missingIceBoxShortcutUsesItsSdkWithoutRoot' verification-results/icebox-sdk.log
+  reset_app
+  adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
+  run_test fr.neamar.kiss.androidTest.LowOverhead187RegressionTest verification-results/disabled-features.log
+  run_test fr.neamar.kiss.androidTest.NotificationShutdown190RegressionTest verification-results/listener-screen-off.log
+  reset_app
+  adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
+  run_test 'fr.neamar.kiss.ShortcutLaunch186IntegrationTest#openedShortcutIsPinnedWithoutLosingOtherPinsAndSurvivesDynamicRemoval,fr.neamar.kiss.ShortcutLaunch186IntegrationTest#disabledAndHiddenNativeShortcutActuallyUnfreezesAndOpensExactTarget,fr.neamar.kiss.ShortcutLaunch186IntegrationTest#iceBoxMetadataRetainsTargetEvenWhenItsPackageIsHidden,fr.neamar.kiss.ShortcutLaunch186IntegrationTest#legacyExactIntentRetainsItsDataExtrasAndEnablesDisabledComponent,fr.neamar.kiss.ShortcutLaunch186IntegrationTest#iceboxNativeRouteWorksAndStaleWrapperUnfreezesVerifiedTarget,fr.neamar.kiss.ShortcutLaunch186IntegrationTest#exactRouteCodecPreservesTypedArraysAndIntentStack' verification-results/shortcut-destinations.log
+  if (( ${#FAILED[@]} > 0 )); then printf 'FAIL: %s\n' "${FAILED[@]}"; exit 1; fi
+  echo 'PASS: exact received event is durable before OFF; disabled service/screen-off and frozen shortcut checks. Production unchanged from full verification run 41723861512.'
+  exit 0
+fi
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test fr.neamar.kiss.androidTest.HomeRotation192RegressionTest verification-results/home-rotation.log

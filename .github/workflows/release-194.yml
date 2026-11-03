@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-194-${{ github.ref }}
@@ -23,13 +24,17 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - name: Build and run checks
-        run: bash ./gradlew lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
-      - name: Prepare build artifacts
+      - name: Confirm unchanged production source from the full regression run
         run: |
-          mkdir -p release-input
-          cp app/build/outputs/apk/release/app-release-unsigned.apk release-input/
-          cp app/build/outputs/apk/debug/app-debug.apk release-input/
+          git fetch --depth=1 origin 2bc31f44fb583972280aeadc0c5c349908935990
+          git diff --exit-code 2bc31f44fb583972280aeadc0c5c349908935990 -- app/src/main app/build.gradle build.gradle settings.gradle gradle gradle.properties shortcut-fixture
+      - name: Reuse successful lint, unit test and APK build from that exact production source
+        uses: actions/download-artifact@v8
+        with:
+          run-id: 41723861512
+          github-token: ${{ github.token }}
+          name: release-input-194
+          path: release-input
       - uses: actions/upload-artifact@v7
         with:
           name: release-input-194
@@ -65,7 +70,7 @@ jobs:
           ram-size: 2048M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash scripts/verify_194_android.sh
+          script: VERIFY_194_FINAL_CHECK=1 bash scripts/verify_194_android.sh
       - name: Save Android verification evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

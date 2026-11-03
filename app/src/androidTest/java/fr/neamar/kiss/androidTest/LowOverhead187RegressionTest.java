@@ -200,14 +200,19 @@ public final class LowOverhead187RegressionTest {
         PowerTestSupport187.connect(app);
         PowerTestSupport187.control("notify-one");
         PowerTestSupport187.await("Exact notification is available", () -> fixtureNotification() != null);
-        String id = NotificationListener.getTimelineId(fixtureNotification());
-        PowerTestSupport187.await("Archive captures when enabled", () -> {
+        StatusBarNotification received = fixtureNotification();
+        String id = NotificationListener.getTimelineId(received);
+        long receivedAt = received.getPostTime();
+        PowerTestSupport187.await("This exact received event and its picture are durable", () -> {
             String path = app.getSharedPreferences("notification-visual-history", 0).getString(id + "|image", "");
             return !path.isEmpty() && new File(path).isFile()
-                    && !SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).isEmpty();
+                    && SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100)
+                    .stream().anyMatch(record -> id.equals(record.notificationId)
+                            && record.postTime == receivedAt);
         });
         int saved = SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size();
-        prefs.edit().putBoolean(KEYS[1], false).commit();
+        // Match the actual settings switch: dispatch its shutdown listeners on the UI thread.
+        scenario.onActivity(activity -> prefs.edit().putBoolean(KEYS[1], false).commit());
         PowerTestSupport187.await("Listener stops", () -> !listenerRunning());
         PowerTestSupport187.control("notify-fresh");
         Thread.sleep(500L);
