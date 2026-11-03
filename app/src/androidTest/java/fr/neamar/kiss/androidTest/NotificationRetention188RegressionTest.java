@@ -195,6 +195,8 @@ public final class NotificationRetention188RegressionTest {
         NotificationHistoryRecord first = post("notify-history-one");
         NotificationTimelineState.hideFromHistory(app, first.notificationId, first.postTime);
         DBHelper.removeFromHistory(app, first.notificationId);
+        assertFalse("A queued copy cannot recreate the removed History row",
+                DBHelper.insertNotificationHistory(app, first.notificationId, first.postTime));
         reconnect();
         refreshHome();
         awaitRow(first.notificationId, false);

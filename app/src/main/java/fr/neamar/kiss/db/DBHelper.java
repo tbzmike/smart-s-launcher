@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import fr.neamar.kiss.notification.NotificationTimelineState;
 import fr.neamar.kiss.utils.Log;
 
 public class DBHelper {
@@ -93,6 +94,12 @@ public class DBHelper {
         return DatabaseRecovery.run(context, db -> {
             db.beginTransaction();
             try {
+                // Removal records the hidden post before deleting its History row. Check again
+                // while holding the write transaction so a queued receipt cannot recreate it.
+                if (NotificationTimelineState.isHiddenOrEarlierFromHistory(context, record, postTime)) {
+                    db.setTransactionSuccessful();
+                    return false;
+                }
                 try (Cursor cursor = db.query("history", new String[]{"_id"},
                         "record=? AND timeStamp>=?", new String[]{record, Long.toString(postTime)},
                         null, null, null, "1")) {
