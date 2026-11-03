@@ -64,9 +64,8 @@ public final class SearchQuickActionStyle {
         shape.setColor(surface);
         shape.setCornerRadius(24f * density);
         shape.setStroke(Math.max(1, Math.round(density)), 0x66FFFFFF);
-        button.setSupportBackgroundTintList(null);
-        button.setBackgroundTintList(null);
         button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x1CFFFFFF), shape, null));
+        button.setBackgroundTintList(null);
         button.setTextColor(Color.WHITE);
     }
 }
