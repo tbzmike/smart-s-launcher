@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.text.TextUtils;
+import android.os.OperationCanceledException;
 
 import androidx.preference.PreferenceManager;
 
@@ -25,6 +26,7 @@ import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.pojo.NotificationHistorySearchPojo;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.searcher.Searcher;
+import fr.neamar.kiss.searcher.QuerySearcher;
 import fr.neamar.kiss.utils.fuzzy.MatchInfo;
 import fr.neamar.kiss.utils.fuzzy.SmartMatcher;
 
@@ -61,8 +63,15 @@ public final class NotificationProvider extends SimpleProvider<NotificationPojo>
         // whole timeline into memory on every typed character. Each matching persisted row becomes
         // a unique launcher result that deep-links back to that exact row and query.
         String trimmedQuery = query.trim();
-        List<NotificationHistoryRecord> history = SmartStateStore.queryNotifications(
-                context, null, Collections.singletonList(trimmedQuery), HISTORY_QUERY_LIMIT);
+        List<NotificationHistoryRecord> history;
+        try {
+            history = SmartStateStore.queryNotifications(context, null,
+                    Collections.singletonList(trimmedQuery), null, HISTORY_QUERY_LIMIT,
+                    searcher instanceof QuerySearcher
+                            ? ((QuerySearcher) searcher).getDatabaseCancellationSignal() : null);
+        } catch (OperationCanceledException cancelled) {
+            return;
+        }
         for (NotificationHistoryRecord record : history) {
             if (record == null || record.dbId <= 0L) continue;
 

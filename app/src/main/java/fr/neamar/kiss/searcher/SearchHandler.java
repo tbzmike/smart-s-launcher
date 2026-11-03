@@ -61,6 +61,7 @@ public class SearchHandler {
     private final AtomicLong searchGeneration = new AtomicLong();
     private final AtomicLong completedSearchGeneration = new AtomicLong(-1L);
     private Runnable pendingQuery;
+    private WeakReference<MainActivity> queryActionActivity = new WeakReference<>(null);
 
     private SearchHandler() {
         historySeedExecutor.allowCoreThreadTimeOut(true);
@@ -111,6 +112,12 @@ public class SearchHandler {
      */
     public void search(@NonNull Searcher.Type type, @NonNull MainActivity activity,
                        String query, boolean isRefresh) {
+        if (isRefresh && lastSearchType == Searcher.Type.QUERY && pendingQuery != null) {
+            // Notification/provider refreshes must neither bypass nor keep restarting the user's
+            // five-second deadline. The saved-window preview is the only work allowed here.
+            publishImmediateQueryPreview(activity, lastSearchQuery, searchGeneration.get());
+            return;
+        }
         final long generation = searchGeneration.incrementAndGet();
         cancelPendingQuery();
         cancelRunningSearch();
@@ -140,20 +147,38 @@ public class SearchHandler {
             final WeakReference<MainActivity> target = new WeakReference<>(activity);
             final String capturedQuery = query;
             final boolean capturedRefresh = isRefresh;
-            pendingQuery = () -> {
-                pendingQuery = null;
-                MainActivity current = target.get();
-                if (generation != searchGeneration.get()
-                        || lastSearchType != Searcher.Type.QUERY
-                        || !java.util.Objects.equals(capturedQuery, lastSearchQuery)
-                        || current == null || current.isFinishing() || current.isDestroyed()) return;
-                startSearch(Searcher.Type.QUERY, current, capturedQuery, capturedRefresh, generation);
+            pendingQuery = new Runnable() {
+                @Override public void run() {
+                    if (pendingQuery != this) return;
+                    pendingQuery = null;
+                    MainActivity current = target.get();
+                    if (generation != searchGeneration.get()
+                            || lastSearchType != Searcher.Type.QUERY
+                            || !java.util.Objects.equals(capturedQuery, lastSearchQuery)
+                            || current == null || current.isFinishing() || current.isDestroyed()) {
+                        if (current != null) current.setSearchQuickActions(false, false);
+                        return;
+                    }
+                    startSearch(Searcher.Type.QUERY, current, capturedQuery, capturedRefresh, generation);
+                }
             };
             mainHandler.postDelayed(pendingQuery, QUERY_DEBOUNCE_MS);
+            queryActionActivity = target;
+            activity.setSearchQuickActions(true, query != null && !query.trim().isEmpty());
             return;
         }
 
         startSearch(type, activity, query, isRefresh, generation);
+    }
+
+    /** Consume the same pending callback once; do not schedule a second provider/database scan. */
+    public boolean startPendingQueryNow(@NonNull MainActivity activity) {
+        if (pendingQuery == null || queryActionActivity.get() != activity
+                || lastSearchType != Searcher.Type.QUERY) return false;
+        Runnable requested = pendingQuery;
+        mainHandler.removeCallbacks(requested);
+        requested.run();
+        return runningSearch != null;
     }
 
     /**
@@ -210,6 +235,10 @@ public class SearchHandler {
     private void startSearch(@NonNull Searcher.Type type, @NonNull MainActivity activity,
                              String query, boolean isRefresh, long generation) {
         if (generation != searchGeneration.get()) return;
+        if (isRefresh && lastSearchType != null) {
+            type = lastSearchType;
+            query = lastSearchQuery;
+        }
         if (type == Searcher.Type.HISTORY && historyScrollActive) {
             rememberHistoryAfterScroll(activity, isRefresh);
             return;
@@ -218,6 +247,10 @@ public class SearchHandler {
         // SmartMatcher caches only immutable preparation for this one search generation. Starting
         // a new operation invalidates it so repeated identical text still observes changed prefs.
         SmartMatcher.beginSearch();
+        if (type == Searcher.Type.QUERY) {
+            queryActionActivity = new WeakReference<>(activity);
+            activity.setSearchQuickActions(false, query != null && !query.trim().isEmpty());
+        }
         final Searcher.Type startedType = type;
         runningSearch = createSearcher(type, activity, query, isRefresh);
         runningSearch.setSearchDoneCallback((searcher, isCancelled) -> {
@@ -619,12 +652,17 @@ public class SearchHandler {
             mainHandler.removeCallbacks(pendingQuery);
             pendingQuery = null;
         }
+        MainActivity owner = queryActionActivity.get();
+        if (owner != null) owner.setSearchQuickActions(false, false);
+        queryActionActivity.clear();
     }
 
     private void cancelRunningSearch() {
         if (runningSearch != null) {
             if (runningSearch instanceof HistorySearcher) {
                 ((HistorySearcher) runningSearch).cancelDatabaseWork();
+            } else if (runningSearch instanceof QuerySearcher) {
+                ((QuerySearcher) runningSearch).cancelDatabaseWork();
             }
             runningSearch.cancel(true);
             Searcher.purgeCancelledSearches();

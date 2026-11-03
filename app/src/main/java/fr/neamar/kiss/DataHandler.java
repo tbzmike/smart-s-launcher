@@ -1188,6 +1188,23 @@ public class DataHandler implements SharedPreferences.OnSharedPreferenceChangeLi
         DBHelper.insertHistory(this.context, currentQuery, canonicalId);
     }
 
+    /** Notification receipts are events, not app launches; respect the same privacy controls. */
+    public boolean canAddNotificationToHistory(String id, long postTime) {
+        return !TextUtils.isEmpty(id) && postTime > 0L
+                && PreferenceManager.getDefaultSharedPreferences(context)
+                        .getBoolean("enable-notification-history", false)
+                && !PreferenceManager.getDefaultSharedPreferences(context)
+                        .getBoolean("freeze-history", false)
+                && !getExcludedFromHistory().contains(id)
+                && !fr.neamar.kiss.notification.NotificationTimelineState.isHiddenOrEarlierFromHistory(
+                        context, id, postTime);
+    }
+
+    public boolean addNotificationToHistory(String id, long postTime) {
+        if (!canAddNotificationToHistory(id, postTime)) return false;
+        return DBHelper.insertNotificationHistory(context, id, postTime);
+    }
+
     private void rememberLaunchedAppIdentity(@Nullable Pojo pojo) {
         UserManager userManager = ContextCompat.getSystemService(context, UserManager.class);
         if (userManager == null || pojo == null) return;

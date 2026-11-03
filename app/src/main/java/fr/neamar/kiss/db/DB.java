@@ -24,7 +24,7 @@ import fr.neamar.kiss.utils.UserHandle;
 class DB extends SQLiteOpenHelper {
 
     static final String DB_NAME = "kiss.s3db";
-    private final static int DB_VERSION = 20;
+    private final static int DB_VERSION = 21;
     private static final String TAG = DB.class.getSimpleName();
 
     private final Context mContext;
@@ -46,6 +46,12 @@ class DB extends SQLiteOpenHelper {
         addSmartLauncherStateTables(database);
         addAppSourceMetadataTable(database);
         addSemanticActivityLogTable(database);
+        addNotificationHistoryIndexes(database);
+    }
+
+    private void addNotificationHistoryIndexes(SQLiteDatabase database) {
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_history_record_time ON history(record,timeStamp DESC)");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_notification_history_identity ON notification_history(notification_id,post_time DESC,_id DESC)");
     }
 
     private void createTags(SQLiteDatabase database) {
@@ -175,6 +181,7 @@ class DB extends SQLiteOpenHelper {
             // early once their own schema step is complete.
             if (newVersion >= 19) addAppSourceMetadataTable(database);
             if (newVersion >= 20) addSemanticActivityLogTable(database);
+            if (newVersion >= 21) addNotificationHistoryIndexes(database);
         }
     }
 

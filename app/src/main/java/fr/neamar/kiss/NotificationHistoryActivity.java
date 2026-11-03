@@ -11,6 +11,10 @@ import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.CancellationSignal;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.OperationCanceledException;
 import android.text.Editable;
 import android.text.Spannable;
 import android.text.SpannableString;
@@ -49,6 +53,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 
 import fr.neamar.kiss.db.NotificationHistoryRecord;
 import fr.neamar.kiss.db.SmartStateStore;
@@ -60,6 +66,8 @@ import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.AppReinstallSupport;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
 import fr.neamar.kiss.utils.SemanticHints;
+import fr.neamar.kiss.utils.IdleExecutors;
+import fr.neamar.kiss.utils.Log;
 
 public class NotificationHistoryActivity extends AppCompatActivity {
     public static final String EXTRA_HISTORY_DB_ID = "notification-history-db-id";
@@ -67,6 +75,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     public static final String EXTRA_OPEN_DETAIL = "notification-history-open-detail";
     public static final String EXTRA_SEARCH_QUERY = "notification-history-search-query";
     public static final String EXTRA_PERMANENT = "notification-history-permanent";
+    public static final String EXTRA_SEARCH_ALL = "notification-history-search-all";
 
     private LinearLayout tabs;
     private EditText search;
@@ -76,11 +85,22 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     private final List<NotificationHistoryRecord> records = new ArrayList<>();
     private String selectedPackage;
     private boolean selectedPermanent;
+    private boolean searchAllNotifications;
     private int lastFirstVisible = -1;
     private long targetDbId = -1L;
     private String targetQuery = "";
     private boolean openTargetDetail;
     private boolean suppressSearchRefresh;
+    private final Handler loadHandler = new Handler(Looper.getMainLooper());
+    private final ThreadPoolExecutor loader = IdleExecutors.single("smart-s-notification-history-query");
+    private final List<String[]> appTabs = new ArrayList<>();
+    private volatile long loadGeneration;
+    private Future<?> currentLoad;
+    private CancellationSignal loadCancellation;
+    private Runnable pendingLoad;
+    private boolean activityResumed;
+    private boolean appTabsReady;
+    private TextView searchStatus;
 
     /**
      * Open the built-in Notification History at one exact persisted row. The package filter keeps
@@ -108,6 +128,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         if (selectedPackage.isEmpty()) selectedPackage = null;
         openTargetDetail = getIntent().getBooleanExtra(EXTRA_OPEN_DETAIL, false);
         selectedPermanent = getIntent().getBooleanExtra(EXTRA_PERMANENT, false);
+        searchAllNotifications = getIntent().getBooleanExtra(EXTRA_SEARCH_ALL, false);
         configureWallpaperBackground();
         buildUi();
         if (!targetQuery.isEmpty()) {
@@ -117,8 +138,6 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             suppressSearchRefresh = false;
         }
         rebuildTabs();
-        refresh();
-        focusTarget();
         if (rootView != null) {
             rootView.post(() -> SmartAnimationEngine.animateWindowSwitch(null, rootView));
         }
@@ -127,11 +146,20 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (tabs != null) rebuildTabs();
-        if (list != null) {
-            refresh();
-            focusTarget();
-        }
+        activityResumed = true;
+        requestRefresh(true, 0L);
+    }
+
+    @Override protected void onPause() {
+        activityResumed = false;
+        cancelLoad();
+        super.onPause();
+    }
+
+    @Override protected void onDestroy() {
+        cancelLoad();
+        loader.shutdownNow();
+        super.onDestroy();
     }
 
     private void configureWallpaperBackground() {
@@ -181,6 +209,12 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         scroll.addView(tabs, new HorizontalScrollView.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        searchStatus = new TextView(this);
+        searchStatus.setTextSize(14);
+        searchStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        root.addView(searchStatus, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         list = new ListView(this);
         list.setDividerHeight(1);
         list.setCacheColorHint(Color.TRANSPARENT);
@@ -226,7 +260,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
                 if (!suppressSearchRefresh) {
                     targetDbId = -1L;
                     targetQuery = "";
-                    refresh();
+                    requestRefresh(false, 150L);
                 }
             }
             @Override public void afterTextChanged(Editable s) {}
@@ -239,7 +273,7 @@ public class NotificationHistoryActivity extends AppCompatActivity {
         tabs.removeAllViews();
         addTab("All", null, false);
         addTab("Permanent", null, true);
-        for (String[] app : SmartStateStore.getNotificationApps(this)) addTab(app[1], app[0], false);
+        for (String[] app : appTabs) addTab(app[1], app[0], false);
     }
 
     private void addTab(String label, String packageName, boolean permanent) {
@@ -264,16 +298,82 @@ public class NotificationHistoryActivity extends AppCompatActivity {
     }
 
     private void refresh() {
-        String query = getSearchQuery();
-        List<String> terms = null;
-        if (!query.isEmpty()) {
-            Set<String> smartTerms = new LinkedHashSet<>();
-            smartTerms.add(query);
-            smartTerms.addAll(SemanticHints.expand(query));
-            terms = new ArrayList<>(smartTerms);
-        }
+        requestRefresh(false, 0L);
+    }
+
+    private void cancelLoad() {
+        loadGeneration++;
+        if (pendingLoad != null) loadHandler.removeCallbacks(pendingLoad);
+        pendingLoad = null;
+        if (loadCancellation != null) loadCancellation.cancel();
+        loadCancellation = null;
+        if (currentLoad != null) currentLoad.cancel(true);
+        currentLoad = null;
+        loader.purge();
+    }
+
+    private void requestRefresh(boolean reloadTabs, long delayMs) {
+        cancelLoad();
+        if (!activityResumed || list == null) return;
+        final long generation = loadGeneration;
+        final String query = getSearchQuery();
+        final String packageFilter = selectedPackage;
+        final boolean loadTabs = reloadTabs || !appTabsReady;
+        final Boolean permanentFilter = selectedPermanent ? Boolean.TRUE
+                : searchAllNotifications ? null : Boolean.FALSE;
+        final CancellationSignal cancellation = new CancellationSignal();
+        loadCancellation = cancellation;
+        searchStatus.setText("Searching saved notifications…");
+        searchStatus.setVisibility(View.VISIBLE);
         records.clear();
-        records.addAll(SmartStateStore.queryNotifications(this, selectedPackage, terms, selectedPermanent, 2000));
+        publishRecords();
+        pendingLoad = () -> {
+            pendingLoad = null;
+            currentLoad = loader.submit(() -> {
+                try {
+                    List<String> terms = null;
+                    if (!query.isEmpty()) {
+                        Set<String> expanded = new LinkedHashSet<>();
+                        expanded.add(query);
+                        expanded.addAll(SemanticHints.expand(query));
+                        terms = new ArrayList<>(expanded);
+                    }
+                    List<NotificationHistoryRecord> loaded = SmartStateStore.queryNotifications(
+                            getApplicationContext(), packageFilter, terms, permanentFilter, 2000, cancellation);
+                    List<String[]> apps = loadTabs ? SmartStateStore.getNotificationApps(
+                            getApplicationContext(), cancellation) : null;
+                    if (Thread.currentThread().isInterrupted() || cancellation.isCanceled()) return;
+                    loadHandler.post(() -> {
+                        if (!activityResumed || generation != loadGeneration || isDestroyed()) return;
+                        if (apps != null) {
+                            appTabsReady = true;
+                            appTabs.clear();
+                            appTabs.addAll(apps);
+                            rebuildTabs();
+                        }
+                        records.clear();
+                        records.addAll(loaded);
+                        searchStatus.setText("No saved notifications match this search.");
+                        searchStatus.setVisibility(records.isEmpty() ? View.VISIBLE : View.GONE);
+                        publishRecords();
+                        focusTarget();
+                    });
+                } catch (OperationCanceledException ignored) {
+                    // A changed query or paused Activity cancels SQLite, not just its UI callback.
+                } catch (RuntimeException error) {
+                    Log.w("NotificationHistory", "Unable to load saved notifications", error);
+                    loadHandler.post(() -> {
+                        if (activityResumed && generation == loadGeneration && !isDestroyed()) {
+                            searchStatus.setText("Unable to load saved notifications.");
+                        }
+                    });
+                }
+            });
+        };
+        loadHandler.postDelayed(pendingLoad, delayMs);
+    }
+
+    private void publishRecords() {
         if (list != null && list.getAdapter() instanceof BaseAdapter) {
             ((BaseAdapter) list.getAdapter()).notifyDataSetChanged();
             lastFirstVisible = -1;

@@ -72,11 +72,41 @@ public class DBHelper {
         if (Math.random() <= 0.005) {
             // Roughly every 200 inserts, clean up the history of items older than 3 months
             long twoMonthsAgo = 7776000000L; // 1000 * 60 * 60 * 24 * 30 * 3;
-            db.delete("history", "timeStamp < ?", new String[]{Long.toString(System.currentTimeMillis() - twoMonthsAgo)});
+            // Notification archive entries have explicit removal controls. Ordinary launch-history
+            // housekeeping must not randomly remove their Home links after three months.
+            db.delete("history", "timeStamp < ? AND record NOT LIKE 'notification://%'",
+                    new String[]{Long.toString(System.currentTimeMillis() - twoMonthsAgo)});
             // And vacuum the DB for speed
             db.execSQL("VACUUM");
         }
 
+        });
+    }
+
+    /** Index an incoming post once, without launch canonicalisation, random pruning or VACUUM. */
+    public static boolean insertNotificationHistory(Context context, String record, long postTime) {
+        if (TextUtils.isEmpty(record) || postTime <= 0L) return false;
+        return DatabaseRecovery.run(context, db -> {
+            db.beginTransaction();
+            try {
+                try (Cursor cursor = db.query("history", new String[]{"_id"},
+                        "record=? AND timeStamp>=?", new String[]{record, Long.toString(postTime)},
+                        null, null, null, "1")) {
+                    if (cursor.moveToFirst()) {
+                        db.setTransactionSuccessful();
+                        return false;
+                    }
+                }
+                ContentValues values = new ContentValues();
+                values.putNull("query");
+                values.put("record", record);
+                values.put("timeStamp", postTime);
+                db.insertOrThrow("history", null, values);
+                db.setTransactionSuccessful();
+                return true;
+            } finally {
+                db.endTransaction();
+            }
         });
     }
 

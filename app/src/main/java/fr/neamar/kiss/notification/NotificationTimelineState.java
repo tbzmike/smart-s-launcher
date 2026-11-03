@@ -16,6 +16,7 @@ public final class NotificationTimelineState {
     private static final String READ_PREFIX = "read|";
     private static final String HIDDEN_HISTORY_PREFIX = "hidden-history|";
     private static final String LAST_SCAN = "_last_persisted_scan";
+    private static final String LAST_ROW = "_last_persisted_row";
 
     private NotificationTimelineState() { }
 
@@ -70,6 +71,12 @@ public final class NotificationTimelineState {
         return prefs(context).getLong(HIDDEN_HISTORY_PREFIX + notificationId, Long.MIN_VALUE) == postTime;
     }
 
+    /** Catch-up must not resurrect an older post behind the same explicitly removed Home tile. */
+    public static boolean isHiddenOrEarlierFromHistory(Context context, String notificationId, long postTime) {
+        return postTime > 0L && notificationId != null
+                && prefs(context).getLong(HIDDEN_HISTORY_PREFIX + notificationId, Long.MIN_VALUE) >= postTime;
+    }
+
     public static long getLastPersistedScan(Context context) {
         return prefs(context).getLong(LAST_SCAN, 0L);
     }
@@ -77,5 +84,13 @@ public final class NotificationTimelineState {
     public static void setLastPersistedScan(Context context, long timestamp) {
         if (timestamp <= 0L) return;
         prefs(context).edit().putLong(LAST_SCAN, timestamp).apply();
+    }
+
+    public static long getLastPersistedRow(Context context) {
+        return prefs(context).getLong(LAST_ROW, -1L);
+    }
+
+    public static void setLastPersistedRow(Context context, long rowId) {
+        prefs(context).edit().putLong(LAST_ROW, Math.max(0L, rowId)).apply();
     }
 }

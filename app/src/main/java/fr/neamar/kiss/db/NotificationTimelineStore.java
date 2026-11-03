@@ -118,4 +118,38 @@ public final class NotificationTimelineStore {
         record.locusId = cursor.getString(12);
         return record;
     }
+
+    public static long latestRowId(@NonNull Context context) {
+        return DatabaseRecovery.run(context, db -> {
+            try (Cursor c = db.rawQuery("SELECT MAX(_id) FROM notification_history", null)) {
+                return c.moveToFirst() && !c.isNull(0) ? c.getLong(0) : 0L;
+            }
+        });
+    }
+
+    /** One-time migration from the old time watermark; subsequent passes use the primary key. */
+    public static long initialCatchUpRow(@NonNull Context context, long afterTime) {
+        return DatabaseRecovery.run(context, db -> {
+            try (Cursor c = db.rawQuery("SELECT MIN(_id) FROM notification_history WHERE post_time>?",
+                    new String[]{Long.toString(Math.max(0L, afterTime))})) {
+                if (c.moveToFirst() && !c.isNull(0)) return Math.max(0L, c.getLong(0) - 1L);
+            }
+            return latestRowId(context);
+        });
+    }
+
+    /** Equal post times and delayed writes cannot strand a page or skip a notification. */
+    @NonNull
+    public static List<NotificationHistoryRecord> queryAfterRow(@NonNull Context context,
+                                                                long rowId, int limit) {
+        return DatabaseRecovery.run(context, db -> {
+            List<NotificationHistoryRecord> result = new ArrayList<>();
+            try (Cursor c = db.query("notification_history", SmartStateStore.notificationProjection(),
+                    "_id>?", new String[]{Long.toString(Math.max(0L, rowId))}, null, null,
+                    "_id ASC", Integer.toString(Math.max(1, limit)))) {
+                while (c.moveToNext()) result.add(read(c));
+            }
+            return result;
+        });
+    }
 }

@@ -5,6 +5,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteFullException;
+import android.os.CancellationSignal;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -104,10 +105,16 @@ public final class SmartStateStore {
 
     @NonNull
     public static List<String[]> getNotificationApps(@NonNull Context context) {
+        return getNotificationApps(context, null);
+    }
+
+    @NonNull
+    public static List<String[]> getNotificationApps(@NonNull Context context,
+                                                       @Nullable CancellationSignal cancellation) {
         return DatabaseRecovery.run(context, recoveryDb -> {
         List<String[]> result = new ArrayList<>();
         try (Cursor cursor = recoveryDb.rawQuery(
-                "SELECT package, MAX(app_name) FROM notification_history WHERE is_permanent=0 GROUP BY package ORDER BY MAX(post_time) DESC", null)) {
+                "SELECT package, MAX(app_name) FROM notification_history WHERE is_permanent=0 GROUP BY package ORDER BY MAX(post_time) DESC", null, cancellation)) {
             while (cursor.moveToNext()) result.add(new String[]{cursor.getString(0), cursor.getString(1)});
         }
         return result;
@@ -165,16 +172,16 @@ public final class SmartStateStore {
         return local.get(packageName);
     }
 
-    public static void saveNotification(@NonNull Context context, @NonNull String notificationId,
+    public static boolean saveNotification(@NonNull Context context, @NonNull String notificationId,
                                         @NonNull String packageName, @NonNull String appName,
                                         @Nullable String title, @Nullable String body, long postTime,
                                         boolean permanent, @Nullable String shortcutId, long userSerial,
                                         @Nullable String routeUri, @Nullable String pendingIntentToken,
                                         @Nullable String locusId) {
-        DatabaseRecovery.runVoid(context, recoveryDb -> {
+        return DatabaseRecovery.run(context, recoveryDb -> {
         if (!PreferenceManager.getDefaultSharedPreferences(context)
                 .getBoolean("enable-notification-history", false)) {
-            return;
+            return false;
         }
 
         ContentValues values = new ContentValues();
@@ -209,10 +216,34 @@ public final class SmartStateStore {
                     new String[]{notificationId, Long.toString(postTime)});
             if (rows == 0) database.insertOrThrow("notification_history", null, values);
             latestNotificationsCache = null;
+            return true;
         } catch (SQLiteFullException e) {
             Log.w(TAG, "Notification history reached available database storage", e);
+            return false;
         }
 
+        });
+    }
+
+    /** Commit the readable notification and its Home link together, before publishing a refresh. */
+    public static boolean saveIncomingNotification(@NonNull Context context,
+                                                    @NonNull NotificationHistoryRecord record,
+                                                    boolean includeInHistory) {
+        return DatabaseRecovery.run(context, db -> {
+            db.beginTransaction();
+            try {
+                boolean saved = saveNotification(context, record.notificationId, record.packageName,
+                        record.appName, record.title, record.text, record.postTime, record.permanent,
+                        record.shortcutId, record.userSerial, record.routeUri,
+                        record.pendingIntentToken, record.locusId);
+                if (saved && includeInHistory) {
+                    DBHelper.insertNotificationHistory(context, record.notificationId, record.postTime);
+                }
+                db.setTransactionSuccessful();
+                return saved;
+            } finally {
+                db.endTransaction();
+            }
         });
     }
 
@@ -230,6 +261,16 @@ public final class SmartStateStore {
                                                                      @Nullable List<String> terms,
                                                                      @Nullable Boolean permanent,
                                                                      int limit) {
+        return queryNotifications(context, packageName, terms, permanent, limit, null);
+    }
+
+    @NonNull
+    public static List<NotificationHistoryRecord> queryNotifications(@NonNull Context context,
+                                                                     @Nullable String packageName,
+                                                                     @Nullable List<String> terms,
+                                                                     @Nullable Boolean permanent,
+                                                                     int limit,
+                                                                     @Nullable CancellationSignal cancellation) {
         return DatabaseRecovery.run(context, recoveryDb -> {
         StringBuilder where = new StringBuilder();
         List<String> args = new ArrayList<>();
@@ -258,11 +299,11 @@ public final class SmartStateStore {
 
         List<NotificationHistoryRecord> result = new ArrayList<>();
         String limitText = limit > 0 ? Integer.toString(limit) : null;
-        try (Cursor cursor = recoveryDb.query("notification_history",
+        try (Cursor cursor = recoveryDb.query(false, "notification_history",
                 notificationProjection(),
                 where.length() == 0 ? null : where.toString(),
                 args.isEmpty() ? null : args.toArray(new String[0]),
-                null, null, "post_time DESC", limitText)) {
+                null, null, "post_time DESC", limitText, cancellation)) {
             while (cursor.moveToNext()) {
                 result.add(readNotificationRecord(cursor));
             }

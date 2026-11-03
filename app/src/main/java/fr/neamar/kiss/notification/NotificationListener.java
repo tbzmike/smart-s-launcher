@@ -12,6 +12,8 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
@@ -76,6 +78,7 @@ public class NotificationListener extends NotificationListenerService {
 
     private static volatile NotificationListener instance;
     private static final ExecutorService RECONCILE_EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-notification-reconcile");
+    private static final ExecutorService HISTORY_EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-notification-history");
     private static final AtomicBoolean RECONCILE_RUNNING = new AtomicBoolean(false);
     private static final long ONGOING_PERSIST_INTERVAL_MS = 15_000L;
     private static final ConcurrentHashMap<String, Long> LAST_ONGOING_PERSIST =
@@ -110,6 +113,18 @@ public class NotificationListener extends NotificationListenerService {
     private static final long MIN_REBIND_INTERVAL_MS = 1_000L;
     private SharedPreferences prefs;
     private SharedPreferences details;
+    private final Handler timelineHandler = new Handler(Looper.getMainLooper());
+    private String pendingTimelineRefreshId;
+    private boolean pendingTimelinePosted;
+    private final Runnable publishTimelineRefresh = () -> {
+        String id = pendingTimelineRefreshId;
+        boolean posted = pendingTimelinePosted;
+        pendingTimelineRefreshId = null;
+        pendingTimelinePosted = false;
+        if (id != null) sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER)
+                .putExtra(MainActivity.EXTRA_NOTIFICATION_TIMELINE_ID, id)
+                .putExtra(MainActivity.EXTRA_NOTIFICATION_POSTED, posted));
+    };
 
     @Override public void onCreate() {
         super.onCreate();
@@ -158,7 +173,6 @@ public class NotificationListener extends NotificationListenerService {
                 .getBoolean("enable-notification-history", false);
         Map<String, Set<String>> notificationsByPackage = new HashMap<>();
         Set<String> activeIds = new HashSet<>();
-        List<StatusBarNotification> timeline = new ArrayList<>();
         List<StatusBarNotification> avatarCandidates = seedTimeline ? new ArrayList<>() : null;
         SharedPreferences.Editor detailEditor = details.edit().clear();
 
@@ -170,7 +184,7 @@ public class NotificationListener extends NotificationListenerService {
                 avatarCandidates.add(sbn);
                 String timelineId = getTimelineId(sbn);
                 NotificationVisualSupport.captureAsync(this, timelineId, sbn);
-                if (historyEnabled) persistHistoryAsync(sbn, timelineId, false);
+                if (historyEnabled) persistHistoryAsync(sbn, timelineId, true, true);
             }
             if (isNotificationTrivial(sbn)) continue;
             String packageKey = getPackageKey(sbn);
@@ -178,7 +192,6 @@ public class NotificationListener extends NotificationListenerService {
             String id = getTimelineId(sbn);
             activeIds.add(id);
             storeNotificationDetail(detailEditor, id, packageKey, sbn);
-            timeline.add(sbn);
         }
         // One batch replaces dozens of queue entries that used to be discarded
         // before the avatar worker had a chance to run during startup.
@@ -197,16 +210,6 @@ public class NotificationListener extends NotificationListenerService {
         }
         editor.apply();
 
-        if (seedTimeline && PreferenceManager.getDefaultSharedPreferences(this).getBoolean("enable-notification-history", false)) {
-            timeline.sort(Comparator.comparingLong(StatusBarNotification::getPostTime));
-            for (StatusBarNotification sbn : timeline) {
-                String groupKey = getPackageKey(sbn);
-                // Remove the legacy grouped event so one Android notification is never represented
-                // by both a group tile and its exact notification-event tile.
-                DBHelper.removeFromHistory(this, getGroupId(groupKey));
-                KissApplication.getApplication(this).getDataHandler().addToHistory(getTimelineId(sbn));
-            }
-        }
         return true;
     }
 
@@ -277,7 +280,8 @@ public class NotificationListener extends NotificationListenerService {
             LAST_ONGOING_PERSIST.put(id, SystemClock.elapsedRealtime());
         }
         if (historyEnabled && persistThisUpdate) {
-            persistHistoryAsync(sbn, id, newTimelineEvent);
+            persistHistoryAsync(sbn, id, newTimelineEvent,
+                    newTimelineEvent || (visibleContentChanged && !sbn.isOngoing()));
         }
 
         // Updating the same ongoing notification (VPN progress, media status, transfers, etc.)
@@ -304,7 +308,8 @@ public class NotificationListener extends NotificationListenerService {
         // content current but do not rebuild Home for each progress tick. New notification events
         // and non-ongoing message-content changes still refresh normally.
         boolean ongoingContentOnly = sbn.isOngoing() && !newTimelineEvent;
-        if (newTimelineEvent || (visibleContentChanged && !ongoingContentOnly)) {
+        if ((!historyEnabled || !persistThisUpdate)
+                && (newTimelineEvent || (visibleContentChanged && !ongoingContentOnly))) {
             sendTimelineRefresh(id, true);
         }
     }
@@ -318,17 +323,18 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private void sendTimelineRefresh(String notificationId, boolean posted) {
-        // Persisted notification state remains available, but never force MainActivity to rebuild
-        // its visible list underneath an active fling.
-        if (LauncherScrollWorkGate.isScrolling()) return;
-        Intent refresh = MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER)
-                .putExtra(MainActivity.EXTRA_NOTIFICATION_TIMELINE_ID, notificationId)
-                .putExtra(MainActivity.EXTRA_NOTIFICATION_POSTED, posted);
-        sendBroadcast(refresh);
+        // One event-driven refresh for a burst. MainActivity coalesces History changes while a
+        // fling is active, so receipt must be remembered rather than discarded during scrolling.
+        timelineHandler.post(() -> {
+            pendingTimelineRefreshId = notificationId;
+            pendingTimelinePosted |= posted;
+            timelineHandler.removeCallbacks(publishTimelineRefresh);
+            timelineHandler.postDelayed(publishTimelineRefresh, 75L);
+        });
     }
 
     private void persistHistoryAsync(StatusBarNotification sbn, String id,
-                                     boolean addToLauncherHistory) {
+                                     boolean addToLauncherHistory, boolean refreshVisibleHistory) {
         if (sbn == null || id == null || id.isEmpty()
                 || !NotificationWorkPolicy.historyEnabled(this)) return;
 
@@ -340,52 +346,77 @@ public class NotificationListener extends NotificationListenerService {
 
         final Context appContext = getApplicationContext();
         final long generation = NotificationWorkPolicy.generation();
-        RECONCILE_EXECUTOR.execute(() -> {
-            // Database and route-capture work must never contend with a live launcher fling.
-            if (!LauncherScrollWorkGate.awaitIdle(() -> NotificationWorkPolicy.historyEnabled(appContext)
-                    && generation == NotificationWorkPolicy.generation())) return;
-            persistHistoryNow(sbn, id);
-            if (addToLauncherHistory) {
-                KissApplication.getApplication(appContext).getDataHandler().addToHistory(id);
+        HISTORY_EXECUTOR.execute(() -> {
+            if (!NotificationWorkPolicy.historyEnabled(appContext)
+                    || generation != NotificationWorkPolicy.generation()) return;
+            try {
+                // A small durable text/route journal must not wait behind optional avatar or
+                // shortcut discovery. The originating app may remove its notification at once.
+                NotificationHistoryRecord record = notificationRecord(sbn, id);
+                if (record == null) return;
+                boolean include = addToLauncherHistory && KissApplication.getApplication(appContext)
+                        .getDataHandler().canAddNotificationToHistory(id, record.postTime);
+                if (!SmartStateStore.saveIncomingNotification(appContext, record, include)) return;
+                if (include) NotificationTimelineState.recordIncoming(appContext, id, record.postTime);
+                if (refreshVisibleHistory) sendTimelineRefresh(id, true);
+                enrichHistoryRouteAsync(record, sbn.getUser(), generation);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Unable to save an incoming notification", e);
             }
         });
     }
 
-    private void persistHistoryNow(StatusBarNotification sbn, String id) {
-        if (!NotificationWorkPolicy.historyEnabled(this)) return;
+    private NotificationHistoryRecord notificationRecord(StatusBarNotification sbn, String id) {
+        if (!NotificationWorkPolicy.historyEnabled(this)) return null;
         Notification n = sbn.getNotification();
-        if (n == null) return;
+        if (n == null) return null;
         rememberContentIntent(id, sbn.getPostTime(), n.contentIntent);
-        String title = historyTitle(n);
-        String text = extractExpandedText(n);
-        String shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? n.getShortcutId() : null;
-        String locusId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && n.getLocusId() != null
+        NotificationHistoryRecord record = new NotificationHistoryRecord();
+        record.notificationId = id;
+        record.packageName = sbn.getPackageName();
+        record.appName = getAppName(record.packageName);
+        record.title = historyTitle(n);
+        record.text = extractExpandedText(n);
+        record.postTime = sbn.getPostTime();
+        record.permanent = isPermanentForHistory(sbn);
+        record.shortcutId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? n.getShortcutId() : null;
+        record.locusId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && n.getLocusId() != null
                 ? n.getLocusId().getId() : null;
-        SavedNotificationDestinationResolver.CapturedShortcutRoute capturedShortcut =
-                SavedNotificationDestinationResolver.capturePublishedShortcutRoute(
-                        this, sbn.getPackageName(), shortcutId, locusId, sbn.getUser());
-        String routeUri = null;
-        if (capturedShortcut != null) {
-            shortcutId = capturedShortcut.shortcutId;
-            routeUri = capturedShortcut.routeUri;
-        }
-        boolean historyEnabled = PreferenceManager.getDefaultSharedPreferences(this)
-                .getBoolean("enable-notification-history", false);
-        String pendingIntentToken = historyEnabled
-                ? NotificationPendingIntentStore.capture(
-                this, id, sbn.getPostTime(), n.contentIntent) : "";
-        long userSerial = -1L;
+        record.pendingIntentToken = NotificationPendingIntentStore.capture(
+                this, id, sbn.getPostTime(), n.contentIntent);
+        record.userSerial = -1L;
         android.os.UserManager userManager =
                 (android.os.UserManager) getSystemService(Context.USER_SERVICE);
-        if (userManager != null) userSerial = userManager.getSerialNumberForUser(sbn.getUser());
-        SmartStateStore.saveNotification(this, id, sbn.getPackageName(), getAppName(sbn.getPackageName()),
-                title, text, sbn.getPostTime(),
-                isPermanentForHistory(sbn), shortcutId, userSerial, routeUri,
-                pendingIntentToken, locusId);
-        if (historyEnabled) {
-            autoRebindStaleRecordsAsync(sbn.getPackageName(), id, sbn.getPostTime(), shortcutId,
-                    routeUri, pendingIntentToken, locusId);
-        }
+        if (userManager != null) record.userSerial = userManager.getSerialNumberForUser(sbn.getUser());
+        return record;
+    }
+
+    private void enrichHistoryRouteAsync(NotificationHistoryRecord record,
+                                          android.os.UserHandle user, long generation) {
+        if (TextUtils.isEmpty(record.shortcutId) && TextUtils.isEmpty(record.locusId)) return;
+        Context app = getApplicationContext();
+        RECONCILE_EXECUTOR.execute(() -> {
+            if (!LauncherScrollWorkGate.awaitIdle(() -> NotificationWorkPolicy.historyEnabled(app)
+                    && generation == NotificationWorkPolicy.generation())) return;
+            try {
+                SavedNotificationDestinationResolver.CapturedShortcutRoute captured =
+                        SavedNotificationDestinationResolver.capturePublishedShortcutRoute(app,
+                                record.packageName, record.shortcutId, record.locusId, user);
+                NotificationHistoryRecord saved = NotificationTimelineStore.findExact(
+                        app, record.notificationId, record.postTime);
+                if (saved == null) return;
+                if (captured != null) {
+                    record.shortcutId = captured.shortcutId;
+                    record.routeUri = captured.routeUri;
+                    SmartStateStore.updateNotificationShortcutRoute(app, saved.dbId,
+                            record.shortcutId, record.routeUri);
+                }
+                autoRebindStaleRecordsAsync(record.packageName, record.notificationId, record.postTime,
+                        record.shortcutId, record.routeUri, record.pendingIntentToken, record.locusId);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Unable to enrich a saved notification route", e);
+            }
+        });
     }
 
     /**

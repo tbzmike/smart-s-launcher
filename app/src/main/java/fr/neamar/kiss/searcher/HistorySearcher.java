@@ -487,7 +487,10 @@ public class HistorySearcher extends Searcher {
             return false;
         }
         if (pojo instanceof NotificationPojo) {
-            return excludedPackages.contains(((NotificationPojo) pojo).packageName);
+            NotificationPojo notification = (NotificationPojo) pojo;
+            return excludedPackages.contains(notification.packageName)
+                    || (activity != null && NotificationTimelineState.isHiddenFromHistory(
+                    activity, notification.exactNotificationId, notification.postTime));
         }
         return false;
     }

@@ -1,6 +1,7 @@
 package fr.neamar.kiss.searcher;
 
 import android.content.SharedPreferences;
+import android.os.CancellationSignal;
 import android.text.TextUtils;
 
 import androidx.preference.PreferenceManager;
@@ -40,6 +41,11 @@ import fr.neamar.kiss.utils.ShortcutUtil;
  * fixed relevance constants used by generic web/app-store search actions.
  */
 public class QuerySearcher extends Searcher {
+    private final CancellationSignal databaseCancellation = new CancellationSignal();
+
+    public CancellationSignal getDatabaseCancellationSignal() { return databaseCancellation; }
+    public void cancelDatabaseWork() { databaseCancellation.cancel(); }
+
     /**
      * Searcher/RecordAdapter emit stronger relevance later in the list. Keep every matching app
      * and shortcut in a dedicated high-relevance band so launch targets stay at the physical bottom

@@ -154,11 +154,9 @@ class Notification extends Forwarder {
             if (postTime <= 0L) continue;
             newestPost = Math.max(newestPost, postTime);
 
-            if (NotificationTimelineState.recordIncoming(mainActivity, id, postTime)) {
-                KissApplication.getApplication(mainActivity)
-                        .getDataHandler().addToHistory(id);
-                changed = true;
-            }
+            NotificationTimelineState.recordIncoming(mainActivity, id, postTime);
+            changed |= KissApplication.getApplication(mainActivity)
+                    .getDataHandler().addNotificationToHistory(id, postTime);
 
             String groupKey = detailPreferences.getString(id + "|group", "");
             if (groupKey != null && !groupKey.isEmpty()) {
@@ -184,21 +182,26 @@ class Notification extends Forwarder {
         long lastScan = NotificationTimelineState.getLastPersistedScan(mainActivity);
         if (lastScan <= 0L) lastScan = System.currentTimeMillis() - FIRST_SCAN_LOOKBACK_MS;
         final long scanAfter = Math.max(0L, lastScan - 1L);
-        final long scanStartedAt = System.currentTimeMillis();
 
         Thread worker = new Thread(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             if (LauncherScrollWorkGate.isScrolling()) return;
-            List<NotificationHistoryRecord> records = NotificationTimelineStore.queryAfter(
-                    mainActivity.getApplicationContext(), scanAfter, PERSISTED_CATCH_UP_BATCH);
+            Context app = mainActivity.getApplicationContext();
+            long row = NotificationTimelineState.getLastPersistedRow(app);
+            long latest = NotificationTimelineStore.latestRowId(app);
+            if (row < 0L || row > latest) {
+                row = NotificationTimelineStore.initialCatchUpRow(app, scanAfter);
+                NotificationTimelineState.setLastPersistedRow(app, row);
+            }
+            List<NotificationHistoryRecord> records = NotificationTimelineStore.queryAfterRow(
+                    app, row, PERSISTED_CATCH_UP_BATCH);
             if (LauncherScrollWorkGate.isScrolling()) return;
 
             // Keep the recovery database/history writes off the UI looper too. Only the eventual
             // LOAD_OVER broadcast is visible to MainActivity, and it is suppressed if scrolling
             // has resumed before this pass finishes.
             if (records.isEmpty()) {
-                NotificationTimelineState.setLastPersistedScan(
-                        mainActivity, Math.max(0L, scanStartedAt - 5000L));
+                NotificationTimelineState.setLastPersistedRow(app, Math.max(row, latest));
             } else {
                 indexPersistedRecords(records);
             }
@@ -211,23 +214,24 @@ class Notification extends Forwarder {
                 || mainActivity.isFinishing()) return;
         boolean changed = false;
         long newestPost = 0L;
+        long newestRow = NotificationTimelineState.getLastPersistedRow(mainActivity);
         for (NotificationHistoryRecord record : records) {
+            if (record != null) newestRow = Math.max(newestRow, record.dbId);
             if (record == null || record.notificationId == null
                     || !record.notificationId.startsWith(NotificationListener.NOTIFICATION_SCHEME)) {
                 continue;
             }
             newestPost = Math.max(newestPost, record.postTime);
-            if (!NotificationTimelineState.recordIncoming(
-                    mainActivity, record.notificationId, record.postTime)) {
-                continue;
-            }
-            KissApplication.getApplication(mainActivity)
-                    .getDataHandler().addToHistory(record.notificationId);
-            changed = true;
+            NotificationTimelineState.recordIncoming(mainActivity, record.notificationId, record.postTime);
+            changed |= KissApplication.getApplication(mainActivity).getDataHandler()
+                    .addNotificationToHistory(record.notificationId, record.postTime);
         }
+        NotificationTimelineState.setLastPersistedRow(mainActivity, newestRow);
         if (newestPost > 0L) NotificationTimelineState.setLastPersistedScan(mainActivity, newestPost);
         if (changed && !LauncherScrollWorkGate.isScrolling()) {
-            mainActivity.sendBroadcast(MainActivity.internalBroadcast(mainActivity, MainActivity.LOAD_OVER));
+            mainActivity.sendBroadcast(MainActivity.internalBroadcast(mainActivity, MainActivity.LOAD_OVER)
+                    .putExtra(MainActivity.EXTRA_NOTIFICATION_TIMELINE_ID, records.get(records.size() - 1).notificationId)
+                    .putExtra(MainActivity.EXTRA_NOTIFICATION_POSTED, true));
         }
     }
 

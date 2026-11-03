@@ -129,6 +129,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
      * View for the Search text
      */
     public SearchEditText searchEditText;
+    private View searchQuickActions;
+    private View searchDatabaseNowButton;
+    private View searchNotificationHistoryButton;
 
     /**
      * Main list view
@@ -369,6 +372,12 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         this.launcherButton = findViewById(R.id.launcherButton);
         this.whiteLauncherButton = findViewById(R.id.whiteLauncherButton);
         this.clearButton = findViewById(R.id.clearButton);
+        searchQuickActions = findViewById(R.id.searchQuickActions);
+        searchDatabaseNowButton = findViewById(R.id.searchDatabaseNow);
+        searchNotificationHistoryButton = findViewById(R.id.searchNotificationHistory);
+        searchDatabaseNowButton.setOnClickListener(v ->
+                SearchHandler.getInstance().startPendingQueryNow(this));
+        searchNotificationHistoryButton.setOnClickListener(v -> openNotificationHistoryForCurrentQuery());
 
         /*
          * Initialize components behavior
@@ -658,6 +667,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     protected void onPause() {
+        setSearchQuickActions(false, false);
         // Do not delay external launches: animate our own decor while Android transfers focus.
         if (discoverSideSwipeTransition) {
             discoverSideSwipeTransition = false;
@@ -1315,7 +1325,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             return;
         }
 
-        cancelSearch();
+        if (!isRefresh) cancelSearch();
         dismissPopup();
 
         if (isRefresh) {
@@ -1354,6 +1364,25 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     public void search(@NonNull Searcher.Type type, String query, boolean isRefresh) {
         SearchHandler.getInstance().search(type, this, query, isRefresh);
         displayClearOnInput();
+    }
+
+    /** A transient action row reserves space above the dock instead of covering results or IME. */
+    public void setSearchQuickActions(boolean waitingForDatabase, boolean queryActive) {
+        if (searchQuickActions == null) return;
+        searchDatabaseNowButton.setVisibility(waitingForDatabase && queryActive
+                ? View.VISIBLE : View.GONE);
+        searchNotificationHistoryButton.setVisibility(queryActive ? View.VISIBLE : View.GONE);
+        searchQuickActions.setVisibility(queryActive ? View.VISIBLE : View.GONE);
+    }
+
+    private void openNotificationHistoryForCurrentQuery() {
+        String query = searchEditText == null ? "" : searchEditText.getText().toString().trim();
+        if (query.isEmpty()) return;
+        cancelSearch();
+        hideKeyboard();
+        startActivity(new Intent(this, NotificationHistoryActivity.class)
+                .putExtra(NotificationHistoryActivity.EXTRA_SEARCH_QUERY, query)
+                .putExtra(NotificationHistoryActivity.EXTRA_SEARCH_ALL, true));
     }
 
     private void cancelSearch() {
