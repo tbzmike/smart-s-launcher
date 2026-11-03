@@ -37,6 +37,7 @@ import fr.neamar.kiss.UIColors;
 import fr.neamar.kiss.forwarder.HistoryEdgeWidthPolicy;
 import fr.neamar.kiss.normalizer.StringNormalizer;
 import fr.neamar.kiss.notification.NotificationListener;
+import fr.neamar.kiss.notification.NotificationTimelineState;
 import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.pojo.CommunicationPojo;
 import fr.neamar.kiss.pojo.PhonePojo;
@@ -1250,15 +1251,21 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             // the user's explicit frozen-history policy. When retention is off, an already-visible
             // disabled app is allowed to leave History on the next authoritative refresh.
             List<Result<?>> preservable = results;
-            if (!FrozenAppPreferences.keepHistoryAndFavorites(context)) {
-                preservable = new ArrayList<>(results.size());
-                for (Result<?> existingResult : results) {
-                    Pojo existingPojo = existingResult == null ? null : existingResult.getPojo();
-                    if (existingPojo instanceof AppPojo
-                            && ((AppPojo) existingPojo).isDisabled()) {
-                        continue;
-                    }
-                    preservable.add(existingResult);
+            boolean keepFrozen = FrozenAppPreferences.keepHistoryAndFavorites(context);
+            for (Result<?> existingResult : results) {
+                Pojo existingPojo = existingResult == null ? null : existingResult.getPojo();
+                boolean disabledApp = !keepFrozen && existingPojo instanceof AppPojo
+                        && ((AppPojo) existingPojo).isDisabled();
+                boolean hiddenNotification = false;
+                if (existingPojo instanceof NotificationPojo) {
+                    NotificationPojo notification = (NotificationPojo) existingPojo;
+                    hiddenNotification = NotificationTimelineState.isHiddenOrEarlierFromHistory(
+                            context, notification.exactNotificationId, notification.postTime);
+                }
+                if (disabledApp || hiddenNotification) {
+                    // Copy only when a row really is ineligible for the refresh safety net.
+                    if (preservable == results) preservable = new ArrayList<>(results);
+                    preservable.remove(existingResult);
                 }
             }
             updatedResults = HistoryRefreshPreserver.preserveMissing(

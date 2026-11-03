@@ -193,6 +193,7 @@ public final class NotificationRetention188RegressionTest {
 
     @Test public void explicitRemovalFreezeAndHistoryOffRemainRespected() throws Exception {
         NotificationHistoryRecord first = post("notify-history-one");
+        awaitRow(first.notificationId, true);
         NotificationTimelineState.hideFromHistory(app, first.notificationId, first.postTime);
         DBHelper.removeFromHistory(app, first.notificationId);
         assertFalse("A queued copy cannot recreate the removed History row",
