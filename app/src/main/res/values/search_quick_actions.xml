@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <!-- Smart S actions use the same English fallback as the existing custom feature menus. -->
     <string name="search_database_now">Search database now</string>
     <string name="search_notification_history">Search notification history</string>
 </resources>

@@ -1,0 +1,1 @@
+Retain received notifications through dismissal, reconnect and launcher restart; preserve explicit removal and disabled-history choices. Add Search database now and Search notification history actions. Keep instant saved History search, the five-second automatic database delay, existing UI and shortcut fixes, and low CPU/battery safeguards.

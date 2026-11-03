@@ -3698,3 +3698,193 @@ jobs:
           git commit -qm "Publish signed Smart S Launcher 3.30.187"
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin HEAD:updater-channel
+
+  android-188:
+    name: Verify received notification retention, both search actions and UI/power regressions on Android 35
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.188-history-notifications-search-now') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Enable hardware acceleration
+        run: |
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+      - name: Verify notification receipts, search quick actions, power and preceding UI on Android 35
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash scripts/verify_188_android.sh
+      - name: Preserve CPU, RAM and Android regression evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: low-overhead-188-android35-evidence
+          path: verification-results
+          archive: true
+          if-no-files-found: ignore
+
+
+  sign-188-verified:
+    name: Sign Smart S Launcher 3.30.188 after power and UI verification
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.188-history-notifications-search-now') }}
+    needs: [test, apk, android-188]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: app-release-unsigned.apk
+          path: unsigned-release
+      - name: Sign and verify production identity
+        shell: bash
+        env:
+          SMART_S_SIGNING_KEY_B64: ${{ secrets.SMART_S_SIGNING_KEY_B64 }}
+          SMART_S_SIGNING_STORE_PASSWORD: ${{ secrets.SMART_S_SIGNING_STORE_PASSWORD }}
+          SMART_S_SIGNING_KEY_ALIAS: ${{ secrets.SMART_S_SIGNING_KEY_ALIAS }}
+          SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/smart-s-188-release.p12"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          SDK="$ANDROID_HOME/build-tools/34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null
+          test -n "$SMART_S_SIGNING_KEY_B64"
+          printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          mkdir -p verified-apk
+          OUT="verified-apk/SmartSLauncher.apk"
+          "$SDK/apksigner" sign --ks "$KEYSTORE" --ks-type PKCS12 \
+            --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
+            --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
+            --key-pass env:SMART_S_SIGNING_KEY_PASSWORD \
+            --out "$OUT" unsigned-release/app-release-unsigned.apk
+          "$SDK/apksigner" verify --verbose --print-certs "$OUT" | tee verified-apk/apk-verification.txt
+          CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' verified-apk/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test "$CERT" = '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53'
+          "$SDK/aapt" dump badging "$OUT" > verified-apk/package-badging.txt
+          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='616'" | grep -F "versionName='3.30.188'"
+          sha256sum "$OUT" > verified-apk/SmartSLauncher.sha256
+          git rev-parse HEAD > verified-apk/source-commit.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.188-signed
+          path: verified-apk
+          archive: true
+          if-no-files-found: error
+          retention-days: 90
+
+
+  publish-188-verified:
+    name: Publish verified notification retention and search quick actions 3.30.188
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.188-history-notifications-search-now') }}
+    needs: [sign-188-verified, apk]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: Smart-S-Launcher-3.30.188-signed
+          path: signed
+      - uses: actions/download-artifact@v8
+        with:
+          name: app-debug.apk
+          path: debug
+      - uses: actions/download-artifact@v8
+        with:
+          name: low-overhead-188-android35-evidence
+          path: performance
+      - name: Prepare signed production and updater assets
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cp performance/power-profile-188.json power-profile-188.json
+          cp signed/SmartSLauncher.apk SmartSLauncher.apk
+          cp debug/app-debug.apk SmartSLauncher-debug.apk
+          cp SmartSLauncher.apk smart-s-launcher-3.30.188.apk
+          cp SmartSLauncher-debug.apk app-debug.apk
+          test -s SmartSLauncher.apk && test -s SmartSLauncher-debug.apk
+          grep -F "versionCode='616'" signed/package-badging.txt
+          grep -F "versionName='3.30.188'" signed/package-badging.txt
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          base = "https://github.com/tbzmike/smart-s-launcher/releases/download/updater-latest/"
+          prod = Path("SmartSLauncher.apk")
+          debug = Path("SmartSLauncher-debug.apk")
+          data = {"version":"3.30.188","versionCode":616,"runId":int(os.environ["SOURCE_RUN_ID"]),
+                  "sha":os.environ["SOURCE_SHA"],"variant":"release",
+                  "apkName":prod.name,"apkUrl":base+prod.name,"releaseApkName":prod.name,
+                  "releaseApkUrl":base+prod.name,"releaseApkSize":prod.stat().st_size,
+                  "releaseApkSha256":hashlib.sha256(prod.read_bytes()).hexdigest(),
+                  "debugApkName":debug.name,"debugApkUrl":base+debug.name,
+                  "debugApkSize":debug.stat().st_size,
+                  "debugApkSha256":hashlib.sha256(debug.read_bytes()).hexdigest()}
+          Path("latest-green.json").write_text(json.dumps(data,separators=(",",":"))+"\n")
+          PY
+      - name: Update release with exact Android-verified source and signed APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v3.30.188
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$TAG"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber SmartSLauncher.apk SmartSLauncher-debug.apk \
+              smart-s-launcher-3.30.188.apk app-debug.apk latest-green.json power-profile-188.json
+          else
+            gh release create "$TAG" --latest --target "$GITHUB_SHA" \
+              --title "Smart S Launcher v3.30.188" \
+              --notes "Retain received notifications reliably and add immediate database and scoped notification-history search buttons, preserving the preceding UI, shortcut and power fixes." \
+              SmartSLauncher.apk SmartSLauncher-debug.apk \
+              smart-s-launcher-3.30.188.apk app-debug.apk latest-green.json power-profile-188.json
+          fi
+          gh release edit "$TAG" --latest --target "$GITHUB_SHA" \
+            --notes "Smart S Launcher 3.30.188: commit incoming notification text and its Home History link together before refreshing; retain receipts through dismissal, listener reconnect and process restart; deduplicate catch-up using stable database row IDs and preserve explicit removal/freeze/OFF controls. Keep notification links out of automatic launch-history pruning and add indexed receipt lookups. Add Search database now and Search notification history actions for the current query; preserve instant configured History and the automatic five-second deadline. Scoped archive queries run off the UI thread and cancel on query changes or pause. All preceding UI, native/IceBox destinations and low-overhead feature gates verified on Android 35, with a CPU/RAM comparison against 3.30.187. Original production signing identity preserved."
+      - name: Refresh stable updater assets and manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=updater-latest
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            git tag -f "$TAG" "$GITHUB_SHA"
+            git push --force origin "refs/tags/$TAG"
+            gh release upload "$TAG" --clobber SmartSLauncher.apk SmartSLauncher-debug.apk latest-green.json
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --prerelease \
+              --title "Smart S Launcher — updater latest" \
+              SmartSLauncher.apk SmartSLauncher-debug.apk latest-green.json
+          fi
+          PUSH_DIR="$RUNNER_TEMP/smart-s-188-updater"
+          mkdir -p "$PUSH_DIR"
+          cp latest-green.json "$PUSH_DIR/"
+          cd "$PUSH_DIR"
+          git init -q
+          git checkout -qb updater-channel
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest-green.json
+          git commit -qm "Publish signed Smart S Launcher 3.30.188"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin HEAD:updater-channel

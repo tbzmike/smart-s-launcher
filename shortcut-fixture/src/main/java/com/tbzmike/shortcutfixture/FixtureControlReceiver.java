@@ -43,12 +43,25 @@ public final class FixtureControlReceiver extends BroadcastReceiver {
         int count = "notify-burst".equals(mode) ? 80 : "notify-load".equals(mode) ? 32 : 1;
         for (int i = 0; i < count; i++) {
             boolean ongoing = "notify-burst".equals(mode);
+            boolean history = mode.startsWith("notify-history");
+            Intent destination = new Intent(context, FixturePrivateTargetActivity.class)
+                    .setAction(Intent.ACTION_VIEW).setData(Uri.parse("fixture://notification/received188"))
+                    .putExtra(FixtureTargetActivity.DESTINATION, "notification188");
+            android.app.PendingIntent target = android.app.PendingIntent.getActivity(context, 188,
+                    destination, android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                            | android.app.PendingIntent.FLAG_IMMUTABLE);
             android.app.Notification n = new android.app.Notification.Builder(context, "power187")
                     .setSmallIcon(android.R.drawable.ic_dialog_info).setLargeIcon(image)
-                    .setContentTitle("Power fixture " + i).setContentText("Exact live preview " + i)
+                    .setContentTitle(history ? "Retained message188" : "Power fixture " + i)
+                    .setContentText(history ? "Received notification needle188 " + mode : "Exact live preview " + i)
+                    .setContentIntent(target)
                     .setStyle(new android.app.Notification.BigPictureStyle().bigPicture(image))
                     .setOngoing(ongoing).setOnlyAlertOnce(true).build();
-            manager.notify(ongoing ? 8799 : 8700 + i, n);
+            manager.notify(ongoing ? 8799 : history ? 8800 : 8700 + i, n);
+            if ("notify-history-rapid".equals(mode)) {
+                try { Thread.sleep(150L); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                manager.cancel(8800);
+            }
         }
     }
     private static ShortcutInfo shortcut(Context context, String id) {

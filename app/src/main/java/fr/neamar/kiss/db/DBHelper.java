@@ -74,13 +74,17 @@ public class DBHelper {
             long twoMonthsAgo = 7776000000L; // 1000 * 60 * 60 * 24 * 30 * 3;
             // Notification archive entries have explicit removal controls. Ordinary launch-history
             // housekeeping must not randomly remove their Home links after three months.
-            db.delete("history", "timeStamp < ? AND record NOT LIKE 'notification://%'",
-                    new String[]{Long.toString(System.currentTimeMillis() - twoMonthsAgo)});
+            pruneOldLaunchHistory(db, System.currentTimeMillis() - twoMonthsAgo);
             // And vacuum the DB for speed
             db.execSQL("VACUUM");
         }
 
         });
+    }
+
+    static void pruneOldLaunchHistory(SQLiteDatabase db, long cutoff) {
+        db.delete("history", "timeStamp < ? AND record NOT LIKE 'notification://%'",
+                new String[]{Long.toString(cutoff)});
     }
 
     /** Index an incoming post once, without launch canonicalisation, random pruning or VACUUM. */
