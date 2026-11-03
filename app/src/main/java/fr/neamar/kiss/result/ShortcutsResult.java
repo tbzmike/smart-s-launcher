@@ -428,7 +428,12 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         AppLaunchUtils.ensurePackageEnabledAsync(context, pkg, component, true, enabled -> {
             if (!enabled) {
                 launchPending = false;
-                if (!openKnownIceBoxTarget(context, true)) showUnableToEnable(context, pkg);
+                if (IceBoxLaunchBridge.open(context, pkg,
+                        android.os.Process.myUserHandle().hashCode(), getViewBounds(view), intent)) {
+                    onExactLaunchSucceeded(context, true);
+                } else if (!openKnownIceBoxTarget(context, true)) {
+                    showUnableToEnable(context, pkg);
+                }
                 return;
             }
             openLegacyIntent(context, view, intent, true, pkg);
@@ -620,7 +625,13 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                     associatedActivity, associatedActivity != null, enabled -> {
                         if (!enabled) {
                             launchPending = false;
-                            showUnableToEnable(context, pojo.packageName);
+                            if (IceBoxLaunchBridge.open(context, pojo.packageName,
+                                    android.os.Process.myUserHandle().hashCode(), sourceBounds)) {
+                                onExactLaunchSucceeded(context, true);
+                                retryExactAfterIceBoxHandoff(context, sourceBounds, 0);
+                            } else {
+                                showUnableToEnable(context, pojo.packageName);
+                            }
                             return;
                         }
                         attemptExactLaunchAfterEnable(context, sourceBounds, 0);
@@ -707,7 +718,30 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         if (!IceBoxLaunchBridge.open(context, target, userId, sourceBounds)) return false;
         launchPending = false;
         onExactLaunchSucceeded(context, asynchronous);
+        if (identity != null && identity.originalShortcutId != null) {
+            retryOriginalFeatureAfterIceBoxHandoff(context, target, sourceBounds, 0);
+        }
         return true;
+    }
+
+    private void retryOriginalFeatureAfterIceBoxHandoff(Context context, String target,
+                                                        Rect sourceBounds, int attempt) {
+        if (tryOriginalIceBoxFeature(context, target, sourceBounds)
+                || attempt >= ENABLED_SHORTCUT_RETRY_DELAYS_MS.length) return;
+        new Handler(Looper.getMainLooper()).postDelayed(() ->
+                retryOriginalFeatureAfterIceBoxHandoff(context, target, sourceBounds, attempt + 1),
+                ENABLED_SHORTCUT_RETRY_DELAYS_MS[attempt]);
+    }
+
+    /** Ice Box accepted the app launch. Recover its exact feature if Android republishes it. */
+    @RequiresApi(Build.VERSION_CODES.O)
+    private void retryExactAfterIceBoxHandoff(Context context, Rect sourceBounds, int attempt) {
+        LauncherApps apps = ContextCompat.getSystemService(context, LauncherApps.class);
+        if (apps != null && tryExactShortcutLaunch(context, apps, sourceBounds)) return;
+        if (attempt >= ENABLED_SHORTCUT_RETRY_DELAYS_MS.length) return;
+        new Handler(Looper.getMainLooper()).postDelayed(() ->
+                retryExactAfterIceBoxHandoff(context, sourceBounds, attempt + 1),
+                ENABLED_SHORTCUT_RETRY_DELAYS_MS[attempt]);
     }
 
     private boolean tryOriginalIceBoxFeature(Context context, String target, Rect sourceBounds) {

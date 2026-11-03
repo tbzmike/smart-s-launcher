@@ -26,8 +26,6 @@ public final class FixtureIceBoxProvider extends ContentProvider {
         getContext().sendOrderedBroadcast(request, null, new BroadcastReceiver() {
             @Override public void onReceive(Context context, Intent intent) { completed.countDown(); }
         }, null, 0, null, null);
-        try { completed.await(3, TimeUnit.SECONDS); }
-        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         return new Bundle();
     }
     @Override public Cursor query(Uri u, String[] p, String s, String[] a, String o) { return null; }

@@ -334,8 +334,13 @@ public final class ShortcutLaunch186IntegrationTest {
         BroadcastReceiver sdkReceiver = new BroadcastReceiver() {
             @Override public void onReceive(Context c, Intent request) {
                 String target = request.getStringExtra("target");
-                if (TARGET.equals(target)) shell("pm enable --user 0 " + TARGET);
-                sdkCalls.offer(target == null ? "" : target);
+                PendingResult pending = goAsync();
+                new Thread(() -> {
+                    android.os.SystemClock.sleep(900L);
+                    if (TARGET.equals(target)) shell("pm enable --user 0 " + TARGET);
+                    sdkCalls.offer(target == null ? "" : target);
+                    pending.finish();
+                }, "delayed-icebox-fixture").start();
             }
         };
         ContextCompat.registerReceiver(context, sdkReceiver,
