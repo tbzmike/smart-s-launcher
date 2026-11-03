@@ -98,8 +98,9 @@ public final class NotificationAvatarSupport {
 
     public static void onHistorySettingChanged(Context context) {
         EXECUTOR.getQueue().clear();
-        MEMORY_CACHE.resize(NotificationWorkPolicy.historyEnabled(context)
-                ? MEMORY_CACHE_BYTES : 2 * 1024 * 1024);
+        boolean enabled = NotificationWorkPolicy.historyEnabled(context);
+        MEMORY_CACHE.resize(enabled ? MEMORY_CACHE_BYTES : 2 * 1024 * 1024);
+        if (!enabled) MEMORY_CACHE.evictAll();
     }
 
     public static void releaseLiveAvatar(String id) { MEMORY_CACHE.remove(id); }

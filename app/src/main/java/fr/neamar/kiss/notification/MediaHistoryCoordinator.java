@@ -15,7 +15,7 @@ import java.lang.reflect.Field;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.KissApplication;
@@ -29,7 +29,7 @@ import fr.neamar.kiss.utils.Log;
  */
 public final class MediaHistoryCoordinator implements Application.ActivityLifecycleCallbacks {
     private static final String TAG = MediaHistoryCoordinator.class.getSimpleName();
-    private static final ExecutorService EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-media-history");
+    private static final ThreadPoolExecutor EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-media-history");
     private static final AtomicBoolean REFRESH_RUNNING = new AtomicBoolean(false);
     private static final ConcurrentHashMap<String, Long> CAPTURE_FINGERPRINTS =
             new ConcurrentHashMap<>();
@@ -130,6 +130,8 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
     }
 
     public static void clearCaptureState() {
+        EXECUTOR.getQueue().clear();
+        REFRESH_RUNNING.set(false);
         CAPTURE_FINGERPRINTS.clear();
         SEEDED_MEDIA_HISTORY.clear();
         lastResumeRefreshElapsed = 0L;

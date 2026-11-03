@@ -45,7 +45,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 
 import fr.neamar.kiss.BuildConfig;
 import fr.neamar.kiss.CustomIconDialog;
@@ -89,14 +88,7 @@ public abstract class Result<T extends Pojo> {
 
     private static final String TAG = Result.class.getSimpleName();
     private static final int TAG_RUNNING_TASK = R.id.item_app_icon;
-    private static final Executor ICON_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
-        Thread thread = new Thread(() -> {
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
-            runnable.run();
-        }, "smart-s-icon-loader");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
+    private static final Executor ICON_EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.parallel(2, "smart-s-icon-loader");
 
     /**
      * One reusable idle request per recycled ImageView. A long fling can rebind the same row many

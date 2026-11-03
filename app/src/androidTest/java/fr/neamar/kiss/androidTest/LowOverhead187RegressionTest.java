@@ -52,7 +52,7 @@ public final class LowOverhead187RegressionTest {
         prefs.edit().putBoolean(KEYS[0], false).putBoolean(KEYS[1], false)
                 .putBoolean(KEYS[2], false).putBoolean(KEYS[3], true).commit();
         LauncherScrollWorkGate.setScrolling(false);
-        PowerTestSupport187.connect(app);
+        PowerTestSupport187.shell("appops set " + app.getPackageName() + " GET_USAGE_STATS allow");
         PowerTestSupport187.control("notify-clear");
         scenario = ActivityScenario.launch(MainActivity.class);
     }
@@ -150,41 +150,31 @@ public final class LowOverhead187RegressionTest {
         return false;
     }
 
-    @Test public void disabledHistoryKeepsLivePreviewAndAvatarWithoutArchivingOrRankingChurn()
-            throws Exception {
-        int beforeImages = PowerTestSupport187.files(new File(app.getFilesDir(), "notification_visuals"));
-        int beforeAvatars = PowerTestSupport187.files(new File(app.getFilesDir(), "notification_avatars"));
-        int beforeRows = SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size();
+    @Test public void disabledHistoryStopsListenerAndDoesNotArchive() throws Exception {
+        prefs.edit().putBoolean(KEYS[1], true).commit();
+        PowerTestSupport187.connect(app);
         PowerTestSupport187.control("notify-one");
-        PowerTestSupport187.await("Live notification is verified", () -> fixtureNotification() != null);
-        StatusBarNotification active = fixtureNotification();
-        String id = NotificationListener.getTimelineId(active);
-        PowerTestSupport187.await("Live avatar still appears", () -> NotificationAvatarSupport.avatar(app, id) != null);
-        assertNotNull("Popup still reads the exact live picture without an archive",
-                NotificationVisualSupport.snapshot(app, id, active.getPackageName(), active.getPostTime()));
+        PowerTestSupport187.await("Real notification is verified", () -> fixtureNotification() != null);
+        PowerTestSupport187.await("First notification is saved", () ->
+                !SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).isEmpty());
+        int beforeRows = SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size();
+        prefs.edit().putBoolean(KEYS[1], false).commit();
+        PowerTestSupport187.await("Disabled history stops Android listener", () -> !listenerRunning()
+                && app.getPackageManager().getComponentEnabledSetting(new android.content.ComponentName(
+                app, NotificationListener.class)) == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED);
+        assertNull("No live snapshot is served while disabled", NotificationListener.activeNotificationsSnapshot());
+        assertFalse("A reconnect request cannot restart the listener", NotificationListener.requestListenerReconnect(app));
+        new fr.neamar.kiss.notification.NotificationListenerRecoveryReceiver().onReceive(app,
+                new Intent(Intent.ACTION_BOOT_COMPLETED));
         PowerTestSupport187.control("notify-burst");
         Thread.sleep(700L);
-        assertEquals(beforeImages, PowerTestSupport187.files(new File(app.getFilesDir(), "notification_visuals")));
-        assertEquals(beforeAvatars, PowerTestSupport187.files(new File(app.getFilesDir(), "notification_avatars")));
+        assertFalse("A notification burst does not restart listener", listenerRunning());
         assertEquals(beforeRows, SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size());
-        Field instance = NotificationListener.class.getDeclaredField("instance");
-        instance.setAccessible(true);
-        NotificationListener listener = (NotificationListener) instance.get(null);
-        SharedPreferences details = app.getSharedPreferences(NotificationListener.DETAIL_PREFERENCES_NAME, 0);
-        AtomicInteger writes = new AtomicInteger();
-        SharedPreferences.OnSharedPreferenceChangeListener observer = (p, key) -> writes.incrementAndGet();
-        details.registerOnSharedPreferenceChangeListener(observer);
-        try {
-            scenario.onActivity(a -> {
-                int before = writes.get();
-                for (int i = 0; i < 100; i++) listener.onNotificationRankingUpdate(null);
-                assertEquals("Ranking-only events must not rewrite notification caches", before, writes.get());
-            });
-        } finally { details.unregisterOnSharedPreferenceChangeListener(observer); }
     }
 
     @Test public void reenabledHistoryStillSavesPicturesAndOffPreservesExistingRecords() throws Exception {
         prefs.edit().putBoolean(KEYS[1], true).commit();
+        PowerTestSupport187.connect(app);
         PowerTestSupport187.control("notify-one");
         PowerTestSupport187.await("Exact notification is available", () -> fixtureNotification() != null);
         String id = NotificationListener.getTimelineId(fixtureNotification());
@@ -195,26 +185,25 @@ public final class LowOverhead187RegressionTest {
         });
         int saved = SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size();
         prefs.edit().putBoolean(KEYS[1], false).commit();
-        assertEquals("Turning OFF preserves saved user history", saved,
-                SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size());
-        long previousPost = fixtureNotification().getPostTime();
+        PowerTestSupport187.await("Listener stops", () -> !listenerRunning());
         PowerTestSupport187.control("notify-fresh");
-        PowerTestSupport187.await("Replacement post reached Android", () ->
-                fixtureNotification() != null && fixtureNotification().getPostTime() != previousPost);
-        StatusBarNotification fresh = fixtureNotification();
-        NotificationVisualSupport.Snapshot picture = NotificationVisualSupport.snapshot(
-                app, id, fresh.getPackageName(), fresh.getPostTime());
-        assertNotNull(picture);
-        assertTrue(picture.image instanceof android.graphics.drawable.BitmapDrawable);
-        assertEquals("OFF still shows the new live picture, not an old archived one",
-                android.graphics.Color.RED,
-                ((android.graphics.drawable.BitmapDrawable) picture.image).getBitmap().getPixel(10, 10));
-        PowerTestSupport187.await("Live avatar is refreshed after an archived notification ID is reused", () -> {
-            android.graphics.drawable.Drawable image = NotificationAvatarSupport.avatar(app, id);
-            return image instanceof android.graphics.drawable.BitmapDrawable
-                    && ((android.graphics.drawable.BitmapDrawable) image).getBitmap().getPixel(10, 10)
-                    == android.graphics.Color.RED;
-        });
+        Thread.sleep(500L);
+        assertEquals("Turning OFF keeps saved history and cannot add more", saved,
+                SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size());
+        prefs.edit().putBoolean(KEYS[1], true).commit();
+        PowerTestSupport187.await("Re-enabled history reconnects without granting access again",
+                NotificationListener::isReadyForExactNotificationLookup);
+        PowerTestSupport187.control("notify-history-one");
+        PowerTestSupport187.await("New notifications are saved after re-enabling", () ->
+                SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, Collections.singletonList("needle188"), 100).size() > 0);
+    }
+
+    private boolean listenerRunning() {
+        ActivityManager manager = app.getSystemService(ActivityManager.class);
+        for (ActivityManager.RunningServiceInfo info : manager.getRunningServices(Integer.MAX_VALUE)) {
+            if (NotificationListener.class.getName().equals(info.service.getClassName())) return true;
+        }
+        return false;
     }
 
     @Test public void idleWorkersReleaseStacksAndRestartAndAvatarBudgetShrinks() throws Exception {

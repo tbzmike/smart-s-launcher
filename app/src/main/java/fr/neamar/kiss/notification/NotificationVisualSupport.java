@@ -86,11 +86,13 @@ public final class NotificationVisualSupport {
     }
 
     private static void captureNow(Context context, String notificationId, StatusBarNotification sbn) {
+        if (!NotificationWorkPolicy.historyEnabled(context)) return;
         Notification notification = sbn.getNotification();
         if (notification == null) return;
 
         MediaReference reference = findMessagingMedia(notification);
         Drawable visual = extractVisual(context, notification, reference);
+        if (!NotificationWorkPolicy.historyEnabled(context)) return;
         File file = visual == null ? null : visualFile(context, notificationId);
         boolean wroteImage = file != null && writeBitmap(file, drawableToBitmap(visual));
         boolean media = isMediaNotification(notification);

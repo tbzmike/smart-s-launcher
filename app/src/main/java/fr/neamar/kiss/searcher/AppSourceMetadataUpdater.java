@@ -76,11 +76,7 @@ public final class AppSourceMetadataUpdater {
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
     private static final AtomicBoolean AUTO_RUNNING = new AtomicBoolean(false);
     private static final ExecutorService COORDINATOR =
-            Executors.newSingleThreadExecutor(runnable -> {
-                Thread thread = new Thread(runnable, "smart-s-app-source-update");
-                thread.setPriority(Thread.MIN_PRIORITY);
-                return thread;
-            });
+            fr.neamar.kiss.utils.IdleExecutors.single("smart-s-app-source-update");
 
     private static volatile int total;
     private static volatile int completed;

@@ -578,9 +578,6 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         launcherUiResumed = true;
         AppProvider.setLauncherUiVisible(true);
         fr.neamar.kiss.notification.NotificationWorkPolicy.setHomeVisible(true);
-        if (!fr.neamar.kiss.notification.NotificationWorkPolicy.historyEnabled(this)) {
-            fr.neamar.kiss.notification.MediaHistoryCoordinator.refresh(this, false);
-        }
         // Resume a system-paused update only when the launcher is visibly foreground.
         AppUpdater.resumePendingDownload(this);
         // Settings may have changed while the launcher was paused. Synchronize input mode

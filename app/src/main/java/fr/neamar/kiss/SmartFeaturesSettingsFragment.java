@@ -473,7 +473,9 @@ public class SmartFeaturesSettingsFragment extends PreferenceFragmentCompat
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if ("enable-notification-history".equals(key)
                 && sharedPreferences.getBoolean(key, false)
-                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1
+                && !androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(requireContext())
+                .contains(requireContext().getPackageName())) {
             startActivity(new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
         }
 

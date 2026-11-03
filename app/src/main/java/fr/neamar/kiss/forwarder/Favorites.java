@@ -35,7 +35,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Collections;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import fr.neamar.kiss.DataHandler;
@@ -83,11 +82,7 @@ public class Favorites extends Forwarder {
     // Pixel prediction must never block HOME rendering. The previous synchronous launch-stats
     // query ran from onResume/onFavoriteChange and could hold the main thread for several seconds.
     private final Handler pixelHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService pixelExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "smart-s-pixel-predict");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
+    private final ExecutorService pixelExecutor = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-pixel-predict");
     @Nullable private Future<?> pixelFuture;
     @Nullable private CancellationSignal pixelCancellation;
     private int pixelGeneration;

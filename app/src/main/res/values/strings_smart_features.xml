@@ -22,7 +22,7 @@
     <string name="smart_inline_reply_summary">Show Reply only for notifications exposing a valid Android RemoteInput action.</string>
     <string name="smart_notification_history_category">Notification history</string>
     <string name="smart_enable_notification_history">Save notification history</string>
-    <string name="smart_enable_notification_history_summary">Persist app notifications locally for later search and reopening.</string>
+    <string name="smart_enable_notification_history_summary">Save notifications for later. Turning this off stops the listener and live previews; saved history is kept.</string>
     <string name="smart_save_permanent_notifications">Save permanent notifications</string>
     <string name="smart_save_permanent_notifications_summary">Keep ongoing and non-clearable notifications in the separate Permanent tab.</string>
     <string name="smart_notification_history_search">Smart notification-history search</string>

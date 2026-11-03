@@ -623,7 +623,9 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 getDataHandler().reloadApps();
             } else if ("enable-notification-history".equals(key)) {
                 boolean enabled = sharedPreferences.getBoolean(key, false);
-                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1
+                        && !androidx.core.app.NotificationManagerCompat.getEnabledListenerPackages(requireContext())
+                        .contains(requireContext().getPackageName())) {
                     startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
                 }
             } else if ("selected-contact-mime-types".equals(key)) {

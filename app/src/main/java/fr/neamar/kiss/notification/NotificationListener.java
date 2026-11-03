@@ -39,7 +39,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import fr.neamar.kiss.KissApplication;
@@ -78,8 +78,8 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private static volatile NotificationListener instance;
-    private static final ExecutorService RECONCILE_EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-notification-reconcile");
-    private static final ExecutorService HISTORY_EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-notification-history");
+    private static final ThreadPoolExecutor RECONCILE_EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-notification-reconcile");
+    private static final ThreadPoolExecutor HISTORY_EXECUTOR = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-notification-history");
     private static final AtomicBoolean RECONCILE_RUNNING = new AtomicBoolean(false);
     private static final long ONGOING_PERSIST_INTERVAL_MS = 15_000L;
     private static final ConcurrentHashMap<String, Long> LAST_ONGOING_PERSIST =
@@ -136,9 +136,11 @@ public class NotificationListener extends NotificationListenerService {
         // request a synchronous reconciliation as soon as Launcher Home resumes.
         listenerConnected = false;
         instance = this;
+        if (!NotificationWorkPolicy.historyEnabled(this)) stopForDisabledHistory(this);
     }
 
     @Override public void onDestroy() {
+        timelineHandler.removeCallbacksAndMessages(null);
         if (instance == this) {
             listenerConnected = false;
             instance = null;
@@ -151,12 +153,17 @@ public class NotificationListener extends NotificationListenerService {
     @Override public void onListenerConnected() {
         super.onListenerConnected();
         listenerConnected = true;
+        if (!NotificationWorkPolicy.historyEnabled(this)) {
+            stopForDisabledHistory(this);
+            return;
+        }
         if (refreshAllNotifications(true)) {
             sendBroadcast(MainActivity.internalBroadcast(this, MainActivity.LOAD_OVER));
         }
     }
 
     private boolean refreshAllNotifications(boolean seedTimeline) {
+        if (!NotificationWorkPolicy.historyEnabled(this)) return false;
         StatusBarNotification[] sbns;
         try {
             sbns = getActiveNotifications();
@@ -230,15 +237,14 @@ public class NotificationListener extends NotificationListenerService {
         // full active-notification scan plus SharedPreferences rewrite is optional during a fling.
         // Ranking callbacks do not add/remove notifications. Posted/removed callbacks and the
         // resume reconciliation already maintain that set; ranking churn must not rewrite it.
-        if (!activeStateVerified && !LauncherScrollWorkGate.isScrolling()) startAsyncReconcile(this);
+        if (NotificationWorkPolicy.historyEnabled(this) && !activeStateVerified
+                && !LauncherScrollWorkGate.isScrolling()) startAsyncReconcile(this);
     }
 
     @Override public void onNotificationPosted(StatusBarNotification sbn) {
-        if (sbn == null || isOwnBatteryMonitorTelemetry(sbn)) return;
-        boolean historyEnabled = NotificationWorkPolicy.historyEnabled(this);
-        // Progress/VPN/service ticks have no badge or live timeline row. With history OFF they
-        // require no expanded RemoteViews, image decoding, unread state or archive bookkeeping.
-        if (!historyEnabled && isNotificationTrivial(sbn)) return;
+        if (sbn == null || !NotificationWorkPolicy.historyEnabled(this)
+                || isOwnBatteryMonitorTelemetry(sbn)) return;
+        boolean historyEnabled = true;
 
         String id = getTimelineId(sbn);
         Notification notification = sbn.getNotification();
@@ -598,7 +604,7 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     @Override public void onNotificationRemoved(StatusBarNotification sbn) {
-        if (sbn == null) return;
+        if (sbn == null || !NotificationWorkPolicy.historyEnabled(this)) return;
         removeCachedNotification(sbn);
     }
 
@@ -656,7 +662,8 @@ public class NotificationListener extends NotificationListenerService {
     /** Return a defensive platform snapshot for an explicit avatar-cache refresh. */
     public static StatusBarNotification[] activeNotificationsSnapshot() {
         NotificationListener listener = instance;
-        if (listener == null || !activeStateVerified) return null;
+        if (listener == null || !NotificationWorkPolicy.historyEnabled(listener)
+                || !activeStateVerified) return null;
         try {
             StatusBarNotification[] active = listener.getActiveNotifications();
             return active == null ? null : active.clone();
@@ -674,7 +681,7 @@ public class NotificationListener extends NotificationListenerService {
     public static boolean reconcileActiveNotifications() {
         if (LauncherScrollWorkGate.isScrolling()) return false;
         NotificationListener listener = instance;
-        if (listener == null || !listenerConnected) {
+        if (listener == null || !NotificationWorkPolicy.historyEnabled(listener) || !listenerConnected) {
             publishUnverifiedActiveState();
             return false;
         }
@@ -687,7 +694,7 @@ public class NotificationListener extends NotificationListenerService {
      * actually changed while it was away.
      */
     public static void reconcileActiveNotificationsAsync(Context context) {
-        if (LauncherScrollWorkGate.isScrolling()) return;
+        if (!NotificationWorkPolicy.historyEnabled(context) || LauncherScrollWorkGate.isScrolling()) return;
         NotificationListener listener = instance;
         if (listener == null || !listenerConnected) {
             publishUnverifiedActiveState();
@@ -698,7 +705,7 @@ public class NotificationListener extends NotificationListenerService {
     }
 
     private static void startAsyncReconcile(NotificationListener listener) {
-        if (LauncherScrollWorkGate.isScrolling()) return;
+        if (!NotificationWorkPolicy.historyEnabled(listener) || LauncherScrollWorkGate.isScrolling()) return;
         if (!RECONCILE_RUNNING.compareAndSet(false, true)) return;
         RECONCILE_EXECUTOR.execute(() -> {
             try {
@@ -716,6 +723,36 @@ public class NotificationListener extends NotificationListenerService {
         });
     }
 
+    /** Stop live listener work without touching the saved notification archive or its routes. */
+    static void stopForDisabledHistory(Context context) {
+        if (NotificationWorkPolicy.historyEnabled(context)) return;
+        RECONCILE_EXECUTOR.getQueue().clear();
+        HISTORY_EXECUTOR.getQueue().clear();
+        RECONCILE_RUNNING.set(false);
+        LAST_ONGOING_PERSIST.clear();
+        synchronized (NotificationListener.class) { lastRebindRequestElapsed = 0L; }
+        NotificationListener current = instance;
+        if (current == null) {
+            listenerConnected = false;
+            publishUnverifiedActiveState();
+            return;
+        }
+        boolean connected = listenerConnected;
+        listenerConnected = false;
+        current.timelineHandler.removeCallbacksAndMessages(null);
+        current.pendingTimelineRefreshId = null;
+        current.pendingTimelinePosted = false;
+        current.prefs.edit().clear().apply();
+        current.details.edit().clear().apply();
+        publishUnverifiedActiveState();
+        if (connected && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try { current.requestUnbind(); }
+            catch (RuntimeException e) { Log.w(TAG, "Unable to unbind disabled listener", e); }
+        }
+        current.stopSelf();
+        current.sendBroadcast(MainActivity.internalBroadcast(current, MainActivity.LOAD_OVER));
+    }
+
     /** True only after Android confirms that notification-listener operations are safe. */
     public static boolean isReadyForExactNotificationLookup() {
         return instance != null && listenerConnected && activeStateVerified;
@@ -726,7 +763,7 @@ public class NotificationListener extends NotificationListenerService {
      * The permission check prevents a retry loop when notification access was revoked by the user.
      */
     public static boolean requestListenerReconnect(Context context) {
-        if (context == null) return false;
+        if (context == null || !NotificationWorkPolicy.historyEnabled(context)) return false;
         Context appContext = context.getApplicationContext();
         try {
             if (!NotificationManagerCompat.getEnabledListenerPackages(appContext)

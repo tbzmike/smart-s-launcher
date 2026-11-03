@@ -31,6 +31,7 @@ public final class PixelLauncherScreenOffReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (!Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) return;
+        fr.neamar.kiss.notification.NotificationWorkPolicy.onScreenOff(context);
 
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
         if (!preferences.getBoolean(PREFERENCE_KEY, false)) return;

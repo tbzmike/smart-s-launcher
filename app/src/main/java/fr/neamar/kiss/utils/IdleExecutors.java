@@ -9,6 +9,20 @@ import java.util.concurrent.TimeUnit;
 public final class IdleExecutors {
     private IdleExecutors() { }
 
+    public static ThreadPoolExecutor parallel(int count, String name) {
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(count, count, 10L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(), task -> {
+                    Thread thread = new Thread(() -> {
+                        Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+                        task.run();
+                    }, name);
+                    thread.setPriority(Thread.MIN_PRIORITY);
+                    return thread;
+                });
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
+
     public static ThreadPoolExecutor single(String name) {
         return new ThreadPoolExecutor(0, 1, 10L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(), task -> {

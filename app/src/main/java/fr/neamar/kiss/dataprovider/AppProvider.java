@@ -17,7 +17,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -74,11 +73,7 @@ public class AppProvider extends Provider<AppPojo>
     };
 
     private final Handler stateHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService stateExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "smart-s-frozen-state");
-        thread.setPriority(Thread.MIN_PRIORITY);
-        return thread;
-    });
+    private final ExecutorService stateExecutor = fr.neamar.kiss.utils.IdleExecutors.single("smart-s-frozen-state");
     private final AtomicBoolean reconcileRunning = new AtomicBoolean(false);
     private volatile Future<?> reconcileFuture;
     private LauncherApps launcherApps;
