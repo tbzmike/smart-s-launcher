@@ -132,6 +132,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     private View searchQuickActions;
     private View searchDatabaseNowButton;
     private View searchNotificationHistoryButton;
+    private int contentControlAnchorId = R.id.searchEditLayout;
 
     /**
      * Main list view
@@ -1373,6 +1374,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 ? View.VISIBLE : View.GONE);
         searchNotificationHistoryButton.setVisibility(queryActive ? View.VISIBLE : View.GONE);
         searchQuickActions.setVisibility(queryActive ? View.VISIBLE : View.GONE);
+        anchorMainContentAbove(queryActive ? R.id.searchQuickActions : contentControlAnchorId);
     }
 
     private void openNotificationHistoryForCurrentQuery() {
@@ -1719,8 +1721,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // external favorites in normal history, or the search bar when favorites are hidden or
         // embedded inside the KISS bar. Walking to the root-level ancestor also covers Flexible
         // Workspace, which reparents resultLayout.
-        anchorMainContentAbove(externalFavoritesVisible
-                ? R.id.externalFavoriteBar : R.id.searchEditLayout);
+        contentControlAnchorId = externalFavoritesVisible
+                ? R.id.externalFavoriteBar : R.id.searchEditLayout;
+        anchorMainContentAbove(searchQuickActions != null
+                && searchQuickActions.getVisibility() == View.VISIBLE
+                ? R.id.searchQuickActions : contentControlAnchorId);
         favoritesBar.setVisibility(showFavorites ? View.VISIBLE : View.GONE);
     }
 

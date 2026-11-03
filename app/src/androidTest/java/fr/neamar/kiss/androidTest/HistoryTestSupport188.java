@@ -24,6 +24,8 @@ final class HistoryTestSupport188 {
                 .putBoolean("app-usage-default-repaired-v33001", true)
                 .putBoolean("semantic-search-enabled", false)
                 .putBoolean("freeze-history", false)
+                .putBoolean("history-hide", false)
+                .putBoolean("history-onkeyboard", false)
                 .putBoolean("exclude-favorites-history", false)
                 .putString("smart-history-layout", "vertical")
                 .putString("number-of-history-results", "803")

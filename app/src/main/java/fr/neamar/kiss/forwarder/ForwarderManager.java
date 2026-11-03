@@ -44,11 +44,14 @@ public class ForwarderManager extends Forwarder {
     private final CommunicationHistoryForwarder communicationHistoryForwarder;
     private final WidgetPeelController widgetPeelController;
     private boolean initialResumeComplete;
+    private boolean resumed;
+    private boolean destroyed;
     private boolean lastUiEditLocked;
     private String lastSearchQuery;
     private final Runnable historyScrollIdle = this::onHistoryScrollIdle;
 
     private void onHistoryScrollIdle() {
+        if (!resumed || destroyed) return;
         AppProvider.setLauncherScrolling(false);
         LauncherScrollWorkGate.setScrolling(false);
         SearchHandler.getInstance().onHistoryScrollIdle(mainActivity);
@@ -62,6 +65,9 @@ public class ForwarderManager extends Forwarder {
     }
 
     private final Runnable providerScrollStarted = () -> {
+        // Layout/scroll callbacks can arrive after onPause during window teardown. They cannot
+        // claim the singleton History gate for a viewport that no longer owns the foreground.
+        if (!resumed || destroyed) return;
         // Flip the process-wide gate before any feature-specific cancellation so recurring services
         // and optional workers see "scrolling" immediately.
         LauncherScrollWorkGate.setScrolling(true);
@@ -132,6 +138,7 @@ public class ForwarderManager extends Forwarder {
     public void onStart() { widgetsForwarder.onStart(); }
 
     public void onResume() {
+        resumed = true;
         UiEditLock.syncRuntimeState(mainActivity);
         boolean uiEditLocked = UiEditLock.isLocked(mainActivity);
         lastUiEditLocked = uiEditLocked;
@@ -183,6 +190,7 @@ public class ForwarderManager extends Forwarder {
     }
 
     public void onPause() {
+        resumed = false;
         // A fling can be interrupted by HOME losing focus before the delayed idle callback fires.
         // Clear every scroll gate here so the next resume can always load History again.
         AppProvider.setLauncherScrolling(false);
@@ -435,6 +443,9 @@ public class ForwarderManager extends Forwarder {
     public boolean onMenuButtonClicked(View menuButton) { return tagsMenu.onMenuButtonClicked(menuButton); }
 
     public void onDestroy() {
+        destroyed = true;
+        resumed = false;
+        historyDisplayForwarder.removeScrollStartedListener(providerScrollStarted);
         LauncherScrollWorkGate.setScrolling(false);
         favoritesForwarder.onDestroy();
         liveWallpaperForwarder.onDestroy();

@@ -43,6 +43,7 @@ public final class NotificationRetention188RegressionTest {
         scenario = ActivityScenario.launch(MainActivity.class);
         HistoryTestSupport188.awaitUi(scenario, "History providers ready", activity ->
                 KissApplication.getApplication(activity).getDataHandler().isAllProvidersLoaded());
+        scenario.onActivity(MainActivity::showHistory);
     }
 
     @After public void tearDown() throws Exception {
@@ -82,16 +83,37 @@ public final class NotificationRetention188RegressionTest {
         CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
         optional.execute(() -> {
             entered.countDown();
-            try { release.await(12, TimeUnit.SECONDS); }
+            try { release.await(30, TimeUnit.SECONDS); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         });
         assertTrue(entered.await(5, TimeUnit.SECONDS));
+        java.lang.reflect.Field historyField = NotificationListener.class.getDeclaredField("HISTORY_EXECUTOR");
+        historyField.setAccessible(true);
+        ExecutorService history = (ExecutorService) historyField.get(null);
+        CountDownLatch writesEntered = new CountDownLatch(1), releaseWrites = new CountDownLatch(1);
+        history.execute(() -> {
+            writesEntered.countDown();
+            try { releaseWrites.await(30, TimeUnit.SECONDS); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        });
+        assertTrue(writesEntered.await(5, TimeUnit.SECONDS));
         try {
             scenario.onActivity(activity -> {
                 SearchHandler.getInstance().onHistoryScrollStarted(activity);
                 LauncherScrollWorkGate.setScrolling(true);
             });
-            NotificationHistoryRecord record = post("notify-history-rapid");
+            long before = NotificationTimelineStore.latestRowId(app);
+            PowerTestSupport187.control("notify-history-one");
+            PowerTestSupport187.await("Android delivered the real notification to the listener",
+                    () -> activeFixtureId() != null);
+            String id = activeFixtureId();
+            PowerTestSupport187.control("notify-clear");
+            PowerTestSupport187.await("Android removal delivered before the queued journal write", () ->
+                    !NotificationListener.isNotificationActive(app, id));
+            releaseWrites.countDown();
+            PowerTestSupport187.await("Queued receipt commits after its Android post is gone", () ->
+                    latestReceived() != null && latestReceived().dbId > before);
+            NotificationHistoryRecord record = latestReceived();
             assertTrue("Metadata is journaled while optional work is still deferred",
                     HistoryTestSupport188.historyCount(app, record.notificationId) >= 1);
             assertNotNull(record.pendingIntentToken);
@@ -104,7 +126,24 @@ public final class NotificationRetention188RegressionTest {
             scenario.onActivity(activity -> SearchHandler.getInstance().onHistoryScrollIdle(activity));
             refreshHome();
             awaitRow(record.notificationId, true);
-        } finally { release.countDown(); LauncherScrollWorkGate.setScrolling(false); }
+        } finally {
+            releaseWrites.countDown(); release.countDown(); LauncherScrollWorkGate.setScrolling(false);
+        }
+    }
+
+    @Test public void pausedRendererCallbackCannotBlockTheNextReceivedNotification() throws Exception {
+        final Runnable[] stale = new Runnable[1];
+        scenario.onActivity(activity -> stale[0] = (Runnable) HistoryTestSupport188.field(
+                HistoryTestSupport188.field(activity, "forwarderManager"), "providerScrollStarted"));
+        scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED);
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            stale[0].run();
+            assertFalse(SearchHandler.getInstance().isHistoryScrollActive());
+            assertFalse(LauncherScrollWorkGate.isScrolling());
+        });
+        scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
+        NotificationHistoryRecord record = post("notify-history-one");
+        awaitRow(record.notificationId, true);
     }
 
     @Test public void dismissedSavedNotificationStillOpensTheExactPublisherDestination() throws Exception {
@@ -204,9 +243,21 @@ public final class NotificationRetention188RegressionTest {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
+    private String activeFixtureId() {
+        android.service.notification.StatusBarNotification[] active =
+                NotificationListener.activeNotificationsSnapshot();
+        if (active != null) for (android.service.notification.StatusBarNotification sbn : active) {
+            if (PowerTestSupport187.FIXTURE.equals(sbn.getPackageName()) && sbn.getId() == 8800) {
+                String id = NotificationListener.getTimelineId(sbn);
+                if (NotificationListener.isNotificationActive(app, id, sbn.getPostTime())) return id;
+            }
+        }
+        return null;
+    }
+
     private void refreshHome() {
         scenario.onActivity(activity -> SearchHandler.getInstance().search(
-                Searcher.Type.HISTORY, activity, null, true));
+                Searcher.Type.HISTORY, activity, null, false));
     }
 
     private void awaitRow(String id, boolean present) throws Exception {
