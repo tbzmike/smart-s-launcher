@@ -1,6 +1,5 @@
 package fr.neamar.kiss;
 
-import static android.content.res.Configuration.UI_MODE_NIGHT_MASK;
 import static android.view.HapticFeedbackConstants.LONG_PRESS;
 
 import android.animation.Animator;
@@ -221,6 +220,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     private static final long HOME_RECOVERY_RETRY_MS = 400L;
 
     private boolean launcherUiResumed;
+    private boolean pendingUnchangedHomeResume;
+    private int appliedUiMode;
     private boolean pendingBackgroundRefresh;
     private boolean pendingBackgroundFavoriteRefresh;
     @Nullable private String pendingNotificationTargetId;
@@ -234,6 +235,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        fr.neamar.kiss.utils.LauncherCrashJournal.recordEvent("Home activity created");
+        appliedUiMode = getResources().getConfiguration().uiMode;
 
         /*
          * Initialize preferences
@@ -600,6 +603,13 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 searchLaunchReturnState.consumeDefaultHistoryReset();
         boolean refreshDeferredBackground = pendingBackgroundRefresh;
         boolean refreshDeferredFavorites = pendingBackgroundFavoriteRefresh;
+        boolean unchangedHomeResume = pendingUnchangedHomeResume
+                && !resetDefaultHistoryAfterSearchLaunch && !refreshDeferredBackground
+                && !refreshDeferredFavorites && adapter != null && !adapter.isEmpty()
+                && TextUtils.isEmpty(searchEditText.getText())
+                && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
+                && !isViewingAllApps();
+        pendingUnchangedHomeResume = false;
         String deferredNotificationTargetId = pendingNotificationTargetId;
         pendingBackgroundRefresh = false;
         pendingBackgroundFavoriteRefresh = false;
@@ -629,6 +639,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             SearchHandler.getInstance().restoreHomeHistory(this);
             displayClearOnInput();
             hideKeyboard();
+        } else if (unchangedHomeResume) {
+            // A second HOME press on the already-visible launcher is navigation, not new data.
+            // Retain the existing results/icons instead of cancelling and rescanning History.
         } else if (refreshDeferredBackground
                 && SearchHandler.getInstance().getLastSearchType() != null) {
             updateSearchRecords(true, searchEditText.getText().toString());
@@ -641,9 +654,11 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             displayKissBar(false);
         }
 
-        if (adapter != null) adapter.invalidateHistoryPresentation();
-        fr.neamar.kiss.ui.UniversalHistoryTimestamp.invalidatePresentation();
-        forwarderManager.onResume();
+        if (!unchangedHomeResume) {
+            if (adapter != null) adapter.invalidateHistoryPresentation();
+            fr.neamar.kiss.ui.UniversalHistoryTimestamp.invalidatePresentation();
+        }
+        forwarderManager.onResume(unchangedHomeResume);
         SearchHandler.getInstance().onLauncherResumed(this);
 
         // Pasting shared text via intent-filter into kiss search bar
@@ -663,6 +678,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
         super.onResume();
         homeLifecycleState.onResumeCompleted();
+        fr.neamar.kiss.utils.LauncherCrashJournal.recordEvent("Home activity resumed");
         scheduleHomeSurfaceRecovery();
         // Window animation is launcher-owned and starts only after Home has resumed.
         SmartAnimationEngine.animateWindowEnter(findViewById(android.R.id.content));
@@ -671,6 +687,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     protected void onPause() {
+        pendingUnchangedHomeResume = false;
         setSearchQuickActions(false, false);
         // Do not delay external launches: animate our own decor while Android transfers focus.
         if (discoverSideSwipeTransition) {
@@ -688,6 +705,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     protected void onStop() {
+        pendingUnchangedHomeResume = false;
+        fr.neamar.kiss.utils.LauncherCrashJournal.recordEvent("Home activity stopped");
         AppProvider.setLauncherUiVisible(false);
         fr.neamar.kiss.notification.NotificationWorkPolicy.setHomeVisible(false);
         homeLifecycleState.onStopped();
@@ -719,10 +738,14 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         // launch may already have blanked the field while SearchHandler still owns QUERY results.
         boolean homeIntent = Intent.ACTION_MAIN.equals(intent.getAction())
                 && intent.hasCategory(Intent.CATEGORY_HOME);
+        pendingUnchangedHomeResume = false;
         if (homeIntent) {
+            fr.neamar.kiss.utils.LauncherCrashJournal.recordEvent("Home button delivered to launcher");
             Searcher.Type lastSearchType = SearchHandler.getInstance().getLastSearchType();
             boolean searchResultsActive = !TextUtils.isEmpty(searchEditText.getText())
                     || lastSearchType == Searcher.Type.QUERY;
+            pendingUnchangedHomeResume = launcherWasForeground && !searchResultsActive
+                    && lastSearchType == Searcher.Type.HISTORY && !isViewingAllApps();
             searchLaunchReturnState.onHomeIntent(searchResultsActive);
         }
 
@@ -1716,9 +1739,22 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     @Override
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        fr.neamar.kiss.utils.LauncherCrashJournal.recordEvent(
+                "Home configuration changed, orientation=" + newConfig.orientation);
+        if (newConfig.uiMode != appliedUiMode) {
+            // A real theme change still needs a fresh resource/theme inflation.
+            appliedUiMode = newConfig.uiMode;
+            recreate();
+            return;
+        }
+        // Layouts are responsive and have no landscape-only variants. Reflow the existing view
+        // tree so rotation keeps its results, icons, search text and current History position.
         forwarderManager.onConfigurationChanged(newConfig);
-        recreate();
-        Log.d(TAG, "onConfigurationChanged, uiMode = " + (newConfig.uiMode & UI_MODE_NIGHT_MASK));
+        if (searchEditText != null) searchEditText.syncKeyboardMode();
+        refreshSearchQuickActionStyle();
+        View content = findViewById(android.R.id.content);
+        if (content != null) content.requestLayout();
+        Log.d(TAG, "Home configuration reflowed, orientation=" + newConfig.orientation);
     }
 
     public void setFavoritesBarVisible(boolean isVisible) {

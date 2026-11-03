@@ -166,15 +166,9 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         Preference report = new Preference(requireContext());
         report.setKey("smart-s-last-crash-report");
         report.setTitle("Share last launcher crash report");
-        report.setSummary("Only when you tap: share locally saved crash details to help diagnose unexpected restarts. No automatic upload or background service.");
+        report.setSummary("Share the last saved Java crash and recent Android process exits. A saved crash can be from an earlier date or app version.");
         report.setOnPreferenceClickListener(preference -> {
-            String latest = LauncherCrashJournal.readLatest(requireContext());
-            if (latest == null || latest.isEmpty()) {
-                Toast.makeText(requireContext(),
-                        "No Java crash captured. Android may have restarted the launcher without a Java exception.",
-                        Toast.LENGTH_LONG).show();
-                return true;
-            }
+            String latest = LauncherCrashJournal.buildShareReport(requireContext());
             Intent message = new Intent(Intent.ACTION_SEND);
             message.setType("text/plain");
             message.putExtra(Intent.EXTRA_SUBJECT, "Smart S Launcher crash report");

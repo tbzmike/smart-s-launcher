@@ -137,7 +137,7 @@ public class ForwarderManager extends Forwarder {
 
     public void onStart() { widgetsForwarder.onStart(); }
 
-    public void onResume() {
+    public void onResume(boolean unchangedHomeResume) {
         resumed = true;
         UiEditLock.syncRuntimeState(mainActivity);
         boolean uiEditLocked = UiEditLock.isLocked(mainActivity);
@@ -157,7 +157,7 @@ public class ForwarderManager extends Forwarder {
         // Re-evaluate renderer ownership on every resume. Previously this happened only on the
         // first launcher resume, so choosing Vertical Cards or 3D Wheel in Settings could leave the
         // old renderer visible/active until the whole activity was recreated.
-        historyDisplayForwarder.onResume();
+        historyDisplayForwarder.onResume(unchangedHomeResume);
         smartCardListForwarder.onResume();
 
         if (verticalCards) {

@@ -54,7 +54,7 @@
             android:screenOrientation="user"
             android:stateNotNeeded="true"
             android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
-            android:configChanges="uiMode">
+            android:configChanges="uiMode|orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

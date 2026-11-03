@@ -70,10 +70,12 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (WHEEL_3D.equals(activeMode)) rebuildWheel();
     }
 
-    void onResume() {
+    void onResume(boolean unchangedHomeResume) {
+        boolean wheelWasActive = WHEEL_3D.equals(activeMode);
         applyMode();
         if (WHEEL_3D.equals(activeMode)) {
-            rebuildWheel();
+            if (!unchangedHomeResume || !wheelWasActive
+                    || wheelColumn == null || wheelColumn.getChildCount() == 0) rebuildWheel();
         } else if (VERTICAL.equals(activeMode)) {
             scheduleVisibleVerticalAnimations();
         }
