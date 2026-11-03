@@ -163,7 +163,7 @@ jobs:
           else
             gh release create "$TAG" --latest --target "$GITHUB_SHA" \
               --title "Smart S Launcher v3.30.190" \
-              --notes "Stop and disable the notification listener when notification history is off, including while the screen is off. Keep saved notifications, restart capture when enabled, and release idle optional workers while preserving search and launcher behavior." \
+              --notes "Stop and unbind the notification listener when notification history is off, including while the screen is off. Keep saved notifications, restart capture when enabled, and release idle optional workers while preserving search and launcher behavior." \
               SmartSLauncher.apk SmartSLauncher-debug.apk smart-s-launcher-3.30.190.apk app-debug.apk latest-green.json
           fi
           gh release edit "$TAG" --latest --target "$GITHUB_SHA"

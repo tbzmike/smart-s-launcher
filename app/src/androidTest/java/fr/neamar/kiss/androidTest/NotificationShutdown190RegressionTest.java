@@ -4,11 +4,9 @@ import static org.junit.Assert.*;
 
 import android.app.ActivityManager;
 import android.app.job.JobScheduler;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.os.PowerManager;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.preference.PreferenceManager;
@@ -45,11 +43,9 @@ public final class NotificationShutdown190RegressionTest {
             int saved = SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size();
 
             prefs.edit().putBoolean(keys[0], false).commit();
-            ComponentName component = new ComponentName(app, NotificationListener.class);
-            PowerTestSupport187.await("Android listener is actually stopped and disabled", () ->
+            PowerTestSupport187.await("Android listener is actually stopped", () ->
                     !serviceRunning(app, NotificationListener.class)
-                            && app.getPackageManager().getComponentEnabledSetting(component)
-                            == PackageManager.COMPONENT_ENABLED_STATE_DISABLED);
+                            && !NotificationListener.isReadyForExactNotificationLookup());
             assertFalse(NotificationListener.requestListenerReconnect(app));
             new NotificationListenerRecoveryReceiver().onReceive(app, new Intent(Intent.ACTION_BOOT_COMPLETED));
             new NotificationListenerRecoveryReceiver().onReceive(app, new Intent(Intent.ACTION_MY_PACKAGE_REPLACED));
@@ -70,6 +66,8 @@ public final class NotificationShutdown190RegressionTest {
             android.util.Log.i("SmartS190Power", "disabled-screen-off CPU ms="
                     + (android.os.Process.getElapsedCpuTime() - beforeCpu));
             assertFalse("Screen-off notifications must not restart listener", serviceRunning(app, NotificationListener.class));
+            assertTrue("Stopping the listener keeps notification access granted", NotificationManagerCompat
+                    .getEnabledListenerPackages(app).contains(app.getPackageName()));
             assertNull(NotificationListener.activeNotificationsSnapshot());
             assertFalse("Disabled battery service remains stopped", serviceRunning(app, BatteryMonitorService.class));
             JobScheduler jobs = app.getSystemService(JobScheduler.class);

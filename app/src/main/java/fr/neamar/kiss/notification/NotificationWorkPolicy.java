@@ -32,22 +32,22 @@ public final class NotificationWorkPolicy {
     }
     public static long generation() { return GENERATION.get(); }
 
-    /** Persistently prevent Android from binding the listener while history is disabled. */
+    /** Unbind when history is off; keep Android notification access for re-enabling. */
     public static void syncListener(Context context) {
         Context app = context.getApplicationContext();
-        boolean enabled = historyEnabled(app);
-        if (!enabled) NotificationListener.stopForDisabledHistory(app);
+        if (!historyEnabled(app)) {
+            NotificationListener.stopForDisabledHistory(app);
+            return;
+        }
         PackageManager pm = app.getPackageManager();
         ComponentName component = new ComponentName(app, NotificationListener.class);
         int current = pm.getComponentEnabledSetting(component);
-        int desired = enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-        // Explicitly enable even from DEFAULT. Android may still remember a previous unbind
-        // across a process restart or app-data reset and needs a component change to rediscover it.
-        if (current != desired) {
-            pm.setComponentEnabledSetting(component, desired, PackageManager.DONT_KILL_APP);
+        if (current != PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                && current != PackageManager.COMPONENT_ENABLED_STATE_DEFAULT) {
+            pm.setComponentEnabledSetting(component, PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP);
         }
-        if (enabled) NotificationListener.requestListenerReconnect(app);
+        NotificationListener.requestListenerReconnect(app);
     }
 
     /** Event-driven cleanup; enabled features and explicitly requested work are left alone. */

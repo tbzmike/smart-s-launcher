@@ -160,8 +160,7 @@ public final class LowOverhead187RegressionTest {
         int beforeRows = SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size();
         prefs.edit().putBoolean(KEYS[1], false).commit();
         PowerTestSupport187.await("Disabled history stops Android listener", () -> !listenerRunning()
-                && app.getPackageManager().getComponentEnabledSetting(new android.content.ComponentName(
-                app, NotificationListener.class)) == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED);
+                && !NotificationListener.isReadyForExactNotificationLookup());
         assertNull("No live snapshot is served while disabled", NotificationListener.activeNotificationsSnapshot());
         assertFalse("A reconnect request cannot restart the listener", NotificationListener.requestListenerReconnect(app));
         new fr.neamar.kiss.notification.NotificationListenerRecoveryReceiver().onReceive(app,
@@ -169,6 +168,8 @@ public final class LowOverhead187RegressionTest {
         PowerTestSupport187.control("notify-burst");
         Thread.sleep(700L);
         assertFalse("A notification burst does not restart listener", listenerRunning());
+        assertTrue("Stopping the listener preserves notification access", androidx.core.app.NotificationManagerCompat
+                .getEnabledListenerPackages(app).contains(app.getPackageName()));
         assertEquals(beforeRows, SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE, null, 100).size());
     }
 
