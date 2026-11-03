@@ -580,6 +580,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         fr.neamar.kiss.notification.NotificationWorkPolicy.setHomeVisible(true);
         // Resume a system-paused update only when the launcher is visibly foreground.
         AppUpdater.resumePendingDownload(this);
+        fr.neamar.kiss.searcher.AppMetadataSyncScheduler.resumePending(this);
         // Settings may have changed while the launcher was paused. Synchronize input mode
         // before any later focus request can give Android IME a chance to appear.
         if (searchEditText != null) searchEditText.syncKeyboardMode();

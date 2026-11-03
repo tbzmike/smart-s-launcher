@@ -6,6 +6,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.os.PowerManager;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
@@ -152,8 +153,25 @@ public final class AppMetadataSyncScheduler {
         }
     }
 
+    /** Keep queued package changes, but don't wake the phone for automatic metadata work. */
+    public static boolean isInteractive(@NonNull Context context) {
+        PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        return power == null || power.isInteractive();
+    }
+
+    public static void deferPendingWhileScreenOff(@NonNull Context context) {
+        if (isInteractive(context) || AppSourceMetadataUpdater.isAutomaticRunning()) return;
+        JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        if (scheduler != null) scheduler.cancel(JOB_ID);
+    }
+
+    public static void resumePending(@NonNull Context context) {
+        if (isInteractive(context) && !pendingPackages(context).isEmpty()) schedule(context);
+    }
+
     public static void schedule(@NonNull Context context) {
         Context appContext = context.getApplicationContext();
+        if (!isInteractive(appContext)) return;
         JobScheduler scheduler =
                 (JobScheduler) appContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if (scheduler == null) return;

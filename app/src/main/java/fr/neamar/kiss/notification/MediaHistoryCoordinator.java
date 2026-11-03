@@ -168,7 +168,7 @@ public final class MediaHistoryCoordinator implements Application.ActivityLifecy
     }
 
     @Override public void onActivityResumed(@NonNull Activity activity) {
-        if (!(activity instanceof MainActivity)) return;
+        if (!(activity instanceof MainActivity) || !NotificationWorkPolicy.historyEnabled(activity)) return;
         long now = SystemClock.elapsedRealtime();
         if (now - lastResumeRefreshElapsed < RESUME_REFRESH_MIN_INTERVAL_MS) return;
         lastResumeRefreshElapsed = now;

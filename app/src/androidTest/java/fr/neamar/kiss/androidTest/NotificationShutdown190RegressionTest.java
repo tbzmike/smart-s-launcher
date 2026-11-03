@@ -58,6 +58,14 @@ public final class NotificationShutdown190RegressionTest {
             PowerTestSupport187.await("Screen really turned off", () -> !power.isInteractive());
             long beforeCpu = android.os.Process.getElapsedCpuTime();
             PowerTestSupport187.control("notify-burst");
+            String deferredPackage = "test.screenoff190";
+            fr.neamar.kiss.searcher.AppMetadataSyncScheduler.enqueuePackage(app, deferredPackage,
+                    "Screen-off deferral regression");
+            assertTrue("Package update remains queued", fr.neamar.kiss.searcher.AppMetadataSyncScheduler
+                    .pendingPackages(app).contains(deferredPackage));
+            assertTrue("No automatic metadata service is scheduled while screen is off", app
+                    .getSystemService(JobScheduler.class).getAllPendingJobs().stream().noneMatch(job ->
+                            job.getService().getClassName().endsWith("AppMetadataSyncJobService")));
             Thread.sleep(1200L);
             android.util.Log.i("SmartS190Power", "disabled-screen-off CPU ms="
                     + (android.os.Process.getElapsedCpuTime() - beforeCpu));
@@ -81,6 +89,14 @@ public final class NotificationShutdown190RegressionTest {
             PowerTestSupport187.await("Screen-off notification is saved when enabled", () ->
                     !SmartStateStore.queryNotifications(app, PowerTestSupport187.FIXTURE,
                             Collections.singletonList("needle188"), 100).isEmpty());
+            PowerTestSupport187.shell("input keyevent KEYCODE_WAKEUP");
+            PowerTestSupport187.shell("wm dismiss-keyguard");
+            PowerTestSupport187.await("Screen wakes", power::isInteractive);
+            fr.neamar.kiss.searcher.AppMetadataSyncScheduler.resumePending(app);
+            assertNotNull("Queued package update is scheduled again on wake",
+                    app.getSystemService(JobScheduler.class).getPendingJob(0x53534D44));
+            fr.neamar.kiss.searcher.AppMetadataSyncScheduler.removePackage(app, deferredPackage);
+            app.getSystemService(JobScheduler.class).cancel(0x53534D44);
         } finally {
             PowerTestSupport187.shell("input keyevent KEYCODE_WAKEUP");
             PowerTestSupport187.shell("wm dismiss-keyguard");

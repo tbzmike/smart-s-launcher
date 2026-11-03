@@ -53,6 +53,7 @@ public final class NotificationWorkPolicy {
         if (!historyEnabled(context)) syncListener(context);
         AppUsageTracker.stopDisabledWork(context);
         if (!BatteryMonitorStarter.isEnabled(context)) BatteryMonitorStarter.stopRunning(context);
+        fr.neamar.kiss.searcher.AppMetadataSyncScheduler.deferPendingWhileScreenOff(context);
     }
 
     public static void install(Application app) {

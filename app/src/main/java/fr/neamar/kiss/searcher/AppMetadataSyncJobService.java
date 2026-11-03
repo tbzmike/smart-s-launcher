@@ -18,6 +18,8 @@ import fr.neamar.kiss.KissApplication;
 public final class AppMetadataSyncJobService extends JobService {
     @Override
     public boolean onStartJob(JobParameters params) {
+        // Keep the persistent queue for the next Home resume, without background retries.
+        if (!AppMetadataSyncScheduler.isInteractive(this)) return false;
         Map<String, Long> requests = AppMetadataSyncScheduler.pendingRequests(this);
         Set<String> pending = requests.keySet();
         if (pending.isEmpty()) return false;
