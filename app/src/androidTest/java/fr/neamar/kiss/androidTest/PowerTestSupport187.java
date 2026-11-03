@@ -29,9 +29,15 @@ final class PowerTestSupport187 {
         fail(message);
     }
     static void connect(Context context) throws Exception {
+        android.content.ComponentName component = new android.content.ComponentName(
+                context, NotificationListener.class);
+        await("Listener component is enabled before Android access is granted", () ->
+                context.getPackageManager().getComponentEnabledSetting(component)
+                        != android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED);
         shell("cmd notification allow_listener " + context.getPackageName()
                 + "/fr.neamar.kiss.notification.NotificationListener");
         shell("appops set " + context.getPackageName() + " GET_USAGE_STATS allow");
+        NotificationListener.requestListenerReconnect(context);
         await("Real notification listener connected", NotificationListener::isReadyForExactNotificationLookup);
     }
     static void control(String mode) throws Exception {
