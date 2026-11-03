@@ -79,8 +79,8 @@ public final class AppIdentityResolver {
         ShortcutPojo shortcut = (ShortcutPojo) pojo;
         IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(shortcut.getOreoId());
         // A wrapped app feature (camera/chat/etc.) keeps its own selection and History ID.
-        if (ShortcutUtil.isIceBoxPublisher(context, shortcut.packageName)
-                && identity != null && identity.originalShortcutId != null) return false;
+        if (identity != null && identity.originalShortcutId != null
+                && ShortcutUtil.isIceBoxPublisher(context, shortcut.packageName)) return false;
         String canonical = canonicalPackage(context, dataHandler, shortcut);
         return !TextUtils.isEmpty(canonical)
                 && !TextUtils.equals(canonical, shortcut.packageName);
