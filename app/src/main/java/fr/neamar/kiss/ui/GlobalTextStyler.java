@@ -42,6 +42,7 @@ import java.util.WeakHashMap;
 
 import fr.neamar.kiss.SettingsActivity;
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.R;
 import fr.neamar.kiss.UIColors;
 
 public final class GlobalTextStyler implements Application.ActivityLifecycleCallbacks,
@@ -89,6 +90,11 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent == null || !Intent.ACTION_WALLPAPER_CHANGED.equals(intent.getAction())) return;
+            SearchQuickActionStyle.invalidateWallpaperColor();
+            Activity active = resumedActivity.get();
+            if (active instanceof MainActivity) {
+                ((MainActivity) active).refreshSearchQuickActionStyle();
+            }
             long now = SystemClock.elapsedRealtime();
             if (now - lastWallpaperEventAt < WALLPAPER_EVENT_DEBOUNCE_MS) return;
             lastWallpaperEventAt = now;
@@ -285,7 +291,11 @@ public final class GlobalTextStyler implements Application.ActivityLifecycleCall
 
         // Settings deliberately owns a fixed XP palette. Applying a launcher-wide colour here
         // can make labels disappear against the grey control-panel background.
-        if (!isSettingsContext(view.getContext())) {
+        // These two buttons own a contrast-safe palette against the wallpaper; a global colour
+        // or inverter can otherwise turn their labels the same colour as their background.
+        boolean quickAction = view.getId() == R.id.searchDatabaseNow
+                || view.getId() == R.id.searchNotificationHistory;
+        if (!quickAction && !isSettingsContext(view.getContext())) {
             int configuredColor = configuredColor(view.getContext());
             if (configuredColor != UIColors.COLOR_SYSTEM) {
                 int rendered = SmartTextAppearance.applyTextColorInverter(view.getContext(), configuredColor);

@@ -1,0 +1,1 @@
+Make both search buttons translucent and wallpaper-tinted with readable labels, including when global text colours or inversion are enabled.

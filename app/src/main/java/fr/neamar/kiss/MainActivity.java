@@ -77,6 +77,7 @@ import fr.neamar.kiss.ui.HomeDiscoverSwipeGesture;
 import fr.neamar.kiss.ui.GoogleDiscoverLauncher;
 import fr.neamar.kiss.ui.ListPopup;
 import fr.neamar.kiss.ui.SearchEditText;
+import fr.neamar.kiss.ui.SearchQuickActionStyle;
 import fr.neamar.kiss.ui.SmartAnimationEngine;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
@@ -132,6 +133,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     private View searchQuickActions;
     private View searchDatabaseNowButton;
     private View searchNotificationHistoryButton;
+    private int searchQuickActionSurface;
     private int contentControlAnchorId = R.id.searchEditLayout;
 
     /**
@@ -376,6 +378,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         searchQuickActions = findViewById(R.id.searchQuickActions);
         searchDatabaseNowButton = findViewById(R.id.searchDatabaseNow);
         searchNotificationHistoryButton = findViewById(R.id.searchNotificationHistory);
+        refreshSearchQuickActionStyle();
         searchDatabaseNowButton.setOnClickListener(v ->
                 SearchHandler.getInstance().startPendingQueryNow(this));
         searchNotificationHistoryButton.setOnClickListener(v -> openNotificationHistoryForCurrentQuery());
@@ -561,6 +564,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             this.recreate();
             return;
         }
+
+        refreshSearchQuickActionStyle();
 
         // Undo any in-flight exit transform before provider, card or History work.
         // Previously the transparent root was restored only at the END of onResume,
@@ -1368,6 +1373,15 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
     }
 
     /** A transient action row reserves space above the dock instead of covering results or IME. */
+    public void refreshSearchQuickActionStyle() {
+        if (searchDatabaseNowButton == null || searchNotificationHistoryButton == null) return;
+        int surface = SearchQuickActionStyle.wallpaperSurface(this);
+        if (searchQuickActionSurface == surface) return;
+        searchQuickActionSurface = surface;
+        SearchQuickActionStyle.apply(searchDatabaseNowButton, surface);
+        SearchQuickActionStyle.apply(searchNotificationHistoryButton, surface);
+    }
+
     public void setSearchQuickActions(boolean waitingForDatabase, boolean queryActive) {
         if (searchQuickActions == null) return;
         searchDatabaseNowButton.setVisibility(waitingForDatabase && queryActive

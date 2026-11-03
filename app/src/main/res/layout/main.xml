@@ -74,12 +74,13 @@
             android:layout_marginEnd="4dp"
             android:background="@drawable/search_quick_action_background"
             android:backgroundTint="@null"
+            app:backgroundTint="@null"
             android:minHeight="48dp"
             android:maxLines="2"
             android:padding="8dp"
             android:text="@string/search_database_now"
             android:textAllCaps="false"
-            android:textColor="?attr/searchColor"
+            android:textColor="@android:color/white"
             android:textSize="14sp" />
 
         <androidx.appcompat.widget.AppCompatButton
@@ -90,12 +91,13 @@
             android:layout_marginStart="4dp"
             android:background="@drawable/search_quick_action_background"
             android:backgroundTint="@null"
+            app:backgroundTint="@null"
             android:minHeight="48dp"
             android:maxLines="2"
             android:padding="8dp"
             android:text="@string/search_notification_history"
             android:textAllCaps="false"
-            android:textColor="?attr/searchColor"
+            android:textColor="@android:color/white"
             android:textSize="14sp" />
 
     </LinearLayout>
