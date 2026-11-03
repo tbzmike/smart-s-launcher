@@ -140,7 +140,7 @@ public final class HomeRotation192RegressionTest {
         try {
             Files.write(file.toPath(), old.getBytes(StandardCharsets.UTF_8));
             String report = LauncherCrashJournal.buildShareReport(app);
-            assertTrue(report.contains("Current app version: 3.30.192"));
+            assertTrue(report.contains("Current app version: " + fr.neamar.kiss.BuildConfig.VERSION_NAME));
             assertTrue(report.contains("Recent Android process exits"));
             assertTrue(report.contains("may be from an earlier date or app version"));
             assertTrue(report.contains("Mon Nov 02 12:51:52 GMT+02:00 2026"));

@@ -1,0 +1,156 @@
+name: Verify and release Smart S Launcher 3.30.193
+
+on:
+  push:
+    branches:
+      - fix/3.30.193-updater-release
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-193-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, lint and unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Confirm release changes only the version metadata
+        run: |
+          git fetch --depth=1 origin 20783b9088e01384a1f01619873bdca33efcc25e
+          git diff --exit-code 20783b9088e01384a1f01619873bdca33efcc25e -- app/src/main build.gradle settings.gradle gradle gradle.properties
+          python3 - <<'PYCODE'
+          import subprocess
+          from pathlib import Path
+          original = subprocess.check_output(['git','show','20783b9088e01384a1f01619873bdca33efcc25e:app/build.gradle'], text=True)
+          expected = original.replace('versionCode 620','versionCode 621').replace('versionName "3.30.192"','versionName "3.30.193"')
+          assert Path('app/build.gradle').read_text() == expected
+          PYCODE
+      - name: Build and run checks
+        run: bash ./gradlew lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+      - name: Prepare build artifacts
+        run: |
+          mkdir -p release-input
+          cp app/build/outputs/apk/release/app-release-unsigned.apk release-input/
+          cp app/build/outputs/apk/debug/app-debug.apk release-input/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-input-193
+          path: release-input
+          archive: true
+          if-no-files-found: error
+
+  release:
+    name: Sign and publish Smart S Launcher 3.30.193
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-input-193
+          path: release-input
+      - name: Sign and verify the original app identity
+        shell: bash
+        env:
+          SMART_S_SIGNING_KEY_B64: ${{ secrets.SMART_S_SIGNING_KEY_B64 }}
+          SMART_S_SIGNING_STORE_PASSWORD: ${{ secrets.SMART_S_SIGNING_STORE_PASSWORD }}
+          SMART_S_SIGNING_KEY_ALIAS: ${{ secrets.SMART_S_SIGNING_KEY_ALIAS }}
+          SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/smart-s-193-release.p12"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          SDK="$ANDROID_HOME/build-tools/34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;34.0.0" >/dev/null
+          test -n "$SMART_S_SIGNING_KEY_B64"
+          printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          mkdir -p verified-apk
+          "$SDK/apksigner" sign --ks "$KEYSTORE" --ks-type PKCS12 \
+            --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
+            --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
+            --key-pass env:SMART_S_SIGNING_KEY_PASSWORD \
+            --out verified-apk/SmartSLauncher.apk release-input/app-release-unsigned.apk
+          "$SDK/apksigner" verify --verbose --print-certs verified-apk/SmartSLauncher.apk | tee verified-apk/apk-verification.txt
+          CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' verified-apk/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test "$CERT" = '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53'
+          "$SDK/aapt" dump badging verified-apk/SmartSLauncher.apk > verified-apk/package-badging.txt
+          head -n 1 verified-apk/package-badging.txt | grep -F "name='com.tbzmike.smartslauncher'" | grep -F "versionCode='621'" | grep -F "versionName='3.30.193'"
+          sha256sum verified-apk/SmartSLauncher.apk > verified-apk/SmartSLauncher.sha256
+          git rev-parse HEAD > verified-apk/source-commit.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-Launcher-3.30.193-signed
+          path: verified-apk
+          archive: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Prepare release and updater assets
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cp verified-apk/SmartSLauncher.apk SmartSLauncher.apk
+          cp SmartSLauncher.apk smart-s-launcher-3.30.193.apk
+          cp release-input/app-debug.apk SmartSLauncher-debug.apk
+          cp SmartSLauncher-debug.apk app-debug.apk
+          python3 scripts/prepare_updater_193.py
+      - name: Publish verified APK
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v3.30.193
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$TAG"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber SmartSLauncher.apk SmartSLauncher-debug.apk \
+              smart-s-launcher-3.30.193.apk app-debug.apk latest-green.json
+          else
+            gh release create "$TAG" --latest --target "$GITHUB_SHA" \
+              --title "Smart S Launcher v3.30.193" \
+              --notes "Publish the verified Ice Box, battery, Home and rotation fixes as version 3.30.193 (621), with matching production and debug APK metadata for both updater sources." \
+              SmartSLauncher.apk SmartSLauncher-debug.apk smart-s-launcher-3.30.193.apk app-debug.apk latest-green.json
+          fi
+          gh release edit "$TAG" --latest --target "$GITHUB_SHA"
+      - name: Refresh updater assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=updater-latest
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            git tag -f "$TAG" "$GITHUB_SHA"
+            git push --force origin "refs/tags/$TAG"
+            gh release upload "$TAG" --clobber SmartSLauncher.apk SmartSLauncher-debug.apk latest-green.json
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --prerelease \
+              --title "Smart S Launcher — updater latest" \
+              SmartSLauncher.apk SmartSLauncher-debug.apk latest-green.json
+          fi
+          PUSH_DIR="$RUNNER_TEMP/smart-s-193-updater"
+          mkdir -p "$PUSH_DIR"
+          cp latest-green.json "$PUSH_DIR/"
+          cd "$PUSH_DIR"
+          git init -q
+          git checkout -qb updater-channel
+          git config user.name "github-actions[bot]"
+          git config user.email "41928282+github-actions[bot]@users.noreply.github.com"
+          git add latest-green.json
+          git commit -qm "Publish signed Smart S Launcher 3.30.193"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin HEAD:updater-channel
