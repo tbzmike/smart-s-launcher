@@ -609,6 +609,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                 && TextUtils.isEmpty(searchEditText.getText())
                 && SearchHandler.getInstance().getLastSearchType() == Searcher.Type.HISTORY
                 && !isViewingAllApps();
+        if (BuildConfig.DEBUG) Log.d(TAG, "HOME192 resume unchanged=" + unchangedHomeResume
+                + " candidate=" + pendingUnchangedHomeResume + " reset=" + resetDefaultHistoryAfterSearchLaunch
+                + " pendingData=" + refreshDeferredBackground + " pendingFavorites=" + refreshDeferredFavorites
+                + " last=" + SearchHandler.getInstance().getLastSearchType() + " allApps=" + isViewingAllApps());
         pendingUnchangedHomeResume = false;
         String deferredNotificationTargetId = pendingNotificationTargetId;
         pendingBackgroundRefresh = false;
@@ -746,7 +750,13 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
                     || lastSearchType == Searcher.Type.QUERY;
             pendingUnchangedHomeResume = launcherWasForeground && !searchResultsActive
                     && lastSearchType == Searcher.Type.HISTORY && !isViewingAllApps();
+            if (BuildConfig.DEBUG) Log.d(TAG, "HOME192 intent foreground=" + launcherWasForeground
+                    + " searchActive=" + searchResultsActive + " last=" + lastSearchType
+                    + " allApps=" + isViewingAllApps());
             searchLaunchReturnState.onHomeIntent(searchResultsActive);
+        } else if (BuildConfig.DEBUG) {
+            Log.d(TAG, "HOME192 other intent action=" + intent.getAction()
+                    + " categories=" + intent.getCategories());
         }
 
         //Set the intent so KISS can tell when it was launched as an assistant

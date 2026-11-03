@@ -6,8 +6,11 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
+import android.content.Intent;
+import android.database.DataSetObserver;
 import android.os.Process;
 import android.view.View;
+import androidx.lifecycle.Lifecycle;
 import androidx.preference.PreferenceManager;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -15,6 +18,7 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 import fr.neamar.kiss.KissApplication;
@@ -65,16 +69,35 @@ public final class HomeRotation192RegressionTest {
                 });
                 AtomicLong generation = (AtomicLong) HistoryTestSupport188.field(
                         SearchHandler.getInstance(), "searchGeneration");
-                long beforeHome = generation.get();
+                AtomicInteger adapterChanges = new AtomicInteger();
+                DataSetObserver observer = new DataSetObserver() {
+                    @Override public void onChanged() { adapterChanges.incrementAndGet(); }
+                    @Override public void onInvalidated() { adapterChanges.incrementAndGet(); }
+                };
+                scenario.onActivity(a -> a.adapter.registerDataSetObserver(observer));
                 PowerTestSupport187.shell("input keyevent KEYCODE_HOME");
                 Thread.sleep(500L);
                 scenario.onActivity(a -> {
                     assertSame("HOME retains the activity", activityRef.get(), a);
                     assertSame("HOME retains the History adapter", adapterRef.get(), a.adapter);
                     assertSame("HOME retains the existing History result and icon", resultRef.get(), find(a, id.get()));
-                    assertEquals("Unchanged HOME does not restart History search", beforeHome, generation.get());
+                    assertEquals("Unchanged HOME does not republish visible History", 0, adapterChanges.get());
+                    a.adapter.unregisterDataSetObserver(observer);
                 });
                 assertEquals("HOME does not restart the process", originalPid, Process.myPid());
+
+                // Android may stop HOME before delivering the real key event, so exercise the
+                // distinct paused-but-not-stopped foreground redelivery as well.
+                scenario.moveToState(Lifecycle.State.STARTED);
+                long beforeForegroundDelivery = generation.get();
+                scenario.onActivity(a -> {
+                    Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+                    InstrumentationRegistry.getInstrumentation().callActivityOnNewIntent(a, home);
+                });
+                scenario.moveToState(Lifecycle.State.RESUMED);
+                Thread.sleep(250L);
+                assertEquals("Foreground HOME does not restart History search",
+                        beforeForegroundDelivery, generation.get());
                 rotate(scenario, activityRef.get(), adapterRef.get(), resultRef.get(), id.get(),
                         ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, Configuration.ORIENTATION_LANDSCAPE);
                 rotate(scenario, activityRef.get(), adapterRef.get(), resultRef.get(), id.get(),
