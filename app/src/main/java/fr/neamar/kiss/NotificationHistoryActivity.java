@@ -394,8 +394,11 @@ public class NotificationHistoryActivity extends AppCompatActivity {
             if (target.dbId == targetDbId) {
                 final int position = i;
                 final boolean showDetailNow = openTargetDetail;
+                final long generation = loadGeneration;
+                final long focusedId = targetDbId;
                 openTargetDetail = false;
                 list.post(() -> {
+                    if (!activityResumed || generation != loadGeneration || targetDbId != focusedId) return;
                     list.setSelection(Math.max(0, position - 1));
                     View child = list.getChildAt(position - list.getFirstVisiblePosition());
                     if (child != null) SmartAnimationEngine.animateTileListItem(child, 0);
