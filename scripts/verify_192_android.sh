@@ -59,6 +59,7 @@ run_test fr.neamar.kiss.androidTest.CommunicationIndexLock191RegressionTest veri
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test fr.neamar.kiss.androidTest.HomeRotation192RegressionTest verification-results/home-rotation.log
+run_test fr.neamar.kiss.androidTest.HomeReturnAnimationRegressionTest verification-results/home-animation.log
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test 'fr.neamar.kiss.androidTest.HomeColdRestart192RegressionTest#saveProcessBeforeManualRestart' verification-results/home-restart-seed.log

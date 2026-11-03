@@ -88,6 +88,9 @@ public final class HomeRotation192RegressionTest {
         Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(app);
         configure(prefs);
+        prefs.edit().putString("search-keyboard-mode", "built-in")
+                .putInt("built-in-keyboard-width-percent", 100)
+                .putInt("built-in-keyboard-height-percent", 30).commit();
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             AtomicReference<MainActivity> instance = new AtomicReference<>();
             HistoryTestSupport188.awaitUi(scenario, "Providers ready", a ->
@@ -95,13 +98,23 @@ public final class HomeRotation192RegressionTest {
             scenario.onActivity(a -> {
                 instance.set(a);
                 a.searchEditText.setText("fixture192");
+                a.searchEditText.showBuiltInKeyboard();
                 assertEquals(View.VISIBLE, a.findViewById(R.id.searchQuickActions).getVisibility());
+                assertTrue("Built-in keyboard is visible", a.searchEditText.isBuiltInKeyboardVisible());
                 a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
             });
             HistoryTestSupport188.awaitUi(scenario, "Actual landscape configuration received", a ->
                     a.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE);
+            HistoryTestSupport188.awaitUi(scenario, "Keyboard resizes after actual landscape layout", a -> {
+                View keyboard = (View) HistoryTestSupport188.field(a.searchEditText, "builtInKeyboard");
+                View root = (View) HistoryTestSupport188.field(a.searchEditText, "keyboardRoot");
+                return keyboard != null && root != null && root.getWidth() > 0
+                        && keyboard.getLayoutParams().width == root.getWidth()
+                        && keyboard.getLayoutParams().height <= root.getHeight() / 2;
+            });
             scenario.onActivity(a -> {
                 assertSame("Search activity is retained", instance.get(), a);
+                assertTrue("Keyboard remains visible after rotation", a.searchEditText.isBuiltInKeyboardVisible());
                 assertEquals("Search text survives rotation", "fixture192", a.searchEditText.getText().toString());
                 assertEquals(View.VISIBLE, a.findViewById(R.id.searchQuickActions).getVisibility());
                 assertTrue("Search database button remains wired", a.findViewById(R.id.searchDatabaseNow).performClick());

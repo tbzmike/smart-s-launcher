@@ -32,6 +32,14 @@ public class SearchEditText extends AppCompatEditText {
     private RelativeLayout keyboardRoot;
     private View searchEditLayout;
     private View externalFavoriteBar;
+    private final Runnable refreshKeyboardAfterRootResize = this::refreshBuiltInKeyboardSizing;
+    private final View.OnLayoutChangeListener rootSizeChanged =
+            (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                if (right - left == oldRight - oldLeft && bottom - top == oldBottom - oldTop) return;
+                if (builtInKeyboard == null || builtInKeyboard.getVisibility() != VISIBLE) return;
+                view.removeCallbacks(refreshKeyboardAfterRootResize);
+                view.post(refreshKeyboardAfterRootResize);
+            };
 
     public SearchEditText(Context context) {
         super(context);
@@ -107,6 +115,10 @@ public class SearchEditText extends AppCompatEditText {
         if (keyboard != null) {
             keyboard.release();
         }
+        if (root != null) {
+            root.removeOnLayoutChangeListener(rootSizeChanged);
+            root.removeCallbacks(refreshKeyboardAfterRootResize);
+        }
 
         // Do not mutate root's child array while ViewGroup.dispatchDetachedFromWindow() is
         // iterating it. Removing the keyboard synchronously from this sibling's detach callback can
@@ -134,6 +146,7 @@ public class SearchEditText extends AppCompatEditText {
 
         searchEditLayout = parent;
         keyboardRoot = (RelativeLayout) parent.getParent();
+        keyboardRoot.addOnLayoutChangeListener(rootSizeChanged);
         externalFavoriteBar = keyboardRoot.findViewById(R.id.externalFavoriteBar);
 
         builtInKeyboard = new BuiltInQwertyKeyboard(getContext(), this);
