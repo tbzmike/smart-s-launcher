@@ -6,12 +6,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
-import android.content.Intent;
 import android.database.DataSetObserver;
 import android.os.Process;
 import android.view.View;
 import androidx.preference.PreferenceManager;
-import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -38,9 +36,9 @@ public final class HomeRotation192RegressionTest {
         configure(prefs);
         for (String mode : new String[]{"vertical", "vertical_cards", "wheel_3d"}) {
             prefs.edit().putString("smart-history-layout", mode).commit();
-            try (ActivityScenario<MainActivity> scenario = launchHome(app)) {
+            try (SystemHome192TestSession scenario = launchHome(app)) {
                 AtomicReference<String> id = new AtomicReference<>();
-                HistoryTestSupport188.awaitUi(scenario, "Fixture app and providers loaded", a -> {
+                awaitUi(scenario, "Fixture app and providers loaded", a -> {
                     if (!KissApplication.getApplication(a).getDataHandler().isAllProvidersLoaded()) return false;
                     for (AppPojo pojo : KissApplication.getApplication(a).getDataHandler().getApplications()) {
                         if (PowerTestSupport187.FIXTURE.equals(pojo.packageName)) {
@@ -52,9 +50,9 @@ public final class HomeRotation192RegressionTest {
                 });
                 DBHelper.insertHistory(app, null, id.get());
                 scenario.onActivity(MainActivity::showHistory);
-                HistoryTestSupport188.awaitUi(scenario, "History fixture is visible: " + mode,
+                awaitUi(scenario, "History fixture is visible: " + mode,
                         a -> HistoryTestSupport188.hasRow(a, id.get()));
-                HistoryTestSupport188.awaitUi(scenario, "Initial History search settled", a ->
+                awaitUi(scenario, "Initial History search settled", a ->
                         HistoryTestSupport188.field(SearchHandler.getInstance(), "runningSearch") == null);
                 Thread.sleep(300L);
                 AtomicReference<MainActivity> activityRef = new AtomicReference<>();
@@ -102,9 +100,9 @@ public final class HomeRotation192RegressionTest {
         prefs.edit().putString("search-keyboard-mode", "built-in")
                 .putInt("built-in-keyboard-width-percent", 100)
                 .putInt("built-in-keyboard-height-percent", 30).commit();
-        try (ActivityScenario<MainActivity> scenario = launchHome(app)) {
+        try (SystemHome192TestSession scenario = launchHome(app)) {
             AtomicReference<MainActivity> instance = new AtomicReference<>();
-            HistoryTestSupport188.awaitUi(scenario, "Providers ready", a ->
+            awaitUi(scenario, "Providers ready", a ->
                     KissApplication.getApplication(a).getDataHandler().isAllProvidersLoaded());
             scenario.onActivity(a -> {
                 instance.set(a);
@@ -114,9 +112,9 @@ public final class HomeRotation192RegressionTest {
                 assertTrue("Built-in keyboard is visible", a.searchEditText.isBuiltInKeyboardVisible());
                 a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
             });
-            HistoryTestSupport188.awaitUi(scenario, "Actual landscape configuration received", a ->
+            awaitUi(scenario, "Actual landscape configuration received", a ->
                     a.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE);
-            HistoryTestSupport188.awaitUi(scenario, "Keyboard resizes after actual landscape layout", a -> {
+            awaitUi(scenario, "Keyboard resizes after actual landscape layout", a -> {
                 View keyboard = (View) HistoryTestSupport188.field(a.searchEditText, "builtInKeyboard");
                 View root = (View) HistoryTestSupport188.field(a.searchEditText, "keyboardRoot");
                 return keyboard != null && root != null && root.getWidth() > 0
@@ -153,10 +151,13 @@ public final class HomeRotation192RegressionTest {
         }
     }
 
-    private static ActivityScenario<MainActivity> launchHome(Context app) {
-        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                .setPackage(app.getPackageName()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        return ActivityScenario.launch(home);
+    private static SystemHome192TestSession launchHome(Context app) throws Exception {
+        return SystemHome192TestSession.open(app);
+    }
+
+    private static void awaitUi(SystemHome192TestSession session, String label,
+                                java.util.function.Predicate<MainActivity> condition) throws Exception {
+        PowerTestSupport187.await(label, () -> session.isReady(condition));
     }
 
     private static void configure(SharedPreferences prefs) {
@@ -180,11 +181,11 @@ public final class HomeRotation192RegressionTest {
         return null;
     }
 
-    private static void rotate(ActivityScenario<MainActivity> scenario, MainActivity original,
+    private static void rotate(SystemHome192TestSession scenario, MainActivity original,
                                RecordAdapter adapter, Result<?> result, String id,
                                int requested, int expected) throws Exception {
         scenario.onActivity(a -> a.setRequestedOrientation(requested));
-        HistoryTestSupport188.awaitUi(scenario, "Real rotation applied", a ->
+        awaitUi(scenario, "Real rotation applied", a ->
                 a.getResources().getConfiguration().orientation == expected);
         scenario.onActivity(a -> {
             assertSame("Rotation does not recreate Home", original, a);

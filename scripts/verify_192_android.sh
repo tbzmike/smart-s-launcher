@@ -52,11 +52,9 @@ reset_app() {
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test fr.neamar.kiss.androidTest.HomeRotation192RegressionTest verification-results/home-rotation.log
-if (( ${#FAILED[@]} > 0 )); then printf 'FAIL: %s\n' "${FAILED[@]}"; exit 1; fi
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test 'fr.neamar.kiss.ShortcutLaunch186IntegrationTest#missingIceBoxShortcutUsesItsSdkWithoutRoot' verification-results/icebox-sdk.log
-if (( ${#FAILED[@]} > 0 )); then printf 'FAIL: %s\n' "${FAILED[@]}"; exit 1; fi
 reset_app
 adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
 run_test fr.neamar.kiss.androidTest.LowOverhead187RegressionTest verification-results/disabled-features.log

@@ -5,7 +5,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Process;
-import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry;
 import androidx.test.runner.lifecycle.Stage;
@@ -21,11 +20,9 @@ import fr.neamar.kiss.utils.LauncherCrashJournal;
 public final class HomeColdRestart192RegressionTest {
     @Test public void saveProcessBeforeManualRestart() throws Exception {
         Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                .setPackage(app.getPackageName()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(home)) {
-            HistoryTestSupport188.awaitUi(scenario, "Home ready before restart", a ->
-                    KissApplication.getApplication(a).getDataHandler().isAllProvidersLoaded());
+        try (SystemHome192TestSession session = SystemHome192TestSession.open(app)) {
+            PowerTestSupport187.await("Home ready before restart", () -> session.isReady(a ->
+                    KissApplication.getApplication(a).getDataHandler().isAllProvidersLoaded()));
             assertTrue(app.getSharedPreferences("home-restart-192", 0).edit()
                     .putInt("previous-pid", Process.myPid()).commit());
         }
@@ -54,6 +51,7 @@ public final class HomeColdRestart192RegressionTest {
         assertSame("HOME retains restarted adapter", adapter, resumedHome().adapter);
         assertEquals("HOME does not restart launcher process", process, Process.myPid());
         assertTrue(LauncherCrashJournal.buildShareReport(app).contains("Recent Android process exits"));
+        SystemHome192TestSession.finishHome(app);
     }
 
     private static MainActivity resumedHome() {

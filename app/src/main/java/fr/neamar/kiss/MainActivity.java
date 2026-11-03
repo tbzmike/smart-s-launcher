@@ -1103,8 +1103,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         if (pendingIceBoxPermission != null) { completed.accept(false); return; }
         pendingIceBoxPermission = completed;
         try {
-            requestPermissions(new String[]{fr.neamar.kiss.utils.IceBoxSdkBridge.PERMISSION},
-                    ICE_BOX_PERMISSION_REQUEST);
+            androidx.core.app.ActivityCompat.requestPermissions(this,
+                    new String[]{fr.neamar.kiss.utils.IceBoxSdkBridge.PERMISSION}, ICE_BOX_PERMISSION_REQUEST);
         } catch (RuntimeException e) {
             pendingIceBoxPermission = null;
             completed.accept(false);
