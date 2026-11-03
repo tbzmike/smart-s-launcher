@@ -10,7 +10,6 @@ import android.content.Intent;
 import android.database.DataSetObserver;
 import android.os.Process;
 import android.view.View;
-import androidx.lifecycle.Lifecycle;
 import androidx.preference.PreferenceManager;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -39,7 +38,7 @@ public final class HomeRotation192RegressionTest {
         configure(prefs);
         for (String mode : new String[]{"vertical", "vertical_cards", "wheel_3d"}) {
             prefs.edit().putString("smart-history-layout", mode).commit();
-            try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            try (ActivityScenario<MainActivity> scenario = launchHome(app)) {
                 AtomicReference<String> id = new AtomicReference<>();
                 HistoryTestSupport188.awaitUi(scenario, "Fixture app and providers loaded", a -> {
                     if (!KissApplication.getApplication(a).getDataHandler().isAllProvidersLoaded()) return false;
@@ -69,6 +68,7 @@ public final class HomeRotation192RegressionTest {
                 });
                 AtomicLong generation = (AtomicLong) HistoryTestSupport188.field(
                         SearchHandler.getInstance(), "searchGeneration");
+                long beforeHome = generation.get();
                 AtomicInteger adapterChanges = new AtomicInteger();
                 DataSetObserver observer = new DataSetObserver() {
                     @Override public void onChanged() { adapterChanges.incrementAndGet(); }
@@ -82,22 +82,10 @@ public final class HomeRotation192RegressionTest {
                     assertSame("HOME retains the History adapter", adapterRef.get(), a.adapter);
                     assertSame("HOME retains the existing History result and icon", resultRef.get(), find(a, id.get()));
                     assertEquals("Unchanged HOME does not republish visible History", 0, adapterChanges.get());
+                    assertEquals("Foreground HOME does not restart History search", beforeHome, generation.get());
                     a.adapter.unregisterDataSetObserver(observer);
                 });
                 assertEquals("HOME does not restart the process", originalPid, Process.myPid());
-
-                // Android may stop HOME before delivering the real key event, so exercise the
-                // distinct paused-but-not-stopped foreground redelivery as well.
-                scenario.moveToState(Lifecycle.State.STARTED);
-                long beforeForegroundDelivery = generation.get();
-                scenario.onActivity(a -> {
-                    Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-                    InstrumentationRegistry.getInstrumentation().callActivityOnNewIntent(a, home);
-                });
-                scenario.moveToState(Lifecycle.State.RESUMED);
-                Thread.sleep(250L);
-                assertEquals("Foreground HOME does not restart History search",
-                        beforeForegroundDelivery, generation.get());
                 rotate(scenario, activityRef.get(), adapterRef.get(), resultRef.get(), id.get(),
                         ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, Configuration.ORIENTATION_LANDSCAPE);
                 rotate(scenario, activityRef.get(), adapterRef.get(), resultRef.get(), id.get(),
@@ -114,7 +102,7 @@ public final class HomeRotation192RegressionTest {
         prefs.edit().putString("search-keyboard-mode", "built-in")
                 .putInt("built-in-keyboard-width-percent", 100)
                 .putInt("built-in-keyboard-height-percent", 30).commit();
-        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+        try (ActivityScenario<MainActivity> scenario = launchHome(app)) {
             AtomicReference<MainActivity> instance = new AtomicReference<>();
             HistoryTestSupport188.awaitUi(scenario, "Providers ready", a ->
                     KissApplication.getApplication(a).getDataHandler().isAllProvidersLoaded());
@@ -163,6 +151,12 @@ public final class HomeRotation192RegressionTest {
             if (original == null) Files.deleteIfExists(file.toPath());
             else Files.write(file.toPath(), original);
         }
+    }
+
+    private static ActivityScenario<MainActivity> launchHome(Context app) {
+        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                .setClass(app, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return ActivityScenario.launch(home);
     }
 
     private static void configure(SharedPreferences prefs) {

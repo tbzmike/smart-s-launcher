@@ -70,6 +70,9 @@ final class HistoryDisplayForwarder extends Forwarder {
         if (WHEEL_3D.equals(activeMode)) rebuildWheel();
     }
 
+    /** Also used by existing renderer integrations to request an ordinary resume. */
+    void onResume() { onResume(false); }
+
     void onResume(boolean unchangedHomeResume) {
         boolean wheelWasActive = WHEEL_3D.equals(activeMode);
         applyMode();

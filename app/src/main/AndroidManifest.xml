@@ -45,6 +45,20 @@
         android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/backup_descriptor">
 
+        <!-- App-drawer / Settings Open must enter the actual HOME task, not create a second
+             standard task containing another MainActivity. -->
+        <activity
+            android:name=".LauncherEntryActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".MainActivity"
             android:clearTaskOnLaunch="true"
@@ -57,7 +71,6 @@
             android:configChanges="uiMode|orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
