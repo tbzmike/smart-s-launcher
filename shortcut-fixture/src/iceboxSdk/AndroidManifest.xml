@@ -1,5 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <permission android:name="com.catchingnow.icebox.SDK" android:protectionLevel="dangerous" />
+    <!-- The real Ice Box declares package visibility; the fixture must see its target too. -->
+    <queries>
+        <package android:name="com.tbzmike.shortcutfixture.target" />
+    </queries>
     <application>
         <activity android:name="com.catchingnow.icebox.activity.ShortcutActionActivity"
             android:exported="true" android:launchMode="singleInstance" android:excludeFromRecents="true">
