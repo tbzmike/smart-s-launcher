@@ -3734,11 +3734,48 @@ jobs:
           archive: true
           if-no-files-found: ignore
 
+  android-188-api36:
+    name: Verify received notification retention, both search actions and UI/power regressions on Android 36
+    if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.188-history-notifications-search-now') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Enable hardware acceleration
+        run: |
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+      - name: Verify notification receipts, search quick actions, power and preceding UI on Android 36
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        env:
+          SKIP_188_PROFILE: "1"
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash scripts/verify_188_android.sh
+      - name: Preserve CPU, RAM and Android regression evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: history-search-188-android36-evidence
+          path: verification-results
+          archive: true
+          if-no-files-found: ignore
+
 
   sign-188-verified:
     name: Sign Smart S Launcher 3.30.188 after power and UI verification
     if: ${{ startsWith(github.ref, 'refs/heads/fix/3.30.188-history-notifications-search-now') }}
-    needs: [test, apk, android-188]
+    needs: [test, apk, android-188, android-188-api36]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -3859,7 +3896,7 @@ jobs:
               smart-s-launcher-3.30.188.apk app-debug.apk latest-green.json power-profile-188.json
           fi
           gh release edit "$TAG" --latest --target "$GITHUB_SHA" \
-            --notes "Smart S Launcher 3.30.188: commit incoming notification text and its Home History link together before refreshing; retain receipts through dismissal, listener reconnect and process restart; deduplicate catch-up using stable database row IDs and preserve explicit removal/freeze/OFF controls. Keep notification links out of automatic launch-history pruning and add indexed receipt lookups. Add Search database now and Search notification history actions for the current query; preserve instant configured History and the automatic five-second deadline. Scoped archive queries run off the UI thread and cancel on query changes or pause. All preceding UI, native/IceBox destinations and low-overhead feature gates verified on Android 35, with a CPU/RAM comparison against 3.30.187. Original production signing identity preserved."
+            --notes "Smart S Launcher 3.30.188: commit incoming notification text and its Home History link together before refreshing; retain receipts through dismissal, listener reconnect and process restart; deduplicate catch-up using stable database row IDs and preserve explicit removal/freeze/OFF controls. Keep notification links out of automatic launch-history pruning and add indexed receipt lookups. Add Search database now and Search notification history actions for the current query; preserve instant configured History and the automatic five-second deadline. Scoped archive queries run off the UI thread and cancel on query changes or pause. All preceding UI, native/IceBox destinations and low-overhead feature gates verified on Android 35 and 36, with an Android 35 CPU/RAM comparison against 3.30.187. Original production signing identity preserved."
       - name: Refresh stable updater assets and manifest
         shell: bash
         env:

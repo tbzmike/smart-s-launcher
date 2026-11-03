@@ -122,6 +122,8 @@ run_test fr.neamar.kiss.androidTest.FrozenExactShortcut184RegressionTest \
 run_test fr.neamar.kiss.androidTest.InstantHistory185RegressionTest \
   verification-results/instant-history-185.log
 adb logcat -d > verification-results/ui-regression-logcat.txt || true
-bash scripts/profile_188_android.sh
+if [[ "${SKIP_188_PROFILE:-0}" != "1" ]]; then
+  bash scripts/profile_188_android.sh
+fi
 adb logcat -d > verification-results/logcat.txt || true
 echo "PASS: 3.30.188 actual notification receipts, dismissal/reconnect/process-restart retention, exact saved notification destinations, equal-time catch-up paging, explicit removals and OFF/freeze controls, both search action buttons, actual scoped notification-history query, five-second provider deadline and manual bypass, List/Cards/Wheel/keyboard layout, all preceding UI and native/IceBox shortcut regressions, and CPU/RAM comparison against 3.30.187."
