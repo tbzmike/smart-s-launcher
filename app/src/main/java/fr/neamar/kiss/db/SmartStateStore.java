@@ -243,6 +243,9 @@ public final class SmartStateStore {
                 return saved;
             } finally {
                 db.endTransaction();
+                // A concurrent WAL reader may have cached the pre-commit snapshot while this
+                // transaction was open. Invalidate again after the commit becomes visible.
+                latestNotificationsCache = null;
             }
         });
     }
