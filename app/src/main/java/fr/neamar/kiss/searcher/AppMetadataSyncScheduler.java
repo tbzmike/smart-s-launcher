@@ -166,7 +166,15 @@ public final class AppMetadataSyncScheduler {
     }
 
     public static void resumePending(@NonNull Context context) {
-        if (isInteractive(context) && !pendingPackages(context).isEmpty()) schedule(context);
+        if (!isInteractive(context) || pendingPackages(context).isEmpty()
+                || AppSourceMetadataUpdater.isAutomaticRunning()) return;
+        JobScheduler scheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        if (scheduler != null) {
+            for (JobInfo job : scheduler.getAllPendingJobs()) {
+                if (job.getId() == JOB_ID) return;
+            }
+        }
+        schedule(context);
     }
 
     public static void schedule(@NonNull Context context) {
