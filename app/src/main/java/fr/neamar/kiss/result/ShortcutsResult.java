@@ -745,6 +745,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
     }
 
     private boolean tryOriginalIceBoxFeature(Context context, String target, Rect sourceBounds) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false;
         IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(pojo.getOreoId());
         if (identity == null || identity.originalShortcutId == null
                 || !target.equals(identity.packageName)
