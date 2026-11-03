@@ -250,6 +250,10 @@ public final class SearchQuickActions188RegressionTest {
     }
 
     private static void installSaved(MainActivity activity) {
+        // recreate() restores the previous query. Clear it before installing a Home fixture so
+        // typing that same query again exercises the real text-change path rather than cancelling
+        // the restored search and then setting text that the trimming listener already knows.
+        activity.searchEditText.setText("");
         SearchHandler search = SearchHandler.getInstance();
         search.search(Searcher.Type.HISTORY, activity, null, false);
         search.cancelSearch();
