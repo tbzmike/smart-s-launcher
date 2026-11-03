@@ -290,6 +290,19 @@ public class ShortcutUtil {
     public static String resolveShortcutTargetPackage(@NonNull Context context,
                                                       @NonNull ShortcutInfo shortcutInfo) {
         String publisher = shortcutInfo.getPackage();
+        if (isIceBoxPublisher(context, publisher)) {
+            IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(shortcutInfo.getId());
+            if (identity != null && !publisher.equals(identity.packageName)) {
+                return identity.packageName;
+            }
+            // ShortcutInfo extras survive when Android redacts its launch Intents. A frozen
+            // target can be hidden from PackageManager, so visibility is not proof of identity.
+            android.os.PersistableBundle metadata = shortcutInfo.getExtras();
+            String target = metadata == null ? null : metadata.getString("EXTRA_PACKAGE_NAME");
+            if (IceBoxShortcutIdentity.isPackageName(target) && !publisher.equals(target)) {
+                return target;
+            }
+        }
         LinkedHashSet<String> candidates = new LinkedHashSet<>();
         Intent[] intents = shortcutInfo.getIntents();
         if (intents != null) {

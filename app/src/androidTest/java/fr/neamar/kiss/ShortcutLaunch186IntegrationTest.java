@@ -38,6 +38,8 @@ import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.utils.AppLaunchUtils;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.IceBoxSdkBridge;
+import fr.neamar.kiss.utils.IceBoxLaunchBridge;
+import fr.neamar.kiss.pojo.AppPojo;
 import fr.neamar.kiss.utils.ShortcutUtil;
 import fr.neamar.kiss.utils.UserHandle;
 import fr.neamar.kiss.shortcut.SavedShortcutRoutes;
@@ -325,6 +327,9 @@ public final class ShortcutLaunch186IntegrationTest {
         String iceBox = "com.catchingnow.icebox";
         assertTrue("Test Ice Box SDK provider is installed", IceBoxSdkBridge.available(context, iceBox));
         assertTrue("SDK access is granted for this fixture", IceBoxSdkBridge.hasPermission(context));
+        // Exercise the backwards-compatible SDK fallback when an older Ice Box lacks the route.
+        String nativeAction = iceBox + "/" + iceBox + ".activity.ShortcutActionActivity";
+        shell("pm disable --user 0 " + nativeAction);
         LinkedBlockingQueue<String> sdkCalls = new LinkedBlockingQueue<>();
         BroadcastReceiver sdkReceiver = new BroadcastReceiver() {
             @Override public void onReceive(Context c, Intent request) {
@@ -350,7 +355,78 @@ public final class ShortcutLaunch186IntegrationTest {
             assertEquals("The Ice Box SDK route does not require Smart S root", 0, enableCommands);
         } finally {
             context.unregisterReceiver(sdkReceiver);
+            shell("pm enable --user 0 " + nativeAction);
         }
+    }
+
+    @Test public void realIceBoxIdsOpenDisabledHiddenAndComponentDisabledAppsWithoutSdkOrRoot()
+            throws Exception {
+        assertFalse("Native opening must work without Smart S SDK permission",
+                IceBoxSdkBridge.hasPermission(context));
+        LinkedBlockingQueue<String> routes = new LinkedBlockingQueue<>();
+        BroadcastReceiver nativeReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context c, Intent request) {
+                String target = request.getStringExtra("target");
+                if (TARGET.equals(target)) {
+                    shell("pm unhide --user 0 " + TARGET);
+                    shell("pm unsuspend --user 0 " + TARGET);
+                    shell("pm enable --user 0 " + TARGET);
+                    shell("pm enable --user 0 " + TARGET
+                            + "/com.tbzmike.shortcutfixture.FixtureMainActivity");
+                }
+                routes.offer(request.getStringExtra("uri"));
+            }
+        };
+        ContextCompat.registerReceiver(context, nativeReceiver,
+                new IntentFilter("com.tbzmike.shortcutfixture.ICEBOX_NATIVE"),
+                ContextCompat.RECEIVER_EXPORTED);
+        try {
+            int index = 0;
+            for (String id : new String[]{TARGET + "::0",
+                    "App_Meta_Shortcut_" + TARGET + "::0$$$withdrawn-camera"}) {
+                ShortcutRecord record = new ShortcutRecord();
+                record.packageName = IceBoxLaunchBridge.PACKAGE;
+                record.name = "Renamed shortcut with no label match";
+                record.intentUri = ShortcutPojo.OREO_PREFIX + id;
+                ShortcutPojo saved = new ShortcutPojo(UserHandle.OWNER, record, null, true, false, false);
+                saved.setName(record.name);
+                shell((index++ == 0 ? "pm disable-user --user 0 " : "pm hide --user 0 ") + TARGET);
+                assertFalse(AppLaunchUtils.isPackageEnabledNow(context, TARGET));
+                click(saved, false);
+                assertHit("main");
+                assertEquals("icebox://action/run_app/" + TARGET + "?user=0",
+                        routes.poll(5, TimeUnit.SECONDS));
+            }
+            // Normal app tiles must use Ice Box too, including component-only freezes.
+            shell("pm disable --user 0 " + TARGET
+                    + "/com.tbzmike.shortcutfixture.FixtureMainActivity");
+            AppPojo app = new AppPojo("app://" + TARGET, TARGET,
+                    "com.tbzmike.shortcutfixture.FixtureMainActivity", UserHandle.OWNER,
+                    false, false, false, true);
+            app.setName("Frozen app tile");
+            hits.clear();
+            scenario.onActivity(activity -> Result.fromPojo(activity, app).launch(
+                    activity, activity.searchEditText, activity));
+            assertHit("main");
+            assertNotNull(routes.poll(5, TimeUnit.SECONDS));
+            assertEquals("Native handoff requires no Smart S root commands", 0, enableCommands);
+        } finally {
+            context.unregisterReceiver(nativeReceiver);
+        }
+    }
+
+    @Test public void iceBoxMetadataRetainsTargetEvenWhenItsPackageIsHidden() throws Exception {
+        android.os.PersistableBundle extras = new android.os.PersistableBundle();
+        extras.putString("EXTRA_PACKAGE_NAME", TARGET);
+        extras.putInt("EXTRA_USER_HASH", 0);
+        ShortcutInfo info = new ShortcutInfo.Builder(context.createPackageContext(
+                IceBoxLaunchBridge.PACKAGE, 0), "opaque-wrapper-id")
+                .setShortLabel("No label match").setIntent(new Intent(Intent.ACTION_VIEW)
+                        .setPackage(IceBoxLaunchBridge.PACKAGE))
+                .setExtras(extras).build();
+        shell("pm hide --user 0 " + TARGET);
+        assertFalse(AppLaunchUtils.isPackageEnabledNow(context, TARGET));
+        assertEquals(TARGET, ShortcutUtil.resolveShortcutTargetPackage(context, info));
     }
 
     @Test public void exactRouteCodecPreservesTypedArraysAndIntentStack() throws Exception {

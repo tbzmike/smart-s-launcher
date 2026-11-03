@@ -53,6 +53,8 @@ import fr.neamar.kiss.utils.DrawableUtils;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.IceBoxFallbackTargetPolicy;
 import fr.neamar.kiss.utils.IceBoxSdkBridge;
+import fr.neamar.kiss.utils.IceBoxLaunchBridge;
+import fr.neamar.kiss.utils.IceBoxShortcutIdentity;
 import fr.neamar.kiss.utils.Log;
 import fr.neamar.kiss.utils.PackageManagerUtils;
 import fr.neamar.kiss.utils.SavedNotificationDestinationResolver;
@@ -470,6 +472,7 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             target = recoverUniqueIceBoxTarget(context);
         }
         if (TextUtils.isEmpty(target)) return false;
+        if (openThroughIceBox(context, target, asynchronous, null)) return true;
         if (AppLaunchUtils.isPackageEnabledNow(context, target)) {
             if (AppLaunchUtils.launchEnabledPackage(context, target)) {
                 onExactLaunchSucceeded(context, asynchronous);
@@ -483,6 +486,15 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
     }
 
     private void enableIceBoxTarget(Context context, String target) {
+        if (openThroughIceBox(context, target, true, null)) return;
+        // Never enable a same-named package in the wrong Android profile.
+        IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(pojo.getOreoId());
+        if (identity != null && identity.userId >= 0
+                && identity.userId != android.os.Process.myUserHandle().hashCode()) {
+            Toast.makeText(context, "Open this app from its Ice Box Android profile.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         launchPending = true;
         if (IceBoxSdkBridge.available(context, pojo.packageName)) {
             if (IceBoxSdkBridge.hasPermission(context)) {
@@ -576,7 +588,17 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
             target = recoverUniqueIceBoxTarget(context);
         }
         if (iceBoxRoute && !TextUtils.isEmpty(target)) {
-            if (AppLaunchUtils.isPackageEnabledNow(context, target)) {
+            // Keep exact feature IDs whenever Android still exposes them, then let Ice Box
+            // recover the app alias if its own saved shortcut was withdrawn during freezing.
+            if (tryOriginalIceBoxFeature(context, target, sourceBounds)) {
+                onExactLaunchSucceeded(context, asynchronous);
+                return;
+            }
+            if (openThroughIceBox(context, target, asynchronous, sourceBounds)) return;
+            IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(pojo.getOreoId());
+            boolean targetIsCurrentUser = identity == null || identity.userId < 0
+                    || identity.userId == android.os.Process.myUserHandle().hashCode();
+            if (targetIsCurrentUser && AppLaunchUtils.isPackageEnabledNow(context, target)) {
                 if (AppLaunchUtils.launchEnabledPackage(context, target)) {
                     onExactLaunchSucceeded(context, asynchronous);
                 } else {
@@ -620,12 +642,10 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
     @RequiresApi(Build.VERSION_CODES.O)
     @Nullable
     private String verifiedIceBoxTarget(Context context) {
-        // Ice Box app shortcuts use the exact target package as the Android shortcut ID.
-        // Unlike a label, this identity survives an app being frozen or temporarily hidden.
-        String id = pojo.getOreoId();
-        if (id.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+")
-                && !TextUtils.equals(id, pojo.packageName)
-                && isInstalledOrRememberedIceBoxTarget(context, id)) return id;
+        IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(pojo.getOreoId());
+        if (identity != null && !TextUtils.equals(identity.packageName, pojo.packageName)) {
+            return identity.packageName;
+        }
         String stored = pojo.targetPackage;
         if (!TextUtils.isEmpty(stored) && !TextUtils.equals(stored, pojo.packageName)) {
             // The publisher-associated package was saved before it was frozen; don't
@@ -637,30 +657,6 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
         ShortcutInfo info = getShortCut(context);
         String resolved = info == null ? null : ShortcutUtil.resolveShortcutTargetPackage(context, info);
         return TextUtils.equals(resolved, pojo.packageName) ? null : resolved;
-    }
-
-    private boolean isInstalledOrRememberedIceBoxTarget(Context context, String target) {
-        try {
-            context.getPackageManager().getApplicationInfo(target,
-                    android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS
-                            | android.content.pm.PackageManager.MATCH_UNINSTALLED_PACKAGES);
-            return true;
-        } catch (android.content.pm.PackageManager.NameNotFoundException | RuntimeException ignored) {
-            // Ice Box can hide packages from PackageManager; consult the existing local catalog.
-        }
-        try {
-            android.os.UserManager users = ContextCompat.getSystemService(context, android.os.UserManager.class);
-            if (users != null) {
-                long serial = users.getSerialNumberForUser(android.os.Process.myUserHandle());
-                if (serial >= 0) for (AppCatalogRecord saved :
-                        SmartStateStore.getRememberedApps(context, serial)) {
-                    if (saved != null && target.equals(saved.packageName)) return true;
-                }
-            }
-        } catch (RuntimeException e) {
-            Log.w(TAG, "Cannot inspect remembered Ice Box target", e);
-        }
-        return false;
     }
 
     /**
@@ -701,11 +697,44 @@ public class ShortcutsResult extends ResultWithTags<ShortcutPojo> {
                 label, pojo.packageName, knownApps);
     }
 
+    /** Native handoff uses only the selected, verified app identity; no label-based URI guesses. */
+    private boolean openThroughIceBox(Context context, String target, boolean asynchronous,
+                                      @Nullable Rect sourceBounds) {
+        if (!IceBoxLaunchBridge.PACKAGE.equals(pojo.packageName)) return false;
+        IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(pojo.getOreoId());
+        int userId = identity != null && target.equals(identity.packageName) && identity.userId >= 0
+                ? identity.userId : android.os.Process.myUserHandle().hashCode();
+        if (!IceBoxLaunchBridge.open(context, target, userId, sourceBounds)) return false;
+        launchPending = false;
+        onExactLaunchSucceeded(context, asynchronous);
+        return true;
+    }
+
+    private boolean tryOriginalIceBoxFeature(Context context, String target, Rect sourceBounds) {
+        IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(pojo.getOreoId());
+        if (identity == null || identity.originalShortcutId == null
+                || !target.equals(identity.packageName)
+                || (identity.userId >= 0
+                    && identity.userId != android.os.Process.myUserHandle().hashCode())
+                || !AppLaunchUtils.isPackageEnabledNow(context, target)) return false;
+        try {
+            LauncherApps apps = ContextCompat.getSystemService(context, LauncherApps.class);
+            if (apps == null) return false;
+            apps.startShortcut(target, identity.originalShortcutId, sourceBounds, null,
+                    pojo.getUserHandle().getRealHandle());
+            return true;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Original Ice Box feature is not currently exposed", e);
+            return false;
+        }
+    }
+
     private void openEnabledIceBoxApp(Context context, String target, boolean asynchronous) {
         launchPending = false;
-        if (AppLaunchUtils.launchEnabledPackage(context, target)) {
+        if (tryOriginalIceBoxFeature(context, target, null)
+                || AppLaunchUtils.launchEnabledPackage(context, target)) {
             onExactLaunchSucceeded(context, asynchronous);
-        } else {
+        } else if (!openThroughIceBox(context, target, asynchronous, null)) {
             Toast.makeText(context, "Frozen app was enabled, but could not be opened.",
                     Toast.LENGTH_LONG).show();
         }

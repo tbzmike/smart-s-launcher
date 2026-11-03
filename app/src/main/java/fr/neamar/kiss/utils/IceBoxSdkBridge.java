@@ -59,10 +59,11 @@ public final class IceBoxSdkBridge {
                     extras.putBoolean("enable", true);
                     app.getContentResolver().call(Uri.parse("content://" + AUTHORITY),
                             "set_enable", null, extras);
-                    for (int attempt = 0; attempt < 5; attempt++) {
+                    long deadline = SystemClock.elapsedRealtime() + 5_000L;
+                    do {
                         if (AppLaunchUtils.isPackageEnabledNow(app, target)) { enabled = true; break; }
-                        if (attempt < 4) SystemClock.sleep(100L);
-                    }
+                        SystemClock.sleep(100L);
+                    } while (SystemClock.elapsedRealtime() < deadline);
                 } catch (RuntimeException e) {
                     Log.w("IceBoxSdkBridge", "Ice Box could not enable " + target, e);
                 }

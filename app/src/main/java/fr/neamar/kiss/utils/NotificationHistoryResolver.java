@@ -173,10 +173,9 @@ public final class NotificationHistoryResolver {
         // In this format the Oreo shortcut id itself is the real target package. This must take
         // absolute priority over the publisher and over heuristic launch-intent inspection.
         if (iceBoxPublisher && shortcut.isOreoShortcut()) {
-            String idTarget = shortcut.getOreoId();
-            if (looksLikePackageName(idTarget)
-                    && !TextUtils.equals(idTarget, shortcut.packageName)) {
-                return preferIfHasHistory(context, idTarget);
+            IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(shortcut.getOreoId());
+            if (identity != null && !TextUtils.equals(identity.packageName, shortcut.packageName)) {
+                return preferIfHasHistory(context, identity.packageName);
             }
         }
 

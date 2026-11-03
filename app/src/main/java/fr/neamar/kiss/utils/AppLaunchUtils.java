@@ -179,7 +179,8 @@ public final class AppLaunchUtils {
             ApplicationInfo appInfo = pm.getApplicationInfo(
                     packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
             int state = pm.getApplicationEnabledSetting(packageName);
-            return appInfo.enabled
+            return (appInfo.flags & ApplicationInfo.FLAG_INSTALLED) != 0
+                    && appInfo.enabled
                     && !PackageManagerUtils.isAppSuspended(appInfo)
                     && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
                     && state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER

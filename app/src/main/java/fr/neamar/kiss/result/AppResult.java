@@ -192,7 +192,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
             return false;
         }
         // Live verification is reserved for user actions; rendering trusts provider state.
-        boolean enabled = AppLaunchUtils.isPackageEnabledNow(context, pojo.packageName);
+        boolean enabled = AppLaunchUtils.isActivityEnabledNow(context, getClassName());
         pojo.setDisabled(!enabled);
         return !enabled;
     }
@@ -390,6 +390,15 @@ public class AppResult extends ResultWithTags<AppPojo> {
             return;
         }
 
+        if (fr.neamar.kiss.utils.IceBoxLaunchBridge.open(context, pojo.packageName,
+                android.os.Process.myUserHandle().hashCode(), getViewBounds(v))) {
+            // Ice Box accepted the selected app, but enabling may still be in progress.
+            // Leave its live disabled state to the normal foreground package refresh.
+            launchSucceeded = true;
+            rememberSuccessfulHistoryTarget(context);
+            return;
+        }
+
         // Never run su or a privileged package operation from Android's UI thread.
         launchPending = true;
         AppLaunchUtils.ensurePackageEnabledAsync(
@@ -498,7 +507,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
     }
 
     @Override
-    protected boolean canAddToHistory() { return launchSucceeded && !pojo.isDisabled(); }
+    protected boolean canAddToHistory() { return launchSucceeded; }
 
     @Nullable
     @Override

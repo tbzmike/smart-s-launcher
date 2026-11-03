@@ -52,6 +52,10 @@ public final class AppIdentityResolver {
         // Older Smart S builds remembered the IceBox shortcut itself but did not persist the
         // resolved target package. Recover that identity from the already-loaded app catalog.
         if (!ShortcutUtil.isIceBoxPublisher(context, shortcut.packageName)) return null;
+        IceBoxShortcutIdentity identity = IceBoxShortcutIdentity.parse(shortcut.getOreoId());
+        if (identity != null && !shortcut.packageName.equals(identity.packageName)) {
+            return identity.packageName;
+        }
         String wantedLabel = cleanIceBoxLabel(shortcut.getName());
         if (TextUtils.isEmpty(wantedLabel)) return null;
 
