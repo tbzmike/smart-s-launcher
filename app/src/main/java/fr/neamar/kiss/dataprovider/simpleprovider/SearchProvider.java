@@ -152,9 +152,7 @@ public class SearchProvider extends SimpleProvider<Pojo> {
     private void addCommunicationIndexResults(String query, List<Pojo> records) {
         if (!prefs.getBoolean(CommunicationIndexer.PREF_ENABLED, true)) return;
         if (query == null || query.trim().length() < 2) return;
-        if (CommunicationIndexer.needsRefresh(context)) {
-            android.os.AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> CommunicationIndexer.rebuild(context));
-        }
+        CommunicationIndexer.requestAutomaticRefresh(context);
         int limit = Math.max(5, Math.min(200, prefs.getInt(CommunicationIndexer.PREF_LIMIT, 40)));
         try (CommunicationIndexStore store = new CommunicationIndexStore(context)) {
             // Keep communication records as CommunicationPojo. Converting them to SearchPojo made

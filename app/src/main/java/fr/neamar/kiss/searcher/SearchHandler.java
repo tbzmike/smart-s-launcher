@@ -26,6 +26,7 @@ import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
+import fr.neamar.kiss.index.CommunicationIndexStore;
 import fr.neamar.kiss.pojo.Pojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
@@ -61,6 +62,9 @@ public class SearchHandler {
     private final AtomicLong searchGeneration = new AtomicLong();
     private final AtomicLong completedSearchGeneration = new AtomicLong(-1L);
     private Runnable pendingQuery;
+    private Runnable pendingCommunicationRetry;
+    private long communicationRetryGeneration = -1L;
+    private boolean launcherVisible;
     private WeakReference<MainActivity> queryActionActivity = new WeakReference<>(null);
 
     private SearchHandler() {
@@ -119,6 +123,7 @@ public class SearchHandler {
             return;
         }
         final long generation = searchGeneration.incrementAndGet();
+        cancelPendingCommunicationRetry();
         cancelPendingQuery();
         cancelRunningSearch();
 
@@ -213,6 +218,7 @@ public class SearchHandler {
      */
     public void restoreHomeHistory(@NonNull MainActivity activity) {
         final long generation = searchGeneration.incrementAndGet();
+        cancelPendingCommunicationRetry();
         cancelPendingQuery();
         cancelRunningSearch();
 
@@ -298,8 +304,11 @@ public class SearchHandler {
             MainActivity currentActivity = activityRef.get();
             if (currentActivity == null) return;
 
+            long lockGeneration = CommunicationIndexStore.readLockGeneration();
             List<Pojo> seed = loadHistorySeed(currentActivity);
-            if (historyScrollActive || generation != searchGeneration.get()) return;
+            if (historyScrollActive || generation != searchGeneration.get()
+                    || CommunicationIndexStore.isReadTemporarilyBlocked()
+                    || lockGeneration != CommunicationIndexStore.readLockGeneration()) return;
             mainHandler.post(() -> {
                 if (generation != searchGeneration.get()
                         || completedSearchGeneration.get() == generation) {
@@ -597,6 +606,8 @@ public class SearchHandler {
      * singleton flag true made every later History load get deferred forever.
      */
     public void onLauncherPaused() {
+        launcherVisible = false;
+        cancelPendingCommunicationRetry();
         historyScrollActive = false;
         clearPendingHistoryAfterScroll();
         if (lastSearchType == Searcher.Type.QUERY) {
@@ -611,6 +622,7 @@ public class SearchHandler {
 
     /** Re-arm a postponed QUERY only after Home has returned to the foreground. */
     public void onLauncherResumed(@NonNull MainActivity activity) {
+        launcherVisible = true;
         if (lastSearchType == Searcher.Type.QUERY
                 && lastSearchQuery != null && !lastSearchQuery.trim().isEmpty()
                 && pendingQuery == null && runningSearch == null) {
@@ -640,9 +652,38 @@ public class SearchHandler {
         pendingHistoryActivity = new WeakReference<>(null);
     }
 
+    /** One coalesced retry for the current History generation; never poll in the background. */
+    public void retryHistoryAfterCommunicationLock(@NonNull MainActivity activity) {
+        final long generation = searchGeneration.get();
+        final WeakReference<MainActivity> target = new WeakReference<>(activity);
+        mainHandler.post(() -> {
+            if (!launcherVisible || generation != searchGeneration.get()
+                    || lastSearchType != Searcher.Type.HISTORY
+                    || communicationRetryGeneration == generation) return;
+            communicationRetryGeneration = generation;
+            cancelPendingCommunicationRetry();
+            pendingCommunicationRetry = () -> {
+                pendingCommunicationRetry = null;
+                MainActivity current = target.get();
+                if (!launcherVisible || current == null || current.isFinishing() || current.isDestroyed()
+                        || generation != searchGeneration.get() || lastSearchType != Searcher.Type.HISTORY) return;
+                startSearch(Searcher.Type.HISTORY, current, null, false, generation);
+            };
+            mainHandler.postDelayed(pendingCommunicationRetry, 750L);
+        });
+    }
+
+    private void cancelPendingCommunicationRetry() {
+        if (pendingCommunicationRetry != null) {
+            mainHandler.removeCallbacks(pendingCommunicationRetry);
+            pendingCommunicationRetry = null;
+        }
+    }
+
     /** Cancel last search if still running. */
     public void cancelSearch() {
         searchGeneration.incrementAndGet();
+        cancelPendingCommunicationRetry();
         cancelPendingQuery();
         cancelRunningSearch();
     }

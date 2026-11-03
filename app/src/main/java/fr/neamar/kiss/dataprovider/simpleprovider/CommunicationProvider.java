@@ -1,7 +1,6 @@
 package fr.neamar.kiss.dataprovider.simpleprovider;
 
 import android.content.Context;
-import android.os.AsyncTask;
 
 import androidx.preference.PreferenceManager;
 
@@ -15,7 +14,6 @@ import fr.neamar.kiss.searcher.Searcher;
 public final class CommunicationProvider extends SimpleProvider<CommunicationPojo> {
     private static final String SCHEME = "communication://";
     private final Context context;
-    private volatile boolean refreshInFlight;
 
     public CommunicationProvider(Context context) {
         this.context = context.getApplicationContext();
@@ -24,12 +22,7 @@ public final class CommunicationProvider extends SimpleProvider<CommunicationPoj
     }
 
     private void maybeRefresh() {
-        if (!CommunicationIndexer.needsRefresh(context) || refreshInFlight) return;
-        refreshInFlight = true;
-        AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
-            try { CommunicationIndexer.rebuild(context); }
-            finally { refreshInFlight = false; }
-        });
+        CommunicationIndexer.requestAutomaticRefresh(context);
     }
 
     @Override public void requestResults(String query, Searcher searcher) {

@@ -5,6 +5,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabaseLockedException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import android.os.SystemClock;
 import android.provider.CallLog;
 import android.provider.Telephony;
@@ -46,6 +48,9 @@ public final class CommunicationIndexer {
     private static final long NEWEST_CALL_CHECK_THROTTLE_MS = 5_000L;
     private static final long TRUECALLER_TIME_MATCH_WINDOW_MS = 90_000L;
     private static final Pattern PHONE_PATTERN = Pattern.compile("\\+?[0-9][0-9\\s().-]{5,}[0-9]");
+    private static final AtomicBoolean AUTO_REFRESH_QUEUED = new AtomicBoolean();
+    private static final java.util.concurrent.ThreadPoolExecutor AUTO_REFRESH =
+            fr.neamar.kiss.utils.IdleExecutors.single("smart-s-communication-index");
     private static long lastNewestCallCheckElapsed;
     private static long cachedNewestCallTime;
 
@@ -140,12 +145,29 @@ public final class CommunicationIndexer {
         }
     }
 
+    /** Coalesce search-triggered refreshes; no worker or periodic wake remains after idle. */
+    public static void requestAutomaticRefresh(Context context) {
+        Context app = context.getApplicationContext();
+        if (AUTO_REFRESH_QUEUED.get()
+                || !PreferenceManager.getDefaultSharedPreferences(app).getBoolean(PREF_ENABLED, true)
+                || !needsRefresh(app) || !AUTO_REFRESH_QUEUED.compareAndSet(false, true)) return;
+        AUTO_REFRESH.execute(() -> {
+            try { rebuildIfNeeded(app); }
+            finally { AUTO_REFRESH_QUEUED.set(false); }
+        });
+    }
+
+    public static synchronized void rebuildIfNeeded(Context context) {
+        if (needsRefresh(context)) rebuild(context);
+    }
+
     public static synchronized void rebuild(Context context) {
         ensureDefaults(context);
         SharedPreferences p = PreferenceManager.getDefaultSharedPreferences(context);
         if (!p.getBoolean(PREF_ENABLED, true)) return;
 
         CommunicationIndexStore store = new CommunicationIndexStore(context);
+        boolean completed = false;
         try {
             store.clear();
             long cutoff = cutoff(p);
@@ -166,8 +188,16 @@ public final class CommunicationIndexer {
                     .putInt(PREF_TRUECALLER_NAME_ENRICHMENT_VERSION,
                             TRUECALLER_NAME_ENRICHMENT_VERSION)
                     .apply();
+            completed = true;
+        } catch (SQLiteDatabaseLockedException locked) {
+            // Leave the refresh due so the next real user action can retry; never crash Home.
+            fr.neamar.kiss.utils.Log.w("CommunicationIndexer", "Index is busy; refresh deferred", locked);
         } finally {
             store.close();
+            if (completed && CommunicationIndexStore.consumeHistoryRefreshAfterLock()) {
+                context.sendBroadcast(fr.neamar.kiss.MainActivity.internalBroadcast(
+                        context, fr.neamar.kiss.MainActivity.LOAD_OVER));
+            }
         }
     }
 

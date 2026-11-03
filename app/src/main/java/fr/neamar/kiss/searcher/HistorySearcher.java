@@ -26,6 +26,7 @@ import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ShortcutRecord;
 import fr.neamar.kiss.db.SmartStateStore;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
+import fr.neamar.kiss.index.CommunicationIndexStore;
 import fr.neamar.kiss.notification.NotificationDisplayDeduplicator;
 import fr.neamar.kiss.notification.NotificationListener;
 import fr.neamar.kiss.notification.NotificationTimelineState;
@@ -108,8 +109,17 @@ public class HistorySearcher extends Searcher {
                 activity, (max * 2) + excludedPojoById.size(), databaseCancellation);
         if (shouldAbort()) return null;
 
+        long communicationLockGeneration = CommunicationIndexStore.readLockGeneration();
         List<Pojo> pojos = getStrictRecencyHistory(
                 activity, dataHandler, excludedPojoById, historyRecords, max);
+        if (CommunicationIndexStore.isReadTemporarilyBlocked()
+                || communicationLockGeneration != CommunicationIndexStore.readLockGeneration()) {
+            // Do not replace a complete visible History with an incomplete list from a busy DB.
+            cancel(false);
+            CommunicationIndexStore.requestHistoryRefreshAfterLock();
+            SearchHandler.getInstance().retryHistoryAfterCommunicationLock(activity);
+            return null;
+        }
         if (shouldAbort()) return null;
 
         mergeActiveNotifications(activity, pojos, excludedPojoById, excludedPackages);

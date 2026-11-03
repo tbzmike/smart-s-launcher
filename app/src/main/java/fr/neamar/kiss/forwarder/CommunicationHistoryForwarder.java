@@ -38,7 +38,7 @@ final class CommunicationHistoryForwarder extends Forwarder {
 
         AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
             try {
-                CommunicationIndexer.rebuild(mainActivity.getApplicationContext());
+                CommunicationIndexer.rebuildIfNeeded(mainActivity.getApplicationContext());
             } finally {
                 refreshInFlight.set(false);
             }

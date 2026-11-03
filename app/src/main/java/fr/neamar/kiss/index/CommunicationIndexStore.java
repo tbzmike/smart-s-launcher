@@ -4,6 +4,10 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteDatabaseLockedException;
+import android.os.SystemClock;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 import android.database.sqlite.SQLiteOpenHelper;
 
 import java.util.ArrayList;
@@ -15,6 +19,23 @@ public final class CommunicationIndexStore extends SQLiteOpenHelper {
     private static final String DB = "smart_index.db";
     private static final int VERSION = 1;
     public static final String ID_PREFIX = "communication://";
+    private static final long READ_LOCK_BACKOFF_MS = 500L;
+    private static final AtomicLong READ_LOCK_GENERATION = new AtomicLong();
+    private static final AtomicBoolean HISTORY_REFRESH_AFTER_LOCK = new AtomicBoolean();
+    private static volatile long readBlockedUntil;
+
+    public static boolean isReadTemporarilyBlocked() {
+        return SystemClock.elapsedRealtime() < readBlockedUntil;
+    }
+
+    public static long readLockGeneration() { return READ_LOCK_GENERATION.get(); }
+    public static void requestHistoryRefreshAfterLock() { HISTORY_REFRESH_AFTER_LOCK.set(true); }
+    static boolean consumeHistoryRefreshAfterLock() { return HISTORY_REFRESH_AFTER_LOCK.getAndSet(false); }
+
+    private static void recordReadLock() {
+        readBlockedUntil = SystemClock.elapsedRealtime() + READ_LOCK_BACKOFF_MS;
+        READ_LOCK_GENERATION.incrementAndGet();
+    }
 
     public static final class Stats {
         public final int total;
@@ -27,7 +48,11 @@ public final class CommunicationIndexStore extends SQLiteOpenHelper {
         }
     }
 
-    public CommunicationIndexStore(Context context) { super(context.getApplicationContext(), DB, null, VERSION); }
+    public CommunicationIndexStore(Context context) {
+        super(context.getApplicationContext(), DB, null, VERSION);
+        // Readers can continue while the communication index is updated by another worker.
+        setWriteAheadLoggingEnabled(true);
+    }
 
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE communication_index(_id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT NOT NULL, source_id TEXT NOT NULL, package_name TEXT, address TEXT, display_name TEXT, body TEXT, event_time INTEGER, notification_id TEXT, UNIQUE(source,source_id) ON CONFLICT REPLACE)");
@@ -63,7 +88,7 @@ public final class CommunicationIndexStore extends SQLiteOpenHelper {
 
     public List<CommunicationPojo> search(String query, int limit) {
         String q = query == null ? "" : query.trim();
-        if (q.length() < 2) return new ArrayList<>();
+        if (q.length() < 2 || isReadTemporarilyBlocked()) return new ArrayList<>();
         String like = "%" + q.replace("%", "\\%").replace("_", "\\_") + "%";
         List<CommunicationPojo> out = new ArrayList<>();
         try (Cursor c = getReadableDatabase().query("communication_index",
@@ -77,22 +102,29 @@ public final class CommunicationIndexStore extends SQLiteOpenHelper {
                     out.add(p);
                 }
             }
+        } catch (SQLiteDatabaseLockedException locked) {
+            recordReadLock();
+            return new ArrayList<>();
         }
         return out;
     }
 
     /** Resolve the new stable communication://source/source_id identity. */
     public CommunicationPojo findBySourceId(String source, String sourceId) {
-        if (source == null || sourceId == null) return null;
+        if (source == null || sourceId == null || isReadTemporarilyBlocked()) return null;
         try (Cursor c = getReadableDatabase().query("communication_index",
                 new String[]{"source","source_id","package_name","address","display_name","body","event_time","notification_id"},
                 "source=? AND source_id=?", new String[]{source, sourceId}, null, null, null, "1")) {
             return c.moveToFirst() ? fromCursor(c, true) : null;
+        } catch (SQLiteDatabaseLockedException locked) {
+            recordReadLock();
+            return null;
         }
     }
 
     /** Keep legacy numeric communication://<row-id> records resolvable for old saved history. */
     public CommunicationPojo find(long id) {
+        if (isReadTemporarilyBlocked()) return null;
         try (Cursor c = getReadableDatabase().query("communication_index",
                 new String[]{"source","source_id","package_name","address","display_name","body","event_time","notification_id"},
                 "_id=?", new String[]{Long.toString(id)}, null, null, null)) {
@@ -101,6 +133,9 @@ public final class CommunicationIndexStore extends SQLiteOpenHelper {
             if (p == null) return null;
             return new CommunicationPojo(ID_PREFIX + id, p.kind, p.packageName, p.address,
                     p.getName(), p.body, p.timestamp, p.notificationId);
+        } catch (SQLiteDatabaseLockedException locked) {
+            recordReadLock();
+            return null;
         }
     }
 
