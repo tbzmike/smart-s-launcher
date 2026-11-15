@@ -1,0 +1,103 @@
+name: Sign and verify 3.30.197 Settings repair without publishing
+on:
+  push:
+    branches:
+      - fix/3.30.197-settings-crash
+permissions:
+  contents: read
+  actions: read
+jobs:
+  stage:
+    name: Compile and sign exact production update
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build minified release and check version
+        run: |
+          grep -q 'versionCode 626' app/build.gradle
+          grep -q 'versionName "3.30.197"' app/build.gradle
+          bash ./gradlew --no-configuration-cache :app:lint :app:testDebugUnitTest :app:assembleRelease --stacktrace
+      - name: Sign with existing production certificate
+        shell: bash
+        env:
+          SMART_S_SIGNING_KEY_B64: ${{ secrets.SMART_S_SIGNING_KEY_B64 }}
+          SMART_S_SIGNING_STORE_PASSWORD: ${{ secrets.SMART_S_SIGNING_STORE_PASSWORD }}
+          SMART_S_SIGNING_KEY_ALIAS: ${{ secrets.SMART_S_SIGNING_KEY_ALIAS }}
+          SMART_S_SIGNING_KEY_PASSWORD: ${{ secrets.SMART_S_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p stage
+          KEYSTORE="$RUNNER_TEMP/197-key.p12"
+          trap 'rm -f "$KEYSTORE"' EXIT
+          SDK="$ANDROID_HOME/build-tools/34.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'build-tools;34.0.0' >/dev/null
+          printf '%s' "$SMART_S_SIGNING_KEY_B64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          "$SDK/apksigner" sign --ks "$KEYSTORE" --ks-type PKCS12 \
+            --ks-key-alias "$SMART_S_SIGNING_KEY_ALIAS" \
+            --ks-pass env:SMART_S_SIGNING_STORE_PASSWORD \
+            --key-pass env:SMART_S_SIGNING_KEY_PASSWORD \
+            --out stage/SmartSLauncher.apk app/build/outputs/apk/release/app-release-unsigned.apk
+          "$SDK/apksigner" verify --verbose --print-certs stage/SmartSLauncher.apk > stage/apk-verification.txt
+          CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' stage/apk-verification.txt | head -n 1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test "$CERT" = '9da351d1880aee204832325b32bbe99f39f2b2b3dc178ec0e5d99d26ac236b53'
+          "$SDK/aapt" dump badging stage/SmartSLauncher.apk | head -n 1 | tee stage/badging.txt
+          grep -F "name='com.tbzmike.smartslauncher'" stage/badging.txt
+          grep -F "versionCode='626'" stage/badging.txt
+          grep -F "versionName='3.30.197'" stage/badging.txt
+          sha256sum stage/SmartSLauncher.apk > stage/SmartSLauncher.sha256
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Smart-S-3.30.197-signed-staging
+          path: stage
+          archive: true
+          if-no-files-found: error
+  install:
+    name: Signed v197 after upgrading v196 / Android ${{ matrix.api }}
+    needs: stage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: Smart-S-3.30.197-signed-staging
+          path: stage
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Enable hardware acceleration
+        run: |
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+      - name: Test signed in-place upgrade and Settings startup
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash scripts/verify_197_staged_settings.sh
+      - name: Upload full device error logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-settings-197-api-${{ matrix.api }}
+          path: verification-results
+          archive: true
+          if-no-files-found: ignore
