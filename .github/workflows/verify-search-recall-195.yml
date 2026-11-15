@@ -34,7 +34,16 @@ jobs:
           ram-size: 2048M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: bash ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=fr.neamar.kiss.db.SearchRecallDatabase195RegressionTest --stacktrace
+          script: |
+            set -euo pipefail
+            # Match the working 3.30.194 test setup; only emulator APKs are unminified.
+            sed -i 's/minifyEnabled true/minifyEnabled false/g; s/shrinkResources = true/shrinkResources = false/g' app/build.gradle
+            bash ./gradlew --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+            adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w -r -e class fr.neamar.kiss.db.SearchRecallDatabase195RegressionTest com.tbzmike.smartslauncher.debug.test/androidx.test.runner.AndroidJUnitRunner | tee search-recall-195.log
+            grep -F 'OK (2 tests)' search-recall-195.log
+            grep -F 'INSTRUMENTATION_CODE: -1' search-recall-195.log
       - name: Upload result XML
         if: always()
         uses: actions/upload-artifact@v7
