@@ -54,6 +54,7 @@
 
         <!-- One explicit alarm and system power/boot events. No long-running service. -->
         <receiver android:name=".power.AutoDataReceiver"
+            android:enabled="false"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />

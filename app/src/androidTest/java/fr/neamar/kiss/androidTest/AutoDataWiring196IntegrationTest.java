@@ -39,7 +39,7 @@ public final class AutoDataWiring196IntegrationTest {
                     .putInt(AutoDataController.PREF_DELAY, 5).commit());
             ActivityInfo receiver = app.getPackageManager().getReceiverInfo(
                     new ComponentName(app, AutoDataReceiver.class),
-                    0);
+                    PackageManager.GET_DISABLED_COMPONENTS);
             assertNotNull("Auto Data alarm/boot receiver must be manifest registered", receiver);
             assertFalse("No other application may send a privileged Auto Data alarm",
                     receiver.exported);
