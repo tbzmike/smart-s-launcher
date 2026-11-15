@@ -45,6 +45,14 @@ public class RootHandler {
         return isRootAvailable;
     }
 
+    /**
+     * Called only from AutoDataController's background executor with explicit user opt-in.
+     * Android's svc wrapper delegates to cmd phone data on current platform builds.
+     */
+    public boolean setMobileDataEnabled(boolean enabled) {
+        return isRootAvailable() && executeRootShell(enabled ? "svc data enable" : "svc data disable");
+    }
+
     public boolean hibernateApp(String packageName) {
         try { return executeRootShell("am force-stop " + packageName); }
         catch (Exception e) { return false; }

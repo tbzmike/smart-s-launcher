@@ -682,6 +682,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
 
         super.onResume();
+        // Restore data on HOME immediately even if Android killed the launcher process
+        // and the dynamic SCREEN_ON receiver missed the transition.
+        fr.neamar.kiss.power.AutoDataController.onHomeResumed(this);
         homeLifecycleState.onResumeCompleted();
         fr.neamar.kiss.utils.LauncherCrashJournal.recordEvent("Home activity resumed");
         scheduleHomeSurfaceRecovery();

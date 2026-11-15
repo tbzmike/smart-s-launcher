@@ -155,6 +155,8 @@ public class KissApplication extends Application {
         super.onCreate();
         LauncherCrashJournal.install(this);
         initializeOptional("screen-off receiver", () -> PixelLauncherScreenOffReceiver.register(this));
+        initializeOptional("Auto Data screen/power controls",
+                () -> fr.neamar.kiss.power.AutoDataController.install(this));
 
         // The core SQLite store and Home UI remain strict: don't silently hide a
         // broken primary database behind a deceptively empty launcher.

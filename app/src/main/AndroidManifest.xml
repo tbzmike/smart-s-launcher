@@ -25,6 +25,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Optional precision for Auto Data's user-selected 1–30-minute screen-off timer. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
@@ -49,6 +51,17 @@
 
         <receiver android:name=".utils.IceBoxSdkBridge$AuthorizationReceiver"
             android:exported="false" />
+
+        <!-- One explicit alarm and system power/boot events. No long-running service. -->
+        <receiver android:name=".power.AutoDataReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- App-drawer / Settings Open must enter the actual HOME task, not create a second
              standard task containing another MainActivity. -->

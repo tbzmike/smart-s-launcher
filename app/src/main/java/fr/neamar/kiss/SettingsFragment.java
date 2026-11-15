@@ -1,6 +1,7 @@
 package fr.neamar.kiss;
 
 import android.app.role.RoleManager;
+import android.app.AlarmManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.Set;
 
 import fr.neamar.kiss.broadcast.IncomingCallHandler;
+import fr.neamar.kiss.power.AutoDataController;
 import fr.neamar.kiss.dataprovider.simpleprovider.SearchProvider;
 import fr.neamar.kiss.dataprovider.simpleprovider.TagsProvider;
 import fr.neamar.kiss.forwarder.InterfaceTweaks;
@@ -87,6 +89,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         setPreferencesFromResource(R.xml.preferences, rootKey);
         addPixelLauncherCleanupPreference(rootKey);
         addAppUpdatePreferences(rootKey);
+        addAutoDataPreferences(rootKey);
         addCrashDiagnosticsPreference(rootKey);
         addSearchKeyboardPreferences();
         try {
@@ -157,6 +160,79 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         killPixelLauncher.setSummary("Uses Smart S root access to stop com.google.android.apps.nexuslauncher on every screen-off event and release its background memory. No background service is kept running for this feature.");
         killPixelLauncher.setDefaultValue(false);
         category.addPreference(killPixelLauncher);
+    }
+
+    private void addAutoDataPreferences(@Nullable String rootKey) {
+        PreferenceGroup parent = "advanced".equals(rootKey)
+                ? getPreferenceScreen() : findPreference("advanced");
+        if (parent == null || parent.findPreference("smart-s-auto-data-category") != null) return;
+        PreferenceCategory category = new PreferenceCategory(requireContext());
+        category.setKey("smart-s-auto-data-category");
+        category.setTitle("Auto Data · battery saving");
+        parent.addPreference(category);
+
+        SwitchPreference toggle = new SwitchPreference(requireContext());
+        toggle.setKey(AutoDataController.PREF_ENABLED);
+        toggle.setTitle("Enable Auto Data");
+        toggle.setSummary("Mobile data off after screen-off delay; immediately restore on screen-on. "
+                + "Suspended on any USB or charger connection. Root permission required.");
+        toggle.setDefaultValue(false);
+        category.addPreference(toggle);
+
+        SeekBarPreference delay = new SeekBarPreference(requireContext());
+        delay.setKey(AutoDataController.PREF_DELAY);
+        delay.setTitle("Screen-off delay (minutes)");
+        delay.setSummary("Wait 1–30 minutes after screen off. Unplugging starts a new countdown.");
+        delay.setMin(1);
+        delay.setMax(30);
+        delay.setSeekBarIncrement(1);
+        delay.setShowSeekBarValue(true);
+        delay.setDefaultValue(5);
+        delay.setDependency(AutoDataController.PREF_ENABLED);
+        category.addPreference(delay);
+
+        Preference status = new Preference(requireContext());
+        status.setKey("smart-s-auto-data-status");
+        status.setTitle("Auto Data status");
+        status.setSummary(AutoDataController.getStatus(requireContext()));
+        category.addPreference(status);
+
+        Preference root = new Preference(requireContext());
+        root.setKey("smart-s-auto-data-root-check");
+        root.setTitle("Check or grant root access");
+        root.setSummary("Request Smart S root permission while the screen is on.");
+        root.setOnPreferenceClickListener(preference -> {
+            AutoDataController.requestRootCheck(requireContext());
+            status.setSummary("Checking root access…");
+            return true;
+        });
+        category.addPreference(root);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Preference permission = new Preference(requireContext());
+            permission.setKey("smart-s-auto-data-alarm-permission");
+            permission.setTitle("Allow precise screen-off timing");
+            permission.setSummary("On Android 12+, Alarms & reminders access makes the "
+                    + "selected delay accurate. Without it Android may defer the alarm in Doze.");
+            permission.setOnPreferenceClickListener(preference -> {
+                AlarmManager alarms =
+                        (AlarmManager) requireContext().getSystemService(android.content.Context.ALARM_SERVICE);
+                if (alarms != null && !alarms.canScheduleExactAlarms()) {
+                    Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                    intent.setData(Uri.parse("package:" + requireContext().getPackageName()));
+                    try { startActivity(intent); }
+                    catch (RuntimeException unavailable) {
+                        Toast.makeText(requireContext(), "Open Alarms & reminders under App settings.",
+                                Toast.LENGTH_LONG).show();
+                    }
+                } else {
+                    Toast.makeText(requireContext(), "Precise alarms are already allowed.",
+                            Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            });
+            category.addPreference(permission);
+        }
     }
 
     private void addCrashDiagnosticsPreference(@Nullable String rootKey) {
@@ -538,6 +614,12 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         refreshSearchKeyboardPicker();
         refreshSemanticIndexStatus();
         refreshAppSourceStatus();
+        refreshAutoDataStatus();
+    }
+
+    private void refreshAutoDataStatus() {
+        Preference status = findPreference("smart-s-auto-data-status");
+        if (status != null) status.setSummary(AutoDataController.getStatus(requireContext()));
     }
 
     private void refreshAppSourceStatus() {
@@ -562,6 +644,12 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if (key != null) {
             KissApplication.getApplication(requireContext()).getIconsHandler().onPrefChanged(sharedPreferences, key);
+
+            if (AutoDataController.PREF_ENABLED.equals(key)
+                    || AutoDataController.PREF_DELAY.equals(key)
+                    || AutoDataController.PREF_STATUS.equals(key)) {
+                refreshAutoDataStatus();
+            }
 
             if (SearchEditText.PREF_SEARCH_KEYBOARD_MODE.equals(key)) {
                 refreshSearchKeyboardPicker();
