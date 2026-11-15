@@ -1,0 +1,50 @@
+name: Diagnose signed Smart S 3.30.196 Settings crash
+
+on:
+  push:
+    branches:
+      - fix/3.30.197-settings-crash
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  signed-settings:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Enable hardware acceleration
+        run: |
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+      - name: Open Settings in actual signed v196 production APK, fresh and after v195 upgrade
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash scripts/verify_197_signed_settings.sh
+      - name: Upload fatal logs and activity traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-settings-api-${{ matrix.api }}
+          path: verification-results
+          archive: true
+          if-no-files-found: ignore
