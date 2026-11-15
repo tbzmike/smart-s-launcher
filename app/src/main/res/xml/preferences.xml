@@ -726,6 +726,38 @@
             app:key="root-mode"
             app:summary="@string/root_mode_desc"
             app:title="@string/root_mode_name" />
+        <!-- XML-defined preferences prevent dynamic category/dependency initialization crashes. -->
+        <PreferenceCategory
+            app:key="smart-s-auto-data-category"
+            app:title="Auto Data · battery saving">
+            <SwitchPreference
+                app:key="auto-data-enabled"
+                app:defaultValue="false"
+                app:title="Enable Auto Data"
+                app:summary="Mobile data off after the screen-off delay; restore on screen-on. Suspended on USB/charger. Root required." />
+            <SeekBarPreference
+                app:key="auto-data-delay-minutes"
+                app:dependency="auto-data-enabled"
+                app:min="1"
+                app:max="30"
+                app:defaultValue="5"
+                app:seekBarIncrement="1"
+                app:showSeekBarValue="true"
+                app:title="Screen-off delay (minutes)"
+                app:summary="Wait 1–30 minutes after screen off. Unplugging starts a new countdown." />
+            <Preference
+                app:key="smart-s-auto-data-status"
+                app:title="Auto Data status"
+                app:summary="Off. No background screen/power monitoring." />
+            <Preference
+                app:key="smart-s-auto-data-root-check"
+                app:title="Check or grant root access"
+                app:summary="Request Smart S root permission while the screen is on." />
+            <Preference
+                app:key="smart-s-auto-data-alarm-permission"
+                app:title="Allow precise screen-off timing"
+                app:summary="Alarms and reminders access allows accurate delays; without it Android may defer the alarm in Doze." />
+        </PreferenceCategory>
         <fr.neamar.kiss.preference.DialogShowingPreference
             app:dialogMessage="@string/restart_warn"
             app:key="restart"
