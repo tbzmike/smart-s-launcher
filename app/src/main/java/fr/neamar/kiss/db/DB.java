@@ -24,7 +24,7 @@ import fr.neamar.kiss.utils.UserHandle;
 class DB extends SQLiteOpenHelper {
 
     static final String DB_NAME = "kiss.s3db";
-    private final static int DB_VERSION = 21;
+    private final static int DB_VERSION = 22;
     private static final String TAG = DB.class.getSimpleName();
 
     private final Context mContext;
@@ -47,6 +47,16 @@ class DB extends SQLiteOpenHelper {
         addAppSourceMetadataTable(database);
         addSemanticActivityLogTable(database);
         addNotificationHistoryIndexes(database);
+        addSearchRecallTable(database);
+    }
+
+    private void addSearchRecallTable(SQLiteDatabase database) {
+        database.execSQL("CREATE TABLE IF NOT EXISTS search_recall ("
+                + "_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "query TEXT NOT NULL, record TEXT NOT NULL,"
+                + "UNIQUE(query, record))");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_search_recall_query "
+                + "ON search_recall(query)");
     }
 
     private void addNotificationHistoryIndexes(SQLiteDatabase database) {
@@ -182,6 +192,7 @@ class DB extends SQLiteOpenHelper {
             if (newVersion >= 19) addAppSourceMetadataTable(database);
             if (newVersion >= 20) addSemanticActivityLogTable(database);
             if (newVersion >= 21) addNotificationHistoryIndexes(database);
+            if (newVersion >= 22) addSearchRecallTable(database);
         }
     }
 

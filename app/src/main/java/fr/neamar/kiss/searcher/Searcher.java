@@ -124,6 +124,11 @@ public abstract class Searcher extends AsyncTask<Void, Result<?>, Void> {
         return DEFAULT_MAX_RESULTS;
     }
 
+    /** The already bounded top-N provider result set, copied for an optional background cache. */
+    protected final List<Pojo> snapshotCurrentCandidates() {
+        return new ArrayList<>(processedPojos);
+    }
+
     /**
      * Supply a final display-ordered result snapshot that must not be re-sorted through the shared
      * mutable Pojo.relevance queue. The order of this defensive copy is authoritative.

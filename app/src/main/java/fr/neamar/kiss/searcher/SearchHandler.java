@@ -28,6 +28,8 @@ import fr.neamar.kiss.db.HistoryMode;
 import fr.neamar.kiss.db.ValuedHistoryRecord;
 import fr.neamar.kiss.index.CommunicationIndexStore;
 import fr.neamar.kiss.pojo.Pojo;
+import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.pojo.ShortcutPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.utils.FrozenAppPreferences;
 import fr.neamar.kiss.utils.RecentLaunchTracker;
@@ -276,9 +278,31 @@ public class SearchHandler {
                                               String query, long generation) {
         if (generation != searchGeneration.get() || activity.adapter == null) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
+        int historyLimit = getConfiguredHistoryResultCount(prefs);
         List<Pojo> matches = HistoryPreviewMatcher.match(activity, prefs, query,
-                historyPreviewSnapshot, getConfiguredHistoryResultCount(prefs));
+                historyPreviewSnapshot, historyLimit);
         int limit = getConfiguredSearchResultCount(prefs);
+        List<Pojo> recalled = SearchRecallCache.match(activity, prefs, query,
+                historyLimit, limit);
+        if (!recalled.isEmpty()) {
+            // Retain History-first ranking but prefer results actually found for this query
+            // previously; duplicates never consume the user's displayed-result allowance.
+            LinkedHashMap<String, Pojo> unique = new LinkedHashMap<>();
+            for (Pojo item : matches) if (item != null) unique.put(item.id, item);
+            for (Pojo item : recalled) {
+                if (item == null) continue;
+                unique.remove(item.id);
+                unique.put(item.id, item);
+            }
+            List<Pojo> other = new ArrayList<>();
+            List<Pojo> launchTargets = new ArrayList<>();
+            for (Pojo item : unique.values()) {
+                if (item instanceof AppPojo || item instanceof ShortcutPojo) launchTargets.add(item);
+                else other.add(item);
+            }
+            other.addAll(launchTargets);
+            matches = other;
+        }
         int from = Math.max(0, matches.size() - limit);
         List<Pojo> visible = limit <= 0 ? Collections.emptyList()
                 : new ArrayList<>(matches.subList(from, matches.size()));

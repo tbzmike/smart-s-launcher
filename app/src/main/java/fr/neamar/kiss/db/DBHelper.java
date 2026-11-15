@@ -13,6 +13,11 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+import fr.neamar.kiss.searcher.SearchRecallCache;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -121,20 +126,86 @@ public class DBHelper {
         });
     }
 
+
+    /** Recalled searches are NOT launches: never add them to the main History table. */
+    public static final class SearchRecallRow {
+        public final String query;
+        public final String record;
+
+        SearchRecallRow(String query, String record) {
+            this.query = query;
+            this.record = record;
+        }
+    }
+
+    /** Read the most recently found query/result associations, oldest to newest. */
+    public static List<SearchRecallRow> getRecentSearchRecall(Context context, int maxItems) {
+        if (maxItems <= 0) return Collections.emptyList();
+        return DatabaseRecovery.run(context, db -> {
+            List<SearchRecallRow> rows = new ArrayList<>();
+            try (Cursor cursor = db.query("search_recall", new String[]{"query", "record"},
+                    null, null, null, null, "_id DESC", Integer.toString(maxItems))) {
+                while (cursor.moveToNext()) {
+                    rows.add(new SearchRecallRow(cursor.getString(0), cursor.getString(1)));
+                }
+            }
+            Collections.reverse(rows);
+            return rows;
+        });
+    }
+
+    /**
+     * Replace only this query's remembered matches, deduplicate, and evict the oldest associations.
+     * Write once at completion of a deep search, on its existing background worker.
+     */
+    public static void replaceSearchRecall(Context context, String query,
+                                           List<String> ids, int maxItems) {
+        if (TextUtils.isEmpty(query) || maxItems <= 0) return;
+        DatabaseRecovery.runVoid(context, db -> {
+            db.beginTransaction();
+            try {
+                db.delete("search_recall", "query=?", new String[]{query});
+                Set<String> distinct = new LinkedHashSet<>(ids);
+                for (String id : distinct) {
+                    if (TextUtils.isEmpty(id)) continue;
+                    ContentValues values = new ContentValues();
+                    values.put("query", query);
+                    values.put("record", id);
+                    db.insertOrThrow("search_recall", null, values);
+                }
+                int count;
+                try (Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM search_recall", null)) {
+                    cursor.moveToFirst();
+                    count = cursor.getInt(0);
+                }
+                if (count > maxItems) {
+                    db.execSQL("DELETE FROM search_recall WHERE _id IN "
+                                    + "(SELECT _id FROM search_recall ORDER BY _id ASC LIMIT ?)",
+                            new Object[]{count - maxItems});
+                }
+                db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        });
+    }
+
     public static void removeFromHistory(Context context, String record) {
         DatabaseRecovery.runVoid(context, recoveryDb -> {
         SQLiteDatabase db = recoveryDb;
         db.delete("history", "record = ?", new String[]{record});
-
+        db.delete("search_recall", "record = ?", new String[]{record});
         });
+        SearchRecallCache.invalidate();
     }
 
     public static void clearHistory(Context context) {
         DatabaseRecovery.runVoid(context, recoveryDb -> {
         SQLiteDatabase db = recoveryDb;
         db.delete("history", "", null);
-
+        db.delete("search_recall", "", null);
         });
+        SearchRecallCache.invalidate();
     }
 
     private static Cursor getHistoryByFrecency(SQLiteDatabase db, int limit) {

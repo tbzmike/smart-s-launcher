@@ -212,6 +212,13 @@ public class QuerySearcher extends Searcher {
             dataHandler.requestAllRecords(this);
             semanticPass = false;
         }
+        // Store genuine results even when the user never taps a result. No fake launch
+        // History entries, additional background service, or typing-thread disk access.
+        if (!isCancelled()) {
+            int historyLimit = HistorySearcher.configuredMaxHistoryResults(prefs);
+            SearchRecallCache.remember(activity, dataHandler, query,
+                    snapshotCurrentCandidates(), historyLimit);
+        }
         return null;
     }
 

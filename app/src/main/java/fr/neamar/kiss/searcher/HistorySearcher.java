@@ -54,8 +54,7 @@ public class HistorySearcher extends Searcher {
         prefs = PreferenceManager.getDefaultSharedPreferences(activity);
     }
 
-    @Override
-    protected int getMaxResultCount() {
+    static int configuredMaxHistoryResults(SharedPreferences prefs) {
         try {
             String legacyValue = prefs.getString("number-of-display-elements",
                     String.valueOf(DEFAULT_MAX_RESULTS));
@@ -64,6 +63,11 @@ public class HistorySearcher extends Searcher {
         } catch (NumberFormatException | ClassCastException e) {
             return DEFAULT_MAX_RESULTS;
         }
+    }
+
+    @Override
+    protected int getMaxResultCount() {
+        return configuredMaxHistoryResults(prefs);
     }
 
     @Override
@@ -151,6 +155,9 @@ public class HistorySearcher extends Searcher {
         // item type and provider insertion order are not allowed to create separate bands.
         setFinalOrderedResults(HistoryRecencyOrder.sortTimelineOldestToNewest(
                 pojos, launchTimes, launchSequences));
+        // Preload saved search associations while already on the History worker. Subsequent
+        // keystrokes read only the in-memory recall index, including after process restart.
+        if (!shouldAbort()) SearchRecallCache.warm(activity, dataHandler, getMaxResultCount());
         return null;
     }
 
