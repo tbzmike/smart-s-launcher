@@ -175,6 +175,15 @@ public class SearchHandler {
             return;
         }
 
+        // A launcher process has no in-memory History snapshot after a restart.
+        // Publish a small, ordered SQLite-backed preview on the existing seed worker
+        // while the complete configured History window loads independently.
+        if (type == Searcher.Type.HISTORY && !isRefresh
+                && activity.adapter != null && activity.adapter.isEmpty()) {
+            lastSearchType = Searcher.Type.HISTORY;
+            lastSearchQuery = null;
+            refreshHistorySeedAndPublish(activity, generation);
+        }
         startSearch(type, activity, query, isRefresh, generation);
     }
 
@@ -264,6 +273,22 @@ public class SearchHandler {
         runningSearch.setSearchDoneCallback((searcher, isCancelled) -> {
             if (!isCancelled) {
                 completedSearchGeneration.set(generation);
+                if (startedType == Searcher.Type.HISTORY) {
+                    // Home's authoritative History is already rendered. Warm the persisted
+                    // query-recall index afterwards on the existing low-priority seed worker.
+                    // Never stall History's onPostExecute behind up to 50,003 cached results.
+                    final WeakReference<MainActivity> owner = new WeakReference<>(activity);
+                    historySeedExecutor.execute(() -> {
+                        if (historyScrollActive || generation != searchGeneration.get()) return;
+                        MainActivity current = owner.get();
+                        if (current == null || current.isFinishing() || current.isDestroyed()) return;
+                        SearchRecallCache.warm(current,
+                                fr.neamar.kiss.KissApplication.getApplication(current)
+                                        .getDataHandler(),
+                                getConfiguredHistoryResultCount(
+                                        PreferenceManager.getDefaultSharedPreferences(current)));
+                    });
+                }
             }
             if (runningSearch == searcher) resetRunningSearch();
         });
@@ -535,15 +560,18 @@ public class SearchHandler {
             }
         }
 
-        int configuredLimit = HistoryFirstSearchPolicy.seedLimit(
+        int configuredLimit = HistoryFirstSearchPolicy.startupPreviewLimit(
                 getConfiguredHistoryResultCount(prefs));
         if (configuredLimit <= 0) {
             return Collections.emptyList();
         }
-        int requested = (int) Math.min(Integer.MAX_VALUE,
-                (long) configuredLimit + excluded.size());
+        // Raw newest rows use the history PK index rather than a full GROUP BY over
+        // potentially hundreds of thousands of launches. Java deduplicates these
+        // preview candidates; the authoritative HISTORY search remains unchanged.
+        int requested = (int) Math.min(2_400L,
+                Math.max(40L, ((long) configuredLimit * 6L) + excluded.size()));
         if (historyScrollActive) return Collections.emptyList();
-        List<ValuedHistoryRecord> records = DBHelper.getHistory(activity, requested, HistoryMode.RECENCY);
+        List<ValuedHistoryRecord> records = DBHelper.getRecentHistoryCandidates(activity, requested);
         if (historyScrollActive) return Collections.emptyList();
         List<Pojo> seed = new ArrayList<>(Math.min(configuredLimit, records.size()));
         Set<String> seen = new HashSet<>();

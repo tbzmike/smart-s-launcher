@@ -142,6 +142,14 @@ public class HistorySearcher extends Searcher {
         collapseDuplicateNotifications(activity, pojos);
         if (shouldAbort()) return null;
 
+        if (pojos.isEmpty() && !historyRecords.isEmpty()
+                && !dataHandler.isAllProvidersLoaded()) {
+            // An empty provider snapshot during cold start is not authoritative.
+            // LOAD_OVER will request a real History refresh when the providers finish.
+            cancel(false);
+            return null;
+        }
+
         Map<String, Long> launchTimes = new HashMap<>();
         Map<String, Long> launchSequences = new HashMap<>();
         for (ValuedHistoryRecord record : historyRecords) {
@@ -155,9 +163,9 @@ public class HistorySearcher extends Searcher {
         // item type and provider insertion order are not allowed to create separate bands.
         setFinalOrderedResults(HistoryRecencyOrder.sortTimelineOldestToNewest(
                 pojos, launchTimes, launchSequences));
-        // Preload saved search associations while already on the History worker. Subsequent
-        // keystrokes read only the in-memory recall index, including after process restart.
-        if (!shouldAbort()) SearchRecallCache.warm(activity, dataHandler, getMaxResultCount());
+        // Never block the first Home/History frame behind the potentially huge
+        // persisted search-recall cache. SearchHandler warms that cache independently
+        // AFTER the History adapter has received its result set.
         return null;
     }
 

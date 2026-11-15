@@ -11,4 +11,9 @@ public final class HistoryFirstSearchPolicy {
     public static int seedLimit(int configuredHistoryItems) {
         return Math.max(0, configuredHistoryItems);
     }
+
+    /** Preview is not the final History limit: keep the first Home paint bounded. */
+    public static int startupPreviewLimit(int configuredHistoryItems) {
+        return Math.min(200, seedLimit(configuredHistoryItems));
+    }
 }

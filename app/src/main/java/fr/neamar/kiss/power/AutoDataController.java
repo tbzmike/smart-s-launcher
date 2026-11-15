@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.telephony.TelephonyManager;
+import android.net.TrafficStats;
 import android.provider.Settings;
 
 import androidx.core.content.ContextCompat;
@@ -38,6 +39,10 @@ public final class AutoDataController {
     public static final String ACTION_DISABLE = "fr.neamar.kiss.power.AUTO_DATA_DISABLE";
     private static final String PREF_DUE = "auto-data-off-at-elapsed";
     private static final String PREF_OWNED = "auto-data-disabled-by-smart-s";
+    private static final String PREF_TRAFFIC_RX = "auto-data-device-rx-at-sample";
+    private static final String PREF_TRAFFIC_AT = "auto-data-device-rx-sampled-elapsed";
+    private static final String PREF_TRANSFER_ACTIVE = "auto-data-transfer-detected";
+    private static final String PREF_TRANSFER_QUIET = "auto-data-transfer-quiet-samples";
     private static final String USB_STATE = "android.hardware.usb.action.USB_STATE";
     private static final String TAG = "SmartS-AutoData";
 
@@ -180,7 +185,7 @@ public final class AutoDataController {
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             // ElapsedRealtime from the previous boot is no longer a valid scheduled instant.
-            prefs.edit().remove(PREF_DUE).apply();
+            clearTrafficState(prefs);
         }
 
         boolean enabled = prefs.getBoolean(PREF_ENABLED, false);
@@ -191,13 +196,13 @@ public final class AutoDataController {
         if (AutoDataPolicy.shouldRestore(prefs.getBoolean(PREF_OWNED, false),
                 enabled, interactive, externallyConnected)) {
             cancelAlarm(app);
-            prefs.edit().remove(PREF_DUE).apply();
+            clearTrafficState(prefs);
             restoreIfOwned(app, prefs);
         }
 
         if (!AutoDataPolicy.shouldSchedule(enabled, interactive, externallyConnected)) {
             cancelAlarm(app);
-            prefs.edit().remove(PREF_DUE).apply();
+            clearTrafficState(prefs);
             if (enabled && externallyConnected) {
                 setStatus(app, "Paused while USB or a charger is connected. Data is left on.");
             } else if (enabled) {
@@ -217,11 +222,27 @@ public final class AutoDataController {
                 || due <= 0L || due > now + TimeUnit.MINUTES.toMillis(31)) {
             int minutes = AutoDataPolicy.delayMinutes(prefs.getInt(PREF_DELAY, 5));
             due = now + TimeUnit.MINUTES.toMillis(minutes);
-            prefs.edit().putLong(PREF_DUE, due).apply();
+            long received = TrafficStats.getTotalRxBytes();
+            prefs.edit().putLong(PREF_DUE, due)
+                    .putLong(PREF_TRAFFIC_RX, received)
+                    .putLong(PREF_TRAFFIC_AT, now)
+                    .putBoolean(PREF_TRANSFER_ACTIVE, false)
+                    .putInt(PREF_TRANSFER_QUIET, 0).apply();
         }
         if (due > now) {
-            scheduleAlarm(app, due);
-            setStatus(app, "Screen off: will switch mobile data off after the selected delay.");
+            // One preflight sample, approximately one minute before the screen-off
+            // deadline, prevents a long delay interval from hiding a recent download.
+            long preflight = due - AutoDataTrafficPolicy.SAMPLE_MS;
+            if (now < preflight) {
+                scheduleAlarm(app, preflight);
+            } else {
+                long sampledAt = prefs.getLong(PREF_TRAFFIC_AT, 0L);
+                if (sampledAt < preflight && !prefs.getBoolean(PREF_TRANSFER_ACTIVE, false)) {
+                    saveTrafficSample(prefs, now, TrafficStats.getTotalRxBytes());
+                }
+                scheduleAlarm(app, due);
+            }
+            setStatus(app, "Screen off: checking downloads before the selected data-off delay.");
             return;
         }
         cancelAlarm(app);
@@ -229,6 +250,42 @@ public final class AutoDataController {
             setStatus(app, "Mobile data switched off by Auto Data.");
             return;
         }
+        long currentRx = TrafficStats.getTotalRxBytes();
+        long previousRx = prefs.getLong(PREF_TRAFFIC_RX, -1L);
+        long sampledAt = prefs.getLong(PREF_TRAFFIC_AT, -1L);
+        AutoDataTrafficPolicy.Traffic traffic = AutoDataTrafficPolicy.classify(
+                previousRx, currentRx, sampledAt < 0L ? 0L : now - sampledAt);
+        if (traffic == AutoDataTrafficPolicy.Traffic.UNKNOWN) {
+            // Fail open rather than cut off a transfer we cannot observe. No poll
+            // loop if this Android build hides device-wide TrafficStats counters.
+            setStatus(app, "Download traffic cannot be verified; mobile data left on.");
+            return;
+        }
+        boolean transferSeen = prefs.getBoolean(PREF_TRANSFER_ACTIVE, false);
+        int quietSamples = prefs.getInt(PREF_TRANSFER_QUIET, 0);
+        if (traffic == AutoDataTrafficPolicy.Traffic.ACTIVE) {
+            transferSeen = true;
+            quietSamples = 0;
+        } else if (transferSeen) {
+            quietSamples++;
+        }
+        if (traffic == AutoDataTrafficPolicy.Traffic.ACTIVE
+                || AutoDataTrafficPolicy.needsAnotherQuietWindow(transferSeen, quietSamples)) {
+            // Recheck only while the screen is off and a transfer has been observed.
+            // Two quiet windows help avoid interrupting downloads between bursts.
+            prefs.edit().putBoolean(PREF_TRANSFER_ACTIVE, transferSeen)
+                    .putInt(PREF_TRANSFER_QUIET, quietSamples)
+                    .putLong(PREF_TRAFFIC_RX, currentRx)
+                    .putLong(PREF_TRAFFIC_AT, now)
+                    .putLong(PREF_DUE, now + AutoDataTrafficPolicy.SAMPLE_MS).apply();
+            scheduleAlarm(app, now + AutoDataTrafficPolicy.SAMPLE_MS);
+            setStatus(app, "Auto Data paused: device-wide download traffic detected. "
+                    + "Waiting for transfers to finish before switching off data.");
+            return;
+        }
+        // The download-protection window is clear. The existing root/ownership
+        // control remains the only code allowed to change the mobile data state.
+        clearTrafficState(prefs);
         Boolean wasEnabled = isMobileDataEnabled(app);
         if (wasEnabled == null) {
             setStatus(app, "Mobile-data state unavailable. No change made.");
@@ -262,6 +319,17 @@ public final class AutoDataController {
         if (isInteractive(app) || externalPowerOrUsb(app)) {
             restoreIfOwned(app, prefs);
         }
+    }
+
+    private static void saveTrafficSample(SharedPreferences prefs, long now, long received) {
+        prefs.edit().putLong(PREF_TRAFFIC_RX, received)
+                .putLong(PREF_TRAFFIC_AT, now).apply();
+    }
+
+    private static void clearTrafficState(SharedPreferences prefs) {
+        prefs.edit().remove(PREF_DUE).remove(PREF_TRAFFIC_RX)
+                .remove(PREF_TRAFFIC_AT).remove(PREF_TRANSFER_ACTIVE)
+                .remove(PREF_TRANSFER_QUIET).apply();
     }
 
     private static void restoreIfOwned(Context app, SharedPreferences prefs) {

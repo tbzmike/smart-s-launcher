@@ -342,6 +342,22 @@ public class DBHelper {
 
 
     /**
+     * A bounded cold-start PREVIEW only. The primary timeline still uses strict
+     * de-duplicated RECENCY. This query walks _id DESC without grouping the entire
+     * launch table, so one visible recent app can appear quickly after process death.
+     */
+    public static List<ValuedHistoryRecord> getRecentHistoryCandidates(Context context, int limit) {
+        if (limit <= 0) return java.util.Collections.emptyList();
+        return DatabaseRecovery.run(context, recoveryDb -> {
+            Cursor cursor = recoveryDb.rawQuery(
+                    "SELECT record, 1, timeStamp, _id FROM history "
+                            + "ORDER BY _id DESC LIMIT ?",
+                    new String[]{Integer.toString(Math.min(2400, limit))});
+            return readCursor(cursor);
+        });
+    }
+
+    /**
      * Strict RECENCY history read used by the visible Home timeline. This variant is cancellable so
      * touching the Vertical List can abort SQLite itself instead of merely interrupting Java after
      * the query has already consumed CPU/I/O.
