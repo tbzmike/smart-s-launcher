@@ -29,7 +29,13 @@ jobs:
           grep -q 'versionCode 627' app/build.gradle
           grep -q 'versionName "3.30.198"' app/build.gradle
           test "$(grep -c 'minifyEnabled true' app/build.gradle)" = 2
-          bash ./gradlew --no-configuration-cache lint testDebugUnitTest assembleDebug assembleRelease --stacktrace
+          gradle_ok=0
+          for attempt in 1 2 3; do
+            if bash ./gradlew --no-configuration-cache lint testDebugUnitTest assembleDebug assembleRelease --stacktrace; then gradle_ok=1; break; fi
+            echo "Gradle dependency resolution/build failed; bounded retry $attempt/3" >&2
+            sleep 6
+          done
+          test "$gradle_ok" = 1
       - name: Collect APKs with exact expected input names
         run: |
           mkdir -p release-input

@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 sed -i 's/minifyEnabled true/minifyEnabled false/g; s/shrinkResources = true/shrinkResources = false/g' app/build.gradle
-bash ./gradlew --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+gradle_ok=0
+for attempt in 1 2 3; do
+  if bash ./gradlew --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace; then gradle_ok=1; break; fi
+  echo "Gradle dependency resolution/build failed; bounded retry $attempt/3" >&2
+  sleep 6
+done
+test "$gradle_ok" = 1
 adb install -r -g app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
