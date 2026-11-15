@@ -70,7 +70,7 @@ public final class SearchRecallCache {
 
         static Snapshot empty() {
             return new Snapshot(Collections.emptyList(),
-                    Collections.unmodifiableNavigableMap(new TreeMap<>()), 0, false);
+                    new TreeMap<>(), 0, false);
         }
     }
 
@@ -235,6 +235,6 @@ public final class SearchRecallCache {
         for (Map.Entry<String, List<Entry>> row : byQuery.entrySet()) {
             row.setValue(Collections.unmodifiableList(row.getValue()));
         }
-        return new Snapshot(safe, Collections.unmodifiableNavigableMap(byQuery), limit, true);
+        return new Snapshot(safe, byQuery, limit, true);
     }
 }
