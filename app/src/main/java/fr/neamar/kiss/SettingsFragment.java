@@ -188,8 +188,15 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         delay.setSeekBarIncrement(1);
         delay.setShowSeekBarValue(true);
         delay.setDefaultValue(5);
-        delay.setDependency(AutoDataController.PREF_ENABLED);
         category.addPreference(delay);
+        // Dynamic preference categories are attached after XML inflation; resolving the
+        // dependency during setDependency() crashed Settings on Android 15/16.
+        // Explicitly wire the toggle instead of referencing an unattached dependency.
+        delay.setEnabled(toggle.isChecked());
+        toggle.setOnPreferenceChangeListener((preference, nextValue) -> {
+            delay.setEnabled(Boolean.TRUE.equals(nextValue));
+            return true; // AndroidX persists the switch and notifies AutoDataController.
+        });
 
         Preference status = new Preference(requireContext());
         status.setKey("smart-s-auto-data-status");
