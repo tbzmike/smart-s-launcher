@@ -1,0 +1,45 @@
+name: Verify instant search recall 3.30.195
+
+on:
+  push:
+    branches:
+      - fix/3.30.195-instant-search-recall
+
+jobs:
+  android:
+    name: Persisted search recall on Android ${{ matrix.api }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Enable hardware acceleration
+        run: |
+          test -c /dev/kvm
+          sudo chmod a+rw /dev/kvm
+      - name: Verify actual SQLite upgrade, persistence, eviction and reset
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          ram-size: 2048M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=fr.neamar.kiss.db.SearchRecallDatabase195RegressionTest --stacktrace
+      - name: Upload result XML
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: search-recall-api-${{ matrix.api }}
+          path: app/build/outputs/androidTest-results
+          archive: true
+          if-no-files-found: ignore
