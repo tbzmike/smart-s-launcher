@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto"
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+                  xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:android="http://schemas.android.com/apk/res/android"
     app:title="@string/activity_setting">
     <PreferenceScreen
@@ -739,7 +740,7 @@
                 app:key="auto-data-delay-minutes"
                 app:dependency="auto-data-enabled"
                 app:min="1"
-                app:max="30"
+                android:max="30"
                 app:defaultValue="5"
                 app:seekBarIncrement="1"
                 app:showSeekBarValue="true"
