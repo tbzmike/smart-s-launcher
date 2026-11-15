@@ -4,6 +4,8 @@ import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.ComponentName;
+import android.content.pm.PackageManager;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -64,27 +66,62 @@ public final class AutoDataController {
         synchronized (INSTALL_LOCK) {
             if (application != null) return;
             application = app;
-            IntentFilter filter = new IntentFilter();
-            filter.addAction(Intent.ACTION_SCREEN_ON);
-            filter.addAction(Intent.ACTION_SCREEN_OFF);
-            filter.addAction(USB_STATE);
-            screenAndUsbReceiver = new BroadcastReceiver() {
-                @Override public void onReceive(Context c, Intent intent) {
-                    enqueue(app, intent == null ? null : intent.getAction());
-                }
-            };
-            ContextCompat.registerReceiver(app, screenAndUsbReceiver, filter,
-                    ContextCompat.RECEIVER_NOT_EXPORTED);
-
             prefListener = (prefs, key) -> {
                 if (PREF_ENABLED.equals(key) || PREF_DELAY.equals(key)) {
-                    enqueue(app, "preference");
+                    updateReceiverRegistration(app);
+                    if (isEnabledOrOwningData(app)) enqueue(app, "preference");
                 }
             };
             PreferenceManager.getDefaultSharedPreferences(app)
                     .registerOnSharedPreferenceChangeListener(prefListener);
         }
-        enqueue(app, "start");
+        // Disabled means zero screen/USB listeners and zero pending work.
+        updateReceiverRegistration(app);
+        if (isEnabledOrOwningData(app)) enqueue(app, "start");
+    }
+
+    private static boolean isEnabledOrOwningData(Context app) {
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(app);
+        return prefs.getBoolean(PREF_ENABLED, false) || prefs.getBoolean(PREF_OWNED, false);
+    }
+
+    /** No event monitoring or power wakeups when the opt-in feature is OFF. */
+    private static void updateReceiverRegistration(Context app) {
+        synchronized (INSTALL_LOCK) {
+            boolean needed = isEnabledOrOwningData(app);
+            if (needed && screenAndUsbReceiver == null) {
+                IntentFilter filter = new IntentFilter();
+                filter.addAction(Intent.ACTION_SCREEN_ON);
+                filter.addAction(Intent.ACTION_SCREEN_OFF);
+                filter.addAction(USB_STATE);
+                BroadcastReceiver receiver = new BroadcastReceiver() {
+                    @Override public void onReceive(Context context, Intent intent) {
+                        enqueue(app, intent == null ? null : intent.getAction());
+                    }
+                };
+                ContextCompat.registerReceiver(app, receiver, filter,
+                        ContextCompat.RECEIVER_NOT_EXPORTED);
+                screenAndUsbReceiver = receiver;
+            } else if (!needed && screenAndUsbReceiver != null) {
+                app.unregisterReceiver(screenAndUsbReceiver);
+                screenAndUsbReceiver = null;
+            }
+
+            // Manifest power/boot wakeups are disabled when the preference is off.
+            // Reenable only while Auto Data is opted in or a previous data toggle needs recovery.
+            PackageManager pm = app.getPackageManager();
+            ComponentName name = new ComponentName(app, AutoDataReceiver.class);
+            int existing = pm.getComponentEnabledSetting(name);
+            if (needed && existing != PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                pm.setComponentEnabledSetting(name,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP);
+            } else if (!needed && existing == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                pm.setComponentEnabledSetting(name,
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP);
+            }
+        }
     }
 
     /** Called by the manifest receiver, even after process death, boot or APK replacement. */
@@ -94,7 +131,8 @@ public final class AutoDataController {
 
     /** A foreground HOME resume guarantees repair if the process missed SCREEN_ON. */
     public static void onHomeResumed(Context context) {
-        enqueue(context.getApplicationContext(), Intent.ACTION_SCREEN_ON);
+        Context app = context.getApplicationContext();
+        if (isEnabledOrOwningData(app)) enqueue(app, Intent.ACTION_SCREEN_ON);
     }
 
     /** Explicit settings action: request/probe su while the user can approve its dialog. */
@@ -112,7 +150,9 @@ public final class AutoDataController {
     public static String getStatus(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         if (!prefs.getBoolean(PREF_ENABLED, false)) {
-            return "Off. Mobile data is unchanged unless Smart S must restore an earlier toggle.";
+            return prefs.getBoolean(PREF_OWNED, false)
+                    ? "Off. Restoring mobile data previously disabled by Smart S."
+                    : "Off. No background screen/power monitoring.";
         }
         String status = prefs.getString(PREF_STATUS, "");
         return status.isEmpty()
@@ -129,6 +169,8 @@ public final class AutoDataController {
             } catch (RuntimeException failure) {
                 Log.w(TAG, "Auto Data state reconciliation failed", failure);
                 setStatus(app, "Unable to change mobile data; check root permission.");
+            } finally {
+                updateReceiverRegistration(app);
             }
         });
     }
@@ -205,8 +247,14 @@ public final class AutoDataController {
             return;
         }
         if (!KissApplication.getApplication(app).getRootHandler().setMobileDataEnabled(false)) {
-            prefs.edit().putBoolean(PREF_OWNED, false).commit();
-            setStatus(app, "Root unavailable or mobile data command failed. Data left unchanged.");
+            // If a vendor shell failed after applying the switch, keep ownership and
+            // restore instead of pretending it never changed the modem.
+            if (Boolean.FALSE.equals(isMobileDataEnabled(app))) {
+                restoreIfOwned(app, prefs);
+            } else {
+                prefs.edit().putBoolean(PREF_OWNED, false).commit();
+                setStatus(app, "Root unavailable or mobile data command failed. Data unchanged.");
+            }
             return;
         }
         setStatus(app, "Mobile data switched off by Auto Data; restores on screen-on or USB/charger.");
@@ -296,7 +344,9 @@ public final class AutoDataController {
     }
 
     private static void setStatus(Context app, String message) {
-        PreferenceManager.getDefaultSharedPreferences(app).edit()
-                .putString(PREF_STATUS, message).apply();
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(app);
+        if (!message.equals(prefs.getString(PREF_STATUS, ""))) {
+            prefs.edit().putString(PREF_STATUS, message).apply();
+        }
     }
 }
