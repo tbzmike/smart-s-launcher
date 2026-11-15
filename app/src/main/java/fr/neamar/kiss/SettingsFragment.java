@@ -162,83 +162,56 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         category.addPreference(killPixelLauncher);
     }
 
+    /**
+     * Bind the XML-inflated Advanced controls. Constructing/attaching a dynamic
+     * PreferenceCategory while a nested PreferenceScreen was initializing caused an
+     * unstable dependency lookup on some devices. Dependencies now belong to the
+     * XML hierarchy and cannot be resolved before attachment.
+     */
     private void addAutoDataPreferences(@Nullable String rootKey) {
-        PreferenceGroup parent = "advanced".equals(rootKey)
-                ? getPreferenceScreen() : findPreference("advanced");
-        if (parent == null || parent.findPreference("smart-s-auto-data-category") != null) return;
-        PreferenceCategory category = new PreferenceCategory(requireContext());
-        category.setKey("smart-s-auto-data-category");
-        category.setTitle("Auto Data · battery saving");
-        parent.addPreference(category);
+        SwitchPreference toggle = findPreference(AutoDataController.PREF_ENABLED);
+        SeekBarPreference delay = findPreference(AutoDataController.PREF_DELAY);
+        if (toggle == null || delay == null) {
+            Log.e(TAG, "Advanced Auto Data settings missing from XML screen");
+            return;
+        }
+        // AndroidX XML dependency wires enabled state correctly on all root screens,
+        // including the nested Advanced screen and subsequent Activity recreation.
+        Preference status = findPreference("smart-s-auto-data-status");
+        if (status != null) status.setSummary(AutoDataController.getStatus(requireContext()));
 
-        SwitchPreference toggle = new SwitchPreference(requireContext());
-        toggle.setKey(AutoDataController.PREF_ENABLED);
-        toggle.setTitle("Enable Auto Data");
-        toggle.setSummary("Mobile data off after screen-off delay; immediately restore on screen-on. "
-                + "Suspended on any USB or charger connection. Root permission required.");
-        toggle.setDefaultValue(false);
-        category.addPreference(toggle);
-
-        SeekBarPreference delay = new SeekBarPreference(requireContext());
-        delay.setKey(AutoDataController.PREF_DELAY);
-        delay.setTitle("Screen-off delay (minutes)");
-        delay.setSummary("Wait 1–30 minutes after screen off. Unplugging starts a new countdown.");
-        delay.setMin(1);
-        delay.setMax(30);
-        delay.setSeekBarIncrement(1);
-        delay.setShowSeekBarValue(true);
-        delay.setDefaultValue(5);
-        category.addPreference(delay);
-        // Dynamic preference categories are attached after XML inflation; resolving the
-        // dependency during setDependency() crashed Settings on Android 15/16.
-        // Explicitly wire the toggle instead of referencing an unattached dependency.
-        delay.setEnabled(toggle.isChecked());
-        toggle.setOnPreferenceChangeListener((preference, nextValue) -> {
-            delay.setEnabled(Boolean.TRUE.equals(nextValue));
-            return true; // AndroidX persists the switch and notifies AutoDataController.
-        });
-
-        Preference status = new Preference(requireContext());
-        status.setKey("smart-s-auto-data-status");
-        status.setTitle("Auto Data status");
-        status.setSummary(AutoDataController.getStatus(requireContext()));
-        category.addPreference(status);
-
-        Preference root = new Preference(requireContext());
-        root.setKey("smart-s-auto-data-root-check");
-        root.setTitle("Check or grant root access");
-        root.setSummary("Request Smart S root permission while the screen is on.");
-        root.setOnPreferenceClickListener(preference -> {
-            AutoDataController.requestRootCheck(requireContext());
-            status.setSummary("Checking root access…");
-            return true;
-        });
-        category.addPreference(root);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Preference permission = new Preference(requireContext());
-            permission.setKey("smart-s-auto-data-alarm-permission");
-            permission.setTitle("Allow precise screen-off timing");
-            permission.setSummary("On Android 12+, Alarms & reminders access makes the "
-                    + "selected delay accurate. Without it Android may defer the alarm in Doze.");
-            permission.setOnPreferenceClickListener(preference -> {
-                AlarmManager alarms =
-                        (AlarmManager) requireContext().getSystemService(android.content.Context.ALARM_SERVICE);
-                if (alarms != null && !alarms.canScheduleExactAlarms()) {
-                    Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
-                    intent.setData(Uri.parse("package:" + requireContext().getPackageName()));
-                    try { startActivity(intent); }
-                    catch (RuntimeException unavailable) {
-                        Toast.makeText(requireContext(), "Open Alarms & reminders under App settings.",
-                                Toast.LENGTH_LONG).show();
-                    }
-                } else {
-                    Toast.makeText(requireContext(), "Precise alarms are already allowed.",
-                            Toast.LENGTH_SHORT).show();
-                }
+        Preference root = findPreference("smart-s-auto-data-root-check");
+        if (root != null) {
+            root.setOnPreferenceClickListener(preference -> {
+                AutoDataController.requestRootCheck(requireContext());
+                if (status != null) status.setSummary("Checking root access…");
                 return true;
             });
-            category.addPreference(permission);
+        }
+
+        Preference permission = findPreference("smart-s-auto-data-alarm-permission");
+        if (permission != null) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                permission.setVisible(false);
+            } else {
+                permission.setOnPreferenceClickListener(preference -> {
+                    AlarmManager alarms =
+                            (AlarmManager) requireContext().getSystemService(android.content.Context.ALARM_SERVICE);
+                    if (alarms != null && !alarms.canScheduleExactAlarms()) {
+                        Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                        intent.setData(Uri.parse("package:" + requireContext().getPackageName()));
+                        try { startActivity(intent); }
+                        catch (RuntimeException unavailable) {
+                            Toast.makeText(requireContext(), "Open Alarms & reminders under App settings.",
+                                    Toast.LENGTH_LONG).show();
+                        }
+                    } else {
+                        Toast.makeText(requireContext(), "Precise alarms are already allowed.",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                    return true;
+                });
+            }
         }
     }
 
