@@ -529,9 +529,13 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private void bindResultInteraction(View row, int adapterPosition) {
-        row.setOnClickListener(v -> mainActivity.adapter.onClick(adapterPosition, v));
+        // A 3D wheel row can outlive a provider refresh. Capture the exact displayed Result
+        // instead of reading whatever unrelated item later occupies its old adapter position.
+        final fr.neamar.kiss.result.Result<?> boundResult =
+                mainActivity.adapter.getItem(adapterPosition);
+        row.setOnClickListener(v -> mainActivity.adapter.onBoundResultClick(boundResult, v));
         row.setOnLongClickListener(v -> {
-            mainActivity.adapter.onLongClick(adapterPosition, v);
+            mainActivity.adapter.onBoundResultLongClick(boundResult, v);
             return true;
         });
         row.setClickable(true);
