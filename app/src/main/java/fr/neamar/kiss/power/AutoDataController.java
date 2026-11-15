@@ -97,6 +97,18 @@ public final class AutoDataController {
         enqueue(context.getApplicationContext(), Intent.ACTION_SCREEN_ON);
     }
 
+    /** Explicit settings action: request/probe su while the user can approve its dialog. */
+    public static void requestRootCheck(Context context) {
+        Context app = context.getApplicationContext();
+        WORKER.execute(() -> {
+            boolean granted = KissApplication.getApplication(app)
+                    .getRootHandler().isRootAvailable();
+            setStatus(app, granted
+                    ? "Root access is available. Auto Data is ready."
+                    : "Root access is unavailable. Grant Smart S su access to use Auto Data.");
+        });
+    }
+
     public static String getStatus(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
         if (!prefs.getBoolean(PREF_ENABLED, false)) {
