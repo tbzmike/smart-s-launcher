@@ -34,20 +34,7 @@ jobs:
           ram-size: 2048M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
-          script: |
-            set -eu
-            sed -i 's/minifyEnabled true/minifyEnabled false/g; s/shrinkResources = true/shrinkResources = false/g' app/build.gradle
-            bash ./gradlew --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
-            adb install -r -g app/build/outputs/apk/debug/app-debug.apk
-            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            for test in fr.neamar.kiss.androidTest.HistoryRestart198SeedTest fr.neamar.kiss.androidTest.HistoryRestart198VerifyTest fr.neamar.kiss.androidTest.LockedHistoryPopup196IntegrationTest fr.neamar.kiss.androidTest.AutoDataWiring196IntegrationTest fr.neamar.kiss.db.SearchRecallDatabase195RegressionTest; do
-              echo "RUN $test"
-              adb shell am force-stop com.tbzmike.smartslauncher.debug
-              adb shell am instrument -w -r -e class "$test" com.tbzmike.smartslauncher.debug.test/androidx.test.runner.AndroidJUnitRunner | tee "result-$(echo "$test" | tr '.' '_').log"
-              grep -E 'OK \([0-9]+ tests?\)' "result-$(echo "$test" | tr '.' '_').log"
-              grep -F 'INSTRUMENTATION_CODE: -1' "result-$(echo "$test" | tr '.' '_').log"
-            done
-            echo 'PASS: Cold process restart / protected History / Auto Data / locked popup'
+          script: bash scripts/verify_198_history_download.sh
       - name: Upload regression logs
         if: always()
         uses: actions/upload-artifact@v7
