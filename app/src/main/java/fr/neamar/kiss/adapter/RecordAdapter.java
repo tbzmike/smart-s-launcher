@@ -323,21 +323,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
                 onResultClick(result, v);
             }
         };
-        View.OnLongClickListener menu = v -> {
-            int position = results.indexOf(result);
-            if (position < 0) return false;
-
-            Context context = v.getContext();
-            if (UiEditLock.isLocked(context)) {
-                if (NotificationHistoryResolver.showLockedForPojo(
-                        context, result.getPojo())) return true;
-                UiEditLock.allowEdit(context);
-                return true;
-            }
-
-            onLongClick(position, v);
-            return true;
-        };
+        // Capture the rendered Result itself. In locked mode the adapter index may move
+        // during a History refresh, but the tile under the user's finger must keep its identity.
+        View.OnLongClickListener menu = v -> onBoundResultLongClick(result, v);
 
         // The complete row owns ordinary taps, while clickable message/notification children can
         // still override just their own target. This makes History and active Search deterministic.
@@ -392,14 +380,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             result.launch(v.getContext(), v, parent);
         };
         View.OnClickListener openApp = v -> openNotificationApp(result, notification, v);
-        View.OnLongClickListener openRichNotification = v -> {
-            int position = results.indexOf(result);
-            if (position >= 0) {
-                onLongClick(position, v);
-                return true;
-            }
-            return false;
-        };
+        View.OnLongClickListener openRichNotification =
+                v -> onBoundResultLongClick(result, v);
 
         // Row/message taps open the exact notification destination. The icon is deliberately
         // excluded from this group and always performs a normal application launch instead.
@@ -1100,6 +1082,28 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         return UiEditLock.isLocked(context)
                 ? NotificationHistoryResolver.showLockedForPojo(context, pojo)
                 : NotificationHistoryResolver.showForPojo(context, pojo);
+    }
+
+    /**
+     * Long press originating from a bound/recycled History view.
+     * Locked UI uses the captured item, never an adapter position; unlocked UI keeps the
+     * existing context-menu path and does not open the read-only notification popup.
+     */
+    public boolean onBoundResultLongClick(Result<?> bound, View anchor) {
+        if (bound == null || bound.getPojo() == null || anchor == null) return false;
+        if (UiEditLock.isLocked(anchor.getContext())) {
+            // NotificationPojo supplies its exact id AND post-time for strict record selection.
+            // No chronological History mutation or position lookup is allowed in locked mode.
+            if (!NotificationHistoryResolver.showLockedForPojo(
+                    anchor.getContext(), bound.getPojo())) {
+                UiEditLock.allowEdit(anchor.getContext());
+            }
+            return true;
+        }
+        int current = results.indexOf(bound);
+        if (current < 0) return false;
+        onLongClick(current, anchor);
+        return true;
     }
 
     public void onLongClick(final int pos, View v) {

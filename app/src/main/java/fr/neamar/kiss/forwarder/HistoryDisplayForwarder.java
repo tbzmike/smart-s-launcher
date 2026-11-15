@@ -529,8 +529,14 @@ final class HistoryDisplayForwarder extends Forwarder {
     }
 
     private void bindResultInteraction(View row, int adapterPosition) {
+        // The wheel reuses shells as its window moves. Capture the real item being rendered,
+        // never treat the old adapter position as an identity for locked-mode inspection.
+        fr.neamar.kiss.result.Result<?> bound = mainActivity.adapter.getItem(adapterPosition);
         row.setOnClickListener(v -> mainActivity.adapter.onClick(adapterPosition, v));
         row.setOnLongClickListener(v -> {
+            if (fr.neamar.kiss.preference.UiEditLock.isLocked(mainActivity)) {
+                return mainActivity.adapter.onBoundResultLongClick(bound, v);
+            }
             mainActivity.adapter.onLongClick(adapterPosition, v);
             return true;
         });

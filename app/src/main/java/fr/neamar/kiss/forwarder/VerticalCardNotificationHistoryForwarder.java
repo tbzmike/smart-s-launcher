@@ -155,12 +155,13 @@ final class VerticalCardNotificationHistoryForwarder extends Forwarder {
             applyBottomSwipeTouchRecursively(wrapper);
 
             View.OnLongClickListener historyFirstLongPress = v -> {
+                if (UiEditLock.isLocked(mainActivity)) {
+                    // The view was bound to this exact notification (including its post time).
+                    // The adapter position can change independently while History is refreshed.
+                    return mainActivity.adapter.onBoundResultLongClick(result, v);
+                }
                 int currentPosition = resolveAdapterPosition(stableId);
                 if (currentPosition < 0) return false;
-                if (UiEditLock.isLocked(mainActivity)
-                        && mainActivity.adapter.showNotificationHistoryIfAvailable(currentPosition, v)) {
-                    return true;
-                }
                 mainActivity.adapter.onLongClick(currentPosition, v);
                 return true;
             };

@@ -1150,8 +1150,14 @@ final class SmartCardListForwarder extends Forwarder {
             if (currentPosition >= 0) mainActivity.adapter.onClick(currentPosition, card);
         };
         View.OnLongClickListener longPress = v -> {
+            if (fr.neamar.kiss.preference.UiEditLock.isLocked(mainActivity)) {
+                // A card keeps the exact bound Result even if another History pass has reordered
+                // the adapter since this view was drawn.
+                return mainActivity.adapter.onBoundResultLongClick(result, v);
+            }
             int currentPosition = resolveAdapterPosition(result.getPojoId());
             if (currentPosition < 0) return false;
+            // Unlocked remains the original editable context menu.
             mainActivity.adapter.onLongClick(currentPosition, v);
             return true;
         };
