@@ -25,6 +25,9 @@ import java.util.List;
 import fr.neamar.kiss.MainActivity;
 import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.pojo.NotificationPojo;
+import fr.neamar.kiss.pojo.AppPojo;
+import fr.neamar.kiss.utils.UserHandle;
+import fr.neamar.kiss.ui.UniversalHistoryTimestamp;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.SearchHandler;
 import fr.neamar.kiss.ui.HistoryDateNavigator;
@@ -52,6 +55,30 @@ public final class VisibleHistoryTime199IntegrationTest {
             return (HistoryDateNavigator) f.get(activity);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
+        }
+    }
+
+    @Test public void exactPersistedAppEventTimeIsNotReplacedByMergedUsageTotals() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                UserHandle user = new UserHandle(activity, android.os.Process.myUserHandle());
+                AppPojo app = new AppPojo("app://time199-exact-app",
+                        activity.getPackageName(), MainActivity.class.getName(),
+                        user, false, false, false, false);
+                long actualEvent = 1_794_850_860_000L;
+                java.util.Map<String, Long> exact = java.util.Collections.singletonMap(
+                        app.getHistoryId(), actualEvent);
+                UniversalHistoryTimestamp.updateRecordedHistoryEventTimes(exact);
+                try {
+                    assertEquals("The app's own persisted event time must take precedence",
+                            actualEvent,
+                            UniversalHistoryTimestamp.resolveHistoryTimestamp(
+                                    Result.fromPojo(activity, app)));
+                } finally {
+                    UniversalHistoryTimestamp.updateRecordedHistoryEventTimes(
+                            java.util.Collections.emptyMap());
+                }
+            });
         }
     }
 
