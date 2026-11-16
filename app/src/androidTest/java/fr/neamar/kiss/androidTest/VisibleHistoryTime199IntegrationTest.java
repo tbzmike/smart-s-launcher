@@ -145,8 +145,13 @@ public final class VisibleHistoryTime199IntegrationTest {
                     assertTrue("Navigator must keep date and time in a shared header",
                             time.getParent() == date.getParent());
                     // This is a physical ListView scrolling operation, not merely
-                    // repositioning the selected adapter item.
-                    activity.list.scrollListBy(-100_000);
+                    // repositioning the selected adapter item. Android bounds each
+                    // scrollListBy call to roughly one viewport, so repeat until the
+                    // oldest rows are truly visible rather than assuming one huge delta works.
+                    for (int sweep = 0; sweep < 30
+                            && activity.list.getFirstVisiblePosition() > 0; sweep++) {
+                        activity.list.scrollListBy(-Math.max(1, activity.list.getHeight() - 1));
+                    }
                 });
                 Thread.sleep(450);
                 scenario.onActivity(activity -> {
