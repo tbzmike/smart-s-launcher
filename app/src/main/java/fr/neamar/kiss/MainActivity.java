@@ -664,6 +664,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             fr.neamar.kiss.ui.UniversalHistoryTimestamp.invalidatePresentation();
         }
         forwarderManager.onResume(unchangedHomeResume);
+        // History time-format changes in Settings must be visible immediately on returning
+        // Home, even when an unchanged Home resume intentionally skips History rescanning.
+        // Reuse the existing date/time overlay and currently rendered rows; no new worker.
+        if (historyDateNavigator != null) historyDateNavigator.onSurfaceChanged();
         SearchHandler.getInstance().onLauncherResumed(this);
 
         // Pasting shared text via intent-filter into kiss search bar
