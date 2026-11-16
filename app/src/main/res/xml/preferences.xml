@@ -30,6 +30,14 @@
             app:title="App history layout"
             app:useSimpleSummaryProvider="true" />
         <ListPreference
+            app:defaultValue="24h-h"
+            app:entries="@array/historyVisibleTimeEntries"
+            app:entryValues="@array/historyVisibleTimeValues"
+            app:key="history-visible-time-format"
+            app:title="Visible History time range format"
+            app:summary="Shows the actual time range of visible History items beside Today / Yesterday"
+            app:useSimpleSummaryProvider="true" />
+        <ListPreference
             app:defaultValue="auto_scroll"
             app:entries="@array/smartTextOverflowEntries"
             app:entryValues="@array/smartTextOverflowValues"

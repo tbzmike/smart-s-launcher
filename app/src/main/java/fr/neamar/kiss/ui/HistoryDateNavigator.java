@@ -14,6 +14,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AbsListView;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -40,7 +41,12 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
     private final AnimatedListView list;
     private final RecordAdapter adapter;
     private final TextView sectionLabel;
+    private final TextView timeRangeLabel;
+    private final LinearLayout sectionHeader;
     private final DateFastScrollView fastScroll;
+    private long lastStartMinute = Long.MIN_VALUE;
+    private long lastEndMinute = Long.MIN_VALUE;
+    private String lastTimeFormat = "";
     private boolean historyScrollbarMode;
     private int lastRepresentativePosition = -1;
     private final int originalListTopMargin;
@@ -57,8 +63,25 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         originalListTopMargin = initial instanceof FrameLayout.LayoutParams
                 ? ((FrameLayout.LayoutParams) initial).topMargin : 0;
 
+        // Both chips occupy ONE stable overlay row; the new time label never enters the
+        // History adapter, changes item positions, or intercepts any History row gestures.
         sectionLabel = buildSectionLabel(activity);
-        sectionLabel.addOnLayoutChangeListener((view, left, top, right, bottom,
+        timeRangeLabel = buildSectionLabel(activity);
+        timeRangeLabel.setContentDescription("Visible History time range");
+        timeRangeLabel.setVisibility(View.GONE);
+        sectionHeader = new LinearLayout(activity);
+        sectionHeader.setOrientation(LinearLayout.HORIZONTAL);
+        sectionHeader.setGravity(Gravity.CENTER);
+        sectionHeader.setClipChildren(false);
+        sectionHeader.setClipToPadding(false);
+        sectionHeader.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        sectionHeader.addView(sectionLabel, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams timeParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        timeParams.setMarginStart(dp(activity, 7));
+        sectionHeader.addView(timeRangeLabel, timeParams);
+        sectionHeader.addOnLayoutChangeListener((view, left, top, right, bottom,
                 oldLeft, oldTop, oldRight, oldBottom) -> {
             if (bottom - top != oldBottom - oldTop) {
                 reserveHeaderSpace(isHistorySurface() && adapter.getCount() > 0);
@@ -72,7 +95,7 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     Gravity.TOP | Gravity.CENTER_HORIZONTAL);
             labelParams.topMargin = dp(activity, 8);
-            ((FrameLayout) host).addView(sectionLabel, labelParams);
+            ((FrameLayout) host).addView(sectionHeader, labelParams);
 
             FrameLayout.LayoutParams scrollParams = new FrameLayout.LayoutParams(
                     dp(activity, 180),
@@ -80,7 +103,7 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
                     Gravity.END);
             ((FrameLayout) host).addView(fastScroll, scrollParams);
         } else {
-            host.addView(sectionLabel);
+            host.addView(sectionHeader);
             host.addView(fastScroll);
         }
 
@@ -92,6 +115,8 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
 
     public void onDataChanged() {
         lastRepresentativePosition = -1;
+        lastStartMinute = Long.MIN_VALUE;
+        lastEndMinute = Long.MIN_VALUE;
         list.removeCallbacks(scheduledRefresh);
         list.post(scheduledRefresh);
     }
@@ -107,8 +132,8 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         reserveHeaderSpace(false);
         historyScrollbarMode = false;
         lastRepresentativePosition = -1;
-        ViewGroup labelParent = (ViewGroup) sectionLabel.getParent();
-        if (labelParent != null) labelParent.removeView(sectionLabel);
+        ViewGroup labelParent = (ViewGroup) sectionHeader.getParent();
+        if (labelParent != null) labelParent.removeView(sectionHeader);
         ViewGroup scrollParent = (ViewGroup) fastScroll.getParent();
         if (scrollParent != null) scrollParent.removeView(fastScroll);
     }
@@ -145,6 +170,10 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         if (!history || totalCount <= 0) {
             lastRepresentativePosition = -1;
             sectionLabel.setVisibility(View.GONE);
+            timeRangeLabel.setVisibility(View.GONE);
+            sectionHeader.setVisibility(View.GONE);
+            lastStartMinute = Long.MIN_VALUE;
+            lastEndMinute = Long.MIN_VALUE;
             fastScroll.setVisibility(View.GONE);
             return;
         }
@@ -158,6 +187,8 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
             }
         }
         sectionLabel.setVisibility(View.VISIBLE);
+        sectionHeader.setVisibility(View.VISIBLE);
+        refreshVisibleTimeRange(firstVisible, visibleCount, totalCount, representative);
 
         boolean canFastScroll = totalCount >= MIN_FAST_SCROLL_ITEMS;
         fastScroll.setVisibility(canFastScroll ? View.VISIBLE : View.GONE);
@@ -166,12 +197,83 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         }
     }
 
+    /**
+     * Render only the visible rows that belong to the date chip's current local day.
+     * Missing/legacy timestamps are skipped: there is never a fabricated time.
+     *
+     * Called by the existing ListView scroll listener. No DB query, service, polling timer,
+     * adapter rebinding, or second scroll listener is involved.
+     */
+    private void refreshVisibleTimeRange(int firstVisible, int visibleCount,
+                                         int totalCount, int representative) {
+        if (visibleCount <= 0 || list.getChildCount() <= 0) {
+            timeRangeLabel.setVisibility(View.GONE);
+            return;
+        }
+        long dateTimestamp = timestampAt(representative);
+        if (dateTimestamp <= 0L) {
+            timeRangeLabel.setVisibility(View.GONE);
+            return;
+        }
+
+        java.util.Calendar startOfDay = java.util.Calendar.getInstance();
+        startOfDay.setTimeInMillis(dateTimestamp);
+        startOfDay.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        startOfDay.set(java.util.Calendar.MINUTE, 0);
+        startOfDay.set(java.util.Calendar.SECOND, 0);
+        startOfDay.set(java.util.Calendar.MILLISECOND, 0);
+        long dayStart = startOfDay.getTimeInMillis();
+        startOfDay.add(java.util.Calendar.DAY_OF_MONTH, 1);
+        long dayEnd = startOfDay.getTimeInMillis();
+
+        HistoryTimeRange timeRange = new HistoryTimeRange();
+        int count = Math.min(visibleCount, list.getChildCount());
+        for (int childIndex = 0; childIndex < count; childIndex++) {
+            View child = list.getChildAt(childIndex);
+            int position = firstVisible + childIndex;
+            if (child == null || child.getBottom() <= 0 || child.getTop() >= list.getHeight()
+                    || position < 0 || position >= totalCount || position >= adapter.getCount()) {
+                continue;
+            }
+            long timestamp = timestampAt(position);
+            if (timestamp >= dayStart && timestamp < dayEnd) {
+                timeRange.include(timestamp);
+            }
+        }
+        if (!timeRange.hasTime()) {
+            timeRangeLabel.setVisibility(View.GONE);
+            return;
+        }
+
+        String format = PreferenceManager.getDefaultSharedPreferences(activity)
+                .getString(HistoryTimeRange.PREF_FORMAT, HistoryTimeRange.FORMAT_24H_H);
+        long startMinute = timeRange.startMinute();
+        long endMinute = timeRange.endMinute();
+        if (startMinute != lastStartMinute || endMinute != lastEndMinute
+                || !format.equals(lastTimeFormat)) {
+            lastStartMinute = startMinute;
+            lastEndMinute = endMinute;
+            lastTimeFormat = format;
+            String label = timeRange.format(format,
+                    activity.getResources().getConfiguration().locale,
+                    java.util.TimeZone.getDefault());
+            if (!label.contentEquals(timeRangeLabel.getText())) timeRangeLabel.setText(label);
+        }
+        timeRangeLabel.setVisibility(View.VISIBLE);
+    }
+
+    private long timestampAt(int position) {
+        if (position < 0 || position >= adapter.getCount()) return 0L;
+        Result<?> result = adapter.getItem(position);
+        return result == null ? 0L : UniversalHistoryTimestamp.resolveHistoryTimestamp(result);
+    }
+
     /** Keep the Today/Yesterday header above rows, not painted over notification text. */
     private void reserveHeaderSpace(boolean history) {
         ViewGroup.LayoutParams raw = list.getLayoutParams();
         if (!(raw instanceof FrameLayout.LayoutParams)) return;
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) raw;
-        int header = Math.max(dp(activity, 44), sectionLabel.getHeight() + dp(activity, 16));
+        int header = Math.max(dp(activity, 44), sectionHeader.getHeight() + dp(activity, 16));
         int wanted = originalListTopMargin + (history ? header : 0);
         if (lp.topMargin != wanted) {
             lp.topMargin = wanted;
@@ -225,6 +327,9 @@ public final class HistoryDateNavigator implements AbsListView.OnScrollListener 
         list.setSelectionFromTop(position, sectionLabel.getHeight() + dp(activity, 10));
         fastScroll.setBubbleText(labelForPosition(position));
         sectionLabel.setText(labelForPosition(position));
+        // ScrollView layout is updated asynchronously after setSelectionFromTop().
+        list.removeCallbacks(scheduledRefresh);
+        list.post(scheduledRefresh);
     }
 
     private static TextView buildSectionLabel(Context context) {
