@@ -122,7 +122,9 @@ public final class VisibleHistoryTime199IntegrationTest {
                     activity.list.setTranscriptMode(
                             android.widget.AbsListView.TRANSCRIPT_MODE_DISABLED);
                     activity.adapter.updateResults(activity, items, false, "");
-                    activity.list.post(() -> activity.list.setSelectionFromTop(0, 0));
+                    // Start at the natural newest History viewport. A real scrollListBy()
+                    // movement will then exercise the existing OnScrollListener.
+                    activity.list.post(() -> activity.list.scrollListBy(100_000));
                 });
                 Thread.sleep(450);
                 scenario.onActivity(activity -> {
@@ -133,15 +135,18 @@ public final class VisibleHistoryTime199IntegrationTest {
                     assertEquals(View.VISIBLE, time.getVisibility());
                     assertEquals(View.VISIBLE, date.getVisibility());
                     assertEquals("Today", date.getText().toString());
-                    assertTrue("First measurement must actually show the older viewport",
-                            activity.list.getFirstVisiblePosition() <= 3);
+                    assertTrue("First sample must show the newest viewport; got "
+                                    + activity.list.getFirstVisiblePosition(),
+                            activity.list.getFirstVisiblePosition() >= 12);
                     displayed[0] = time.getText().toString();
                     dates[0] = date.getText().toString();
                     assertTrue("First visible History events must show their 10 AM timestamps",
                             displayed[0].startsWith("10h"));
                     assertTrue("Navigator must keep date and time in a shared header",
                             time.getParent() == date.getParent());
-                    activity.list.setSelectionFromTop(18, 0);
+                    // This is a physical ListView scrolling operation, not merely
+                    // repositioning the selected adapter item.
+                    activity.list.scrollListBy(-100_000);
                 });
                 Thread.sleep(450);
                 scenario.onActivity(activity -> {
@@ -149,8 +154,9 @@ public final class VisibleHistoryTime199IntegrationTest {
                     displayed[1] = field(nav, "timeRangeLabel").getText().toString();
                     dates[1] = field(nav, "sectionLabel").getText().toString();
                     assertEquals("Today", dates[1]);
-                    assertTrue("Second measurement must be taken from a different scroll position",
-                            activity.list.getFirstVisiblePosition() >= 12);
+                    assertTrue("Second sample must show older History; got "
+                                    + activity.list.getFirstVisiblePosition(),
+                            activity.list.getFirstVisiblePosition() <= 3);
                     assertTrue(displayed[1].startsWith("10h"));
                     assertNotEquals("Time must follow viewport instead of staying at first rows",
                             displayed[0], displayed[1]);
