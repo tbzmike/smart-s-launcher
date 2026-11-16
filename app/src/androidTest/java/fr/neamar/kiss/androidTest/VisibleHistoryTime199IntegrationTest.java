@@ -84,8 +84,13 @@ public final class VisibleHistoryTime199IntegrationTest {
                                         + i * 60_000L);
                         items.add(Result.fromPojo(activity, p));
                     }
+                    // The launcher deliberately anchors new History to the newest item.
+                    // Disable only that test-time transcript behaviour so two distinct
+                    // viewport positions can be measured deterministically.
+                    activity.list.setTranscriptMode(
+                            android.widget.AbsListView.TRANSCRIPT_MODE_DISABLED);
                     activity.adapter.updateResults(activity, items, false, "");
-                    activity.list.setSelectionFromTop(0, 0);
+                    activity.list.post(() -> activity.list.setSelectionFromTop(0, 0));
                 });
                 Thread.sleep(450);
                 scenario.onActivity(activity -> {
@@ -96,6 +101,8 @@ public final class VisibleHistoryTime199IntegrationTest {
                     assertEquals(View.VISIBLE, time.getVisibility());
                     assertEquals(View.VISIBLE, date.getVisibility());
                     assertEquals("Today", date.getText().toString());
+                    assertTrue("First measurement must actually show the older viewport",
+                            activity.list.getFirstVisiblePosition() <= 3);
                     displayed[0] = time.getText().toString();
                     dates[0] = date.getText().toString();
                     assertTrue("First visible History events must show their 10 AM timestamps",
@@ -110,6 +117,8 @@ public final class VisibleHistoryTime199IntegrationTest {
                     displayed[1] = field(nav, "timeRangeLabel").getText().toString();
                     dates[1] = field(nav, "sectionLabel").getText().toString();
                     assertEquals("Today", dates[1]);
+                    assertTrue("Second measurement must be taken from a different scroll position",
+                            activity.list.getFirstVisiblePosition() >= 12);
                     assertTrue(displayed[1].startsWith("10h"));
                     assertNotEquals("Time must follow viewport instead of staying at first rows",
                             displayed[0], displayed[1]);
