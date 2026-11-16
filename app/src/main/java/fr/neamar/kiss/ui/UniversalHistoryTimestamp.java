@@ -46,6 +46,7 @@ public final class UniversalHistoryTimestamp {
     private static final AtomicLong STATS_GENERATION = new AtomicLong();
     private static final WeakHashMap<TextView, Boolean> STYLED_VIEWS = new WeakHashMap<>();
     private static volatile Map<String, LaunchStatsProvider.LaunchStats> launchStats;
+    private static volatile Map<String, Long> recordedHistoryEventTimes = Collections.emptyMap();
     private static volatile AppUsageTodayStore.Snapshot usageSnapshot;
 
     private UniversalHistoryTimestamp() {}
@@ -155,6 +156,15 @@ public final class UniversalHistoryTimestamp {
         return copy;
     }
 
+    /**
+     * Called only after an authoritative History search has successfully published
+     * its adapter. The input map is already immutable and never mutated thereafter.
+     */
+    public static void updateRecordedHistoryEventTimes(Map<String, Long> eventTimes) {
+        recordedHistoryEventTimes = eventTimes == null
+                ? Collections.emptyMap() : eventTimes;
+    }
+
     private static long resolveTimestamp(Pojo pojo, LaunchStatsProvider.LaunchStats stats) {
         if (pojo instanceof NotificationPojo) {
             long posted = ((NotificationPojo) pojo).postTime;
@@ -164,6 +174,11 @@ public final class UniversalHistoryTimestamp {
             long eventTime = ((CommunicationPojo) pojo).timestamp;
             if (eventTime > 0L) return eventTime;
         }
+        // An app and its wrapper shortcut may share merged launch counts; their
+        // actual History events remain separate and must NOT inherit one another's time.
+        String id = pojo.getHistoryId();
+        Long recorded = id == null ? null : recordedHistoryEventTimes.get(id);
+        if (recorded != null && recorded > 0L) return recorded;
         return stats == null ? 0L : Math.max(0L, stats.lastLaunchTime);
     }
 

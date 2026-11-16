@@ -46,6 +46,14 @@ public class HistorySearcher extends Searcher {
     private final CancellationSignal databaseCancellation = new CancellationSignal();
     private NotificationProvider notificationProvider;
     private List<ShortcutRecord> shortcutRecords;
+    // The strict RECENCY query already reads each item's exact latest event timestamp.
+    // Reuse that immutable snapshot for the visible date/time chip; no new SQLite pass.
+    private volatile Map<String, Long> recordedEventTimes = java.util.Collections.emptyMap();
+
+    public Map<String, Long> getRecordedEventTimes() {
+        return recordedEventTimes;
+    }
+
     private Map<String, AppCatalogRecord> rememberedAppsByHistoryId;
     private Map<String, UserHandle> rememberedAppUsersByHistoryId;
 
@@ -157,6 +165,10 @@ public class HistorySearcher extends Searcher {
             launchTimes.put(record.record, record.timestamp);
             launchSequences.put(record.record, record.sequence);
         }
+
+        // Publish only after the successful DB read; cancelled workers never install
+        // an incomplete timestamp map in the live History overlay.
+        recordedEventTimes = java.util.Collections.unmodifiableMap(launchTimes);
 
         // One invariant for the entire visible History: sort every row by its real event time.
         // Apps/shortcuts use their last launch time; notifications use postTime. Search relevance,

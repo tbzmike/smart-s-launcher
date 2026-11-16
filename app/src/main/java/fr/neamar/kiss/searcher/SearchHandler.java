@@ -273,6 +273,14 @@ public class SearchHandler {
         runningSearch.setSearchDoneCallback((searcher, isCancelled) -> {
             if (!isCancelled) {
                 completedSearchGeneration.set(generation);
+                if (startedType == Searcher.Type.HISTORY && generation == searchGeneration.get()
+                        && searcher instanceof HistorySearcher) {
+                    // The adapter has already been published on this UI turn.
+                    // Date/Time uses the same exact recorded event IDs as the History
+                    // sort, not the potentially merged app/wrapper usage totals.
+                    fr.neamar.kiss.ui.UniversalHistoryTimestamp.updateRecordedHistoryEventTimes(
+                            ((HistorySearcher) searcher).getRecordedEventTimes());
+                }
                 if (startedType == Searcher.Type.HISTORY) {
                     // Home's authoritative History is already rendered. Warm the persisted
                     // query-recall index afterwards on the existing low-priority seed worker.
