@@ -23,6 +23,7 @@ import java.util.Calendar;
 import java.util.List;
 
 import fr.neamar.kiss.MainActivity;
+import fr.neamar.kiss.KissApplication;
 import fr.neamar.kiss.pojo.NotificationPojo;
 import fr.neamar.kiss.result.Result;
 import fr.neamar.kiss.searcher.SearchHandler;
@@ -66,6 +67,10 @@ public final class VisibleHistoryTime199IntegrationTest {
                     .putString(HistoryTimeRange.PREF_FORMAT, HistoryTimeRange.FORMAT_24H_H)
                     .putBoolean("history-hide", false).commit());
             try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+                BaselineBehaviorTest.await(scenario,
+                        activity -> KissApplication.getApplication(activity)
+                                .getDataHandler().isAllProvidersLoaded(),
+                        "History time test providers ready");
                 BaselineBehaviorTest.awaitHistory(scenario);
                 scenario.onActivity(activity -> {
                     SearchHandler.getInstance().cancelSearch();
