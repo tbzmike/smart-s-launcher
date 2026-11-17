@@ -383,7 +383,7 @@ final class HistoryDisplayForwarder extends Forwarder {
             resetWheelTransform(shell);
             shell.setCameraDistance(
                     mainActivity.getResources().getDisplayMetrics().density * 8000f);
-            bindResultInteraction(shell, position);
+            bindResultInteraction(shell, position, source);
 
             // 3D transforms run on the shell; never stack a second tile animation on
             // each nested content view during an initial/history rebuild. That many
@@ -528,10 +528,11 @@ final class HistoryDisplayForwarder extends Forwarder {
         }
     }
 
-    private void bindResultInteraction(View row, int adapterPosition) {
-        // The wheel reuses shells as its window moves. Capture the real item being rendered,
-        // never treat the old adapter position as an identity for locked-mode inspection.
-        fr.neamar.kiss.result.Result<?> bound = mainActivity.adapter.getItem(adapterPosition);
+    private void bindResultInteraction(View row, int adapterPosition, View source) {
+        // Use the Result that actually painted this shell, not a second positional lookup.
+        Object identity = source.getTag(R.id.smart_s_bound_history_result);
+        fr.neamar.kiss.result.Result<?> bound = identity instanceof fr.neamar.kiss.result.Result
+                ? (fr.neamar.kiss.result.Result<?>) identity : null;
         row.setOnClickListener(v -> mainActivity.adapter.onClick(adapterPosition, v));
         row.setOnLongClickListener(v -> {
             if (fr.neamar.kiss.preference.UiEditLock.isLocked(mainActivity)) {

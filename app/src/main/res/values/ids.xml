@@ -2,4 +2,5 @@
 <resources>
     <item name="smart_s_icon_bind_token" type="id" />
     <item name="smart_s_icon_idle_loader" type="id" />
+    <item name="smart_s_bound_history_result" type="id" />
 </resources>

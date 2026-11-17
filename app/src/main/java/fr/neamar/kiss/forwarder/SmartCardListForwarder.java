@@ -752,7 +752,10 @@ final class SmartCardListForwarder extends Forwarder {
 
         if (pojo instanceof NotificationPojo) {
             NotificationPojo n = (NotificationPojo) pojo;
-            signature.append('|').append(n.postTime)
+            signature.append('|').append(n.packageName)
+                    .append('|').append(n.exactNotificationId)
+                    .append('|').append(n.groupKey)
+                    .append('|').append(n.postTime)
                     .append('|').append(n.notificationCount)
                     .append('|').append(n.latestTitle)
                     .append('|').append(n.latestText);

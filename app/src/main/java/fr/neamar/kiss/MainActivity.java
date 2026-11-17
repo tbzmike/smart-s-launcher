@@ -411,10 +411,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         }
 
         this.list.setOnItemClickListener((parent, v, position, id) -> adapter.onClick(position, v));
-        this.list.setOnItemLongClickListener((parent, v, pos, id) -> {
-            adapter.onLongClick(pos, v);
-            return true;
-        });
+        this.list.setOnItemLongClickListener((parent, v, pos, id) ->
+                adapter.onListItemLongClick(pos, v));
 
         // Clear text content when touching the cross button
         clearButton.setOnClickListener(v -> clearSearchText());

@@ -64,8 +64,11 @@ public final class NotificationHistoryResolver {
     public static boolean showLockedForPojo(Context context, Pojo pojo) {
         if (context == null || pojo == null) return false;
 
-        String packageName = resolvePackage(context, pojo);
-        if (packageName == null) return false;
+        // A live exact notification can be long-pressed before its history write finishes.
+        // Its package is explicit, so do not gate that exact lookup on older saved history.
+        String packageName = pojo instanceof NotificationPojo
+                ? ((NotificationPojo) pojo).packageName : resolvePackage(context, pojo);
+        if (TextUtils.isEmpty(packageName)) return false;
 
         if (pojo instanceof NotificationPojo) {
             NotificationPojo notification = (NotificationPojo) pojo;

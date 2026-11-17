@@ -169,7 +169,15 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         // icon. This avoids relying on ListView's parent item-click dispatch after we made icons
         // long-clickable in 3.30.142; that combination caused single taps to be swallowed or require
         // repeated presses. Notification rows keep their specialized exact-message routing below.
-        configureStandardRowActions(view, result);
+        // Binding identity and interaction is mandatory even when expensive presentation
+        // work is skipped. Recycled notification views otherwise retain the previous
+        // event's long-press listener (and inconsistent normal-tap routing).
+        view.setTag(R.id.smart_s_bound_history_result, result);
+        if (result.getPojo() instanceof NotificationPojo) {
+            configureNotificationTileClick(view, result);
+        } else {
+            configureStandardRowActions(view, result);
+        }
 
         // HARD scroll freeze for native Vertical List. Result.display() performs only the minimum
         // identity/text bind; every optional decorator below is skipped until a later normal bind.
@@ -199,7 +207,6 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             configureOverflowText(view);
             overflowConfigured.put(view, overflowMode);
         }
-        if (result.getPojo() instanceof NotificationPojo) configureNotificationTileClick(view, result);
         if (parent instanceof AbsListView) {
             Context context = renderContext;
             TileVisualStyle.apply(view, result, context);
@@ -412,7 +419,7 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
      * not touch the exact saved notification destination, so an expired route cannot break an
      * ordinary app-icon tap.
      */
-    private void openNotificationApp(Result<?> result, NotificationPojo notification, View source) {
+    protected void openNotificationApp(Result<?> result, NotificationPojo notification, View source) {
         if (result == null || notification == null || source == null) return;
         SearchHandler.getInstance().cancelSearch();
         Context context = source.getContext();
@@ -1103,6 +1110,17 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
         int current = results.indexOf(bound);
         if (current < 0) return false;
         onLongClick(current, anchor);
+        return true;
+    }
+
+    /** The native ListView's long-click callback may report a newly shifted adapter index. */
+    public boolean onListItemLongClick(int position, View row) {
+        if (row == null) return false;
+        if (UiEditLock.isLocked(row.getContext())) {
+            Object bound = row.getTag(R.id.smart_s_bound_history_result);
+            return bound instanceof Result && onBoundResultLongClick((Result<?>) bound, row);
+        }
+        onLongClick(position, row);
         return true;
     }
 
