@@ -101,3 +101,5 @@ tasks.withType(JavaCompile).configureEach {
 tasks.withType(Test).configureEach {
     useJUnitPlatform()
 }
+
+// CI retry after restoring the verified Gradle plugin repository configuration.
