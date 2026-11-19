@@ -9,8 +9,10 @@ import androidx.preference.PreferenceManager;
 
 public final class BatteryMonitorStarter {
     public static final String PREF_ENABLED = "smart-battery-monitor-enabled";
-    private static final java.util.concurrent.atomic.AtomicBoolean START_PENDING =
-            new java.util.concurrent.atomic.AtomicBoolean();
+    // Widgets and activities can request monitoring at the same time. Treat service startup as
+    // an idempotent state transition: one pending start, then one running service, not repeated
+    // startForegroundService calls that keep resetting its sampling schedule.
+    private static final BatteryMonitorStartGate START_GATE = new BatteryMonitorStartGate();
 
     private BatteryMonitorStarter() {}
 
@@ -34,17 +36,21 @@ public final class BatteryMonitorStarter {
     public static void stopRunning(Context context) {
         // Android must deliver an outstanding startForegroundService request before it can be
         // stopped safely. The service acknowledges that request and immediately stops if OFF.
-        if (!START_PENDING.get()) context.stopService(new Intent(context, BatteryMonitorService.class));
+        if (!START_GATE.isStartPending()) {
+            context.stopService(new Intent(context, BatteryMonitorService.class));
+        }
     }
 
-    static void startHandled() { START_PENDING.set(false); }
+    static void startHandled() { START_GATE.onStartHandled(); }
+
+    static void serviceStopped() { START_GATE.onServiceStopped(); }
 
     public static void ensureRunning(Context context) {
         if (!PreferenceManager.getDefaultSharedPreferences(context)
                 .getBoolean(PREF_ENABLED, false)) return;
+        if (!START_GATE.requestStart()) return;
         Intent intent = new Intent(context, BatteryMonitorService.class)
                 .setAction(BatteryMonitorService.ACTION_START);
-        START_PENDING.set(true);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ContextCompat.startForegroundService(context, intent);
@@ -52,7 +58,7 @@ public final class BatteryMonitorStarter {
                 context.startService(intent);
             }
         } catch (RuntimeException ignored) {
-            START_PENDING.set(false);
+            START_GATE.onStartFailed();
             // Android may temporarily block background FGS starts. The next launcher/widget foreground
             // interaction will retry without crashing the launcher.
         }
