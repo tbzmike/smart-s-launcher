@@ -39,8 +39,8 @@ public final class BatteryMonitorService extends Service {
 
     // Event-first telemetry: preserve useful history and alerts without continuously polling.
     private static final long SAMPLE_CHARGING_MS = 2L * 60_000L;
-    private static final long SAMPLE_SCREEN_ON_MS = 5L * 60_000L;
-    private static final long SAMPLE_SCREEN_OFF_MS = 15L * 60_000L;
+    private static final long SAMPLE_SCREEN_ON_MS = 2L * 60_000L;
+    private static final long SAMPLE_SCREEN_OFF_MS = 3L * 60_000L;
     private static final long SAMPLE_LOW_SCREEN_OFF_MS = 5L * 60_000L;
     private static final long LIVE_ACTIVE_REFRESH_MS = 60_000L;
     private static final long LIVE_IDLE_REFRESH_MS = 5L * 60_000L;
@@ -202,6 +202,7 @@ public final class BatteryMonitorService extends Service {
 
     @Override public void onDestroy() {
         stopping = true;
+        BatteryMonitorStarter.serviceStopped();
         Handler localHandler = handler;
         if (localHandler != null) localHandler.removeCallbacksAndMessages(null);
         if (receiverRegistered) {
@@ -421,7 +422,7 @@ public final class BatteryMonitorService extends Service {
     }
 
     private String formatPercentRate(double value) {
-        if (Double.isNaN(value)) return "measuring";
+        if (Double.isNaN(value)) return "Not enough stable samples";
         return String.format(Locale.US, "%+.1f%%/h", value);
     }
 
