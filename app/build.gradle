@@ -19,8 +19,8 @@ android {
             version = release(36)
         }
         // Smart S Launcher 3.30.201 - 3.30.200 battery monitor and launcher lifecycle stability fixes
-        versionCode 630
-        versionName "3.30.201"
+        versionCode 631
+        versionName "3.30.202"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
