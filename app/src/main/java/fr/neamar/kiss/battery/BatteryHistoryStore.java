@@ -237,6 +237,23 @@ public final class BatteryHistoryStore extends SQLiteOpenHelper {
         return out;
     }
 
+    public List<SamplePoint> samplesBetween(long startMs, long endMs) {
+        List<SamplePoint> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT ts,level,charging,screen_on,temp,current_ua,charge_uah FROM samples "
+                        + "WHERE ts>=? AND ts<=? ORDER BY ts ASC",
+                new String[]{Long.toString(startMs), Long.toString(endMs)});
+        try {
+            while (c.moveToNext()) {
+                out.add(new SamplePoint(c.getLong(0), c.getInt(1), c.getInt(2) != 0,
+                        c.getInt(3) != 0, c.isNull(4) ? Float.NaN : c.getFloat(4),
+                        c.isNull(5) ? Long.MIN_VALUE : c.getLong(5),
+                        c.isNull(6) ? Long.MIN_VALUE : c.getLong(6)));
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
     public CurrentSessionStats currentSessionStats(BatterySnapshot current) {
         List<SamplePoint> points = recentSamples(48L * 60L * 60L * 1000L, 1500);
         if (current.percent() >= 0
