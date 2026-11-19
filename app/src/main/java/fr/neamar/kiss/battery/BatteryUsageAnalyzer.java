@@ -61,16 +61,17 @@ public final class BatteryUsageAnalyzer {
     }
 
     public static String likelyDrainCause(Context context, long windowMs) {
-        if (!hasUsageAccess(context)) return "Usage Access is off";
+        if (!hasUsageAccess(context)) return "Usage Access is off; app activity correlation is unavailable.";
         List<AppDrainCandidate> candidates = candidates(context, Math.max(5 * 60_000L, windowMs));
-        if (candidates.isEmpty()) return "No active app identified";
+        if (candidates.isEmpty()) return "No app activity was identified in this window. Device-wide drain is confirmed only by battery telemetry.";
         AppDrainCandidate top = candidates.get(0);
         StringBuilder result = new StringBuilder();
-        result.append(top.label).append(" (active ").append(formatDuration(top.foregroundMs));
+        result.append("Most active app by time: ").append(top.label)
+                .append(" (foreground ").append(formatDuration(top.foregroundMs));
         if (top.foregroundServiceMs > 0) {
             result.append(", foreground service ").append(formatDuration(top.foregroundServiceMs));
         }
-        result.append(')');
+        result.append("). This is activity correlation only, not measured CPU use or battery consumption.");
         return result.toString();
     }
 
