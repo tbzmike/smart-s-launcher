@@ -3,7 +3,7 @@ name: Verify and release Smart S Launcher 3.30.201
 on:
   push:
     branches:
-      - fix/3.30.201-exact-history-long-press
+      - fix/3.30.201-battery-monitor-restart-stability
 
 permissions:
   contents: write
