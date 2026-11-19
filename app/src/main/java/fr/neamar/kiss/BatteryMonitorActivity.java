@@ -56,8 +56,14 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
 
     private final Runnable refresh = new Runnable() {
         @Override public void run() {
-            updateDashboard();
-            handler.postDelayed(this, 2000L);
+            try {
+                updateDashboard();
+            } catch (RuntimeException error) {
+                // A transient usage-stats/database/device-service failure must not terminate the
+                // refresh loop and leave stale dashboard values on screen forever.
+                if (live != null) live.setText("Battery information is temporarily unavailable. Retrying automatically.");
+            }
+            if (!isFinishing() && !isDestroyed()) handler.postDelayed(this, 15_000L);
         }
     };
 
@@ -232,7 +238,7 @@ public final class BatteryMonitorActivity extends AppCompatActivity {
                 + "\n24h average temperature: " + (Double.isNaN(avgTemp) ? "Not observed yet"
                 : String.format(Locale.US, "%.1f°C", avgTemp))
                 + "\nSmart alerts: high heat · high drain · slow charging · charge target"
-                + "\nHistory retention: 180 days · sampling: 1 min active/charging, 3 min screen-off");
+                + "\nHistory retention: 180 days · sampling: 2 min active/charging, 3 min screen-off");
 
         graph.setPoints(store.recentSamples(DAY_MS, 500));
         sessions.setText(formatSessions(store.recentSessions(8)));
