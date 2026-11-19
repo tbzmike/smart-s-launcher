@@ -146,7 +146,7 @@ jobs:
           cp SmartSLauncher.apk smart-s-launcher-3.30.202.apk
           cp release-input/app-debug.apk SmartSLauncher-debug.apk
           cp SmartSLauncher-debug.apk app-debug.apk
-          python3 scripts/prepare_updater_201.py
+          python3 scripts/prepare_updater_202.py
       - name: Publish verified APK
         shell: bash
         env:
@@ -162,7 +162,7 @@ jobs:
           else
             gh release create "$TAG" --latest --target "$GITHUB_SHA" \
               --title "Smart S Launcher v3.30.202" \
-              --notes "Repair stale notification long-press bindings when History rows are recycled during fast scrolling. Use the exact rendered item for locked UI, preserve unlocked context menus and standard app, shortcut, notification body and app-icon taps. Preserve 3.30.199 time indicator, cold-restart History, IceBox, Auto Data and persistent search recall. Android 15/16 popup and tap regression gates, lint and unit tests." \
+              --notes "Add clickable battery session diagnostics, time-bounded current/temperature/screen-state analysis, and honest activity-correlation wording. Preserve all 3.30.201 launcher fixes and battery monitor stability. Android 15/16 regression gates, lint and unit tests." \
               SmartSLauncher.apk SmartSLauncher-debug.apk smart-s-launcher-3.30.202.apk app-debug.apk latest-green.json
           fi
           gh release edit "$TAG" --latest --target "$GITHUB_SHA"
