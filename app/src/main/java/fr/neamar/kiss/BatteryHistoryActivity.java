@@ -1,6 +1,7 @@
 package fr.neamar.kiss;
 
 import android.graphics.Typeface;
+import android.app.AlertDialog;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -255,11 +256,75 @@ public final class BatteryHistoryActivity extends AppCompatActivity {
         }
         card.addView(detail);
 
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setOnClickListener(v -> showSessionDetails(s));
+
         ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         bar.setMax(100);
         bar.setProgress(Math.min(100, Math.abs(d)));
         card.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6)));
         return card;
+    }
+
+    private void showSessionDetails(BatteryHistoryStore.SessionSummary session) {
+        List<BatteryHistoryStore.SamplePoint> points =
+                store.samplesBetween(session.startMs, session.endMs);
+        double sumMa = 0d, peakMa = Double.NaN, minMa = Double.NaN;
+        float minTemp = Float.NaN, maxTemp = Float.NaN;
+        int currentCount = 0;
+        long screenOnMs = 0L, screenOffMs = 0L;
+        BatteryHistoryStore.SamplePoint previous = null;
+        String worstTime = "Unavailable";
+        for (BatteryHistoryStore.SamplePoint point : points) {
+            if (previous != null) {
+                long interval = Math.max(0L, point.ts - previous.ts);
+                if (previous.screenOn) screenOnMs += interval; else screenOffMs += interval;
+            }
+            if (point.currentUa != Long.MIN_VALUE) {
+                double ma = Math.abs(point.currentUa) / 1000.0;
+                sumMa += ma;
+                currentCount++;
+                if (Double.isNaN(peakMa) || ma > peakMa) {
+                    peakMa = ma;
+                    worstTime = new SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
+                            .format(new Date(point.ts));
+                }
+                if (Double.isNaN(minMa) || ma < minMa) minMa = ma;
+            }
+            if (!Float.isNaN(point.temp)) {
+                if (Float.isNaN(minTemp) || point.temp < minTemp) minTemp = point.temp;
+                if (Float.isNaN(maxTemp) || point.temp > maxTemp) maxTemp = point.temp;
+            }
+            previous = point;
+        }
+        String avg = currentCount == 0 ? "Unavailable"
+                : String.format(Locale.US, "%.0f mA", sumMa / currentCount);
+        String peak = Double.isNaN(peakMa) ? "Unavailable"
+                : String.format(Locale.US, "%.0f mA at %s", peakMa, worstTime);
+        String lowest = Double.isNaN(minMa) ? "Unavailable"
+                : String.format(Locale.US, "%.0f mA", minMa);
+        String temps = Float.isNaN(minTemp) ? "Unavailable"
+                : String.format(Locale.US, "%.1f°C – %.1f°C", minTemp, maxTemp);
+        String capacity = session.deliveredUah > 0
+                ? String.format(Locale.US, "%.0f mAh (estimated from capacity and level change)",
+                    session.deliveredUah / 1000.0) : "Unavailable";
+        String message = "Session: " + (session.charging ? "Charging" : "Discharging")
+                + "\nStart: " + new SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(new Date(session.startMs))
+                + "\nEnd: " + new SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(new Date(session.endMs))
+                + "\nDuration: " + duration(session.durationMs())
+                + "\nBattery: " + session.startLevel + "% → " + session.endLevel + "%"
+                + "\nAverage measured current: " + avg
+                + "\nHighest measured current: " + peak
+                + "\nLowest measured current: " + lowest
+                + "\nTemperature range: " + temps
+                + "\nScreen-on time: " + duration(screenOnMs)
+                + "\nScreen-off time: " + duration(screenOffMs)
+                + "\nEnergy/charge estimate: " + capacity
+                + "\nSamples available: " + points.size()
+                + "\n\nCPU/app attribution: Android does not provide reliable per-app power attribution to ordinary apps. See app activity correlation separately. Current readings are device-wide, not proof of which app consumed the power.";
+        new AlertDialog.Builder(this).setTitle("Battery session diagnostics")
+                .setMessage(message).setPositiveButton("Close", null).show();
     }
 
     private long screenOnMs(BatteryHistoryStore.SessionSummary s, List<BatteryHistoryStore.SamplePoint> points) {
