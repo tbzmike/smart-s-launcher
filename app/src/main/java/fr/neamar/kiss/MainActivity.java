@@ -1018,6 +1018,8 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     private void setGlobalTextSizePercent(int percent) {
         int clamped = Math.max(70, Math.min(160, percent));
+        // Do not tear down and recreate the launcher when the selected value is unchanged.
+        if (prefs.getInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, 100) == clamped) return;
         prefs.edit().putInt(PREF_GLOBAL_TEXT_SIZE_PERCENT, clamped).apply();
         recreate();
     }
