@@ -52,6 +52,13 @@ public final class BackupRestoreProgress {
         if (bounded != lastPercent) publish(bounded, operation + " " + bounded + "%");
     }
 
+    /** Publish a diagnostic detail even when the coarse percentage has not changed. */
+    public void setStatus(int percent, String detail) {
+        int bounded = Math.max(0, Math.min(99, percent));
+        String suffix = detail == null || detail.trim().isEmpty() ? "" : " — " + detail;
+        publish(bounded, operation + " " + bounded + "%" + suffix);
+    }
+
     public void complete() {
         completedSteps = totalSteps;
         publishFinished(100, operation.startsWith("Backing") ? "Backup complete" : "Restore complete");
