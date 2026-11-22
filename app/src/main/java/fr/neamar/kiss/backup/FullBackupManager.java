@@ -314,7 +314,7 @@ public final class FullBackupManager {
         if (raw == null) throw new IOException("Unable to open backup file");
         byte[] buffer = new byte[BUFFER_SIZE];
         long copied = 0L;
-        long lastReportedBytes = 0L;
+        AtomicLong lastReportedBytes = new AtomicLong(0L);
         BufferedInputStream in = new BufferedInputStream(raw, BUFFER_SIZE);
         AtomicLong lastReadAt = new AtomicLong(SystemClock.elapsedRealtime());
         AtomicBoolean stalledOut = new AtomicBoolean(false);
@@ -322,7 +322,7 @@ public final class FullBackupManager {
             long idleMs = SystemClock.elapsedRealtime() - lastReadAt.get();
             if (idleMs >= COPY_STALL_WARNING_MS && idleMs < COPY_STALL_ABORT_MS) {
                 progress.setStatus(total > 0L
-                                ? 1 + (int) Math.min(23L, (lastReportedBytes * 23L) / total) : 1,
+                                ? 1 + (int) Math.min(23L, (lastReportedBytes.get() * 23L) / total) : 1,
                         "No new bytes for " + (idleMs / 1000L)
                                 + "s; waiting for storage provider");
             } else if (idleMs >= COPY_STALL_ABORT_MS && stalledOut.compareAndSet(false, true)) {
@@ -346,7 +346,7 @@ public final class FullBackupManager {
                 if (copied > MAX_RESTORE_BYTES) throw new IOException("Backup file is too large");
                 // Report byte movement at 1 MiB intervals. The first stage occupies only
                 // 24 percentage points, so percent-only reporting can look frozen at 23%.
-                if (copied - lastReportedBytes >= 1024L * 1024L || (total > 0L && copied >= total)) {
+                if (copied - lastReportedBytes.get() >= 1024L * 1024L || (total > 0L && copied >= total)) {
                     int percent = total > 0L
                             ? 1 + (int) Math.min(23L, (copied * 23L) / total) : 1;
                     String detail = total > 0L
@@ -357,7 +357,7 @@ public final class FullBackupManager {
                     progress.setStatus(percent, detail);
                     Log.i(TAG, "Restore copy progress: " + copied + " / "
                             + (total > 0L ? total : -1L) + " bytes");
-                    lastReportedBytes = copied;
+                    lastReportedBytes.set(copied);
                 }
             }
             out.flush();
