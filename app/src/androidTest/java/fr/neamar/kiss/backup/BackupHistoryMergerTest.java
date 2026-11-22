@@ -48,9 +48,35 @@ public final class BackupHistoryMergerTest {
                 insertUsage(usageBackup, "usage-old", 100L, 5000L);
                 insertUsage(usageLive, "usage-new", 300L, 12000L);
                 insertUsage(usageLive, "usage-old", 100L, 5000L);
+                insertDailyUsage(usageBackup, 1000L, "example.app", 6000L);
+                insertDailyUsage(usageLive, 1000L, "example.app", 12000L);
+                insertPhoneState(usageBackup, 1000L, 3000L, 4000L, 2);
+                insertPhoneState(usageLive, 1000L, 5000L, 2000L, 4);
+                insertPackageState(usageBackup, "known.install", 100L, 200L);
+                insertPackageState(usageLive, "known.install", 0L, 300L);
+                insertPackageState(usageBackup, "missing.install", 0L, 200L);
+                insertPackageState(usageLive, "missing.install", 50L, 300L);
+                insertMeta(usageBackup, "sync_cursor", 5L);
+                insertMeta(usageLive, "sync_cursor", 9L);
 
                 BackupHistoryMerger.merge(usageBackup, usageLive, "smart_s_app_usage.db");
                 assertEquals(2, count(usageBackup, "timeline"));
+                assertEquals(12000L, scalarLong(usageBackup,
+                        "SELECT duration_ms FROM daily_usage WHERE day_ms=1000 AND package_name='example.app'"));
+                assertEquals(5000L, scalarLong(usageBackup,
+                        "SELECT screen_on_ms FROM daily_phone_state WHERE day_ms=1000"));
+                assertEquals(4000L, scalarLong(usageBackup,
+                        "SELECT screen_off_ms FROM daily_phone_state WHERE day_ms=1000"));
+                assertEquals(4L, scalarLong(usageBackup,
+                        "SELECT unlock_count FROM daily_phone_state WHERE day_ms=1000"));
+                assertEquals(100L, scalarLong(usageBackup,
+                        "SELECT first_install_ms FROM package_state WHERE package_name='known.install'"));
+                assertEquals(300L, scalarLong(usageBackup,
+                        "SELECT last_update_ms FROM package_state WHERE package_name='known.install'"));
+                assertEquals(50L, scalarLong(usageBackup,
+                        "SELECT first_install_ms FROM package_state WHERE package_name='missing.install'"));
+                assertEquals(9L, scalarLong(usageBackup,
+                        "SELECT CAST(meta_value AS INTEGER) FROM meta WHERE meta_key='sync_cursor'"));
                 try (SQLiteDatabase db = SQLiteDatabase.openDatabase(
                         usageBackup.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY);
                      Cursor cursor = db.rawQuery(
@@ -124,6 +150,47 @@ public final class BackupHistoryMergerTest {
                 file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
             db.execSQL("INSERT INTO timeline(event_key,start_ms,kind,duration_ms) VALUES(?,?,?,?)",
                     new Object[]{key, time, "APP_USAGE", duration});
+        }
+    }
+
+    private static void insertDailyUsage(File file, long day, String pkg, long duration) {
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(
+                file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
+            db.execSQL("INSERT INTO daily_usage(day_ms,package_name,duration_ms) VALUES(?,?,?)",
+                    new Object[]{day, pkg, duration});
+        }
+    }
+
+    private static void insertPhoneState(File file, long day, long on, long off, int unlocks) {
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(
+                file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
+            db.execSQL("INSERT INTO daily_phone_state(day_ms,screen_on_ms,screen_off_ms,unlock_count) "
+                    + "VALUES(?,?,?,?)", new Object[]{day, on, off, unlocks});
+        }
+    }
+
+    private static void insertPackageState(File file, String pkg, long first, long updated) {
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(
+                file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
+            db.execSQL("INSERT INTO package_state(package_name,first_install_ms,last_update_ms) "
+                    + "VALUES(?,?,?)", new Object[]{pkg, first, updated});
+        }
+    }
+
+    private static void insertMeta(File file, String key, long value) {
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(
+                file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
+            db.execSQL("INSERT INTO meta(meta_key,meta_value) VALUES(?,?)",
+                    new Object[]{key, Long.toString(value)});
+        }
+    }
+
+    private static long scalarLong(File file, String sql) {
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(
+                file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READONLY);
+             Cursor cursor = db.rawQuery(sql, null)) {
+            assertTrue(cursor.moveToFirst());
+            return cursor.getLong(0);
         }
     }
 
