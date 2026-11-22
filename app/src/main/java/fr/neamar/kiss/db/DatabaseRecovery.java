@@ -20,6 +20,8 @@ final class DatabaseRecovery {
 
     private static volatile SQLiteDatabase database;
     private static volatile long recoveryGeneration;
+    private static boolean restoreInProgress;
+    private static int activeOperations;
 
     private DatabaseRecovery() { }
 
@@ -34,24 +36,73 @@ final class DatabaseRecovery {
     }
 
     static <T> T run(@NonNull Context context, @NonNull Operation<T> operation) {
-        SQLiteDatabase attemptedDatabase = null;
-        long observedGeneration = recoveryGeneration;
+        beginOperation();
         try {
-            attemptedDatabase = getDatabase(context);
-            return operation.run(attemptedDatabase);
-        } catch (SQLiteDatabaseCorruptException corruption) {
-            recover(context, attemptedDatabase, corruption);
-            // Exactly one retry. If a fresh database also reports corruption, propagate that second
-            // exception instead of looping forever or hiding an underlying storage failure.
-            return operation.run(getDatabase(context));
-        } catch (RuntimeException failure) {
-            // A concurrent recovery may close the old handle while another DB caller is in-flight.
-            // Retry that caller once only when a recovery generation actually changed underneath it.
-            if (observedGeneration != recoveryGeneration) {
+            SQLiteDatabase attemptedDatabase = null;
+            long observedGeneration = recoveryGeneration;
+            try {
+                attemptedDatabase = getDatabase(context);
+                return operation.run(attemptedDatabase);
+            } catch (SQLiteDatabaseCorruptException corruption) {
+                recover(context, attemptedDatabase, corruption);
+                // Exactly one retry. If a fresh database also reports corruption, propagate that second
+                // exception instead of looping forever or hiding an underlying storage failure.
                 return operation.run(getDatabase(context));
+            } catch (RuntimeException failure) {
+                // A concurrent recovery may close the old handle while another DB caller is in-flight.
+                // Retry that caller once only when a recovery generation actually changed underneath it.
+                if (observedGeneration != recoveryGeneration) {
+                    return operation.run(getDatabase(context));
+                }
+                throw failure;
             }
-            throw failure;
+        } finally {
+            endOperation();
         }
+    }
+
+    private static void beginOperation() {
+        synchronized (LOCK) {
+            while (restoreInProgress) waitForRestore();
+            activeOperations++;
+        }
+    }
+
+    private static void endOperation() {
+        synchronized (LOCK) {
+            activeOperations = Math.max(0, activeOperations - 1);
+            LOCK.notifyAll();
+        }
+    }
+
+    static void beginRestore() {
+        synchronized (LOCK) {
+            restoreInProgress = true;
+            while (activeOperations > 0) waitForRestore();
+            SQLiteDatabase current = database;
+            database = null;
+            closeQuietly(current);
+        }
+    }
+
+    static void endRestore() {
+        synchronized (LOCK) {
+            restoreInProgress = false;
+            LOCK.notifyAll();
+        }
+    }
+
+    private static void waitForRestore() {
+        boolean interrupted = false;
+        while (true) {
+            try {
+                LOCK.wait();
+                break;
+            } catch (InterruptedException ignored) {
+                interrupted = true;
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt();
     }
 
     static void runVoid(@NonNull Context context, @NonNull VoidOperation operation) {
