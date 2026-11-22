@@ -327,7 +327,7 @@ public final class FullBackupManager {
                                 + "s; waiting for storage provider");
             } else if (idleMs >= COPY_STALL_ABORT_MS && stalledOut.compareAndSet(false, true)) {
                 progress.setStatus(total > 0L
-                                ? 1 + (int) Math.min(23L, (lastReportedBytes * 23L) / total) : 1,
+                                ? 1 + (int) Math.min(23L, (lastReportedBytes.get() * 23L) / total) : 1,
                         "Storage provider timed out; stopping incomplete copy");
                 try {
                     in.close();
