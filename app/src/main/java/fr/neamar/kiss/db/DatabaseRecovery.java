@@ -22,6 +22,7 @@ final class DatabaseRecovery {
     private static volatile long recoveryGeneration;
     private static boolean restoreInProgress;
     private static int activeOperations;
+    private static final ThreadLocal<Integer> OPERATION_DEPTH = new ThreadLocal<>();
 
     private DatabaseRecovery() { }
 
@@ -62,13 +63,25 @@ final class DatabaseRecovery {
     }
 
     private static void beginOperation() {
+        Integer depth = OPERATION_DEPTH.get();
+        if (depth != null && depth > 0) {
+            OPERATION_DEPTH.set(depth + 1);
+            return;
+        }
         synchronized (LOCK) {
             while (restoreInProgress) waitForRestore();
             activeOperations++;
+            OPERATION_DEPTH.set(1);
         }
     }
 
     private static void endOperation() {
+        Integer depth = OPERATION_DEPTH.get();
+        if (depth != null && depth > 1) {
+            OPERATION_DEPTH.set(depth - 1);
+            return;
+        }
+        OPERATION_DEPTH.remove();
         synchronized (LOCK) {
             activeOperations = Math.max(0, activeOperations - 1);
             LOCK.notifyAll();
