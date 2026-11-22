@@ -41,6 +41,8 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import fr.neamar.kiss.BuildConfig;
+import fr.neamar.kiss.appusage.AppUsageStore;
+import fr.neamar.kiss.db.DBHelper;
 import fr.neamar.kiss.utils.BackupRestoreProgress;
 import fr.neamar.kiss.utils.Log;
 
@@ -471,7 +473,13 @@ public final class FullBackupManager {
     private static void replacePersistentState(Context context, File staged, List<String> rootNames,
                                                BackupRestoreProgress progress) throws IOException {
         List<Replacement> replacements = new ArrayList<>();
+        boolean mainDatabaseGate = false;
+        boolean usageDatabaseGate = false;
         try {
+            DBHelper.beginFullRestoreDatabaseGate();
+            mainDatabaseGate = true;
+            AppUsageStore.beginFullRestoreDatabaseGate();
+            usageDatabaseGate = true;
             List<RootSpec> liveRoots = rootsFor(context);
             for (RootSpec root : liveRoots) {
                 if (!rootNames.contains(root.archiveName)) continue;
@@ -510,6 +518,9 @@ public final class FullBackupManager {
                 if (replacement.oldPath.exists()) replacement.oldPath.renameTo(replacement.livePath);
             }
             throw e;
+        } finally {
+            if (usageDatabaseGate) AppUsageStore.endFullRestoreDatabaseGate();
+            if (mainDatabaseGate) DBHelper.endFullRestoreDatabaseGate();
         }
     }
 
