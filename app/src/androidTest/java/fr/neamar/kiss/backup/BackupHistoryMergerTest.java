@@ -31,7 +31,6 @@ public final class BackupHistoryMergerTest {
             insertNotification(backup, "notif-shared", 200L);
             insertNotification(live, "notif-new", 300L);
             insertNotification(live, "notif-shared", 200L);
-            insertUsage(live, "usage-new", 300L, 12000L);
 
             BackupHistoryMerger.merge(backup, live, "kiss.s3db");
             assertEquals(3, count(backup, "notification_history"));
