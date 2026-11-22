@@ -361,6 +361,11 @@ public final class FullBackupManager {
                 }
             }
             out.flush();
+        } catch (IOException e) {
+            if (stalledOut.get()) {
+                throw new IOException("Backup file provider stopped responding for 120 seconds", e);
+            }
+            throw e;
         } finally {
             watchdog.cancel(false);
         }
