@@ -42,7 +42,7 @@ final class BackupHistoryMerger {
                 if ("kiss.s3db".equals(databaseName)) {
                     mergeTable(target, "notification_history",
                             new String[]{"notification_id", "post_time"});
-                    mergeTable(target, "history", new String[]{"record", "timeStamp"});
+                    mergeTable(target, "history", new String[]{"record"});
                 } else if ("smart_s_app_usage.db".equals(databaseName)) {
                     mergeTable(target, "timeline", new String[]{"event_key"});
                     mergeTable(target, "daily_usage", new String[]{"day_ms", "package_name"});
