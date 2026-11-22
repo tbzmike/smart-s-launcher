@@ -42,7 +42,7 @@ final class BackupHistoryMerger {
                 if ("kiss.s3db".equals(databaseName)) {
                     mergeTable(target, "notification_history",
                             new String[]{"notification_id", "post_time"});
-                    mergeTable(target, "history", new String[]{"record", "timeStamp"});
+                    mergeTable(target, "history", new String[]{"record", "timeStamp", "query"});
                 } else if ("smart_s_app_usage.db".equals(databaseName)) {
                     mergeTable(target, "timeline", new String[]{"event_key"});
                     mergeTable(target, "daily_usage", new String[]{"day_ms", "package_name"});
@@ -92,7 +92,7 @@ final class BackupHistoryMerger {
         }
         for (String key : keys) {
             if (identity.length() > 0) identity.append(" AND ");
-            identity.append("b.").append(q(key)).append("=s.").append(q(key));
+            identity.append("b.").append(q(key)).append(" IS s.").append(q(key));
         }
         db.execSQL("INSERT INTO main." + q(table) + " (" + joinQuoted(columns) + ") "
                 + "SELECT " + projection + " FROM " + LIVE_ALIAS + "." + q(table)
@@ -132,8 +132,14 @@ final class BackupHistoryMerger {
         List<String> columns = commonColumns(db, "package_state");
         if (!columns.containsAll(Arrays.asList("package_name", "first_install_ms", "last_update_ms"))) return;
         db.execSQL("UPDATE main.package_state SET "
-                + "first_install_ms=MIN(first_install_ms,COALESCE((SELECT s.first_install_ms FROM "
-                + LIVE_ALIAS + ".package_state s WHERE s.package_name=main.package_state.package_name),first_install_ms)),"
+                + "first_install_ms=CASE "
+                + "WHEN COALESCE((SELECT s.first_install_ms FROM " + LIVE_ALIAS
+                + ".package_state s WHERE s.package_name=main.package_state.package_name),0)<=0 "
+                + "THEN first_install_ms "
+                + "WHEN first_install_ms<=0 THEN (SELECT s.first_install_ms FROM " + LIVE_ALIAS
+                + ".package_state s WHERE s.package_name=main.package_state.package_name) "
+                + "ELSE MIN(first_install_ms,(SELECT s.first_install_ms FROM " + LIVE_ALIAS
+                + ".package_state s WHERE s.package_name=main.package_state.package_name)) END,"
                 + "last_update_ms=MAX(last_update_ms,COALESCE((SELECT s.last_update_ms FROM "
                 + LIVE_ALIAS + ".package_state s WHERE s.package_name=main.package_state.package_name),last_update_ms)) "
                 + "WHERE EXISTS (SELECT 1 FROM " + LIVE_ALIAS
