@@ -1,9 +1,7 @@
 name: Verify and release Smart S Launcher 3.30.202
 
 on:
-  push:
-    branches:
-      - fix/3.30.202-battery-diagnostics-session-details
+  workflow_dispatch:
 
 permissions:
   contents: write
