@@ -30,6 +30,8 @@ public final class AppUsageStore extends SQLiteOpenHelper {
     public static final long RETENTION_MS = 365L * 24L * 60L * 60L * 1000L;
 
     private static volatile AppUsageStore instance;
+    private static final Object RESTORE_LOCK = new Object();
+    private static boolean restoreInProgress;
 
     public static AppUsageStore get(@NonNull Context context) {
         if (instance == null) {
@@ -42,6 +44,64 @@ public final class AppUsageStore extends SQLiteOpenHelper {
 
     private AppUsageStore(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
+    }
+
+    /**
+     * Pause app-usage database access while FullBackupManager replaces the databases directory.
+     * Taking the instance monitor first lets any in-flight synchronized write finish before the
+     * gate is raised; later readers and writers wait and then reopen the newly installed database.
+     */
+    public static void beginFullRestoreDatabaseGate() {
+        synchronized (AppUsageStore.class) {
+            AppUsageStore current = instance;
+            if (current != null) {
+                synchronized (current) {
+                    synchronized (RESTORE_LOCK) {
+                        restoreInProgress = true;
+                    }
+                    current.close();
+                }
+            } else {
+                synchronized (RESTORE_LOCK) {
+                    restoreInProgress = true;
+                }
+            }
+        }
+    }
+
+    public static void endFullRestoreDatabaseGate() {
+        synchronized (RESTORE_LOCK) {
+            restoreInProgress = false;
+            RESTORE_LOCK.notifyAll();
+        }
+    }
+
+    private static void awaitRestoreComplete() {
+        synchronized (RESTORE_LOCK) {
+            boolean interrupted = false;
+            while (restoreInProgress) {
+                try {
+                    RESTORE_LOCK.wait();
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
+                }
+            }
+            if (interrupted) Thread.currentThread().interrupt();
+        }
+    }
+
+    @NonNull
+    @Override
+    public synchronized SQLiteDatabase getWritableDatabase() {
+        awaitRestoreComplete();
+        return super.getWritableDatabase();
+    }
+
+    @NonNull
+    @Override
+    public synchronized SQLiteDatabase getReadableDatabase() {
+        awaitRestoreComplete();
+        return super.getReadableDatabase();
     }
 
     @Override
