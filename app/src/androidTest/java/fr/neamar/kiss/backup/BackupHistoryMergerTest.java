@@ -77,7 +77,7 @@ public final class BackupHistoryMergerTest {
                     + "user_serial INTEGER NOT NULL DEFAULT -1,route_uri TEXT NOT NULL DEFAULT '',"
                     + "pending_intent_token TEXT NOT NULL DEFAULT '',locus_id TEXT NOT NULL DEFAULT '')");
             db.execSQL("CREATE TABLE history (_id INTEGER PRIMARY KEY AUTOINCREMENT,query TEXT,"
-                    + "record TEXT NOT NULL,timeStamp INTEGER NOT NULL DEFAULT 0)");
+                    + "record TEXT NOT NULL)");
         }
     }
 
@@ -104,8 +104,8 @@ public final class BackupHistoryMergerTest {
                 file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
             db.execSQL("INSERT INTO notification_history(notification_id,package,app_name,title,body,post_time) "
                     + "VALUES(?,?,?,?,?,?)", new Object[]{id, "example.app", "Example", id, "body", time});
-            db.execSQL("INSERT INTO history(query,record,timeStamp) VALUES(NULL,?,?)",
-                    new Object[]{"notification://" + id, time});
+            db.execSQL("INSERT INTO history(query,record) VALUES(NULL,?)",
+                    new Object[]{"notification://" + id});
         }
     }
 
