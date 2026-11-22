@@ -21,7 +21,8 @@ for test in \
   fr.neamar.kiss.androidTest.HistoryRestart198VerifyTest \
   fr.neamar.kiss.androidTest.LockedHistoryPopup196IntegrationTest \
   fr.neamar.kiss.androidTest.AutoDataWiring196IntegrationTest \
-  fr.neamar.kiss.db.SearchRecallDatabase195RegressionTest; do
+  fr.neamar.kiss.db.SearchRecallDatabase195RegressionTest \
+  fr.neamar.kiss.backup.BackupHistoryMergerTest; do
   echo "RUN $test"
   adb shell am force-stop com.tbzmike.smartslauncher.debug
   file="verification-results/$(echo "$test" | tr '.' '_').log"
