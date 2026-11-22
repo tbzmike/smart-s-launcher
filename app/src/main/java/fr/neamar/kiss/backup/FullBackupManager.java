@@ -132,13 +132,13 @@ public final class FullBackupManager {
             progress.setStatus(25, "File copied; checking archive");
 
             ArchiveInfo archiveInfo = inspectArchive(context, archive);
-            progress.setPercent(30);
+            progress.setStatus(30, "Extracting backup contents");
             extractArchive(archive, staged, archiveInfo.totalBytes, progress);
-            progress.setPercent(85);
+            progress.setStatus(85, "Checking extracted files");
 
             validateStaged(staged, archiveInfo.rootNames);
             validateRestoredTagLinks(staged, archiveInfo.hasTagLinks);
-            progress.setPercent(88);
+            progress.setStatus(88, "Installing restored data");
             replacePersistentState(context, staged, archiveInfo.rootNames, progress);
             progress.complete();
             toast(context, "Full Smart S restore complete. Restarting launcher…");
@@ -147,9 +147,10 @@ public final class FullBackupManager {
                 System.exit(0);
             }, 900L);
         } catch (IOException | JSONException | RuntimeException e) {
-            progress.fail();
+            progress.fail(e.getMessage());
             Log.e(TAG, "Full restore failed", e);
-            toast(context, "Restore failed. Existing Smart S data was kept whenever replacement had not completed.");
+            toast(context, "Restore failed: " + (e.getMessage() == null ? "see diagnostic log" : e.getMessage())
+                    + ". Existing Smart S data was kept whenever replacement had not completed.");
         } finally {
             deleteRecursively(working);
         }
