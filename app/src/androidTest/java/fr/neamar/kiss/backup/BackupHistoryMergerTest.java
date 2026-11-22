@@ -29,12 +29,14 @@ public final class BackupHistoryMergerTest {
             createMainDatabase(live);
             insertNotification(backup, "notif-old", 100L);
             insertNotification(backup, "notif-shared", 200L);
+            insertHistory(backup, "app://example.repeat-launch", 1000L);
             insertNotification(live, "notif-new", 300L);
             insertNotification(live, "notif-shared", 200L);
+            insertHistory(live, "app://example.repeat-launch", 2000L);
 
             BackupHistoryMerger.merge(backup, live, "kiss.s3db");
             assertEquals(3, count(backup, "notification_history"));
-            assertEquals(3, count(backup, "history"));
+            assertEquals(5, count(backup, "history"));
 
             File usageBackup = new File(directory, "usage-merge-backup.db");
             File usageLive = new File(directory, "usage-merge-live.db");
@@ -77,7 +79,7 @@ public final class BackupHistoryMergerTest {
                     + "user_serial INTEGER NOT NULL DEFAULT -1,route_uri TEXT NOT NULL DEFAULT '',"
                     + "pending_intent_token TEXT NOT NULL DEFAULT '',locus_id TEXT NOT NULL DEFAULT '')");
             db.execSQL("CREATE TABLE history (_id INTEGER PRIMARY KEY AUTOINCREMENT,query TEXT,"
-                    + "record TEXT NOT NULL)");
+                    + "record TEXT NOT NULL,timeStamp INTEGER NOT NULL DEFAULT 0)");
         }
     }
 
@@ -104,12 +106,12 @@ public final class BackupHistoryMergerTest {
                 file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
             db.execSQL("INSERT INTO notification_history(notification_id,package,app_name,title,body,post_time) "
                     + "VALUES(?,?,?,?,?,?)", new Object[]{id, "example.app", "Example", id, "body", time});
-            db.execSQL("INSERT INTO history(query,record) VALUES(NULL,?)",
-                    new Object[]{"notification://" + id});
+            db.execSQL("INSERT INTO history(query,record,timeStamp) VALUES(NULL,?,?)",
+                    new Object[]{"notification://" + id, time});
         }
     }
 
-    private static void insertUsage(File file, String key, long time, long duration) {
+    private static void insertHistory(File file, String record, long time) {\n        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(\n                file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {\n            db.execSQL("INSERT INTO history(query,record,timeStamp) VALUES(NULL,?,?)",\n                    new Object[]{record, time});\n        }\n    }\n\n    private static void insertUsage(File file, String key, long time, long duration) {
         try (SQLiteDatabase db = SQLiteDatabase.openDatabase(
                 file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
             db.execSQL("INSERT INTO timeline(event_key,start_ms,kind,duration_ms) VALUES(?,?,?,?)",
