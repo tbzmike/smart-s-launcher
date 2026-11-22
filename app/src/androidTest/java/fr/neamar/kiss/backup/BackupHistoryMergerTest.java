@@ -111,7 +111,15 @@ public final class BackupHistoryMergerTest {
         }
     }
 
-    private static void insertHistory(File file, String record, long time) {\n        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(\n                file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {\n            db.execSQL("INSERT INTO history(query,record,timeStamp) VALUES(NULL,?,?)",\n                    new Object[]{record, time});\n        }\n    }\n\n    private static void insertUsage(File file, String key, long time, long duration) {
+    private static void insertHistory(File file, String record, long time) {
+        try (SQLiteDatabase db = SQLiteDatabase.openDatabase(
+                file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
+            db.execSQL("INSERT INTO history(query,record,timeStamp) VALUES(NULL,?,?)",
+                    new Object[]{record, time});
+        }
+    }
+
+    private static void insertUsage(File file, String key, long time, long duration) {
         try (SQLiteDatabase db = SQLiteDatabase.openDatabase(
                 file.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE)) {
             db.execSQL("INSERT INTO timeline(event_key,start_ms,kind,duration_ms) VALUES(?,?,?,?)",
