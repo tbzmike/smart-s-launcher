@@ -65,7 +65,14 @@ public final class BackupRestoreProgress {
     }
 
     public void fail() {
-        publishFinished(Math.max(0, lastPercent), operation.startsWith("Backing") ? "Backup failed" : "Restore failed");
+        fail(null);
+    }
+
+    public void fail(String detail) {
+        String title = operation.startsWith("Backing") ? "Backup failed" : "Restore failed";
+        String message = detail == null || detail.trim().isEmpty()
+                ? title : title + " — " + detail;
+        publishFinished(Math.max(0, lastPercent), message);
     }
 
     private void publish(int percent, String text) {
