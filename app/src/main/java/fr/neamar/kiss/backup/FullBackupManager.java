@@ -476,6 +476,9 @@ public final class FullBackupManager {
             for (RootSpec root : liveRoots) {
                 if (!rootNames.contains(root.archiveName)) continue;
                 File stagedRoot = new File(staged, root.archiveName);
+                if ("databases".equals(root.archiveName)) {
+                    mergeRestoredHistoryDatabases(root.livePath, stagedRoot);
+                }
                 if (root.atomicInternal) {
                     File old = new File(root.livePath.getParentFile(),
                             ".smart-s-old-" + root.archiveName + "-" + UUID.randomUUID());
@@ -507,6 +510,28 @@ public final class FullBackupManager {
                 if (replacement.oldPath.exists()) replacement.oldPath.renameTo(replacement.livePath);
             }
             throw e;
+        }
+    }
+
+    /**
+     * Keep records collected on this installation after the backup was created. The staged
+     * archive remains authoritative for other state; only notification and app-usage history
+     * databases are merged with the currently installed databases before the atomic swap.
+     */
+    private static void mergeRestoredHistoryDatabases(File liveDirectory, File stagedDirectory)
+            throws IOException {
+        File[] current = liveDirectory.listFiles();
+        if (current == null) return;
+        if (!stagedDirectory.exists() && !stagedDirectory.mkdirs()) {
+            throw new IOException("Unable to create staged database directory");
+        }
+        for (File liveDatabase : current) {
+            String name = liveDatabase.getName();
+            if (!liveDatabase.isFile()
+                    || !("kiss.s3db".equals(name) || "smart_s_app_usage.db".equals(name))) {
+                continue;
+            }
+            BackupHistoryMerger.merge(new File(stagedDirectory, name), liveDatabase, name);
         }
     }
 
