@@ -7,14 +7,16 @@ import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
- * Merges user-visible notification and app-usage history from the installed data set into a
- * staged backup database before the staged databases replace the live directory.
- *
- * The backup remains the primary copy: records already in it are retained, and records that
- * exist only on the device are added using their original event timestamps. Stable event keys
- * prevent repeat restores from duplicating timeline entries.
+ * Merges records collected on this installation into staged backup databases before restore.
+ * The archive remains the primary copy; current-only events are added with their original keys
+ * and timestamps. Repeated restores are idempotent.
  */
 final class BackupHistoryMerger {
     private static final String LIVE_ALIAS = "smart_s_live_restore";
@@ -28,34 +30,48 @@ final class BackupHistoryMerger {
             return;
         }
         SQLiteDatabase target = null;
+        boolean attached = false;
         try {
             target = SQLiteDatabase.openDatabase(backupDatabase.getAbsolutePath(), null,
                     SQLiteDatabase.OPEN_READWRITE);
             target.execSQL("ATTACH DATABASE ? AS " + LIVE_ALIAS,
                     new Object[]{liveDatabase.getAbsolutePath()});
+            attached = true;
             target.beginTransaction();
             try {
                 if ("kiss.s3db".equals(databaseName)) {
-                    mergeNotificationHistory(target);
-                    mergeLaunchHistory(target);
+                    mergeTable(target, "notification_history",
+                            new String[]{"notification_id", "post_time"});
+                    mergeTable(target, "history", new String[]{"record", "timeStamp"});
                 } else if ("smart_s_app_usage.db".equals(databaseName)) {
-                    mergeUsageTimeline(target);
-                    mergeDailyUsage(target);
-                    mergeDailyPhoneState(target);
-                    mergePackageState(target);
-                    mergeMeta(target);
+                    mergeTable(target, "timeline", new String[]{"event_key"});
+                    mergeTable(target, "daily_usage", new String[]{"day_ms", "package_name"});
+                    mergeTable(target, "daily_phone_state", new String[]{"day_ms"});
+                    mergeTable(target, "package_state", new String[]{"package_name"});
+                    mergeTable(target, "meta", new String[]{"meta_key"});
+                    mergeMaximum(target, "timeline", "event_key",
+                            new String[]{"end_ms", "duration_ms"});
+                    mergeMaximum(target, "daily_usage", "package_name,day_ms",
+                            new String[]{"duration_ms"});
+                    mergeMaximum(target, "daily_phone_state", "day_ms",
+                            new String[]{"screen_on_ms", "screen_off_ms", "unlock_count"});
+                    mergePackageDates(target);
+                    mergeNumericMeta(target);
                 }
                 target.setTransactionSuccessful();
             } finally {
                 target.endTransaction();
             }
             target.execSQL("DETACH DATABASE " + LIVE_ALIAS);
-            target = null;
+            attached = false;
         } catch (RuntimeException failure) {
             throw new IOException("Unable to merge existing " + databaseName
                     + " into the restored backup", failure);
         } finally {
             if (target != null) {
+                try {
+                    if (attached) target.execSQL("DETACH DATABASE " + LIVE_ALIAS);
+                } catch (RuntimeException ignored) { }
                 try {
                     if (target.isOpen()) target.close();
                 } catch (RuntimeException ignored) { }
@@ -63,90 +79,111 @@ final class BackupHistoryMerger {
         }
     }
 
-    private static void mergeNotificationHistory(SQLiteDatabase db) {
-        db.execSQL("INSERT INTO main.notification_history "
-                + "(notification_id,package,app_name,title,body,post_time,is_permanent,"
-                + "shortcut_id,user_serial,route_uri,pending_intent_token,locus_id) "
-                + "SELECT c.notification_id,c.package,c.app_name,c.title,c.body,c.post_time,"
-                + "c.is_permanent,c.shortcut_id,c.user_serial,c.route_uri,"
-                + "c.pending_intent_token,c.locus_id FROM " + LIVE_ALIAS
-                + ".notification_history c WHERE NOT EXISTS (SELECT 1 FROM main.notification_history b "
-                + "WHERE b.notification_id=c.notification_id AND b.post_time=c.post_time)");
+    private static void mergeTable(SQLiteDatabase db, String table, String[] keys) {
+        if (!tableExists(db, "main", table) || !tableExists(db, LIVE_ALIAS, table)) return;
+        List<String> columns = commonColumns(db, table);
+        if (columns.isEmpty()) return;
+        for (String key : keys) if (!columns.contains(key)) return;
+        StringBuilder projection = new StringBuilder();
+        StringBuilder identity = new StringBuilder();
+        for (String column : columns) {
+            if (projection.length() > 0) projection.append(',');
+            projection.append("s.").append(q(column));
+        }
+        for (String key : keys) {
+            if (identity.length() > 0) identity.append(" AND ");
+            identity.append("b.").append(q(key)).append("=s.").append(q(key));
+        }
+        db.execSQL("INSERT INTO main." + q(table) + " (" + joinQuoted(columns) + ") "
+                + "SELECT " + projection + " FROM " + LIVE_ALIAS + "." + q(table)
+                + " s WHERE NOT EXISTS (SELECT 1 FROM main." + q(table)
+                + " b WHERE " + identity + ")");
     }
 
-    private static void mergeLaunchHistory(SQLiteDatabase db) {
-        db.execSQL("INSERT INTO main.history (query,record,timeStamp) SELECT c.query,c.record,c.timeStamp "
-                + "FROM " + LIVE_ALIAS + ".history c WHERE NOT EXISTS "
-                + "(SELECT 1 FROM main.history b WHERE b.record=c.record AND b.timeStamp=c.timeStamp)");
+    private static void mergeMaximum(SQLiteDatabase db, String table, String keyExpression,
+                                     String[] values) {
+        if (!tableExists(db, "main", table) || !tableExists(db, LIVE_ALIAS, table)) return;
+        List<String> columns = commonColumns(db, table);
+        for (String value : values) if (!columns.contains(value)) return;
+        String[] keys = keyExpression.split(",");
+        for (String key : keys) if (!columns.contains(key)) return;
+        StringBuilder match = new StringBuilder();
+        for (String key : keys) {
+            if (match.length() > 0) match.append(" AND ");
+            match.append("s.").append(q(key)).append("=main.").append(q(table))
+                    .append('.').append(q(key));
+        }
+        StringBuilder assignments = new StringBuilder();
+        for (String value : values) {
+            if (assignments.length() > 0) assignments.append(',');
+            assignments.append(q(value)).append("=MAX(").append(q(value))
+                    .append(",COALESCE((SELECT s.").append(q(value)).append(" FROM ")
+                    .append(LIVE_ALIAS).append('.').append(q(table)).append(" s WHERE ")
+                    .append(match).append("),").append(q(value)).append("))");
+        }
+        db.execSQL("UPDATE main." + q(table) + " SET " + assignments
+                + " WHERE EXISTS (SELECT 1 FROM " + LIVE_ALIAS + "." + q(table)
+                + " s WHERE " + match + ")");
     }
 
-    private static void mergeUsageTimeline(SQLiteDatabase db) {
-        db.execSQL("INSERT OR IGNORE INTO main.timeline "
-                + "(event_key,start_ms,end_ms,kind,package_name,app_label,duration_ms,is_system,detail,source,source_uri) "
-                + "SELECT event_key,start_ms,end_ms,kind,package_name,app_label,duration_ms,is_system,"
-                + "detail,source,source_uri FROM " + LIVE_ALIAS + ".timeline");
-        db.execSQL("UPDATE main.timeline SET "
-                + "end_ms=MAX(end_ms,COALESCE((SELECT c.end_ms FROM " + LIVE_ALIAS
-                + ".timeline c WHERE c.event_key=main.timeline.event_key),end_ms)),"
-                + "duration_ms=MAX(duration_ms,COALESCE((SELECT c.duration_ms FROM " + LIVE_ALIAS
-                + ".timeline c WHERE c.event_key=main.timeline.event_key),duration_ms)) "
-                + "WHERE EXISTS (SELECT 1 FROM " + LIVE_ALIAS
-                + ".timeline c WHERE c.event_key=main.timeline.event_key)");
-    }
-
-    private static void mergeDailyUsage(SQLiteDatabase db) {
-        db.execSQL("INSERT OR IGNORE INTO main.daily_usage "
-                + "(day_ms,package_name,app_label,duration_ms,is_system) SELECT "
-                + "day_ms,package_name,app_label,duration_ms,is_system FROM "
-                + LIVE_ALIAS + ".daily_usage");
-        db.execSQL("UPDATE main.daily_usage SET "
-                + "duration_ms=MAX(duration_ms,COALESCE((SELECT c.duration_ms FROM " + LIVE_ALIAS
-                + ".daily_usage c WHERE c.day_ms=main.daily_usage.day_ms "
-                + "AND c.package_name=main.daily_usage.package_name),duration_ms)) "
-                + "WHERE EXISTS (SELECT 1 FROM " + LIVE_ALIAS
-                + ".daily_usage c WHERE c.day_ms=main.daily_usage.day_ms "
-                + "AND c.package_name=main.daily_usage.package_name)");
-    }
-
-    private static void mergeDailyPhoneState(SQLiteDatabase db) {
-        db.execSQL("INSERT OR IGNORE INTO main.daily_phone_state "
-                + "(day_ms,screen_on_ms,screen_off_ms,unlock_count) SELECT "
-                + "day_ms,screen_on_ms,screen_off_ms,unlock_count FROM "
-                + LIVE_ALIAS + ".daily_phone_state");
-        db.execSQL("UPDATE main.daily_phone_state SET "
-                + "screen_on_ms=MAX(screen_on_ms,COALESCE((SELECT c.screen_on_ms FROM " + LIVE_ALIAS
-                + ".daily_phone_state c WHERE c.day_ms=main.daily_phone_state.day_ms),screen_on_ms)),"
-                + "screen_off_ms=MAX(screen_off_ms,COALESCE((SELECT c.screen_off_ms FROM " + LIVE_ALIAS
-                + ".daily_phone_state c WHERE c.day_ms=main.daily_phone_state.day_ms),screen_off_ms)),"
-                + "unlock_count=MAX(unlock_count,COALESCE((SELECT c.unlock_count FROM " + LIVE_ALIAS
-                + ".daily_phone_state c WHERE c.day_ms=main.daily_phone_state.day_ms),unlock_count)) "
-                + "WHERE EXISTS (SELECT 1 FROM " + LIVE_ALIAS
-                + ".daily_phone_state c WHERE c.day_ms=main.daily_phone_state.day_ms)");
-    }
-
-    private static void mergePackageState(SQLiteDatabase db) {
-        db.execSQL("INSERT OR IGNORE INTO main.package_state "
-                + "(package_name,app_label,is_system,first_install_ms,last_update_ms,"
-                + "installer_package,source,source_uri) SELECT package_name,app_label,is_system,"
-                + "first_install_ms,last_update_ms,installer_package,source,source_uri FROM "
-                + LIVE_ALIAS + ".package_state");
+    private static void mergePackageDates(SQLiteDatabase db) {
+        if (!tableExists(db, "main", "package_state")
+                || !tableExists(db, LIVE_ALIAS, "package_state")) return;
+        List<String> columns = commonColumns(db, "package_state");
+        if (!columns.containsAll(Arrays.asList("package_name", "first_install_ms", "last_update_ms"))) return;
         db.execSQL("UPDATE main.package_state SET "
-                + "first_install_ms=MIN(first_install_ms,COALESCE((SELECT c.first_install_ms FROM "
-                + LIVE_ALIAS + ".package_state c WHERE c.package_name=main.package_state.package_name),first_install_ms)),"
-                + "last_update_ms=MAX(last_update_ms,COALESCE((SELECT c.last_update_ms FROM "
-                + LIVE_ALIAS + ".package_state c WHERE c.package_name=main.package_state.package_name),last_update_ms)) "
+                + "first_install_ms=MIN(first_install_ms,COALESCE((SELECT s.first_install_ms FROM "
+                + LIVE_ALIAS + ".package_state s WHERE s.package_name=main.package_state.package_name),first_install_ms)),"
+                + "last_update_ms=MAX(last_update_ms,COALESCE((SELECT s.last_update_ms FROM "
+                + LIVE_ALIAS + ".package_state s WHERE s.package_name=main.package_state.package_name),last_update_ms)) "
                 + "WHERE EXISTS (SELECT 1 FROM " + LIVE_ALIAS
-                + ".package_state c WHERE c.package_name=main.package_state.package_name)");
+                + ".package_state s WHERE s.package_name=main.package_state.package_name)");
     }
 
-    private static void mergeMeta(SQLiteDatabase db) {
-        db.execSQL("INSERT OR IGNORE INTO main.meta(meta_key,meta_value) "
-                + "SELECT meta_key,meta_value FROM " + LIVE_ALIAS + ".meta");
+    private static void mergeNumericMeta(SQLiteDatabase db) {
+        if (!tableExists(db, "main", "meta") || !tableExists(db, LIVE_ALIAS, "meta")) return;
+        List<String> columns = commonColumns(db, "meta");
+        if (!columns.containsAll(Arrays.asList("meta_key", "meta_value"))) return;
         db.execSQL("UPDATE main.meta SET meta_value=CAST(MAX(CAST(meta_value AS INTEGER),"
-                + "COALESCE((SELECT CAST(c.meta_value AS INTEGER) FROM " + LIVE_ALIAS
-                + ".meta c WHERE c.meta_key=main.meta.meta_key),CAST(meta_value AS INTEGER))) AS TEXT) "
+                + "COALESCE((SELECT CAST(s.meta_value AS INTEGER) FROM " + LIVE_ALIAS
+                + ".meta s WHERE s.meta_key=main.meta.meta_key),CAST(meta_value AS INTEGER))) AS TEXT) "
                 + "WHERE meta_key IN (SELECT meta_key FROM " + LIVE_ALIAS
                 + ".meta WHERE meta_value GLOB '[0-9]*')");
+    }
+
+    private static boolean tableExists(SQLiteDatabase db, String schema, String table) {
+        try (Cursor c = db.rawQuery("SELECT 1 FROM " + schema
+                + ".sqlite_master WHERE type='table' AND name=?", new String[]{table})) {
+            return c.moveToFirst();
+        }
+    }
+
+    private static List<String> commonColumns(SQLiteDatabase db, String table) {
+        Set<String> source = new HashSet<>();
+        try (Cursor c = db.rawQuery("PRAGMA " + LIVE_ALIAS + ".table_info(" + q(table) + ")", null)) {
+            while (c.moveToNext()) source.add(c.getString(1));
+        }
+        List<String> common = new ArrayList<>();
+        try (Cursor c = db.rawQuery("PRAGMA main.table_info(" + q(table) + ")", null)) {
+            while (c.moveToNext()) {
+                String column = c.getString(1);
+                if (!"_id".equals(column) && source.contains(column)) common.add(column);
+            }
+        }
+        return common;
+    }
+
+    private static String joinQuoted(List<String> columns) {
+        StringBuilder out = new StringBuilder();
+        for (String column : columns) {
+            if (out.length() > 0) out.append(',');
+            out.append(q(column));
+        }
+        return out.toString();
+    }
+
+    private static String q(String identifier) {
+        return "\"" + identifier.replace("\"", "\"\"") + "\"";
     }
 
     private static void copyDatabase(File source, File destination) throws IOException {
