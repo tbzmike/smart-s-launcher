@@ -96,6 +96,56 @@ public final class BackupHistoryMergerTest {
         }
     }
 
+    @Test public void restoreDirectoryWiringMergesBothHistoryDatabases() throws Exception {
+        File root = InstrumentationRegistry.getInstrumentation().getTargetContext().getCacheDir();
+        File staged = new File(root, "restore-wiring-staged");
+        File live = new File(root, "restore-wiring-live");
+        deleteRecursively(staged);
+        deleteRecursively(live);
+        assertTrue(staged.mkdirs());
+        assertTrue(live.mkdirs());
+        try {
+            File stagedMain = new File(staged, "kiss.s3db");
+            File liveMain = new File(live, "kiss.s3db");
+            createMainDatabase(stagedMain);
+            createMainDatabase(liveMain);
+            insertNotification(stagedMain, "archived", 100L);
+            insertNotification(liveMain, "newer", 200L);
+
+            File stagedUsage = new File(staged, "smart_s_app_usage.db");
+            File liveUsage = new File(live, "smart_s_app_usage.db");
+            createUsageDatabase(stagedUsage);
+            createUsageDatabase(liveUsage);
+            insertUsage(stagedUsage, "archived-usage", 100L, 5000L);
+            insertUsage(liveUsage, "newer-usage", 200L, 9000L);
+
+            FullBackupManager.mergeRestoredHistoryDatabases(live, staged);
+
+            assertEquals(2, count(stagedMain, "notification_history"));
+            assertEquals(2, count(stagedUsage, "timeline"));
+
+            // Older archives may not contain the app-usage database at all. The restore path
+            // must still bring forward the live database instead of silently omitting it.
+            stagedUsage.delete();
+            FullBackupManager.mergeRestoredHistoryDatabases(live, staged);
+            assertEquals(1, count(stagedUsage, "timeline"));
+            assertEquals(1L, scalarLong(stagedUsage,
+                    "SELECT COUNT(*) FROM timeline WHERE event_key='newer-usage'"));
+        } finally {
+            deleteRecursively(staged);
+            deleteRecursively(live);
+        }
+    }
+
+    private static void deleteRecursively(File file) {
+        if (!file.exists()) return;
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) deleteRecursively(child);
+        }
+        file.delete();
+    }
+
     private static void createMainDatabase(File file) {
         try (SQLiteDatabase db = SQLiteDatabase.openOrCreateDatabase(file, null)) {
             db.execSQL("CREATE TABLE notification_history (_id INTEGER PRIMARY KEY AUTOINCREMENT,"
