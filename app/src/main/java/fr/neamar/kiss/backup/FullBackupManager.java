@@ -119,9 +119,17 @@ public final class FullBackupManager {
             if (!working.mkdirs() && !working.isDirectory()) throw new IOException("Unable to create restore workspace");
             if (!staged.mkdirs() && !staged.isDirectory()) throw new IOException("Unable to create restore staging directory");
 
+            progress.setStatus(0, "Opening selected backup");
             long sourceLength = queryLength(context, source);
             copyUriToFile(context, source, archive, sourceLength, progress);
-            progress.setPercent(25);
+            if (!archive.isFile() || archive.length() == 0L) {
+                throw new IOException("Backup copy produced an empty file");
+            }
+            if (sourceLength > 0L && archive.length() != sourceLength) {
+                throw new IOException("Backup copy size mismatch: copied " + archive.length()
+                        + " of " + sourceLength + " bytes");
+            }
+            progress.setStatus(25, "File copied; checking archive");
 
             ArchiveInfo archiveInfo = inspectArchive(context, archive);
             progress.setPercent(30);
@@ -291,6 +299,7 @@ public final class FullBackupManager {
         if (raw == null) throw new IOException("Unable to open backup file");
         byte[] buffer = new byte[BUFFER_SIZE];
         long copied = 0L;
+        long lastReportedBytes = 0L;
         try (InputStream in = new BufferedInputStream(raw, BUFFER_SIZE);
              OutputStream out = new BufferedOutputStream(new FileOutputStream(target), BUFFER_SIZE)) {
             int read;
@@ -298,9 +307,29 @@ public final class FullBackupManager {
                 out.write(buffer, 0, read);
                 copied += read;
                 if (copied > MAX_RESTORE_BYTES) throw new IOException("Backup file is too large");
-                if (total > 0L) progress.setPercent((int) Math.min(24L, (copied * 24L) / total));
+                // Report byte movement at 1 MiB intervals. The first stage occupies only
+                // 24 percentage points, so percent-only reporting can look frozen at 23%.
+                if (copied - lastReportedBytes >= 1024L * 1024L || (total > 0L && copied >= total)) {
+                    int percent = total > 0L
+                            ? 1 + (int) Math.min(23L, (copied * 23L) / total) : 1;
+                    String detail = total > 0L
+                            ? String.format(Locale.US, "Copying %.1f / %.1f MB",
+                                    copied / 1048576.0, total / 1048576.0)
+                            : String.format(Locale.US, "Copied %.1f MB; source size unknown",
+                                    copied / 1048576.0);
+                    progress.setStatus(percent, detail);
+                    Log.i(TAG, "Restore copy progress: " + copied + " / "
+                            + (total > 0L ? total : -1L) + " bytes");
+                    lastReportedBytes = copied;
+                }
             }
+            out.flush();
         }
+        if (total > 0L && copied != total) {
+            throw new IOException("Backup source ended early: copied " + copied
+                    + " of " + total + " bytes");
+        }
+        progress.setStatus(25, "Copy finished; validating archive");
     }
 
     private static ArchiveInfo inspectArchive(Context context, File archive) throws IOException, JSONException {
