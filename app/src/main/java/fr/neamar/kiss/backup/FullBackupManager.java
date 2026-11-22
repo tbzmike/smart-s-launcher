@@ -478,8 +478,8 @@ public final class FullBackupManager {
         try {
             DBHelper.beginFullRestoreDatabaseGate();
             mainDatabaseGate = true;
-            AppUsageStore.beginFullRestoreDatabaseGate();
             usageDatabaseGate = true;
+            AppUsageStore.beginFullRestoreDatabaseGate();
             List<RootSpec> liveRoots = rootsFor(context);
             for (RootSpec root : liveRoots) {
                 if (!rootNames.contains(root.archiveName)) continue;
