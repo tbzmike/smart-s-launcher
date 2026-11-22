@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -35,6 +36,11 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -66,6 +72,14 @@ public final class FullBackupManager {
         thread.setDaemon(true);
         return thread;
     });
+    private static final ScheduledExecutorService COPY_WATCHDOG =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread thread = new Thread(r, "smart-s-backup-copy-watchdog");
+                thread.setDaemon(true);
+                return thread;
+            });
+    private static final long COPY_STALL_WARNING_MS = 15_000L;
+    private static final long COPY_STALL_ABORT_MS = 120_000L;
 
     private FullBackupManager() {}
 
@@ -301,10 +315,32 @@ public final class FullBackupManager {
         byte[] buffer = new byte[BUFFER_SIZE];
         long copied = 0L;
         long lastReportedBytes = 0L;
-        try (InputStream in = new BufferedInputStream(raw, BUFFER_SIZE);
+        BufferedInputStream in = new BufferedInputStream(raw, BUFFER_SIZE);
+        AtomicLong lastReadAt = new AtomicLong(SystemClock.elapsedRealtime());
+        AtomicBoolean stalledOut = new AtomicBoolean(false);
+        ScheduledFuture<?> watchdog = COPY_WATCHDOG.scheduleAtFixedRate(() -> {
+            long idleMs = SystemClock.elapsedRealtime() - lastReadAt.get();
+            if (idleMs >= COPY_STALL_WARNING_MS && idleMs < COPY_STALL_ABORT_MS) {
+                progress.setStatus(total > 0L
+                                ? 1 + (int) Math.min(23L, (lastReportedBytes * 23L) / total) : 1,
+                        "No new bytes for " + (idleMs / 1000L)
+                                + "s; waiting for storage provider");
+            } else if (idleMs >= COPY_STALL_ABORT_MS && stalledOut.compareAndSet(false, true)) {
+                progress.setStatus(total > 0L
+                                ? 1 + (int) Math.min(23L, (lastReportedBytes * 23L) / total) : 1,
+                        "Storage provider timed out; stopping incomplete copy");
+                try {
+                    in.close();
+                } catch (IOException ignored) {
+                    // The read loop will report the timeout as its primary failure.
+                }
+            }
+        }, 15L, 15L, TimeUnit.SECONDS);
+        try (InputStream input = in;
              OutputStream out = new BufferedOutputStream(new FileOutputStream(target), BUFFER_SIZE)) {
             int read;
-            while ((read = in.read(buffer)) != -1) {
+            while ((read = input.read(buffer)) != -1) {
+                lastReadAt.set(SystemClock.elapsedRealtime());
                 out.write(buffer, 0, read);
                 copied += read;
                 if (copied > MAX_RESTORE_BYTES) throw new IOException("Backup file is too large");
@@ -325,6 +361,11 @@ public final class FullBackupManager {
                 }
             }
             out.flush();
+        } finally {
+            watchdog.cancel(false);
+        }
+        if (stalledOut.get()) {
+            throw new IOException("Backup file provider stopped responding for 120 seconds");
         }
         if (total > 0L && copied != total) {
             throw new IOException("Backup source ended early: copied " + copied
