@@ -3,6 +3,7 @@ package fr.neamar.kiss.backup;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 
@@ -13,6 +14,11 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import fr.neamar.kiss.appusage.AppUsageStore;
+import fr.neamar.kiss.db.DBHelper;
 
 /** Verifies that restoring an older archive keeps both archived and subsequently collected history. */
 @RunWith(AndroidJUnit4.class)
@@ -135,6 +141,52 @@ public final class BackupHistoryMergerTest {
             deleteRecursively(staged);
             deleteRecursively(live);
         }
+    }
+
+    @Test public void notificationAndUsageWritersWaitUntilRestoredDatabasesAreInstalled()
+            throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        AppUsageStore usageStore = AppUsageStore.get(context);
+        String historyMarker = "restore-gate-history-" + System.nanoTime();
+        String usageMarker = "restore-gate-usage-" + System.nanoTime();
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch finished = new CountDownLatch(1);
+
+        DBHelper.beginFullRestoreDatabaseGate();
+        AppUsageStore.beginFullRestoreDatabaseGate();
+        Thread writer = new Thread(() -> {
+            started.countDown();
+            try {
+                DBHelper.insertHistory(context, null, historyMarker);
+                usageStore.putTimeline(new AppUsageStore.TimelineEntry(
+                        usageMarker, System.currentTimeMillis(), 0L,
+                        AppUsageStore.KIND_APP_USAGE, "restore.gate.test", "Restore gate test",
+                        1000L, false, "restore gate regression", null, null));
+            } finally {
+                finished.countDown();
+            }
+        }, "restore-database-gate-test");
+        try {
+            writer.start();
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            assertTrue("History writer must wait while the live database is being replaced",
+                    !finished.await(150, TimeUnit.MILLISECONDS));
+        } finally {
+            AppUsageStore.endFullRestoreDatabaseGate();
+            DBHelper.endFullRestoreDatabaseGate();
+        }
+        assertTrue("Queued history and usage writes must resume on the installed databases",
+                finished.await(5, TimeUnit.SECONDS));
+
+        boolean historyFound = DBHelper.getRecentHistoryCandidates(context, 500)
+                .stream().anyMatch(item -> historyMarker.equals(item.record));
+        boolean usageFound = usageStore.getTimeline(0L, 10000)
+                .stream().anyMatch(item -> usageMarker.equals(item.eventKey));
+        assertTrue("Queued notification/launcher history write must persist", historyFound);
+        assertTrue("Queued app-usage write must persist", usageFound);
+        DBHelper.removeFromHistory(context, historyMarker);
+        usageStore.getWritableDatabase().delete("timeline", "event_key=?",
+                new String[]{usageMarker});
     }
 
     private static void deleteRecursively(File file) {
