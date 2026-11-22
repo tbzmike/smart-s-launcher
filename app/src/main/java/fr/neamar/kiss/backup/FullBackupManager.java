@@ -518,7 +518,7 @@ public final class FullBackupManager {
      * archive remains authoritative for other state; only notification and app-usage history
      * databases are merged with the currently installed databases before the atomic swap.
      */
-    private static void mergeRestoredHistoryDatabases(File liveDirectory, File stagedDirectory)
+    static void mergeRestoredHistoryDatabases(File liveDirectory, File stagedDirectory)
             throws IOException {
         File[] current = liveDirectory.listFiles();
         if (current == null) return;
