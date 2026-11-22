@@ -30,6 +30,16 @@ public class DBHelper {
     private DBHelper() {
     }
 
+    /** Stop new main-database operations and close the live handle before replacing its directory. */
+    public static void beginFullRestoreDatabaseGate() {
+        DatabaseRecovery.beginRestore();
+    }
+
+    /** Reopen access after the restored database directory is installed or rolled back. */
+    public static void endFullRestoreDatabaseGate() {
+        DatabaseRecovery.endRestore();
+    }
+
     @Nullable
     private static String emptyToNull(@Nullable String value) {
         return TextUtils.isEmpty(value) ? null : value;
