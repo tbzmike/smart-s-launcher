@@ -275,6 +275,7 @@ public final class FreeformRealGesture207Test {
             Rect saved = frame(task(resized));
             SystemClock.sleep(1300);
             title = decoration(resized, "title");
+            title = decoration(await("current title at maximize tap", this::attached), "title");
             tap(title.right - dp(60), title.centerY());
             JSONObject full = await("normal fullscreen surface with no detached title or corner", doc -> {
                 JSONObject t = task(doc);
@@ -304,6 +305,7 @@ public final class FreeformRealGesture207Test {
                     attached(doc) && FreeformGeometry.near(frame(task(doc)), saved, dp(8)));
             title = decoration(restored, "title");
             SystemClock.sleep(900);
+            title = decoration(await("current title at minimize tap", this::attached), "title");
             tap(title.right - dp(100), title.centerY());
             JSONObject minimized = await("real minimized bubble and no detached decorations", doc ->
                     task(doc) != null && task(doc).getInt("id") == id && !task(doc).getBoolean("visible")

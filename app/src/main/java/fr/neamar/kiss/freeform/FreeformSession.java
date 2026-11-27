@@ -376,6 +376,13 @@ final class FreeformSession {
             if (!save(context, entries)) return false;
             if (!client.action("maximize", task, null)) return false;
             if (awaitGeometry(client, id, component, 1, area, tolerance(context), true) != null) return true;
+            // Desktop policy may have left another task in front after the transition.
+            // Re-focus only the same verified fullscreen task before considering rollback.
+            List<NativeTaskClient.Task> latest = client.list(false);
+            NativeTaskClient.Task current = latest == null ? null : exact(latest, entry);
+            if (current != null && current.mode == 1 && !current.focused
+                    && client.action("focus", current, null)
+                    && awaitGeometry(client, id, component, 1, area, tolerance(context), true) != null) return true;
             // A mode flag alone is insufficient. Restore the known popup if the surface
             // never actually becomes fullscreen, so no clipped pseudo-fullscreen is retained.
             client.action("restore", task, fit(entry.popup, popupArea(context, area), 1));
