@@ -76,6 +76,7 @@ public final class FreeformOverlayService extends Service {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<View> overlays = new ArrayList<>();
     private final java.util.Map<Integer, Decoration> decorations = new java.util.HashMap<>();
+    private final java.util.Map<View, android.graphics.Point> overlayOrigins = new java.util.IdentityHashMap<>();
     @Nullable private GestureRun activeGesture;
     private boolean normalizeOnRefresh = true;
     private final Runnable poll = this::refresh;
@@ -359,6 +360,7 @@ public final class FreeformOverlayService extends Service {
         }
         overlays.clear();
         decorations.clear();
+        overlayOrigins.clear();
         if (activeGesture != null) activeGesture.cancel();
         signature = "";
         dragging = 0;
@@ -497,10 +499,18 @@ public final class FreeformOverlayService extends Service {
         if (view == null || lp == null || !view.isAttachedToWindow()) return;
         // Android may translate overlay gravity into its own containing-frame origin. Measure
         // that offset from the actual attached view instead of assuming an origin of (0,0).
-        int[] actual = new int[2];
-        view.getLocationOnScreen(actual);
-        int nextX = lp.x + target.left - actual[0];
-        int nextY = lp.y + target.top - actual[1];
+        android.graphics.Point origin = overlayOrigins.get(view);
+        if (origin == null) {
+            if (view.getWidth() <= 0 || view.getHeight() <= 0) return;
+            int[] actual = new int[2];
+            view.getLocationOnScreen(actual);
+            origin = new android.graphics.Point(actual[0] - lp.x, actual[1] - lp.y);
+            overlayOrigins.put(view, origin);
+        }
+        // Use one measured origin per attached view. Never accumulate corrections from a
+        // pending layout while processing rapid drag events.
+        int nextX = target.left - origin.x;
+        int nextY = target.top - origin.y;
         if (nextX == lp.x && nextY == lp.y && lp.width == target.width()
                 && lp.height == target.height()) return;
         lp.x = nextX; lp.y = nextY; lp.width = target.width(); lp.height = target.height();
@@ -508,6 +518,14 @@ public final class FreeformOverlayService extends Service {
     }
 
     private void alignAfterLayout(View view, WindowManager.LayoutParams lp, Rect target) {
+        view.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override public void onLayoutChange(View v, int l, int t, int r, int b,
+                                                 int ol, int ot, int or, int ob) {
+                if (v.getWidth() <= 0 || v.getHeight() <= 0) return;
+                v.removeOnLayoutChangeListener(this);
+                v.post(() -> { if (!destroyed && overlays.contains(v)) align(v, lp, target); });
+            }
+        });
         view.post(() -> { if (!destroyed && overlays.contains(view)) align(view, lp, target); });
     }
 

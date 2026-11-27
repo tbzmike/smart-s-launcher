@@ -71,7 +71,8 @@ public final class NativeTaskBridge {
                         rows.put(info);
                     }
                 }
-                emit(new JSONObject().put("ok", true).put("tasks", rows));
+                emit(new JSONObject().put("ok", true).put("tasks", rows)
+                        .put("decorations", decorationFrames(windows)));
                 return;
             }
             if (args.length != 8) throw new IllegalArgumentException("Malformed task operation");
@@ -238,6 +239,23 @@ public final class NativeTaskBridge {
                 return rows.get();
             } finally { remove.invoke(listener, callback); }
         } catch (Throwable unavailable) { return null; }
+    }
+
+    /** Only our explicitly named controls; used to check real overlay alignment in CI. */
+    private static JSONArray decorationFrames(List<?> windows) throws Exception {
+        JSONArray result = new JSONArray();
+        if (windows == null) return result;
+        for (Object window : windows) {
+            Class<?> type = window.getClass();
+            String name = (String) type.getField("name").get(window);
+            if (name == null || !name.matches(".*Smart S freeform (title|corner|restore|bubble) [0-9]+$")
+                    || type.getField("displayId").getInt(window) != 0
+                    || !type.getField("isVisible").getBoolean(window)) continue;
+            Rect frame = (Rect) type.getField("bounds").get(window);
+            if (frame != null && !frame.isEmpty()) result.put(new JSONObject().put("name", name)
+                    .put("l", frame.left).put("t", frame.top).put("r", frame.right).put("b", frame.bottom));
+        }
+        return result;
     }
 
     private static boolean matchesWindow(String name, ComponentName component) {
