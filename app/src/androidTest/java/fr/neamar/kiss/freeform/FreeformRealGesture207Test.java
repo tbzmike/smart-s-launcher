@@ -196,6 +196,24 @@ public final class FreeformRealGesture207Test {
         } finally { bitmap.recycle(); }
     }
 
+    private void settledEvidence(String filename, Rect bounds) throws Exception {
+        // Task geometry can settle before the fullscreen transition finishes drawing.
+        // Require two full-content frames and retain the last screenshot on timeout.
+        long drawDeadline = SystemClock.elapsedRealtime() + 3000;
+        int verifiedFrames = 0;
+        while (verifiedFrames < 2) {
+            try {
+                evidence(filename, bounds, true);
+                verifiedFrames++;
+            } catch (AssertionError error) {
+                if (error.getMessage() == null || !error.getMessage().startsWith("Actual app content")
+                        || SystemClock.elapsedRealtime() >= drawDeadline) throw error;
+                verifiedFrames = 0;
+            }
+            if (verifiedFrames < 2) SystemClock.sleep(120);
+        }
+    }
+
     @Test public void actualGestureKeepsAppAndControlsTogetherAndMaximizes() throws Exception {
         assertEquals("Root test transport is not available", "0", shell("su 0 id -u").trim());
         assertTrue("Overlay app-op not granted in isolated emulator", Settings.canDrawOverlays(app));
@@ -242,7 +260,7 @@ public final class FreeformRealGesture207Test {
             assertTrue("Initial popup must reserve caption space", FreeformGeometry.contentArea(usable, dp(40)).contains(initial));
             Rect expected = FreeformGeometry.center(FreeformGeometry.contentArea(usable, dp(40)));
             assertTrue("New popup should be centered", FreeformGeometry.near(initial, expected, dp(10)));
-            evidence("initial.png", initial, true);
+            settledEvidence("initial.png", initial);
 
             Rect title = decoration(ready, "title");
             int x = title.left + Math.min(dp(46), title.width()/4), y = title.centerY();
@@ -284,21 +302,7 @@ public final class FreeformRealGesture207Test {
                         && decoration(doc, "title") == null && decoration(doc, "corner") == null
                         && decoration(doc, "restore") != null;
             });
-            // Task geometry can settle before the fullscreen transition finishes drawing.
-            // Require two full-content frames and retain the last screenshot on timeout.
-            long drawDeadline = SystemClock.elapsedRealtime() + 3000;
-            int verifiedFrames = 0;
-            while (verifiedFrames < 2) {
-                try {
-                    evidence("fullscreen.png", usable, true);
-                    verifiedFrames++;
-                } catch (AssertionError error) {
-                    if (error.getMessage() == null || !error.getMessage().startsWith("Actual app content")
-                            || SystemClock.elapsedRealtime() >= drawDeadline) throw error;
-                    verifiedFrames = 0;
-                }
-                if (verifiedFrames < 2) SystemClock.sleep(120);
-            }
+            settledEvidence("fullscreen.png", usable);
             Rect restore = decoration(full, "restore");
             tap(restore.centerX(), restore.centerY());
             JSONObject restored = await("same task restored with previous geometry", doc ->
@@ -327,7 +331,7 @@ public final class FreeformRealGesture207Test {
             await("bubble restores the same popup, not a duplicate", doc ->
                     attached(doc) && decoration(doc, "bubble") == null
                             && FreeformGeometry.near(frame(task(doc)), saved, dp(8)));
-            evidence("restored.png", saved, true);
+            settledEvidence("restored.png", saved);
 
             // A real display rotation changes the coordinate space. Re-read usable bounds
             // from the rotated display and verify that the same task's title/corner follow it.
