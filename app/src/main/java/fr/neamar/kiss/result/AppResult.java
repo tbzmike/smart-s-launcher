@@ -63,6 +63,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
     private volatile Drawable icon = null;
     private boolean launchSucceeded = true;
     private boolean launchPending;
+    private boolean freeformPending;
 
     AppResult(@NonNull AppPojo pojo) { super(pojo); }
 
@@ -201,6 +202,9 @@ public class AppResult extends ResultWithTags<AppPojo> {
     protected void buildPopupMenu(Context context, ArrayAdapter<ListPopup.Item> adapter) {
         refreshLiveDisabledState(context);
         super.buildPopupMenu(context, adapter);
+        if (Build.VERSION.SDK_INT >= 24 && pojo.userHandle.isCurrentUser()) {
+            adapter.add(new ListPopup.Item(context, R.string.menu_app_freeform));
+        }
         adapter.add(new ListPopup.Item(context, R.string.menu_app_usage_history));
         adapter.add(new ListPopup.Item(context, R.string.menu_exclude));
         adapter.add(new ListPopup.Item(context, R.string.menu_app_rename));
@@ -229,6 +233,10 @@ public class AppResult extends ResultWithTags<AppPojo> {
 
     @Override
     protected boolean popupMenuClickHandler(final Context context, final RecordAdapter parent, int stringId, View parentView) {
+        if (stringId == R.string.menu_app_freeform) {
+            launchFreeform(context, parentView);
+            return true;
+        }
         if (stringId == R.string.menu_app_usage_history) {
             AppUsageActivity.openForPackage(context, pojo.packageName, pojo.getName());
             return true;
@@ -253,6 +261,62 @@ public class AppResult extends ResultWithTags<AppPojo> {
         }
         if (stringId == R.string.menu_app_rename) { launchRenameDialog(context, parent, pojo); return true; }
         return super.popupMenuClickHandler(context, parent, stringId, parentView);
+    }
+
+    /** Explicit alternative launch; ordinary taps and existing shortcuts remain untouched. */
+    private void launchFreeform(Context context, @Nullable View view) {
+        if (freeformPending) return;
+        if (Build.VERSION.SDK_INT < 24 || !pojo.userHandle.isCurrentUser()) return;
+        if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()) {
+            Toast.makeText(context, R.string.freeform_root_required, Toast.LENGTH_LONG).show();
+            return;
+        }
+        boolean frozen = !AppLaunchUtils.isActivityEnabledNow(context, getClassName());
+        if (frozen && !FrozenAppPreferences.autoEnable(context)) {
+            Toast.makeText(context, R.string.freeform_frozen, Toast.LENGTH_LONG).show();
+            return;
+        }
+        freeformPending = true;
+        if (frozen) {
+            AppLaunchUtils.ensurePackageEnabledAsync(context, pojo.packageName, getClassName(),
+                    true, enabled -> {
+                        if (!enabled) {
+                            freeformPending = false;
+                            Toast.makeText(context, R.string.freeform_failed, Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        startFreeformOnWorker(context, view, true);
+                    });
+        } else {
+            startFreeformOnWorker(context, view, false);
+        }
+    }
+
+    private void startFreeformOnWorker(Context context, @Nullable View view, boolean wasFrozen) {
+        Context appContext = context.getApplicationContext();
+        ComponentName component = getClassName();
+        int userId = android.os.Process.myUid() / 100000;
+        new Thread(() -> {
+            boolean accepted = KissApplication.getApplication(appContext).getRootHandler()
+                    .launchFreeform(component.getPackageName(), component.getClassName(), userId);
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                freeformPending = false;
+                if (wasFrozen) {
+                    pojo.setDisabled(false);
+                    clearVisibleDisabledFilter(view);
+                    clearIcon();
+                    AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
+                }
+                if (accepted) {
+                    markLaunchSucceeded(wasFrozen, view);
+                    rememberSuccessfulHistoryTarget(context);
+                    recordLaunch(context, null);
+                    Toast.makeText(context, R.string.freeform_requested, Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(context, R.string.freeform_failed, Toast.LENGTH_LONG).show();
+                }
+            });
+        }, "smart-freeform-launch").start();
     }
 
     private void excludeFromHistory(Context context, AppPojo app) {

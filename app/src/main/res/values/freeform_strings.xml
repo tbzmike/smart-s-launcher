@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="menu_app_freeform">Open in floating window</string>
+    <string name="freeform_root_required">Enable Root mode in Smart S settings and grant root permission.</string>
+    <string name="freeform_frozen">App is frozen. Enable auto-enable frozen apps first.</string>
+    <string name="freeform_requested">Floating window requested. Window controls depend on your ROM.</string>
+    <string name="freeform_failed">Unable to request floating window. Check root access and ROM freeform support.</string>
+</resources>

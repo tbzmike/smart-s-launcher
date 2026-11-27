@@ -53,6 +53,15 @@ public class RootHandler {
         return isRootAvailable() && executeRootShell(enabled ? "svc data enable" : "svc data disable");
     }
 
+    /** Native windowing mode 5; called only after an explicit menu action on a worker. */
+    public boolean launchFreeform(String packageName, String activityName, int userId) {
+        if (!isRootActivated()) return false;
+        String command = fr.neamar.kiss.utils.FreeformLaunchCommand.build(
+                packageName, activityName, userId);
+        if (command == null) return false;
+        return fr.neamar.kiss.utils.FreeformLaunchCommand.accepted(readPrivilegedOutput(command));
+    }
+
     public boolean hibernateApp(String packageName) {
         try { return executeRootShell("am force-stop " + packageName); }
         catch (Exception e) { return false; }
