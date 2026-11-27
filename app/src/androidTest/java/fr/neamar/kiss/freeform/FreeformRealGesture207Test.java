@@ -20,7 +20,7 @@ import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.graphics.Insets;
 
-import androidx.annotation.RequiresApi;
+import androidx.test.filters.SdkSuppress;
 import androidx.preference.PreferenceManager;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -41,7 +41,7 @@ import fr.neamar.kiss.MainActivity;
  * The emulator grants shell root to the debug instrumentation transport only; the production
  * source set does not contain the test override. No mocked task coordinates or gestures.
  */
-@RequiresApi(35)
+@SdkSuppress(minSdkVersion = 35)
 public final class FreeformRealGesture207Test {
     private static final String PKG = "com.tbzmike.shortcutfixture.target";
     private static final String COMPONENT = PKG + "/com.tbzmike.shortcutfixture.FixtureFreeformActivity";
