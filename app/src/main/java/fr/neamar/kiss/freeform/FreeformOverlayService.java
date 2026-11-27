@@ -821,8 +821,14 @@ public final class FreeformOverlayService extends Service {
                 }).start();
     }
 
+    private NativeTaskClient.Task pendingClose;
+
     private void operate(NativeTaskClient.Task task, String action, @Nullable Rect bounds) {
-        if (busy || stopping || destroyed) return;
+        if (stopping || destroyed) return;
+        if (busy) {
+            if ("close".equals(action)) pendingClose = task;
+            return;
+        }
         Rect area;
         try { area = displayAreaFor(wm); }
         catch (RuntimeException unavailable) { return; }
@@ -851,6 +857,12 @@ public final class FreeformOverlayService extends Service {
     private void complete(boolean ok) {
         if (destroyed) return;
         busy = false;
+        if (pendingClose != null) {
+            NativeTaskClient.Task next = pendingClose;
+            pendingClose = null;
+            operate(next, "close", null);
+            return;
+        }
         if (!ok) Toast.makeText(this, R.string.freeform_operation_unverified, Toast.LENGTH_LONG).show();
         signature = "";
         requestRefresh();
