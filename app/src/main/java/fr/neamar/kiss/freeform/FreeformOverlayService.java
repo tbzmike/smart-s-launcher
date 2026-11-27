@@ -75,6 +75,9 @@ public final class FreeformOverlayService extends Service {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<View> overlays = new ArrayList<>();
+    private final java.util.Map<Integer, Decoration> decorations = new java.util.HashMap<>();
+    @Nullable private GestureRun activeGesture;
+    private boolean normalizeOnRefresh = true;
     private final Runnable poll = this::refresh;
     private Context windowContext;
     private WindowManager wm;
@@ -241,6 +244,8 @@ public final class FreeformOverlayService extends Service {
     @Override public void onConfigurationChanged(Configuration configuration) {
         super.onConfigurationChanged(configuration);
         signature = "";
+        normalizeOnRefresh = true;
+        if (activeGesture != null) activeGesture.cancel();
         if (dragging == 0) requestRefresh();
     }
 
@@ -287,9 +292,12 @@ public final class FreeformOverlayService extends Service {
             if (SystemClock.elapsedRealtime() - lastOpen > 6000) { stopSelf(); return; }
             later(1000); return;
         }
+        Rect area = displayAreaFor(wm);
+        boolean normalize = normalizeOnRefresh;
+        normalizeOnRefresh = false;
         busy = true;
         worker.execute(() -> {
-            FreeformSession.Snapshot state = FreeformSession.snapshot(this);
+            FreeformSession.Snapshot state = FreeformSession.snapshot(this, area, normalize);
             main.post(() -> {
                 if (destroyed) return;
                 busy = false;
@@ -307,7 +315,7 @@ public final class FreeformOverlayService extends Service {
                     FreeformSession.Entry entry = state.entries.get(task.id);
                     if (entry != null && !entry.minimized && task.visible) { visible = true; break; }
                 }
-                later(visible ? 3000 : 6000);
+                later(visible ? 1200 : 6000);
             });
         });
     }
@@ -350,6 +358,8 @@ public final class FreeformOverlayService extends Service {
             catch (RuntimeException ignored) { }
         }
         overlays.clear();
+        decorations.clear();
+        if (activeGesture != null) activeGesture.cancel();
         signature = "";
         dragging = 0;
     }
@@ -412,7 +422,8 @@ public final class FreeformOverlayService extends Service {
     private boolean coveredByHigherTask(List<NativeTaskClient.Task> tasks, int index, Rect target) {
         for (int i = 0; i < index; i++) {
             NativeTaskClient.Task other = tasks.get(i);
-            if (other.visible && other.type != 2 && Rect.intersects(other.bounds, target)) return true;
+            Rect frame = other.frame.isEmpty() ? other.bounds : other.frame;
+            if (other.visible && other.type != 2 && Rect.intersects(frame, target)) return true;
         }
         return false;
     }
@@ -426,7 +437,8 @@ public final class FreeformOverlayService extends Service {
         StringBuilder key = new StringBuilder(area.toString());
         for (NativeTaskClient.Task task : state.tasks) {
             key.append('|').append(task.id).append(':').append(task.mode).append(':')
-                    .append(task.visible).append(':').append(task.focused).append(':').append(task.bounds);
+                    .append(task.visible).append(':').append(task.focused).append(':').append(task.bounds)
+                    .append(':').append(task.frame);
         }
         for (FreeformSession.Entry e : state.entries.values()) {
             key.append('|').append(e.id).append(':').append(e.component).append(':')
@@ -444,20 +456,20 @@ public final class FreeformOverlayService extends Service {
             FreeformSession.Entry entry = state.entries.get(task.id);
             if (entry == null || !entry.component.equals(task.component) || entry.minimized
                     || !task.visible || (task.mode != 5 && task.mode != 1)) continue;
-            int height = dp(40);
-            int width = Math.min(area.width(), task.mode == 1 ? dp(250) : Math.max(dp(170), task.bounds.width()));
-            int x = task.mode == 1 ? area.right - width
-                    : FreeformTaskPolicy.clamp(task.bounds.left, area.left, area.right - width);
-            int y = FreeformTaskPolicy.clamp(task.bounds.top - height, area.top, area.bottom - height);
-            Rect title = new Rect(x, y, x + width, y + height);
-            if (!coveredByHigherTask(state.tasks, i, title)) ok &= addTitle(task, title, area);
-            if (task.mode == 5) {
-                int corner = dp(30);
-                int rx = FreeformTaskPolicy.clamp(task.bounds.right - corner, area.left, area.right - corner);
-                int ry = FreeformTaskPolicy.clamp(task.bounds.bottom - corner, area.top, area.bottom - corner);
-                Rect handle = new Rect(rx, ry, rx + corner, ry + corner);
-                if (!coveredByHigherTask(state.tasks, i, handle)) ok &= addResize(task, handle, area);
+            // Never put a caption at a guessed task/configuration rectangle. Use the actual
+            // visible application frame, including compositor position, in display coordinates.
+            Rect frame = new Rect(task.frame);
+            if (frame.isEmpty() || !frame.intersect(area)) continue;
+            if (task.mode == 1) {
+                if (FreeformGeometry.fullscreen(task.frame, area, dp(8))) ok &= addFullscreenRestore(task, area);
+                continue;
             }
+            Rect title = FreeformGeometry.caption(frame, area, dp(40));
+            Rect handle = FreeformGeometry.corner(frame, dp(30));
+            Decoration decor = new Decoration();
+            decorations.put(task.id, decor);
+            if (!coveredByHigherTask(state.tasks, i, title)) ok &= addTitle(task, title, area, decor);
+            if (!coveredByHigherTask(state.tasks, i, handle)) ok &= addResize(task, handle, area, decor);
         }
         // Bubbles retain their own native identity, independent position and task number.
         for (NativeTaskClient.Task task : state.tasks) {
@@ -476,7 +488,54 @@ public final class FreeformOverlayService extends Service {
         }
     }
 
-    private boolean addTitle(NativeTaskClient.Task task, Rect title, Rect area) {
+    private static final class Decoration {
+        View title, corner;
+        WindowManager.LayoutParams titleParams, cornerParams;
+    }
+
+    private void align(View view, WindowManager.LayoutParams lp, Rect target) {
+        if (view == null || lp == null || !view.isAttachedToWindow()) return;
+        // Android may translate overlay gravity into its own containing-frame origin. Measure
+        // that offset from the actual attached view instead of assuming an origin of (0,0).
+        int[] actual = new int[2];
+        view.getLocationOnScreen(actual);
+        int nextX = lp.x + target.left - actual[0];
+        int nextY = lp.y + target.top - actual[1];
+        if (nextX == lp.x && nextY == lp.y && lp.width == target.width()
+                && lp.height == target.height()) return;
+        lp.x = nextX; lp.y = nextY; lp.width = target.width(); lp.height = target.height();
+        try { wm.updateViewLayout(view, lp); } catch (RuntimeException ignored) { }
+    }
+
+    private void alignAfterLayout(View view, WindowManager.LayoutParams lp, Rect target) {
+        view.post(() -> { if (!destroyed && overlays.contains(view)) align(view, lp, target); });
+    }
+
+    private void alignDecoration(int id, Rect frame, Rect area) {
+        Decoration decor = decorations.get(id);
+        if (decor == null || frame.isEmpty()) return;
+        Rect shown = new Rect(frame);
+        if (!shown.intersect(area)) return;
+        align(decor.title, decor.titleParams, FreeformGeometry.caption(shown, area, dp(40)));
+        align(decor.corner, decor.cornerParams, FreeformGeometry.corner(shown, dp(30)));
+    }
+
+    private boolean addFullscreenRestore(NativeTaskClient.Task task, Rect area) {
+        // Fullscreen content must not retain the detached title bar or resize handle.
+        TextView restore = control("▣", R.string.freeform_restore, () -> operate(task, "restore", null));
+        restore.setTextSize(18f);
+        restore.setBackground(background(true));
+        int size = dp(38);
+        Rect target = new Rect(area.right - size - dp(4), area.top + dp(4),
+                area.right - dp(4), area.top + dp(4) + size);
+        WindowManager.LayoutParams lp = params(size, size, target.left, target.top);
+        lp.setTitle("Smart S freeform restore " + task.id);
+        boolean added = add(restore, lp);
+        if (added) alignAfterLayout(restore, lp, target);
+        return added;
+    }
+
+    private boolean addTitle(NativeTaskClient.Task task, Rect title, Rect area, Decoration decor) {
         LinearLayout bar = new LinearLayout(windowContext);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
@@ -495,6 +554,7 @@ public final class FreeformOverlayService extends Service {
         label.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(label, new LinearLayout.LayoutParams(0, title.height(), 1f));
         WindowManager.LayoutParams lp = params(title.width(), title.height(), title.left, title.top);
+        lp.setTitle("Smart S freeform title " + task.id);
         bar.addView(control("−", R.string.freeform_minimize,
                 () -> operate(task, "minimize", null)), new LinearLayout.LayoutParams(dp(40), title.height()));
         if (task.mode == 5) {
@@ -503,22 +563,28 @@ public final class FreeformOverlayService extends Service {
             icon.setOnClickListener(v -> operate(task, "focus", null));
             drag(icon, bar, lp, task, area, 0);
         }
-        boolean full = task.mode == 1;
-        bar.addView(control(full ? "▣" : "□", full ? R.string.freeform_restore : R.string.freeform_maximize,
-                () -> operate(task, full ? "restore" : "maximize", null)),
+        bar.addView(control("□", R.string.freeform_maximize,
+                () -> operate(task, "maximize", null)),
                 new LinearLayout.LayoutParams(dp(40), title.height()));
         bar.addView(control("×", R.string.freeform_close, () -> operate(task, "close", null)),
                 new LinearLayout.LayoutParams(dp(40), title.height()));
-        return add(bar, lp);
+        decor.title = bar; decor.titleParams = lp;
+        boolean added = add(bar, lp);
+        if (added) alignAfterLayout(bar, lp, title);
+        return added;
     }
 
-    private boolean addResize(NativeTaskClient.Task task, Rect handle, Rect area) {
+    private boolean addResize(NativeTaskClient.Task task, Rect handle, Rect area, Decoration decor) {
         TextView view = control("◢", R.string.freeform_resize, () -> {});
         view.setTextSize(16f);
         view.setBackground(background(false));
         WindowManager.LayoutParams lp = params(handle.width(), handle.height(), handle.left, handle.top);
+        lp.setTitle("Smart S freeform corner " + task.id);
         drag(view, view, lp, task, area, 1);
-        return add(view, lp);
+        decor.corner = view; decor.cornerParams = lp;
+        boolean added = add(view, lp);
+        if (added) alignAfterLayout(view, lp, handle);
+        return added;
     }
 
     private boolean addBubble(NativeTaskClient.Task task, FreeformSession.Entry entry,
@@ -545,59 +611,131 @@ public final class FreeformOverlayService extends Service {
         bubble.setContentDescription(getString(R.string.freeform_restore_app, nativeLabel(task), task.id));
         bubble.setOnClickListener(v -> operate(task, "restore", null));
         WindowManager.LayoutParams lp = params(size, size, x, y);
+        lp.setTitle("Smart S freeform bubble " + task.id);
         drag(bubble, bubble, lp, task, area, 2);
-        return add(bubble, lp);
+        boolean added = add(bubble, lp);
+        if (added) alignAfterLayout(bubble, lp, new Rect(x, y, x + size, y + size));
+        return added;
     }
 
     /**
-     * During a drag only the small control is moved. Commit exactly one real task transaction
-     * on release instead of starting a root process on every MotionEvent.
-     * kind: 0 move title, 1 resize corner, 2 move native app bubble.
+     * A gesture owns one task and one bounded root process. Motion events coalesce into the
+     * latest desired rectangle; the UI moves BOTH controls only on observed surface geometry.
+     * No speculative title/corner movement or unbounded command queue.
      */
+    private final class GestureRun implements Runnable {
+        final NativeTaskClient.Task task;
+        final Rect area;
+        private Rect wanted;
+        private boolean finished, cancelled;
+        GestureRun(NativeTaskClient.Task task, Rect area) {
+            this.task = task; this.area = new Rect(area);
+        }
+        synchronized void offer(Rect bounds, boolean end) {
+            if (cancelled) return;
+            wanted = new Rect(bounds); finished = end; notifyAll();
+        }
+        synchronized void cancel() { cancelled = true; notifyAll(); }
+        @Override public void run() {
+            boolean success = false;
+            try (NativeTaskClient.Gesture pipe = new NativeTaskClient(FreeformOverlayService.this).new Gesture(task)) {
+                while (true) {
+                    Rect next; boolean end;
+                    synchronized (this) {
+                        // Prevent an orphan process/worker if Android never sends ACTION_UP.
+                        long deadline = SystemClock.elapsedRealtime() + 4000;
+                        while (wanted == null && !cancelled) {
+                            long left = deadline - SystemClock.elapsedRealtime();
+                            if (left <= 0) { cancelled = true; break; }
+                            wait(left);
+                        }
+                        if (cancelled) break;
+                        next = wanted; wanted = null; end = finished;
+                    }
+                    NativeTaskClient.Task observed = pipe.send(next, end);
+                    if (observed == null || observed.id != task.id || !task.component.equals(observed.component)) break;
+                    Rect frame = new Rect(observed.frame);
+                    main.post(() -> {
+                        if (!destroyed && screenReady && activeGesture == this)
+                            alignDecoration(task.id, frame, area);
+                    });
+                    if (end) {
+                        success = FreeformSession.finishGesture(FreeformOverlayService.this, observed, next);
+                        break;
+                    }
+                }
+            } catch (Exception failure) { /* Report only after reconciling actual task state. */ }
+            final boolean ok = success;
+            main.post(() -> {
+                if (destroyed || activeGesture != this) return;
+                activeGesture = null;
+                dragging = 0;
+                complete(ok);
+            });
+        }
+    }
+
     private void drag(View target, View window, WindowManager.LayoutParams lp,
                       NativeTaskClient.Task task, Rect area, int kind) {
         target.setOnTouchListener(new View.OnTouchListener() {
             float downX, downY;
             int initialX, initialY, dx, dy;
             boolean moved, down;
+            GestureRun gesture;
             final int slop = ViewConfiguration.get(windowContext).getScaledTouchSlop();
+            Rect desired() {
+                Rect next = new Rect(task.bounds);
+                Rect safe = FreeformGeometry.contentArea(area, dp(40));
+                if (kind == 0) next.offset(dx, dy);
+                else {
+                    next.right = Math.max(next.left + dp(150), next.right + dx);
+                    next.bottom = Math.max(next.top + dp(180), next.bottom + dy);
+                    next.right = Math.min(next.right, safe.right);
+                    next.bottom = Math.min(next.bottom, safe.bottom);
+                }
+                return FreeformGeometry.fit(next, safe, dp(150));
+            }
             @Override public boolean onTouch(View view, MotionEvent event) {
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
-                        if (busy || stopping || destroyed) return false;
-                        down = true; moved = false; dx = 0; dy = 0;
+                        if (busy || stopping || destroyed || dragging > 0) return false;
+                        down = true; moved = false; dx = 0; dy = 0; gesture = null;
                         downX = event.getRawX(); downY = event.getRawY();
-                        initialX = lp.x; initialY = lp.y;
+                        int[] actual = new int[2]; window.getLocationOnScreen(actual);
+                        initialX = actual[0]; initialY = actual[1];
                         dragging++;
                         return true;
                     case MotionEvent.ACTION_MOVE:
+                    case MotionEvent.ACTION_UP:
                         if (!down) return false;
                         dx = Math.round(event.getRawX() - downX);
                         dy = Math.round(event.getRawY() - downY);
                         if (Math.abs(dx) > slop || Math.abs(dy) > slop) moved = true;
-                        if (moved) {
-                            lp.x = FreeformTaskPolicy.clamp(initialX + dx, area.left, area.right - lp.width);
-                            lp.y = FreeformTaskPolicy.clamp(initialY + dy, area.top, area.bottom - lp.height);
-                            try { wm.updateViewLayout(window, lp); } catch (RuntimeException ignored) { }
+                        boolean end = event.getActionMasked() == MotionEvent.ACTION_UP;
+                        if (!moved) {
+                            if (end) { down = false; dragging = 0; view.performClick(); }
+                            return true;
                         }
+                        if (kind == 2) {
+                            int x = FreeformTaskPolicy.clamp(initialX + dx, area.left, area.right - lp.width);
+                            int y = FreeformTaskPolicy.clamp(initialY + dy, area.top, area.bottom - lp.height);
+                            align(window, lp, new Rect(x, y, x + lp.width, y + lp.height));
+                            if (end) { down = false; dragging = 0; moveBubble(task, x, y); }
+                            return true;
+                        }
+                        if (gesture == null) {
+                            gesture = new GestureRun(task, area);
+                            activeGesture = gesture; busy = true;
+                            worker.execute(gesture);
+                        }
+                        gesture.offer(desired(), end);
+                        if (end) down = false;
                         return true;
                     case MotionEvent.ACTION_CANCEL:
-                    case MotionEvent.ACTION_UP:
                         if (!down) return false;
-                        down = false; dragging = Math.max(0, dragging - 1);
-                        if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                            signature = ""; requestRefresh(); return true;
-                        }
-                        if (!moved) { view.performClick(); return true; }
-                        int mx = lp.x - initialX, my = lp.y - initialY;
-                        if (kind == 2) { moveBubble(task, lp.x, lp.y); return true; }
-                        Rect next = new Rect(task.bounds);
-                        if (kind == 0) next.offset(mx, my);
-                        else {
-                            next.right = Math.max(next.left + dp(150), next.right + mx);
-                            next.bottom = Math.max(next.top + dp(180), next.bottom + my);
-                        }
-                        operate(task, "resize", FreeformSession.fit(next, area, dp(150)));
+                        down = false;
+                        if (gesture != null) gesture.cancel();
+                        else { dragging = 0; signature = ""; requestRefresh(); }
                         return true;
                     default: return true;
                 }

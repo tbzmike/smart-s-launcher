@@ -284,13 +284,30 @@ final class FreeformSession {
         target.bubbleY = Math.max(area.top, start);
     }
 
-    @Nullable static synchronized Snapshot snapshot(Context context) {
+    @Nullable static synchronized Snapshot snapshot(Context context, Rect area, boolean normalize) {
         Map<Integer, Entry> entries = load(context);
         if (entries == null) return null;
         if (entries.isEmpty()) return new Snapshot(new ArrayList<>(), entries);
         List<NativeTaskClient.Task> tasks = new NativeTaskClient(context).list();
         if (tasks == null) return null;
         boolean changed = false;
+        if (normalize && !area.isEmpty()) {
+            Rect safe = popupArea(context, area);
+            NativeTaskClient client = new NativeTaskClient(context);
+            boolean requested = false;
+            for (Entry entry : entries.values()) {
+                NativeTaskClient.Task task = exact(tasks, entry);
+                if (task == null || entry.minimized || task.mode != 5 || !task.visible) continue;
+                if (!safe.contains(task.bounds)) {
+                    Rect next = fit(task.bounds, safe, 1);
+                    if (client.action("resize", task, next)) requested = true;
+                }
+            }
+            if (requested) {
+                List<NativeTaskClient.Task> updated = client.list();
+                if (updated != null) tasks = updated;
+            }
+        }
         for (Entry entry : new ArrayList<>(entries.values())) {
             NativeTaskClient.Task task = exact(tasks, entry);
             if (task == null) {
