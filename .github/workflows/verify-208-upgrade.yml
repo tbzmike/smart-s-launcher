@@ -1,0 +1,47 @@
+name: Verify published in-place upgrades and label downloads
+on:
+  push:
+    branches: [fix/208-update-downloads]
+permissions:
+  contents: read
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download published signed packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for version in 207 208; do
+            gh release download v3.30.$version -R "$GITHUB_REPOSITORY" -D "$version" -p SmartSLauncher.apk -p SmartSLauncher-debug.apk
+          done
+      - name: Enable KVM
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          script: |
+            bash -ec 'for file in SmartSLauncher.apk SmartSLauncher-debug.apk; do pkg=com.tbzmike.smartslauncher; if [[ $file == *-debug.apk ]]; then pkg=$pkg.debug; fi; adb install "207/$file"; before=$(adb shell pm list packages -U "$pkg" | grep -F "package:$pkg uid:"); test -n "$before"; adb install -r "208/$file"; after=$(adb shell pm list packages -U "$pkg" | grep -F "package:$pkg uid:"); test "$before" = "$after"; adb shell dumpsys package "$pkg" | grep -F versionCode=637; done'
+  label:
+    needs: upgrade
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v3.30.208 -R "$GITHUB_REPOSITORY" --json body -q .body > previous.md
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("previous.md")
+          heading = "### Update your existing installation"
+          base = "https://github.com/tbzmike/smart-s-launcher/releases/download/v3.30.208/"
+          old = p.read_text()
+          if heading not in old:
+              p.write_text(heading + "\n\nUse the same edition you installed previously. Both update paths from 3.30.207 were tested on Android 16.\n\n" +
+                           "- [Update the standard launcher](" + base + "SmartSLauncher.apk)\n" +
+                           "- [Update the debug launcher (including app-debug.apk installations)](" + base + "SmartSLauncher-debug.apk)\n\n" + old)
+          PY
+          gh release edit v3.30.208 -R "$GITHUB_REPOSITORY" --notes-file previous.md
