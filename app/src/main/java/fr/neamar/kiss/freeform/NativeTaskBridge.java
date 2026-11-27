@@ -64,15 +64,26 @@ public final class NativeTaskBridge {
             if ("list".equals(action)) {
                 JSONArray rows = new JSONArray();
                 List<?> windows = visibleWindows();
+                List<WindowFrameLookup.Window> layout = null;
                 for (Object item : tasks) {
                     JSONObject info = describe(item);
                     if (info != null && info.getInt("user") == user) {
                         addFrame(info, item, tasks, windows);
+                        if (!info.has("vl") && info.getBoolean("visible")
+                                && info.getInt("type") == 1) {
+                            if (layout == null) layout = windowLayouts();
+                            addLayoutFrame(info, layout, windows);
+                        }
                         rows.put(info);
                     }
                 }
+                JSONArray decorations = decorationFrames(windows);
+                if (decorations.length() == 0) {
+                    if (layout == null) layout = windowLayouts();
+                    decorations = layoutDecorations(layout);
+                }
                 emit(new JSONObject().put("ok", true).put("tasks", rows)
-                        .put("decorations", decorationFrames(windows)));
+                        .put("decorations", decorations));
                 return;
             }
             if (args.length != 8) throw new IllegalArgumentException("Malformed task operation");
@@ -209,7 +220,10 @@ public final class NativeTaskBridge {
                 JSONObject row = describe(item);
                 if (row == null || row.getInt("id") != id || row.getInt("user") != user
                         || !component.equals(row.getString("component"))) continue;
-                addFrame(row, item, rows, visibleWindows());
+                List<?> windows = visibleWindows();
+                addFrame(row, item, rows, windows);
+                if (!row.has("vl") && row.getBoolean("visible"))
+                    addLayoutFrame(row, windowLayouts(), windows);
                 last = row;
                 if (row.getInt("mode") == 5 && row.has("vl") && row.getInt("l") == expected.left
                         && row.getInt("t") == expected.top && row.getInt("r") == expected.right
@@ -239,6 +253,78 @@ public final class NativeTaskBridge {
                 return rows.get();
             } finally { remove.invoke(listener, callback); }
         } catch (Throwable unavailable) { return null; }
+    }
+
+    /** Independent WindowManager fallback, using exact task/user identity and visible main windows.
+     * No reliance on an optional test API or on the application title matching its component. */
+    private static List<WindowFrameLookup.Window> windowLayouts() {
+        java.lang.Process process = null;
+        try {
+            process = new ProcessBuilder("/system/bin/dumpsys", "-t", "1", "window", "windows")
+                    .redirectErrorStream(true).start();
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            java.io.InputStream input = process.getInputStream();
+            byte[] buffer = new byte[4096];
+            long deadline = android.os.SystemClock.elapsedRealtime() + 1200;
+            while (android.os.SystemClock.elapsedRealtime() < deadline) {
+                while (input.available() > 0) {
+                    int n = input.read(buffer);
+                    if (n < 0) break;
+                    bytes.write(buffer, 0, n);
+                    if (bytes.size() > 2_000_000) return java.util.Collections.emptyList();
+                }
+                if (!process.isAlive()) {
+                    while (input.available() > 0) {
+                        int n = input.read(buffer);
+                        if (n < 0) break;
+                        bytes.write(buffer, 0, n);
+                    }
+                    if (process.exitValue() != 0) return java.util.Collections.emptyList();
+                    return WindowFrameLookup.parse(bytes.toString("UTF-8"));
+                }
+                android.os.SystemClock.sleep(5);
+            }
+        } catch (Exception ignored) { }
+        finally { if (process != null) process.destroy(); }
+        return java.util.Collections.emptyList();
+    }
+
+    private static void addLayoutFrame(JSONObject info, List<WindowFrameLookup.Window> layout,
+                                       List<?> compositor) throws Exception {
+        WindowFrameLookup.Window window = WindowFrameLookup.find(layout, info.getInt("id"), info.getInt("user"));
+        if (window == null) return;
+        // When compositor data exists but the app chose a custom title, match the WindowState
+        // identity hash from the dump rather than guessing a package or activity.
+        if (compositor != null) for (Object row : compositor) {
+            Class<?> type = row.getClass();
+            String name = (String) type.getField("name").get(row);
+            if (name == null || !name.startsWith(window.hash + " ")
+                    || !type.getField("isVisible").getBoolean(row)
+                    || type.getField("displayId").getInt(row) != 0) continue;
+            Rect rect = (Rect) type.getField("bounds").get(row);
+            if (rect != null && !rect.isEmpty()) {
+                putFrame(info, rect, "compositor-identity");
+                return;
+            }
+        }
+        int[] f = window.frame;
+        putFrame(info, new Rect(f[0], f[1], f[2], f[3]), "window-manager");
+    }
+
+    private static void putFrame(JSONObject info, Rect frame, String source) throws Exception {
+        info.put("vl", frame.left).put("vt", frame.top).put("vr", frame.right).put("vb", frame.bottom)
+                .put("frameSource", source);
+    }
+
+    private static JSONArray layoutDecorations(List<WindowFrameLookup.Window> windows) throws Exception {
+        JSONArray result = new JSONArray();
+        for (WindowFrameLookup.Window window : windows) {
+            if (!window.valid() || !window.name.matches("Smart S freeform (title|corner|restore|bubble) [0-9]+")) continue;
+            int[] f = window.frame;
+            result.put(new JSONObject().put("name", window.name)
+                    .put("l", f[0]).put("t", f[1]).put("r", f[2]).put("b", f[3]));
+        }
+        return result;
     }
 
     /** Only our explicitly named controls; used to check real overlay alignment in CI. */
@@ -286,7 +372,7 @@ public final class NativeTaskBridge {
                     || !matchesWindow((String) type.getField("name").get(window), top)) continue;
             Rect frame = (Rect) type.getField("bounds").get(window);
             if (frame != null && !frame.isEmpty()) {
-                info.put("vl", frame.left).put("vt", frame.top).put("vr", frame.right).put("vb", frame.bottom);
+                putFrame(info, frame, "compositor");
                 return;
             }
         }
