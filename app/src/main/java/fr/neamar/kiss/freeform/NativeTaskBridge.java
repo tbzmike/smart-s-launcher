@@ -88,7 +88,6 @@ public final class NativeTaskBridge {
             boolean focus = false;
             switch (action) {
                 case "minimize":
-                    if (mode != 5) throw new IllegalStateException("Only a popup can be minimized");
                     hidden.invoke(transaction, token, true);
                     reorder.invoke(transaction, token, false);
                     break;

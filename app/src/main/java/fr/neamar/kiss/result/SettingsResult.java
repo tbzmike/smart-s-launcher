@@ -457,6 +457,40 @@ public class SettingsResult extends ResultWithTags<SettingPojo> {
                 || context.checkCallingOrSelfPermission(activity.permission) == PackageManager.PERMISSION_GRANTED;
     }
 
+    @androidx.annotation.Nullable private AppResult freeformFrozenApp() {
+        if (!(pojo instanceof DisabledAppPojo)) return null;
+        DisabledAppPojo disabled = (DisabledAppPojo) pojo;
+        if (disabled.activityName == null || disabled.activityName.isEmpty()
+                || disabled.targetPackage == null || disabled.targetPackage.isEmpty()) return null;
+        fr.neamar.kiss.pojo.AppPojo app = new fr.neamar.kiss.pojo.AppPojo(
+                disabled.getHistoryId(), disabled.targetPackage, disabled.activityName,
+                UserHandle.OWNER, false, false, false, true);
+        app.setName(disabled.getName());
+        return new AppResult(app);
+    }
+
+    @Override public boolean showLockedFreeform(Context context, View anchor) {
+        AppResult app = freeformFrozenApp();
+        return app != null && app.showLockedFreeform(context, anchor);
+    }
+
+    @Override protected void buildPopupMenu(Context context,
+            android.widget.ArrayAdapter<fr.neamar.kiss.ui.ListPopup.Item> adapter) {
+        super.buildPopupMenu(context, adapter);
+        if (android.os.Build.VERSION.SDK_INT >= 24 && freeformFrozenApp() != null) {
+            adapter.add(new fr.neamar.kiss.ui.ListPopup.Item(context, R.string.menu_app_freeform));
+        }
+    }
+
+    @Override protected boolean popupMenuClickHandler(Context context,
+            fr.neamar.kiss.adapter.RecordAdapter parent, int stringId, View view) {
+        if (stringId == R.string.menu_app_freeform) {
+            AppResult app = freeformFrozenApp();
+            if (app != null) { app.launchFreeform(context, view); return true; }
+        }
+        return super.popupMenuClickHandler(context, parent, stringId, view);
+    }
+
     private void enableAndLaunch(Context context, DisabledAppPojo disabled) {
         if (!FrozenAppPreferences.autoEnable(context)) {
             Toast.makeText(context, "App is frozen. Auto-enable frozen apps is off.",

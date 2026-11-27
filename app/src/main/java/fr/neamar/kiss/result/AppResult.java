@@ -264,7 +264,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
     }
 
     /** Read-only app actions remain available with the launcher editing lock enabled. */
-    public boolean showLockedFreeform(Context context, @Nullable View anchor) {
+    @Override public boolean showLockedFreeform(Context context, @Nullable View anchor) {
         if (Build.VERSION.SDK_INT < 24 || !pojo.userHandle.isCurrentUser()) return false;
         if (fr.neamar.kiss.ui.RichNotificationHistoryDialog.showLatest(
                 context, pojo.packageName, () -> launchFreeform(context, anchor))) return true;
@@ -278,7 +278,7 @@ public class AppResult extends ResultWithTags<AppPojo> {
     }
 
     /** Explicit alternative launch; ordinary taps and existing shortcuts remain untouched. */
-    private void launchFreeform(Context context, @Nullable View view) {
+    void launchFreeform(Context context, @Nullable View view) {
         if (freeformPending) return;
         if (Build.VERSION.SDK_INT >= 35
                 && !android.provider.Settings.canDrawOverlays(context)
@@ -331,8 +331,10 @@ public class AppResult extends ResultWithTags<AppPojo> {
         int userId = android.os.Process.myUid() / 100000;
         new Thread(() -> {
             int outcome = 0;
-            if (managed && Build.VERSION.SDK_INT >= 35) {
-                outcome = fr.neamar.kiss.freeform.FreeformOverlayService.openManaged(appContext, component);
+            if (Build.VERSION.SDK_INT >= 35) {
+                outcome = managed
+                        ? fr.neamar.kiss.freeform.FreeformOverlayService.openManaged(appContext, component)
+                        : fr.neamar.kiss.freeform.FreeformOverlayService.openBasic(appContext, component);
             } else if (KissApplication.getApplication(appContext).getRootHandler()
                     .launchFreeform(component.getPackageName(), component.getClassName(), userId)) {
                 outcome = 2; // Explicit basic launch: request accepted, controls not verified.

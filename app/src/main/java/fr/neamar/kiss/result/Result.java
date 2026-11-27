@@ -210,6 +210,9 @@ public abstract class Result<T extends Pojo> {
             return -1;
     }
 
+    /** Non-editing popup action: shared by app results and frozen app placeholders. */
+    public boolean showLockedFreeform(Context context, @Nullable View anchor) { return false; }
+
     public String getPojoId() {
         return pojo.id;
     }

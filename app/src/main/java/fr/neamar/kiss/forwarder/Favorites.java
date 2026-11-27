@@ -821,8 +821,7 @@ public class Favorites extends Forwarder {
         if (UiEditLock.isLocked(mainActivity)) {
             // Locked UI keeps the previous read-only notification-history behavior. Editing menus
             // are deliberately available only after the launcher UI is unlocked.
-            if (result instanceof fr.neamar.kiss.result.AppResult
-                    && ((fr.neamar.kiss.result.AppResult) result).showLockedFreeform(mainActivity, v)) return true;
+            if (result.showLockedFreeform(mainActivity, v)) return true;
             if (NotificationHistoryResolver.showForPojo(mainActivity, result.getPojo())) return true;
             UiEditLock.allowEdit(mainActivity);
             return true;

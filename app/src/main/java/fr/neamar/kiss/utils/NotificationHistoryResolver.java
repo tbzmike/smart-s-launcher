@@ -64,10 +64,9 @@ public final class NotificationHistoryResolver {
     public static boolean showLockedForPojo(Context context, Pojo pojo) {
         if (context == null || pojo == null) return false;
         // Some layout-specific entry points reach this resolver without a bound Result.
-        if (pojo instanceof AppPojo) {
+        if (pojo instanceof AppPojo || pojo instanceof DisabledAppPojo) {
             fr.neamar.kiss.result.Result<?> result = fr.neamar.kiss.result.Result.fromPojo(null, pojo);
-            if (result instanceof fr.neamar.kiss.result.AppResult
-                    && ((fr.neamar.kiss.result.AppResult) result).showLockedFreeform(context, null)) return true;
+            if (result.showLockedFreeform(context, null)) return true;
         }
 
         // A live exact notification can be long-pressed before its history write finishes.

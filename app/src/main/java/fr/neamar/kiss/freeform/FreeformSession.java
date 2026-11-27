@@ -156,7 +156,7 @@ final class FreeformSession {
     }
 
     /** Reuse an existing exact task; never launch a second task if identity is ambiguous. */
-    static synchronized OpenResult open(Context context, ComponentName component, Rect area) {
+    static synchronized OpenResult open(Context context, ComponentName component, Rect area, boolean register) {
         if (component.getPackageName().equals(context.getPackageName()) || area.isEmpty()) return OpenResult.FAILED;
         Map<Integer, Entry> entries = load(context);
         if (entries == null) return OpenResult.FAILED;
@@ -177,6 +177,7 @@ final class FreeformSession {
                 if (id == FreeformTaskPolicy.AMBIGUOUS) return OpenResult.REQUESTED_UNVERIFIED;
                 NativeTaskClient.Task candidate = find(tasks, id);
                 if (candidate != null && candidate.mode == 5) {
+                    if (!register) return OpenResult.VERIFIED;
                     entries.put(candidate.id, new Entry(candidate.id, candidate.component, candidate.bounds));
                     return save(context, entries) ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
                 }
@@ -198,6 +199,7 @@ final class FreeformSession {
         if (observed == null) return OpenResult.REQUESTED_UNVERIFIED;
         Entry updated = new Entry(id, observed.component, observed.bounds);
         if (entry != null) { updated.bubbleX = entry.bubbleX; updated.bubbleY = entry.bubbleY; }
+        if (!register && entry == null) return OpenResult.VERIFIED;
         entries.put(id, updated);
         return save(context, entries) ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
     }
@@ -211,6 +213,31 @@ final class FreeformSession {
                     && task.visible == visible) return task;
         }
         return null;
+    }
+
+    /** Allocate a stable, initially non-overlapping location, saved before the task is hidden. */
+    private static void placeBubble(Context context, Entry target, Map<Integer, Entry> entries, Rect area) {
+        if (target.bubbleX >= 0 && target.bubbleY >= 0) return;
+        float density = context.getResources().getDisplayMetrics().density;
+        int size = Math.max(1, Math.round(54 * density)), gap = Math.max(1, Math.round(8 * density));
+        int step = size + gap;
+        int start = Math.min(area.bottom - size, area.top + Math.round(64 * density));
+        for (int x = area.right - size - gap; x >= area.left; x -= step) {
+            for (int y = Math.max(area.top, start); y <= area.bottom - size; y += step) {
+                Rect box = new Rect(x, y, x + size, y + size);
+                boolean occupied = false;
+                for (Entry other : entries.values()) {
+                    if (other.id != target.id && other.minimized && other.bubbleX >= 0 && other.bubbleY >= 0) {
+                        Rect used = new Rect(other.bubbleX, other.bubbleY,
+                                other.bubbleX + size, other.bubbleY + size);
+                        if (Rect.intersects(box, used)) { occupied = true; break; }
+                    }
+                }
+                if (!occupied) { target.bubbleX = x; target.bubbleY = y; return; }
+            }
+        }
+        target.bubbleX = Math.max(area.left, area.right - size);
+        target.bubbleY = Math.max(area.top, start);
     }
 
     @Nullable static synchronized Snapshot snapshot(Context context) {
@@ -251,12 +278,13 @@ final class FreeformSession {
             entries.remove(id); return save(context, entries);
         }
         if ("minimize".equals(action)) {
-            if (entry.minimized || task.mode != 5 || task.bounds.isEmpty()) return false;
-            entry.popup.set(task.bounds);
+            if (entry.minimized || (task.mode != 5 && task.mode != 1) || entry.popup.isEmpty()) return false;
+            if (task.mode == 5 && !task.bounds.isEmpty()) entry.popup.set(task.bounds);
+            placeBubble(context, entry, entries, area);
             entry.minimized = true;
             if (!save(context, entries)) return false; // Never hide an unjournaled task.
             if (client.action("minimize", task, null)
-                    && await(client, id, component, 5, false) != null) return true;
+                    && await(client, id, component, task.mode, false) != null) return true;
             // A failed/uncertain minimize must not strand a hidden task. Retain the recovery
             // record unless the same task is observed restored and visible.
             if (client.action("restore", task, fit(entry.popup, area, 1))
@@ -270,8 +298,15 @@ final class FreeformSession {
             if (!client.action("restore", task, popup)) return false;
             NativeTaskClient.Task after = await(client, id, component, 5, true);
             if (after == null) return false;
+            // Some ROMs apply default bounds during a mode transition. Correct the same task
+            // once, then compare the observed rectangle rather than trusting binder success.
+            if (!popup.equals(after.bounds) && client.action("resize", after, popup)) {
+                NativeTaskClient.Task resized = await(client, id, component, 5, true);
+                if (resized != null) after = resized;
+            }
             entry.minimized = false; entry.popup.set(after.bounds);
-            return save(context, entries);
+            boolean saved = save(context, entries);
+            return saved && popup.equals(after.bounds);
         }
         if ("maximize".equals(action)) {
             if (entry.minimized || task.mode != 5) return false;
@@ -302,6 +337,7 @@ final class FreeformSession {
 
     /** Restore hidden tasks before intentionally stopping controls; do not close any other app. */
     static synchronized boolean restoreAllAndForget(Context context, Rect area) {
+        if (area.isEmpty()) return false;
         Map<Integer, Entry> entries = load(context);
         if (entries == null) return false;
         if (entries.isEmpty()) return true;

@@ -244,6 +244,7 @@ public final class RichNotificationHistoryDialog {
                 AppNativeDialogStyle.styleDialog(dialog, packageName);
                 AppNativeDialogStyle.styleButton(
                         dialog.getButton(AlertDialog.BUTTON_NEGATIVE), accent);
+                AppNativeDialogStyle.styleButton(dialog.getButton(AlertDialog.BUTTON_POSITIVE), accent);
             });
             dialog.show();
             AppNativeDialogStyle.styleDialog(dialog, packageName);

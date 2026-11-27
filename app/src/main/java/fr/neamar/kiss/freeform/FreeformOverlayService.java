@@ -81,7 +81,7 @@ public final class FreeformOverlayService extends Service {
     private int dragging;
     private long lastOpen;
     private String signature = "";
-    private FreeformSession.Snapshot latest;
+    private int queryFailures;
     private final BroadcastReceiver screen = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             screenReady = isScreenReady();
@@ -124,7 +124,7 @@ public final class FreeformOverlayService extends Service {
     /** Called by the existing app-launch worker; no repeated start on verification failure. */
     public static int openManaged(Context context, ComponentName component) {
         try {
-            FreeformSession.OpenResult result = FreeformSession.open(context, component, displayArea(context));
+            FreeformSession.OpenResult result = FreeformSession.open(context, component, displayArea(context), true);
             switch (result) {
                 case VERIFIED: return OPEN_VERIFIED;
                 case REQUESTED_UNVERIFIED: return OPEN_UNVERIFIED;
@@ -143,9 +143,28 @@ public final class FreeformOverlayService extends Service {
         }
     }
 
+    /** Permission-denied basic mode still deduplicates via the same task-ID bridge. */
+    public static int openBasic(Context context, ComponentName component) {
+        try {
+            FreeformSession.OpenResult result = FreeformSession.open(context, component, displayArea(context), false);
+            switch (result) {
+                case VERIFIED: return OPEN_UNVERIFIED; // No overlay controls were requested.
+                case REQUESTED_UNVERIFIED: return OPEN_UNVERIFIED;
+                case AMBIGUOUS: return OPEN_AMBIGUOUS;
+                default: return OPEN_FAILED;
+            }
+        } catch (RuntimeException failure) { return OPEN_FAILED; }
+    }
+
     /** Recover a same-boot journal after process death. Nothing starts on a clean install/boot. */
     public static void resumeIfNeeded(Context context) {
-        if (active != null || !FreeformSession.hasJournal(context)
+        FreeformOverlayService service = active;
+        if (service != null) {
+            service.queryFailures = 0;
+            service.requestRefresh();
+            return;
+        }
+        if (!FreeformSession.hasJournal(context)
                 || !KissApplication.getApplication(context).getRootHandler().isRootActivated()) return;
         try { ContextCompat.startForegroundService(context, new Intent(context, FreeformOverlayService.class)); }
         catch (RuntimeException ignored) { /* The journal is retained for the next explicit launch. */ }
@@ -251,6 +270,10 @@ public final class FreeformOverlayService extends Service {
         screenReady = isScreenReady();
         if (!screenReady) { removeOverlays(); return; }
         if (PENDING_OPEN.get() > 0 || busy || dragging > 0) { later(650); return; }
+        if (!KissApplication.getApplication(this).getRootHandler().isRootActivated()) {
+            removeOverlays();
+            return;
+        }
         if (!Settings.canDrawOverlays(this) || wm == null) {
             stopAndRestore();
             return;
@@ -268,12 +291,18 @@ public final class FreeformOverlayService extends Service {
                 if (state == null) {
                     // No stale control may operate after a failed identity query.
                     removeOverlays();
-                    later(6000); return;
+                    if (++queryFailures < 2) later(6000);
+                    return;
                 }
-                latest = state;
+                queryFailures = 0;
                 if (state.entries.isEmpty()) { removeOverlays(); stopSelf(); return; }
                 if (screenReady && dragging == 0) render(state);
-                later(3000);
+                boolean visible = false;
+                for (NativeTaskClient.Task task : state.tasks) {
+                    FreeformSession.Entry entry = state.entries.get(task.id);
+                    if (entry != null && !entry.minimized && task.visible) { visible = true; break; }
+                }
+                later(visible ? 3000 : 6000);
             });
         });
     }
@@ -460,9 +489,9 @@ public final class FreeformOverlayService extends Service {
         label.setGravity(Gravity.CENTER_VERTICAL);
         bar.addView(label, new LinearLayout.LayoutParams(0, title.height(), 1f));
         WindowManager.LayoutParams lp = params(title.width(), title.height(), title.left, title.top);
+        bar.addView(control("−", R.string.freeform_minimize,
+                () -> operate(task, "minimize", null)), new LinearLayout.LayoutParams(dp(40), title.height()));
         if (task.mode == 5) {
-            bar.addView(control("−", R.string.freeform_minimize,
-                    () -> operate(task, "minimize", null)), new LinearLayout.LayoutParams(dp(40), title.height()));
             label.setOnClickListener(v -> operate(task, "focus", null));
             drag(label, bar, lp, task, area, 0);
             icon.setOnClickListener(v -> operate(task, "focus", null));
