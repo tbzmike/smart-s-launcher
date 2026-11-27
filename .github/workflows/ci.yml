@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - '**'
+      - '!feature/3.30.212-version-correction'
   pull_request:
     branches:
       - master
