@@ -581,7 +581,7 @@ public final class FreeformOverlayService extends Service {
         icon.setImageDrawable(nativeIcon(task));
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
         icon.setPadding(dp(4), dp(4), dp(4), dp(4));
-        int buttonWidth = Math.min(dp(40), Math.max(1, title.width() / 4));
+        int buttonWidth = Math.min(dp(40), Math.max(1, title.width() / 6));
         bar.addView(icon, new LinearLayout.LayoutParams(Math.min(dp(30), buttonWidth), title.height()));
         TextView label = new TextView(windowContext);
         label.setText(nativeLabel(task));
@@ -593,6 +593,8 @@ public final class FreeformOverlayService extends Service {
         bar.addView(label, new LinearLayout.LayoutParams(0, title.height(), 1f));
         WindowManager.LayoutParams lp = params(title.width(), title.height(), title.left, title.top);
         lp.setTitle("Smart S freeform title " + task.id);
+        bar.addView(control("‹", R.string.freeform_back, () -> operate(task, "back", null)),
+                new LinearLayout.LayoutParams(buttonWidth, title.height()));
         bar.addView(control("−", R.string.freeform_minimize,
                 () -> operate(task, "minimize", null)), new LinearLayout.LayoutParams(buttonWidth, title.height()));
         if (task.mode == 5) {

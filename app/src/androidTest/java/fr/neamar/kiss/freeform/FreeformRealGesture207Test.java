@@ -358,6 +358,11 @@ public final class FreeformRealGesture207Test {
             JSONObject overApp = await("same floating window and controls above Settings", this::attached);
             settledEvidence("above-fullscreen.png", frame(task(overApp)));
             Rect closeTitle = decoration(overApp, "title");
+            shell("logcat -c");
+            tap(closeTitle.right - dp(140), closeTitle.centerY());
+            await("Back delivered to exact floating fixture above Settings", doc ->
+                    attached(doc) && shell("logcat -d -s FreeformFixture:I").contains("Back received in task " + id));
+            closeTitle = decoration(await("controls still attached after Back", this::attached), "title");
             tap(closeTitle.right - dp(20), closeTitle.centerY());
             await("explicit X closes the task", doc -> task(doc) == null);
         } finally {

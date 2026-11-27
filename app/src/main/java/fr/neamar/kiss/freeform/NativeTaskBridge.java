@@ -51,7 +51,7 @@ public final class NativeTaskBridge {
                     (Object) new String[]{"Landroid/os/ServiceManager;", "Landroid/app/IActivityTaskManager",
                             "Landroid/app/TaskInfo;", "Landroid/app/ActivityManager$RunningTaskInfo;",
                             "Landroid/content/res/Configuration;->windowConfiguration",
-                            "Landroid/app/WindowConfiguration;", "Landroid/window/"});
+                            "Landroid/hardware/input/", "Landroid/app/WindowConfiguration;", "Landroid/window/"});
             Class<?> atm = Class.forName("android.app.IActivityTaskManager");
             Object binder = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
                     .invoke(null, "activity_task");
@@ -113,6 +113,40 @@ public final class NativeTaskBridge {
             if (selected == null || info == null) throw new IllegalStateException("Task identity changed");
             int mode = info.getInt("mode");
             if (mode != 1 && mode != 5) throw new IllegalStateException("Task is not fullscreen/freeform");
+            if ("back".equals(action)) {
+                if (mode != 5 || !info.getBoolean("visible")) throw new IllegalStateException("Window unavailable");
+                if (!info.getBoolean("focused")) atm.getMethod("setFocusedTask", int.class).invoke(service, id);
+                android.content.pm.ActivityInfo target = null;
+                for (int attempt = 0; attempt < 12 && target == null; attempt++) {
+                    for (Object item : tasks(atm, service)) {
+                        JSONObject row = describe(item);
+                        if (row != null && row.getInt("id") == id && row.getInt("user") == user
+                                && component.equals(row.getString("component")) && row.getBoolean("focused")
+                                && row.getBoolean("visible")) {
+                            target = (android.content.pm.ActivityInfo) item.getClass().getField("topActivityInfo").get(item);
+                            break;
+                        }
+                    }
+                    if (target == null) android.os.SystemClock.sleep(16);
+                }
+                if (target == null || target.applicationInfo == null) throw new IllegalStateException("No focused target");
+                Object inputBinder = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
+                        .invoke(null, "input");
+                Object input = Class.forName("android.hardware.input.IInputManager$Stub")
+                        .getMethod("asInterface", IBinder.class).invoke(null, inputBinder);
+                Method inject = Class.forName("android.hardware.input.IInputManager")
+                        .getMethod("injectInputEventToTarget", android.view.InputEvent.class, int.class, int.class);
+                long down = android.os.SystemClock.uptimeMillis();
+                for (int keyAction : new int[]{android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.ACTION_UP}) {
+                    android.view.KeyEvent event = new android.view.KeyEvent(down, android.os.SystemClock.uptimeMillis(),
+                            keyAction, android.view.KeyEvent.KEYCODE_BACK, 0, 0, -1, 0,
+                            android.view.KeyEvent.FLAG_FROM_SYSTEM, android.view.InputDevice.SOURCE_KEYBOARD);
+                    if (!(Boolean) inject.invoke(input, event, 2, target.applicationInfo.uid))
+                        throw new IllegalStateException("Back delivery failed");
+                }
+                emit(new JSONObject().put("ok", true));
+                return;
+            }
             if ("close".equals(action)) {
                 boolean removed = (Boolean) atm.getMethod("removeTask", int.class).invoke(service, id);
                 emit(new JSONObject().put("ok", removed));

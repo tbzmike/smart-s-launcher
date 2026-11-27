@@ -332,6 +332,7 @@ final class FreeformSession {
         if (tasks == null) return false;
         NativeTaskClient.Task task = exact(tasks, entry);
         if (task == null) { entries.remove(id); save(context, entries); return false; }
+        if ("back".equals(action)) return !entry.minimized && task.mode == 5 && client.action("back", task, null);
         if ("close".equals(action)) {
             if (!client.action("close", task, null)) return false;
             List<NativeTaskClient.Task> after = client.list();
