@@ -352,15 +352,15 @@ public final class FreeformRealGesture207Test {
             SystemClock.sleep(1500);
             JSONObject home = await("same floating window and controls above Home", this::attached);
             settledEvidence("above-home.png", frame(task(home)));
-            String settings = shell("am start -W --windowingMode 1 -a android.settings.SETTINGS");
+            String settings = shell("am start -W --windowingMode 1 -n com.tbzmike.shortcutfixture.icebox/com.tbzmike.shortcutfixture.FixtureFreeformActivity");
             assertTrue(settings, settings.contains("Status: ok"));
             SystemClock.sleep(1500);
-            JSONObject overApp = await("same floating window and controls above Settings", this::attached);
+            JSONObject overApp = await("same floating window and controls above the second fullscreen app", this::attached);
             settledEvidence("above-fullscreen.png", frame(task(overApp)));
             Rect closeTitle = decoration(overApp, "title");
             shell("logcat -c");
             tap(closeTitle.right - dp(140), closeTitle.centerY());
-            await("Back delivered to exact floating fixture above Settings", doc ->
+            await("Back delivered to exact floating fixture above the second fullscreen app", doc ->
                     attached(doc) && shell("logcat -d -s FreeformFixture:I").contains("Back received in task " + id));
             closeTitle = decoration(await("controls still attached after Back", this::attached), "title");
             tap(closeTitle.right - dp(20), closeTitle.centerY());
