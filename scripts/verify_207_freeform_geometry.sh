@@ -65,6 +65,11 @@ adb install -r -g app/build/outputs/apk/debug/app-debug.apk
 adb install -r -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell appops set com.tbzmike.smartslauncher.debug SYSTEM_ALERT_WINDOW allow
 adb shell am force-stop com.tbzmike.smartslauncher.debug
+# Exercise Home with the launcher under test. The stock Pixel launcher in the
+# emulator can leave its own ANR dialog covering otherwise valid app pixels.
+adb shell cmd package set-home-activity --user 0 com.tbzmike.smartslauncher.debug/fr.neamar.kiss.MainActivity
+adb shell am force-stop com.google.android.apps.nexuslauncher
+adb shell input keyevent KEYCODE_HOME
 file=verification-results/freeform-real-gestures.log
 # Collect screenshots even if the test fails. Never skip the test or accept an assertion failure.
 set +e
