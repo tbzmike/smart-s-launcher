@@ -54,7 +54,7 @@ final class NativeTaskClient {
     boolean action(String action, Task task, @Nullable Rect bounds) {
         if (task == null || task.user != USER || task.type != 1) return false;
         if (!task.component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+")) return false;
-        if (!action.matches("minimize|restore|restorePinned|maximize|resize|resizePinned|focus|focusPinned|unpin|back|close")) return false;
+        if (!action.matches("minimize|restore|restorePinned|maximize|resize|resizePinned|focus|focusPinned|unpin|back|close|switchFullscreen|closeFullscreen")) return false;
         Rect rect = bounds == null ? new Rect() : bounds;
         JSONObject result = invoke(action, " " + task.id + " " + quote(task.component)
                 + " " + rect.left + " " + rect.top + " " + rect.right + " " + rect.bottom);

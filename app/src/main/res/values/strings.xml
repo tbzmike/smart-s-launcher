@@ -370,4 +370,6 @@
     <string name="yes">Yes</string>
     <string name="no">No</string>
     <string name="freeform_back">Back in this window</string>
+    <string name="fullscreen_bubbles">Fullscreen app bubbles</string>
+    <string name="fullscreen_switch_description">Show a switch bubble when you leave a fullscreen app. Tap it to return, or drag it to × to close the app. Requires Smart S root mode.</string>
 </resources>

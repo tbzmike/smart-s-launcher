@@ -321,6 +321,11 @@ final class FreeformSession {
         return new Snapshot(tasks, entries);
     }
 
+    @Nullable static synchronized java.util.Set<Integer> managedIds(Context context) {
+        Map<Integer, Entry> entries = load(context);
+        return entries == null ? null : new java.util.HashSet<>(entries.keySet());
+    }
+
     static synchronized boolean operate(Context context, int id, String component, String action,
                                          @Nullable Rect requested, Rect area) {
         Map<Integer, Entry> entries = load(context);

@@ -113,6 +113,10 @@ public final class NativeTaskBridge {
             if (selected == null || info == null) throw new IllegalStateException("Task identity changed");
             int mode = info.getInt("mode");
             if (mode != 1 && mode != 5) throw new IllegalStateException("Task is not fullscreen/freeform");
+            if ("switchFullscreen".equals(action) || "closeFullscreen".equals(action)) {
+                if (mode != 1) throw new IllegalStateException("Task is no longer fullscreen");
+                action = "switchFullscreen".equals(action) ? "focus" : "close";
+            }
             if ("back".equals(action)) {
                 if (mode != 5 || !info.getBoolean("visible")) throw new IllegalStateException("Window unavailable");
                 if (!info.getBoolean("focused")) atm.getMethod("setFocusedTask", int.class).invoke(service, id);

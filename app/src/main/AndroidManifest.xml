@@ -375,5 +375,10 @@
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/lock_accessibility_service_config" />
         </service>
+        <service android:name=".freeform.FullscreenBubbleService" android:label="@string/fullscreen_bubbles"
+            android:enabled="@bool/fullscreen_switch_supported" android:exported="true" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/fullscreen_switch_events" />
+        </service>
     </application>
 </manifest>

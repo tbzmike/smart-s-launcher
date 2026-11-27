@@ -525,6 +525,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         super.onCreateContextMenu(menu, v, menuInfo);
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.menu_main, menu);
+        MenuItem bubbles = menu.findItem(R.id.fullscreen_bubbles);
+        bubbles.setVisible(android.os.Build.VERSION.SDK_INT >= 35);
+        if (android.os.Build.VERSION.SDK_INT >= 35)
+            bubbles.setChecked(fr.neamar.kiss.freeform.FullscreenBubbleService.enabled(this));
 
         MenuItem privateSpaceItem = menu.findItem(R.id.private_space);
         if (privateSpaceItem != null) {
@@ -887,6 +891,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == R.id.fullscreen_bubbles && android.os.Build.VERSION.SDK_INT >= 35) {
+            fr.neamar.kiss.freeform.FullscreenBubbleService.toggle(this);
+            return true;
+        }
         if (forwarderManager.onOptionsItemSelected(item)) {
             return true;
         }
@@ -1079,6 +1087,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         super.onCreateOptionsMenu(menu);
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.menu_main, menu);
+        MenuItem bubbles = menu.findItem(R.id.fullscreen_bubbles);
+        bubbles.setVisible(android.os.Build.VERSION.SDK_INT >= 35);
+        if (android.os.Build.VERSION.SDK_INT >= 35)
+            bubbles.setChecked(fr.neamar.kiss.freeform.FullscreenBubbleService.enabled(this));
         return true;
     }
 

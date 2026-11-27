@@ -47,11 +47,60 @@ public final class FreeformRealGesture207Test {
     private static final String COMPONENT = PKG + "/com.tbzmike.shortcutfixture.FixtureFreeformActivity";
     private final Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
     private final Context app = instrumentation.getTargetContext();
-    private final UiAutomation ui = instrumentation.getUiAutomation();
+    private final UiAutomation ui = instrumentation.getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES);
     private int id;
     private long downTime;
     private Rect usable;
     private final float density = app.getResources().getDisplayMetrics().density;
+
+    private Rect switchBubble(String name) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 18000;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            for (WindowFrameLookup.Window w : WindowFrameLookup.parse(shell("dumpsys window -a windows"))) {
+                if (w.name.equals(name) && w.valid()) return new Rect(w.frame[0],w.frame[1],w.frame[2],w.frame[3]);
+            }
+            SystemClock.sleep(120);
+        }
+        throw new AssertionError("Missing switcher overlay: " + name);
+    }
+
+    private void checkFullscreenSwitching() throws Exception {
+        String previous = shell("settings get secure enabled_accessibility_services").trim();
+        String service = app.getPackageName() + "/fr.neamar.kiss.freeform.FullscreenBubbleService";
+        String enabled = "null".equals(previous) || previous.isEmpty() ? service : previous + ":" + service;
+        try {
+            shell("settings put secure enabled_accessibility_services " + enabled);
+            shell("input keyevent KEYCODE_HOME");
+            shell("am start -W --windowingMode 1 -n " + COMPONENT);
+            JSONObject first = task(await("first fullscreen task", d -> task(d) != null && task(d).getBoolean("focused")));
+            int firstId = first.getInt("id");
+            SystemClock.sleep(850);
+            shell("input keyevent KEYCODE_HOME");
+            Rect firstBubble = switchBubble("Smart S fullscreen switch " + firstId);
+            String second = "com.tbzmike.shortcutfixture.icebox";
+            shell("am start -W --windowingMode 1 -n " + second + "/com.tbzmike.shortcutfixture.FixtureFreeformActivity");
+            SystemClock.sleep(850);
+            int secondId = -1;
+            JSONArray rows = state().getJSONArray("tasks");
+            for (int i=0;i<rows.length();i++) if (second.equals(rows.getJSONObject(i).getString("pkg")))
+                secondId=rows.getJSONObject(i).getInt("id");
+            assertTrue(secondId >= 0);
+            tap(firstBubble.centerX(),firstBubble.centerY());
+            await("same first task restored fullscreen", d -> task(d).getInt("id")==firstId && task(d).getBoolean("focused") && task(d).getInt("mode")==1);
+            Rect other = switchBubble("Smart S fullscreen switch " + secondId);
+            tap(other.centerX(),other.centerY());
+            Rect again = switchBubble("Smart S fullscreen switch " + firstId);
+            motion(MotionEvent.ACTION_DOWN,again.centerX(),again.centerY());
+            motion(MotionEvent.ACTION_MOVE,again.centerX()+dp(25),again.centerY()+dp(25));
+            Rect x = switchBubble("Smart S fullscreen close target");
+            motion(MotionEvent.ACTION_MOVE,x.centerX(),x.centerY());
+            motion(MotionEvent.ACTION_UP,x.centerX(),x.centerY());
+            await("drag to X closes only first fullscreen task", d -> task(d)==null);
+        } finally {
+            if ("null".equals(previous) || previous.isEmpty()) shell("settings delete secure enabled_accessibility_services");
+            else shell("settings put secure enabled_accessibility_services " + previous);
+        }
+    }
 
     private int dp(int value) { return Math.round(value * density); }
 
@@ -365,6 +414,7 @@ public final class FreeformRealGesture207Test {
             closeTitle = decoration(await("controls still attached after Back", this::attached), "title");
             tap(closeTitle.right - dp(20), closeTitle.centerY());
             await("explicit X closes the task", doc -> task(doc) == null);
+            checkFullscreenSwitching();
         } finally {
             ui.setRotation(UiAutomation.ROTATION_FREEZE_0);
             ui.setRotation(UiAutomation.ROTATION_UNFREEZE);
