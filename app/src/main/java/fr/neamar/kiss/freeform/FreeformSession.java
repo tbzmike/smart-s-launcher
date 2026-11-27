@@ -176,7 +176,8 @@ final class FreeformSession {
                 id = select(tasks, component);
                 if (id == FreeformTaskPolicy.AMBIGUOUS) return OpenResult.REQUESTED_UNVERIFIED;
                 NativeTaskClient.Task candidate = find(tasks, id);
-                if (candidate != null && candidate.mode == 5) {
+                if (candidate != null && candidate.mode == 5 && candidate.visible
+                        && !candidate.bounds.isEmpty()) {
                     if (!register) return OpenResult.VERIFIED;
                     entries.put(candidate.id, new Entry(candidate.id, candidate.component, candidate.bounds));
                     return save(context, entries) ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
@@ -190,18 +191,24 @@ final class FreeformSession {
         if (entry != null && !FreeformTaskPolicy.same(entry.id, entry.component, task.id, task.component)) entry = null;
         Rect popup = entry != null ? fit(entry.popup, area, 1)
                 : task.mode == 5 && !task.bounds.isEmpty() ? fit(task.bounds, area, 1) : defaultPopup(area);
-        if (task.mode == 5 && (entry == null || !entry.minimized) && task.visible) {
+        boolean restoring = task.mode != 5 || (entry != null && entry.minimized) || !task.visible;
+        if (!restoring) {
             if (!client.action("focus", task, null)) return OpenResult.FAILED;
         } else {
             if (!client.action("restore", task, popup)) return OpenResult.FAILED;
         }
         NativeTaskClient.Task observed = await(client, id, task.component, 5, true);
-        if (observed == null) return OpenResult.REQUESTED_UNVERIFIED;
+        if (observed == null || observed.bounds.isEmpty()) return OpenResult.REQUESTED_UNVERIFIED;
+        if (restoring && !popup.equals(observed.bounds) && client.action("resize", observed, popup)) {
+            NativeTaskClient.Task resized = await(client, id, task.component, 5, true);
+            if (resized != null && !resized.bounds.isEmpty()) observed = resized;
+        }
+        boolean exactBounds = !restoring || popup.equals(observed.bounds);
         Entry updated = new Entry(id, observed.component, observed.bounds);
         if (entry != null) { updated.bubbleX = entry.bubbleX; updated.bubbleY = entry.bubbleY; }
-        if (!register && entry == null) return OpenResult.VERIFIED;
+        if (!register && entry == null) return exactBounds ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
         entries.put(id, updated);
-        return save(context, entries) ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
+        return save(context, entries) && exactBounds ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
     }
 
     @Nullable private static NativeTaskClient.Task await(NativeTaskClient client, int id,

@@ -180,6 +180,10 @@ public final class FreeformOverlayService extends Service {
 
     private static Rect displayArea(Context context) {
         WindowManager manager = overlayContext(context).getSystemService(WindowManager.class);
+        return displayAreaFor(manager);
+    }
+
+    private static Rect displayAreaFor(@Nullable WindowManager manager) {
         if (manager == null) return new Rect();
         WindowMetrics metrics = manager.getMaximumWindowMetrics();
         Rect area = new Rect(metrics.getBounds());
@@ -318,7 +322,8 @@ public final class FreeformOverlayService extends Service {
         removeOverlays();
         worker.execute(() -> {
             boolean restored;
-            try { restored = FreeformSession.restoreAllAndForget(this, displayArea(this)); }
+            try { restored = !FreeformSession.hasJournal(this)
+                    || FreeformSession.restoreAllAndForget(this, wm == null ? displayArea(this) : displayAreaFor(wm)); }
             catch (RuntimeException failure) { restored = false; }
             final boolean ok = restored;
             main.post(() -> {
@@ -414,7 +419,7 @@ public final class FreeformOverlayService extends Service {
     private void render(FreeformSession.Snapshot state) {
         if (destroyed || stopping || !screenReady || wm == null || dragging > 0) return;
         Rect area;
-        try { area = displayArea(this); }
+        try { area = displayAreaFor(wm); }
         catch (RuntimeException unavailable) { return; }
         if (area.isEmpty()) return;
         StringBuilder key = new StringBuilder(area.toString());
@@ -611,7 +616,7 @@ public final class FreeformOverlayService extends Service {
     private void operate(NativeTaskClient.Task task, String action, @Nullable Rect bounds) {
         if (busy || stopping || destroyed) return;
         Rect area;
-        try { area = displayArea(this); }
+        try { area = displayAreaFor(wm); }
         catch (RuntimeException unavailable) { return; }
         if (area.isEmpty()) return;
         busy = true;

@@ -62,7 +62,7 @@ def wait_for(description, predicate, attempts=12):
 tasks()
 for pkg in (first_pkg, second_pkg):
     shell("am force-stop " + pkg)
-    output = shell("am start -W --windowingMode 5 -n " + pkg + "/com.tbzmike.shortcutfixture.FixtureMainActivity")
+    output = shell("am start -W --windowingMode 5 -n " + pkg + "/com.tbzmike.shortcutfixture.FixtureFreeformActivity")
     assert "Error" not in output, output
 
 
