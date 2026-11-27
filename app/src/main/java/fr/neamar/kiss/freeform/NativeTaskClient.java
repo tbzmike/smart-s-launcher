@@ -63,7 +63,7 @@ final class NativeTaskClient {
         if (!root.isRootActivated()) return null;
         String command = "/system/bin/env " + quote("CLASSPATH=" + app.getApplicationInfo().sourceDir)
                 + " /system/bin/app_process /system/bin " + NativeTaskBridge.class.getName()
-                + " " + action + " " + USER + extra;
+                + " " + action + " " + USER + extra + " 2>&1";
         String output = root.readPrivilegedOutput(command);
         for (String line : output.split("\\r?\\n")) {
             if (!line.startsWith(NativeTaskBridge.PREFIX)) continue;
