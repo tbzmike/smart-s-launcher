@@ -1,0 +1,19 @@
+name: Inspect window evidence
+on:
+  push:
+    branches: [diagnostics/window-211-evidence]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/$GITHUB_REPOSITORY/actions/artifacts/15218070680/zip > evidence.zip
+          unzip -oq evidence.zip
+          sudo apt-get install -y tesseract-ocr >/dev/null
+          find . -name '*.png' -exec tesseract {} stdout \;
+          grep -E 'mCurrentFocus|Window #[0-9]+ Window' window-state.txt | head -45
