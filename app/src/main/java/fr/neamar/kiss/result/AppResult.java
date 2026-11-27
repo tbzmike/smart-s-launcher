@@ -280,6 +280,18 @@ public class AppResult extends ResultWithTags<AppPojo> {
     /** Explicit alternative launch; ordinary taps and existing shortcuts remain untouched. */
     private void launchFreeform(Context context, @Nullable View view) {
         if (freeformPending) return;
+        if (Build.VERSION.SDK_INT >= 35
+                && !android.provider.Settings.canDrawOverlays(context)
+                && KissApplication.getApplication(context).getRootHandler().isRootActivated()) {
+            fr.neamar.kiss.freeform.FreeformOverlayService.askPermission(context,
+                    () -> launchFreeformInternal(context, view, false));
+            return;
+        }
+        launchFreeformInternal(context, view, Build.VERSION.SDK_INT >= 35);
+    }
+
+    private void launchFreeformInternal(Context context, @Nullable View view, boolean managed) {
+        if (freeformPending) return;
         if (Build.VERSION.SDK_INT < 24 || !pojo.userHandle.isCurrentUser()) return;
         if (!KissApplication.getApplication(context).getRootHandler().isRootActivated()) {
             Toast.makeText(context, R.string.freeform_root_required, Toast.LENGTH_LONG).show();
@@ -299,20 +311,34 @@ public class AppResult extends ResultWithTags<AppPojo> {
                             Toast.makeText(context, R.string.freeform_failed, Toast.LENGTH_LONG).show();
                             return;
                         }
-                        startFreeformOnWorker(context, view, true);
+                        startFreeformOnWorker(context, view, true, managed);
                     });
         } else {
-            startFreeformOnWorker(context, view, false);
+            startFreeformOnWorker(context, view, false, managed);
         }
     }
 
-    private void startFreeformOnWorker(Context context, @Nullable View view, boolean wasFrozen) {
+    private void startFreeformOnWorker(Context context, @Nullable View view, boolean wasFrozen, boolean managed) {
+        if (managed && Build.VERSION.SDK_INT >= 35
+                && !fr.neamar.kiss.freeform.FreeformOverlayService.prepare(context)) {
+            freeformPending = false;
+            if (wasFrozen) AppLaunchUtils.refreshLauncherAfterEnable(context, pojo.packageName);
+            Toast.makeText(context, R.string.freeform_control_failed, Toast.LENGTH_LONG).show();
+            return;
+        }
         Context appContext = context.getApplicationContext();
         ComponentName component = getClassName();
         int userId = android.os.Process.myUid() / 100000;
         new Thread(() -> {
-            boolean accepted = KissApplication.getApplication(appContext).getRootHandler()
-                    .launchFreeform(component.getPackageName(), component.getClassName(), userId);
+            int outcome = 0;
+            if (managed && Build.VERSION.SDK_INT >= 35) {
+                outcome = fr.neamar.kiss.freeform.FreeformOverlayService.openManaged(appContext, component);
+            } else if (KissApplication.getApplication(appContext).getRootHandler()
+                    .launchFreeform(component.getPackageName(), component.getClassName(), userId)) {
+                outcome = 2; // Explicit basic launch: request accepted, controls not verified.
+            }
+            final int result = outcome;
+            boolean accepted = result > 0;
             new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                 freeformPending = false;
                 if (wasFrozen) {
@@ -325,9 +351,11 @@ public class AppResult extends ResultWithTags<AppPojo> {
                     markLaunchSucceeded(wasFrozen, view);
                     rememberSuccessfulHistoryTarget(context);
                     recordLaunch(context, null);
-                    Toast.makeText(context, R.string.freeform_requested, Toast.LENGTH_SHORT).show();
+                    Toast.makeText(context, result == 1 ? R.string.freeform_ready
+                            : R.string.freeform_requested, Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(context, R.string.freeform_failed, Toast.LENGTH_LONG).show();
+                    Toast.makeText(context, result == -2 ? R.string.freeform_ambiguous
+                            : R.string.freeform_failed, Toast.LENGTH_LONG).show();
                 }
             });
         }, "smart-freeform-launch").start();

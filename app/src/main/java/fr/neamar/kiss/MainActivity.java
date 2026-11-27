@@ -578,6 +578,9 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
             SmartAnimationEngine.reset(homeRoot);
         }
         launcherUiResumed = true;
+        if (android.os.Build.VERSION.SDK_INT >= 35) {
+            fr.neamar.kiss.freeform.FreeformOverlayService.resumeIfNeeded(this);
+        }
         AppProvider.setLauncherUiVisible(true);
         fr.neamar.kiss.notification.NotificationWorkPolicy.setHomeVisible(true);
         // Resume a system-paused update only when the launcher is visibly foreground.

@@ -6,4 +6,22 @@
     <string name="freeform_frozen">App is frozen. Enable auto-enable frozen apps first.</string>
     <string name="freeform_requested">Floating window requested. Window controls depend on your ROM.</string>
     <string name="freeform_failed">Unable to request floating window. Check root access and ROM freeform support.</string>
+    <string name="freeform_overlay_title">Floating window controls</string>
+    <string name="freeform_overlay_explanation">Allow Smart S to draw the title bars, resize handles and minimized app icons over your real floating apps. Root is used only to manage the selected Android tasks. After granting permission, select the app again.</string>
+    <string name="freeform_allow_controls">Allow controls</string>
+    <string name="freeform_permission_retry">Grant display-over-other-apps permission, then reopen the app in a floating window.</string>
+    <string name="freeform_basic_launch">Open without controls</string>
+    <string name="freeform_control_failed">Unable to start window controls. Check overlay and root permissions.</string>
+    <string name="freeform_ready">Native floating window verified.</string>
+    <string name="freeform_ambiguous">More than one matching task exists. No duplicate window was launched.</string>
+    <string name="freeform_overlay_notification">Manage the selected native floating windows.</string>
+    <string name="freeform_restore_all">Restore all and stop</string>
+    <string name="freeform_recovery_pending">Window recovery could not be verified. Re-enable root and use Restore all and stop to retry.</string>
+    <string name="freeform_operation_unverified">Window operation could not be verified. No replacement app was launched.</string>
+    <string name="freeform_minimize">Minimize to app icon</string>
+    <string name="freeform_maximize">Maximize window</string>
+    <string name="freeform_restore">Restore popup</string>
+    <string name="freeform_close">Close this window</string>
+    <string name="freeform_resize">Drag to resize window</string>
+    <string name="freeform_restore_app">Restore %1$s, task %2$d</string>
 </resources>
