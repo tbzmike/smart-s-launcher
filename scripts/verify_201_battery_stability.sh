@@ -15,6 +15,7 @@ adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 mkdir -p verification-results
 for test in \
   fr.neamar.kiss.result.ExactHistoryPopup200Test \
+  fr.neamar.kiss.result.FreeformLockedAction206Test \
   fr.neamar.kiss.androidTest.HistoryCenterTapRegressionTest \
   fr.neamar.kiss.androidTest.VisibleHistoryTime199IntegrationTest \
   fr.neamar.kiss.androidTest.HistoryRestart198SeedTest \
