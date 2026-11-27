@@ -18,9 +18,9 @@ android {
         targetSdk {
             version = release(36)
         }
-        // Smart S Launcher 3.30.207 - managed native freeform tasks and locked-menu access
-        versionCode 636
-        versionName "3.30.207"
+        // Smart S Launcher 3.30.208 - managed native freeform tasks and locked-menu access
+        versionCode 637
+        versionName "3.30.208"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

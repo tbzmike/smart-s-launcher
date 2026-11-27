@@ -480,8 +480,14 @@ public final class FreeformOverlayService extends Service {
             Rect handle = FreeformGeometry.corner(frame, dp(30));
             Decoration decor = new Decoration();
             decorations.put(task.id, decor);
-            if (!coveredByHigherTask(state.tasks, i, title)) ok &= addTitle(task, title, area, decor);
-            if (!coveredByHigherTask(state.tasks, i, handle)) ok &= addResize(task, handle, area, decor);
+            // Keep the controls as a pair; never leave an orphan title or resize handle.
+            // The focused task is in front even when a ROM reports stale task ordering.
+            boolean covered = !task.focused && (coveredByHigherTask(state.tasks, i, title)
+                    || coveredByHigherTask(state.tasks, i, handle));
+            if (!covered) {
+                ok &= addTitle(task, title, area, decor);
+                ok &= addResize(task, handle, area, decor);
+            }
         }
         // Bubbles retain their own native identity, independent position and task number.
         for (NativeTaskClient.Task task : state.tasks) {
@@ -572,7 +578,8 @@ public final class FreeformOverlayService extends Service {
         icon.setImageDrawable(nativeIcon(task));
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
         icon.setPadding(dp(4), dp(4), dp(4), dp(4));
-        bar.addView(icon, new LinearLayout.LayoutParams(dp(30), title.height()));
+        int buttonWidth = Math.min(dp(40), Math.max(1, title.width() / 4));
+        bar.addView(icon, new LinearLayout.LayoutParams(Math.min(dp(30), buttonWidth), title.height()));
         TextView label = new TextView(windowContext);
         label.setText(nativeLabel(task));
         label.setTextColor(Color.WHITE);
@@ -584,7 +591,7 @@ public final class FreeformOverlayService extends Service {
         WindowManager.LayoutParams lp = params(title.width(), title.height(), title.left, title.top);
         lp.setTitle("Smart S freeform title " + task.id);
         bar.addView(control("−", R.string.freeform_minimize,
-                () -> operate(task, "minimize", null)), new LinearLayout.LayoutParams(dp(40), title.height()));
+                () -> operate(task, "minimize", null)), new LinearLayout.LayoutParams(buttonWidth, title.height()));
         if (task.mode == 5) {
             label.setOnClickListener(v -> operate(task, "focus", null));
             drag(label, bar, lp, task, area, 0);
@@ -593,9 +600,9 @@ public final class FreeformOverlayService extends Service {
         }
         bar.addView(control("□", R.string.freeform_maximize,
                 () -> operate(task, "maximize", null)),
-                new LinearLayout.LayoutParams(dp(40), title.height()));
+                new LinearLayout.LayoutParams(buttonWidth, title.height()));
         bar.addView(control("×", R.string.freeform_close, () -> operate(task, "close", null)),
-                new LinearLayout.LayoutParams(dp(40), title.height()));
+                new LinearLayout.LayoutParams(buttonWidth, title.height()));
         decor.title = bar; decor.titleParams = lp;
         boolean added = add(bar, lp);
         if (added) alignAfterLayout(bar, lp, title);

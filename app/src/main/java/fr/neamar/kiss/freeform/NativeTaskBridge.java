@@ -213,7 +213,8 @@ public final class NativeTaskBridge {
     private static JSONObject observe(Class<?> atm, Object service, int id, String component,
                                       int user, Rect expected) throws Exception {
         JSONObject last = null;
-        for (int attempt = 0; attempt < 12; attempt++) {
+        long deadline = android.os.SystemClock.elapsedRealtime() + 1400;
+        for (int attempt = 0; attempt < 12 && android.os.SystemClock.elapsedRealtime() < deadline; attempt++) {
             if (attempt != 0) android.os.SystemClock.sleep(40);
             List<?> rows = tasks(atm, service);
             for (Object item : rows) {
