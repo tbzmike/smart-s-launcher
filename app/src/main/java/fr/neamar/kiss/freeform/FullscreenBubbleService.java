@@ -34,7 +34,7 @@ import java.util.concurrent.Executors;
 /** Event-driven fullscreen task switcher. It never changes an app's windowing mode. */
 @RequiresApi(35)
 public final class FullscreenBubbleService extends AccessibilityService {
-    private static FullscreenBubbleService instance;
+    private static java.lang.ref.WeakReference<FullscreenBubbleService> connected = new java.lang.ref.WeakReference<>(null);
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Map<Integer, View> views = new LinkedHashMap<>();
@@ -54,6 +54,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
     }
 
     public static void toggle(Activity activity) {
+        FullscreenBubbleService instance = connected.get();
         if (instance != null) {
             instance.saved.edit().clear().apply();
             instance.shutdown();
@@ -69,7 +70,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
     }
 
     @Override protected void onServiceConnected() {
-        instance = this;
+        connected = new java.lang.ref.WeakReference<>(this);
         saved = getSharedPreferences("fullscreen-switcher-tasks", MODE_PRIVATE);
         wm = getSystemService(WindowManager.class);
         schedule();
@@ -257,5 +258,5 @@ public final class FullscreenBubbleService extends AccessibilityService {
         views.clear(); worker.shutdownNow();
     }
     @Override public void onInterrupt() {}
-    @Override public void onDestroy() { shutdown(); if (instance==this) instance=null; super.onDestroy(); }
+    @Override public void onDestroy() { shutdown(); if (connected.get()==this) connected.clear(); super.onDestroy(); }
 }
