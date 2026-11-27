@@ -8,6 +8,7 @@ import android.widget.TextView;
 public final class FixtureFreeformActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().setTitle("Freeform custom title " + getPackageName());
         TextView label = new TextView(this);
         label.setText("Native freeform fixture: " + getPackageName());
         label.setTextSize(20);

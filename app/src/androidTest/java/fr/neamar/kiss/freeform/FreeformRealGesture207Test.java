@@ -283,7 +283,21 @@ public final class FreeformRealGesture207Test {
                         && decoration(doc, "title") == null && decoration(doc, "corner") == null
                         && decoration(doc, "restore") != null;
             });
-            evidence("fullscreen.png", usable, true);
+            // Task geometry can settle before the fullscreen transition finishes drawing.
+            // Require two full-content frames and retain the last screenshot on timeout.
+            long drawDeadline = SystemClock.elapsedRealtime() + 3000;
+            int verifiedFrames = 0;
+            while (verifiedFrames < 2) {
+                try {
+                    evidence("fullscreen.png", usable, true);
+                    verifiedFrames++;
+                } catch (AssertionError error) {
+                    if (error.getMessage() == null || !error.getMessage().startsWith("Actual app content")
+                            || SystemClock.elapsedRealtime() >= drawDeadline) throw error;
+                    verifiedFrames = 0;
+                }
+                if (verifiedFrames < 2) SystemClock.sleep(120);
+            }
             Rect restore = decoration(full, "restore");
             tap(restore.centerX(), restore.centerY());
             JSONObject restored = await("same task restored with previous geometry", doc ->
