@@ -18,9 +18,16 @@ adb install -r -g app/build/outputs/apk/debug/app-debug.apk
 adb install -r shortcut-fixture/build/outputs/apk/target/debug/shortcut-fixture-target-debug.apk
 adb install -r shortcut-fixture/build/outputs/apk/icebox/debug/shortcut-fixture-icebox-debug.apk
 # Real Android tasks in an isolated CI emulator. No production/device settings are changed.
-adb root
-adb wait-for-device
-test "$(adb shell id -u | tr -d '\r')" = 0
+ensure_root() {
+  for attempt in 1 2 3; do
+    timeout 45 adb root || true
+    if timeout 45 adb wait-for-device && [ "$(timeout 10 adb shell id -u | tr -d '\r')" = 0 ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+ensure_root
 adb shell settings put global enable_freeform_support 1
 adb shell settings put global force_resizable_activities 1
 adb shell settings put global enable_non_resizable_multi_window 1
@@ -35,9 +42,7 @@ for attempt in $(seq 1 180); do
   sleep 1
 done
 test "$booted" = 1
-adb root
-adb wait-for-device
-test "$(adb shell id -u | tr -d '\r')" = 0
+ensure_root
 adb shell input keyevent 82
 mkdir -p verification-results
 python3 scripts/verify_206_task_transitions.py | tee verification-results/native-freeform-transitions.log
@@ -66,6 +71,10 @@ set +e
 adb shell am instrument -w -r -e class fr.neamar.kiss.freeform.FreeformRealGesture207Test \
   com.tbzmike.smartslauncher.debug.test/androidx.test.runner.AndroidJUnitRunner | tee "$file"
 code=${PIPESTATUS[0]}
+if ! grep -qE 'OK \([0-9]+ tests?\)' "$file"; then
+  adb shell dumpsys window -a windows > verification-results/window-state.txt
+  cat verification-results/window-state.txt | sed -n '/Window #[0-9].*Fixture/,/Window #[0-9]/p'
+fi
 adb pull /data/user/0/com.tbzmike.smartslauncher.debug/files/freeform207-evidence verification-results/ || true
 set -e
 test "$code" = 0
