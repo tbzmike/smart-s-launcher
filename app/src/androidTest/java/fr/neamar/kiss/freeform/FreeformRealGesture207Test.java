@@ -347,7 +347,19 @@ public final class FreeformRealGesture207Test {
                     attached(doc) && usable.contains(frame(task(doc)))
                             && usable.contains(decoration(doc, "title"))
                             && usable.contains(decoration(doc, "corner")));
-            evidence("rotated.png", frame(task(rotated)), true);
+            settledEvidence("rotated.png", frame(task(rotated)));
+            shell("input keyevent KEYCODE_HOME");
+            SystemClock.sleep(1500);
+            JSONObject home = await("same floating window and controls above Home", this::attached);
+            settledEvidence("above-home.png", frame(task(home)));
+            String settings = shell("am start -W --windowingMode 1 -a android.settings.SETTINGS");
+            assertTrue(settings, settings.contains("Status: ok"));
+            SystemClock.sleep(1500);
+            JSONObject overApp = await("same floating window and controls above Settings", this::attached);
+            settledEvidence("above-fullscreen.png", frame(task(overApp)));
+            Rect closeTitle = decoration(overApp, "title");
+            tap(closeTitle.right - dp(20), closeTitle.centerY());
+            await("explicit X closes the task", doc -> task(doc) == null);
         } finally {
             ui.setRotation(UiAutomation.ROTATION_FREEZE_0);
             ui.setRotation(UiAutomation.ROTATION_UNFREEZE);

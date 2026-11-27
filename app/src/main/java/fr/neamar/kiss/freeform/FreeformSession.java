@@ -179,7 +179,7 @@ final class FreeformSession {
                         && !candidate.bounds.isEmpty()) {
                     if (!register) return OpenResult.VERIFIED;
                     Rect wanted = defaultPopup(popupArea(context, area));
-                    if (client.action("resize", candidate, wanted)) {
+                    if (client.action("resizePinned", candidate, wanted)) {
                         NativeTaskClient.Task placed = awaitGeometry(client, candidate.id, candidate.component,
                                 5, wanted, tolerance(context), false);
                         if (placed != null) candidate = placed;
@@ -201,9 +201,9 @@ final class FreeformSession {
         boolean restoring = task.mode != 5 || (entry != null && entry.minimized) || !task.visible
                 || (register && (entry == null || !safe.contains(task.bounds)));
         if (!restoring) {
-            if (!client.action("focus", task, null)) return OpenResult.FAILED;
+            if (!client.action(register || entry != null ? "focusPinned" : "focus", task, null)) return OpenResult.FAILED;
         } else {
-            if (!client.action("restore", task, popup)) return OpenResult.FAILED;
+            if (!client.action(register || entry != null ? "restorePinned" : "restore", task, popup)) return OpenResult.FAILED;
         }
         NativeTaskClient.Task observed = restoring && register
                 ? awaitGeometry(client, id, task.component, 5, popup, tolerance(context), false)
@@ -348,7 +348,7 @@ final class FreeformSession {
                     && await(client, id, component, task.mode, false) != null) return true;
             // A failed/uncertain minimize must not strand a hidden task. Retain the recovery
             // record unless the same task is observed restored and visible.
-            if (client.action("restore", task, fit(entry.popup, popupArea(context, area), 1))
+            if (client.action("restorePinned", task, fit(entry.popup, popupArea(context, area), 1))
                     && await(client, id, component, 5, true) != null) {
                 entry.minimized = false; save(context, entries);
             }
@@ -356,7 +356,7 @@ final class FreeformSession {
         }
         if ("restore".equals(action)) {
             Rect popup = fit(entry.popup, popupArea(context, area), 1);
-            if (!client.action("restore", task, popup)) return false;
+            if (!client.action("restorePinned", task, popup)) return false;
             NativeTaskClient.Task after = await(client, id, component, 5, true);
             if (after == null) return false;
             // Some ROMs apply default bounds during a mode transition. Correct the same task
@@ -385,7 +385,7 @@ final class FreeformSession {
                     && awaitGeometry(client, id, component, 1, area, tolerance(context), true) != null) return true;
             // A mode flag alone is insufficient. Restore the known popup if the surface
             // never actually becomes fullscreen, so no clipped pseudo-fullscreen is retained.
-            client.action("restore", task, fit(entry.popup, popupArea(context, area), 1));
+            client.action("restorePinned", task, fit(entry.popup, popupArea(context, area), 1));
             awaitGeometry(client, id, component, 5, entry.popup, tolerance(context), false);
             return false;
         }
@@ -421,7 +421,11 @@ final class FreeformSession {
         if (tasks == null) return false;
         for (Entry entry : new ArrayList<>(entries.values())) {
             NativeTaskClient.Task task = exact(tasks, entry);
-            if (task == null || !entry.minimized) { entries.remove(entry.id); continue; }
+            if (task == null) { entries.remove(entry.id); continue; }
+            if (!entry.minimized) {
+                if (client.action("unpin", task, null)) entries.remove(entry.id);
+                continue;
+            }
             if (client.action("restore", task, fit(entry.popup, popupArea(context, area), 1))
                     && await(client, entry.id, entry.component, 5, true) != null) entries.remove(entry.id);
         }

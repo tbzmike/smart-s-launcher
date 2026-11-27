@@ -129,8 +129,16 @@ public final class NativeTaskBridge {
             Method reorder = transactionType.getMethod("reorder", tokenType, boolean.class);
             Method windowMode = transactionType.getMethod("setWindowingMode", tokenType, int.class);
             Method setBounds = transactionType.getMethod("setBounds", tokenType, Rect.class);
+            boolean keepAbove = action.endsWith("Pinned");
+            if (keepAbove) action = action.substring(0, action.length() - "Pinned".length());
+            if (keepAbove || "unpin".equals(action) || "minimize".equals(action) || "maximize".equals(action)) {
+                transactionType.getMethod("setAlwaysOnTop", tokenType, boolean.class)
+                        .invoke(transaction, token, keepAbove);
+            }
             boolean focus = false;
             switch (action) {
+                case "unpin":
+                    break;
                 case "live":
                     if (mode != 5 || bounds.isEmpty()) throw new IllegalArgumentException("Not a resizable popup");
                     // Transition-aware resize path updates actual task surfaces, not just the
