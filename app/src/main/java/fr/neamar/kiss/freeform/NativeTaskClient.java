@@ -37,7 +37,11 @@ final class NativeTaskClient {
     }
 
     @Nullable List<Task> list() {
-        JSONObject result = invoke("list", "");
+        return list(true);
+    }
+
+    @Nullable List<Task> list(boolean withFrames) {
+        JSONObject result = invoke(withFrames ? "list" : "identities", "");
         if (result == null || !result.optBoolean("ok")) return null;
         try {
             JSONArray rows = result.getJSONArray("tasks");

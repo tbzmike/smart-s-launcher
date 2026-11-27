@@ -227,7 +227,7 @@ final class FreeformSession {
             String component, int mode, boolean visible) {
         for (int attempt = 0; attempt < 3; attempt++) {
             if (attempt > 0) SystemClock.sleep(180L * attempt);
-            NativeTaskClient.Task task = find(client.list(), id);
+            NativeTaskClient.Task task = find(client.list(visible), id);
             if (task != null && task.component.equals(component) && task.mode == mode
                     && task.visible == visible) return task;
         }
@@ -328,7 +328,7 @@ final class FreeformSession {
         Entry entry = entries.get(id);
         if (entry == null || !entry.component.equals(component)) return false;
         NativeTaskClient client = new NativeTaskClient(context);
-        List<NativeTaskClient.Task> tasks = client.list();
+        List<NativeTaskClient.Task> tasks = client.list(false);
         if (tasks == null) return false;
         NativeTaskClient.Task task = exact(tasks, entry);
         if (task == null) { entries.remove(id); save(context, entries); return false; }

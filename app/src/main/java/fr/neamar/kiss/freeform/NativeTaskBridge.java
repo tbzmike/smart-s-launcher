@@ -61,6 +61,15 @@ public final class NativeTaskBridge {
             if (user < 0) throw new IllegalArgumentException("Invalid user");
             String action = args[0];
             List<?> tasks = tasks(atm, service);
+            if ("identities".equals(action)) {
+                JSONArray rows = new JSONArray();
+                for (Object item : tasks) {
+                    JSONObject info = describe(item);
+                    if (info != null && info.getInt("user") == user) rows.put(info);
+                }
+                emit(new JSONObject().put("ok", true).put("tasks", rows));
+                return;
+            }
             if ("list".equals(action)) {
                 JSONArray rows = new JSONArray();
                 List<?> windows = visibleWindows();
@@ -165,9 +174,12 @@ public final class NativeTaskBridge {
             Class<?> organizerType = Class.forName("android.window.IWindowOrganizerController");
             // Shell transitions update crop/position of organized task surfaces as well as
             // configuration. AOSP falls back to legacy apply when no transition player exists.
-            if ("restore".equals(action) || "maximize".equals(action) || "resize".equals(action)) {
+            if ("minimize".equals(action) || "restore".equals(action) || "maximize".equals(action) || "resize".equals(action)) {
+                int transition = "minimize".equals(action) ? 4 /* TRANSIT_TO_BACK */
+                        : "restore".equals(action) && !info.getBoolean("visible") ? 3 /* TRANSIT_TO_FRONT */
+                        : 6 /* TRANSIT_CHANGE */;
                 organizerType.getMethod("startNewTransition", int.class, transactionType)
-                        .invoke(organizer, 6 /* TRANSIT_CHANGE */, transaction);
+                        .invoke(organizer, transition, transaction);
             } else {
                 organizerType.getMethod("applyTransaction", transactionType).invoke(organizer, transaction);
             }

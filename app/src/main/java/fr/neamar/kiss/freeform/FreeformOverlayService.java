@@ -427,6 +427,9 @@ public final class FreeformOverlayService extends Service {
         button.setTextSize(20f);
         button.setGravity(Gravity.CENTER);
         button.setContentDescription(getString(label));
+        android.util.TypedValue feedback = new android.util.TypedValue();
+        if (windowContext.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, feedback, true)
+                && feedback.resourceId != 0) button.setBackgroundResource(feedback.resourceId);
         button.setOnClickListener(v -> action.run());
         return button;
     }
@@ -794,6 +797,16 @@ public final class FreeformOverlayService extends Service {
         catch (RuntimeException unavailable) { return; }
         if (area.isEmpty()) return;
         busy = true;
+        Decoration decor = decorations.get(task.id);
+        if (decor != null && ("maximize".equals(action) || "minimize".equals(action))
+                && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            int duration = getResources().getInteger(android.R.integer.config_shortAnimTime);
+            android.view.animation.Interpolator curve = android.view.animation.AnimationUtils.loadInterpolator(
+                    this, android.R.interpolator.fast_out_slow_in);
+            for (View control : new View[]{decor.title, decor.corner}) {
+                if (control != null) control.animate().alpha(0.35f).setDuration(duration).setInterpolator(curve).start();
+            }
+        }
         worker.execute(() -> {
             boolean ok;
             try { ok = FreeformSession.operate(this, task.id, task.component, action, bounds, area); }
