@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 final class WindowFrameLookup {
     private static final Pattern HEADER = Pattern.compile("^\\s*Window #\\d+ Window\\{([0-9a-fA-F]+) u(\\d+) (.+?)\\}:\\s*$");
     private static final Pattern TASK = Pattern.compile("\\bmDisplayId=(\\d+)(?:\\s+taskId=(\\d+))?\\b");
+    private static final Pattern ACTIVITY_TASK = Pattern.compile("^\\s*mActivityRecord=ActivityRecord\\{[^}]*\\bt(\\d+)\\b");
     private static final Pattern FRAME = Pattern.compile("\\bframe=\\[(-?\\d+),(-?\\d+)\\]\\[(-?\\d+),(-?\\d+)\\]");
     private static final Pattern MAIN = Pattern.compile("\\bty=(?:BASE_APPLICATION|APPLICATION|1|2)(?:\\s|\\}|$)");
     static final class Window {
@@ -42,6 +43,8 @@ final class WindowFrameLookup {
                 current.display = Integer.parseInt(task.group(1));
                 if (task.group(2) != null) current.task = Integer.parseInt(task.group(2));
             }
+            Matcher activity = ACTIVITY_TASK.matcher(line);
+            if (activity.find()) current.task = Integer.parseInt(activity.group(1));
             if (line.trim().startsWith("mAttrs=")) {
                 current.main = MAIN.matcher(line).find();
                 current.base = line.matches(".*\\bty=(BASE_APPLICATION|1)(\\s|\\}|$).*");
