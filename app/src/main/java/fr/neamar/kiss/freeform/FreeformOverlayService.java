@@ -438,7 +438,9 @@ public final class FreeformOverlayService extends Service {
         for (int i = 0; i < index; i++) {
             NativeTaskClient.Task other = tasks.get(i);
             Rect frame = other.frame.isEmpty() ? other.bounds : other.frame;
-            if (other.visible && other.type != 2 && Rect.intersects(frame, target)) return true;
+            // A visible always-on-top popup is above normal fullscreen apps even
+            // when getTasks() lists their more recently focused task first.
+            if (other.visible && other.mode != 1 && other.type != 2 && Rect.intersects(frame, target)) return true;
         }
         return false;
     }
