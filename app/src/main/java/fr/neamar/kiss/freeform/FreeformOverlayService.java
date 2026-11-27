@@ -452,9 +452,12 @@ public final class FreeformOverlayService extends Service {
         catch (RuntimeException unavailable) { return; }
         if (area.isEmpty()) return;
         StringBuilder key = new StringBuilder(area.toString());
+        int freeformCount = 0;
+        for (NativeTaskClient.Task task : state.tasks) if (task.mode == 5 && task.visible) freeformCount++;
         for (NativeTaskClient.Task task : state.tasks) {
+            if (task.mode == 1 && !state.entries.containsKey(task.id)) continue;
             key.append('|').append(task.id).append(':').append(task.mode).append(':')
-                    .append(task.visible).append(':').append(task.focused).append(':').append(task.bounds)
+                    .append(task.visible).append(':').append(freeformCount > 1 && task.focused).append(':').append(task.bounds)
                     .append(':').append(task.frame);
         }
         for (FreeformSession.Entry e : state.entries.values()) {
@@ -850,11 +853,13 @@ public final class FreeformOverlayService extends Service {
             try { ok = FreeformSession.operate(this, task.id, task.component, action, bounds, area); }
             catch (RuntimeException failure) { ok = false; }
             final boolean result = ok;
-            main.post(() -> complete(result));
+            main.post(() -> complete(result, !"back".equals(action)));
         });
     }
 
-    private void complete(boolean ok) {
+    private void complete(boolean ok) { complete(ok, true); }
+
+    private void complete(boolean ok, boolean rebuild) {
         if (destroyed) return;
         busy = false;
         if (pendingClose != null) {
@@ -864,7 +869,7 @@ public final class FreeformOverlayService extends Service {
             return;
         }
         if (!ok) Toast.makeText(this, R.string.freeform_operation_unverified, Toast.LENGTH_LONG).show();
-        signature = "";
+        if (rebuild) signature = "";
         requestRefresh();
     }
 }
