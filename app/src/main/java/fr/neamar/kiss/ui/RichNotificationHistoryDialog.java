@@ -45,11 +45,16 @@ public final class RichNotificationHistoryDialog {
     private RichNotificationHistoryDialog() {}
 
     public static boolean showLatest(Context context, String packageName) {
+        return showLatest(context, packageName, null);
+    }
+
+    /** Only app entries supply this exact app action. Exact notification destinations stay intact. */
+    public static boolean showLatest(Context context, String packageName, Runnable freeformAction) {
         if (context == null || packageName == null || packageName.isEmpty()) return false;
         List<NotificationHistoryRecord> records = SmartStateStore.queryNotifications(
                 context, packageName, null, 0);
         if (records.isEmpty()) return false;
-        new Session(context, packageName, records, 0).show();
+        new Session(context, packageName, records, 0, freeformAction).show();
         return true;
     }
 
@@ -139,6 +144,11 @@ public final class RichNotificationHistoryDialog {
 
         Session(Context context, String packageName, List<NotificationHistoryRecord> records,
                 int startIndex) {
+            this(context, packageName, records, startIndex, null);
+        }
+
+        Session(Context context, String packageName, List<NotificationHistoryRecord> records,
+                int startIndex, Runnable freeformAction) {
             this.context = context;
             this.packageName = packageName;
             this.records = records;
@@ -218,10 +228,14 @@ public final class RichNotificationHistoryDialog {
             scroll.setFillViewport(false);
             scroll.addView(content);
 
-            dialog = new AlertDialog.Builder(context)
+            AlertDialog.Builder builder = new AlertDialog.Builder(context)
                     .setView(scroll)
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .create();
+                    .setNegativeButton(android.R.string.cancel, null);
+            if (freeformAction != null) {
+                builder.setPositiveButton(fr.neamar.kiss.R.string.menu_app_freeform,
+                        (ignored, which) -> freeformAction.run());
+            }
+            dialog = builder.create();
         }
 
         void show() {

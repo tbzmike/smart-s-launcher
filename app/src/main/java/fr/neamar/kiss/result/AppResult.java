@@ -263,6 +263,20 @@ public class AppResult extends ResultWithTags<AppPojo> {
         return super.popupMenuClickHandler(context, parent, stringId, parentView);
     }
 
+    /** Read-only app actions remain available with the launcher editing lock enabled. */
+    public boolean showLockedFreeform(Context context, @Nullable View anchor) {
+        if (Build.VERSION.SDK_INT < 24 || !pojo.userHandle.isCurrentUser()) return false;
+        if (fr.neamar.kiss.ui.RichNotificationHistoryDialog.showLatest(
+                context, pojo.packageName, () -> launchFreeform(context, anchor))) return true;
+        new AlertDialog.Builder(context)
+                .setTitle(pojo.getName())
+                .setItems(new CharSequence[]{context.getString(R.string.menu_app_freeform)},
+                        (dialog, which) -> launchFreeform(context, anchor))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+        return true;
+    }
+
     /** Explicit alternative launch; ordinary taps and existing shortcuts remain untouched. */
     private void launchFreeform(Context context, @Nullable View view) {
         if (freeformPending) return;

@@ -1085,7 +1085,10 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public boolean showNotificationHistoryIfAvailable(final int pos, View v) {
         if (pos < 0 || pos >= getCount() || v == null) return false;
         Context context = v.getContext();
-        Pojo pojo = getItem(pos).getPojo();
+        Result<?> result = getItem(pos);
+        if (UiEditLock.isLocked(context) && result instanceof fr.neamar.kiss.result.AppResult
+                && ((fr.neamar.kiss.result.AppResult) result).showLockedFreeform(context, v)) return true;
+        Pojo pojo = result.getPojo();
         return UiEditLock.isLocked(context)
                 ? NotificationHistoryResolver.showLockedForPojo(context, pojo)
                 : NotificationHistoryResolver.showForPojo(context, pojo);
@@ -1099,6 +1102,9 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
     public boolean onBoundResultLongClick(Result<?> bound, View anchor) {
         if (bound == null || bound.getPojo() == null || anchor == null) return false;
         if (UiEditLock.isLocked(anchor.getContext())) {
+            if (bound instanceof fr.neamar.kiss.result.AppResult
+                    && ((fr.neamar.kiss.result.AppResult) bound).showLockedFreeform(
+                            anchor.getContext(), anchor)) return true;
             // NotificationPojo supplies its exact id AND post-time for strict record selection.
             // No chronological History mutation or position lookup is allowed in locked mode.
             if (!NotificationHistoryResolver.showLockedForPojo(
@@ -1133,6 +1139,8 @@ public class RecordAdapter extends BaseAdapter implements SectionIndexer {
             // Read-only long press is inspection, not a launch/selection event. Do not write a new
             // History row or move anything to the chronological bottom before resolving the popup;
             // doing so could make the view/adapter position drift underneath the user's finger.
+            if (result instanceof fr.neamar.kiss.result.AppResult
+                    && ((fr.neamar.kiss.result.AppResult) result).showLockedFreeform(context, v)) return;
             NotificationHistoryResolver.showLockedForPojo(context, result.getPojo());
             return;
         }
