@@ -141,18 +141,17 @@ final class FreeformSession {
     }
 
     static Rect fit(Rect source, Rect area, int minimum) {
-        int width = Math.max(1, Math.min(area.width(), Math.max(minimum, source.width())));
-        int height = Math.max(1, Math.min(area.height(), Math.max(minimum, source.height())));
-        int x = FreeformTaskPolicy.clamp(source.left, area.left, area.right - width);
-        int y = FreeformTaskPolicy.clamp(source.top, area.top, area.bottom - height);
-        return new Rect(x, y, x + width, y + height);
+        return FreeformGeometry.fit(source, area, minimum);
     }
 
-    private static Rect defaultPopup(Rect area) {
-        int w = Math.max(1, area.width() * 3 / 4);
-        int h = Math.max(1, area.height() * 3 / 4);
-        int x = area.left + (area.width() - w) / 2, y = area.top + (area.height() - h) / 2;
-        return new Rect(x, y, x + w, y + h);
+    private static Rect defaultPopup(Rect area) { return FreeformGeometry.center(area); }
+
+    private static Rect popupArea(Context context, Rect area) {
+        return FreeformGeometry.contentArea(area, Math.round(40 * context.getResources().getDisplayMetrics().density));
+    }
+
+    private static int tolerance(Context context) {
+        return Math.max(8, Math.round(8 * context.getResources().getDisplayMetrics().density));
     }
 
     /** Reuse an existing exact task; never launch a second task if identity is ambiguous. */
@@ -179,8 +178,16 @@ final class FreeformSession {
                 if (candidate != null && candidate.mode == 5 && candidate.visible
                         && !candidate.bounds.isEmpty()) {
                     if (!register) return OpenResult.VERIFIED;
+                    Rect wanted = defaultPopup(popupArea(context, area));
+                    if (client.action("resize", candidate, wanted)) {
+                        NativeTaskClient.Task placed = awaitGeometry(client, candidate.id, candidate.component,
+                                5, wanted, tolerance(context), false);
+                        if (placed != null) candidate = placed;
+                    }
                     entries.put(candidate.id, new Entry(candidate.id, candidate.component, candidate.bounds));
-                    return save(context, entries) ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
+                    boolean saved = save(context, entries);
+                    return saved && FreeformGeometry.near(candidate.frame, wanted, tolerance(context))
+                            ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
                 }
             }
             return OpenResult.REQUESTED_UNVERIFIED;
@@ -189,21 +196,26 @@ final class FreeformSession {
         if (task == null || (task.mode != 1 && task.mode != 5)) return OpenResult.FAILED;
         Entry entry = entries.get(id);
         if (entry != null && !FreeformTaskPolicy.same(entry.id, entry.component, task.id, task.component)) entry = null;
-        Rect popup = entry != null ? fit(entry.popup, area, 1)
-                : task.mode == 5 && !task.bounds.isEmpty() ? fit(task.bounds, area, 1) : defaultPopup(area);
-        boolean restoring = task.mode != 5 || (entry != null && entry.minimized) || !task.visible;
+        Rect safe = popupArea(context, area);
+        Rect popup = entry != null ? fit(entry.popup, safe, 1) : defaultPopup(safe);
+        boolean restoring = task.mode != 5 || (entry != null && entry.minimized) || !task.visible
+                || (register && (entry == null || !safe.contains(task.bounds)));
         if (!restoring) {
             if (!client.action("focus", task, null)) return OpenResult.FAILED;
         } else {
             if (!client.action("restore", task, popup)) return OpenResult.FAILED;
         }
-        NativeTaskClient.Task observed = await(client, id, task.component, 5, true);
+        NativeTaskClient.Task observed = restoring && register
+                ? awaitGeometry(client, id, task.component, 5, popup, tolerance(context), false)
+                : await(client, id, task.component, 5, true);
+        if (observed == null && restoring) observed = await(client, id, task.component, 5, true);
         if (observed == null || observed.bounds.isEmpty()) return OpenResult.REQUESTED_UNVERIFIED;
         if (restoring && !popup.equals(observed.bounds) && client.action("resize", observed, popup)) {
             NativeTaskClient.Task resized = await(client, id, task.component, 5, true);
             if (resized != null && !resized.bounds.isEmpty()) observed = resized;
         }
-        boolean exactBounds = !restoring || popup.equals(observed.bounds);
+        boolean exactBounds = !restoring || (popup.equals(observed.bounds)
+                && (!register || FreeformGeometry.near(observed.frame, popup, tolerance(context))));
         Entry updated = new Entry(id, observed.component, observed.bounds);
         if (entry != null) { updated.bubbleX = entry.bubbleX; updated.bubbleY = entry.bubbleY; }
         if (!register && entry == null) return exactBounds ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
@@ -220,6 +232,31 @@ final class FreeformSession {
                     && task.visible == visible) return task;
         }
         return null;
+    }
+
+    @Nullable private static NativeTaskClient.Task awaitGeometry(NativeTaskClient client, int id,
+            String component, int mode, Rect wanted, int tolerance, boolean fullscreen) {
+        for (int i = 0; i < 6; i++) {
+            if (i != 0) SystemClock.sleep(150);
+            NativeTaskClient.Task task = find(client.list(), id);
+            if (task == null || !component.equals(task.component) || task.mode != mode || !task.visible) continue;
+            if (fullscreen ? FreeformGeometry.fullscreen(task.frame, wanted, tolerance)
+                    : wanted.equals(task.bounds) && FreeformGeometry.near(task.frame, wanted, tolerance)) return task;
+        }
+        return null;
+    }
+
+    /** Persist only the observed final geometry, never the finger's speculative rectangle. */
+    static synchronized boolean finishGesture(Context context, NativeTaskClient.Task task, Rect wanted) {
+        Map<Integer, Entry> entries = load(context);
+        if (entries == null) return false;
+        Entry entry = entries.get(task.id);
+        if (entry == null || entry.minimized || !entry.component.equals(task.component)) return false;
+        NativeTaskClient.Task observed = awaitGeometry(new NativeTaskClient(context), task.id,
+                task.component, 5, wanted, tolerance(context), false);
+        if (observed == null) return false;
+        entry.popup.set(observed.bounds);
+        return save(context, entries);
     }
 
     /** Allocate a stable, initially non-overlapping location, saved before the task is hidden. */
@@ -294,14 +331,14 @@ final class FreeformSession {
                     && await(client, id, component, task.mode, false) != null) return true;
             // A failed/uncertain minimize must not strand a hidden task. Retain the recovery
             // record unless the same task is observed restored and visible.
-            if (client.action("restore", task, fit(entry.popup, area, 1))
+            if (client.action("restore", task, fit(entry.popup, popupArea(context, area), 1))
                     && await(client, id, component, 5, true) != null) {
                 entry.minimized = false; save(context, entries);
             }
             return false;
         }
         if ("restore".equals(action)) {
-            Rect popup = fit(entry.popup, area, 1);
+            Rect popup = fit(entry.popup, popupArea(context, area), 1);
             if (!client.action("restore", task, popup)) return false;
             NativeTaskClient.Task after = await(client, id, component, 5, true);
             if (after == null) return false;
@@ -313,19 +350,26 @@ final class FreeformSession {
             }
             entry.minimized = false; entry.popup.set(after.bounds);
             boolean saved = save(context, entries);
-            return saved && popup.equals(after.bounds);
+            return saved && popup.equals(after.bounds)
+                    && FreeformGeometry.near(after.frame, popup, tolerance(context));
         }
         if ("maximize".equals(action)) {
             if (entry.minimized || task.mode != 5) return false;
             entry.popup.set(task.bounds);
             if (!save(context, entries)) return false;
-            return client.action("maximize", task, null)
-                    && await(client, id, component, 1, true) != null;
+            if (!client.action("maximize", task, null)) return false;
+            if (awaitGeometry(client, id, component, 1, area, tolerance(context), true) != null) return true;
+            // A mode flag alone is insufficient. Restore the known popup if the surface
+            // never actually becomes fullscreen, so no clipped pseudo-fullscreen is retained.
+            client.action("restore", task, fit(entry.popup, popupArea(context, area), 1));
+            awaitGeometry(client, id, component, 5, entry.popup, tolerance(context), false);
+            return false;
         }
         if ("resize".equals(action)) {
             if (entry.minimized || task.mode != 5 || requested == null) return false;
-            if (!client.action("resize", task, fit(requested, area, 1))) return false;
-            NativeTaskClient.Task after = await(client, id, component, 5, true);
+            Rect wanted = fit(requested, popupArea(context, area), 1);
+            if (!client.action("resize", task, wanted)) return false;
+            NativeTaskClient.Task after = awaitGeometry(client, id, component, 5, wanted, tolerance(context), false);
             if (after == null) return false;
             entry.popup.set(after.bounds);
             return save(context, entries);
@@ -354,7 +398,7 @@ final class FreeformSession {
         for (Entry entry : new ArrayList<>(entries.values())) {
             NativeTaskClient.Task task = exact(tasks, entry);
             if (task == null || !entry.minimized) { entries.remove(entry.id); continue; }
-            if (client.action("restore", task, fit(entry.popup, area, 1))
+            if (client.action("restore", task, fit(entry.popup, popupArea(context, area), 1))
                     && await(client, entry.id, entry.component, 5, true) != null) entries.remove(entry.id);
         }
         return save(context, entries) && entries.isEmpty();

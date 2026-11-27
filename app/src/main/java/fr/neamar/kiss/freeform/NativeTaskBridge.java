@@ -116,7 +116,7 @@ public final class NativeTaskBridge {
                     // requested override configuration. SystemUI retains its organizer.
                     atm.getMethod("resizeTask", int.class, Rect.class, int.class)
                             .invoke(service, id, bounds, 1 /* RESIZE_MODE_USER */);
-                    emit(new JSONObject().put("ok", true));
+                    emit(observe(atm, service, id, component, user, bounds));
                     return;
                 case "minimize":
                     hidden.invoke(transaction, token, true);
@@ -165,7 +165,9 @@ public final class NativeTaskBridge {
                     atm.getMethod("setFocusedTask", int.class).invoke(service, id); }
                 catch (ReflectiveOperationException ignored) { }
             }
-            emit(new JSONObject().put("ok", true));
+            if ("resize".equals(action) || "restore".equals(action)) {
+                emit(observe(atm, service, id, component, user, bounds));
+            } else emit(new JSONObject().put("ok", true));
         } catch (Throwable failure) {
             try { emit(new JSONObject().put("ok", false).put("error", failure.toString())); }
             catch (Exception ignored) { System.exit(1); }
@@ -194,6 +196,32 @@ public final class NativeTaskBridge {
                 .put("visible", cls.getField("isVisible").getBoolean(task))
                 .put("focused", cls.getField("isFocused").getBoolean(task))
                 .put("l", bounds.left).put("t", bounds.top).put("r", bounds.right).put("b", bounds.bottom);
+    }
+
+    private static JSONObject observe(Class<?> atm, Object service, int id, String component,
+                                      int user, Rect expected) throws Exception {
+        JSONObject last = null;
+        for (int attempt = 0; attempt < 12; attempt++) {
+            if (attempt != 0) android.os.SystemClock.sleep(40);
+            List<?> rows = tasks(atm, service);
+            for (Object item : rows) {
+                JSONObject row = describe(item);
+                if (row == null || row.getInt("id") != id || row.getInt("user") != user
+                        || !component.equals(row.getString("component"))) continue;
+                addFrame(row, item, rows, visibleWindows());
+                last = row;
+                if (row.getInt("mode") == 5 && row.has("vl") && row.getInt("l") == expected.left
+                        && row.getInt("t") == expected.top && row.getInt("r") == expected.right
+                        && row.getInt("b") == expected.bottom
+                        && Math.abs(row.getInt("vl") - expected.left) <= 12
+                        && Math.abs(row.getInt("vt") - expected.top) <= 12
+                        && Math.abs(row.getInt("vr") - expected.right) <= 12
+                        && Math.abs(row.getInt("vb") - expected.bottom) <= 12) {
+                    return new JSONObject().put("ok", true).put("task", row);
+                }
+            }
+        }
+        return new JSONObject().put("ok", last != null).put("task", last);
     }
 
     /** SurfaceFlinger input-window frames in logical display coordinates, independent of TaskInfo. */

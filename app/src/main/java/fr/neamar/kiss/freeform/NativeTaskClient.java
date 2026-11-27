@@ -73,9 +73,9 @@ final class NativeTaskClient {
                     + quote(task.component))).redirectErrorStream(true).start();
             input = process.getOutputStream(); output = process.getInputStream();
         }
-        boolean send(Rect bounds, boolean finish) {
+        @Nullable Task send(Rect bounds, boolean finish) {
             try {
-                if (!KissApplication.getApplication(app).getRootHandler().isRootActivated()) return false;
+                if (!KissApplication.getApplication(app).getRootHandler().isRootActivated()) return null;
                 String message = (finish ? "resize" : "live") + " " + bounds.left + " "
                         + bounds.top + " " + bounds.right + " " + bounds.bottom + "\n";
                 input.write(message.getBytes(java.nio.charset.StandardCharsets.UTF_8)); input.flush();
@@ -83,20 +83,22 @@ final class NativeTaskClient {
                 while (android.os.SystemClock.elapsedRealtime() < deadline) {
                     while (output.available() > 0) {
                         int ch = output.read();
-                        if (ch < 0) return false;
+                        if (ch < 0) return null;
                         if (ch == '\n') {
                             String response = line.toString("UTF-8").trim(); line.reset();
                             if (response.startsWith(NativeTaskBridge.PREFIX)) {
-                                return new JSONObject(response.substring(NativeTaskBridge.PREFIX.length())).optBoolean("ok");
+                                JSONObject value = new JSONObject(response.substring(NativeTaskBridge.PREFIX.length()));
+                                JSONObject row = value.optJSONObject("task");
+                                return value.optBoolean("ok") && row != null ? new Task(row) : null;
                             }
                         } else if (line.size() < 65536) line.write(ch);
                         else line.reset();
                     }
-                    if (!process.isAlive()) return false;
+                    if (!process.isAlive()) return null;
                     android.os.SystemClock.sleep(8);
                 }
-            } catch (Exception failure) { return false; }
-            return false;
+            } catch (Exception failure) { return null; }
+            return null;
         }
         @Override public void close() {
             try { input.close(); } catch (java.io.IOException ignored) { }
