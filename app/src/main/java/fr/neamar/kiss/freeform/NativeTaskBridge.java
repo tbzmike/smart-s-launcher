@@ -23,6 +23,25 @@ public final class NativeTaskBridge {
     private NativeTaskBridge() {}
 
     public static void main(String[] args) {
+        // The helper stays alive only for the active gesture. No organizer is registered and no
+        // SystemUI task leash is stolen. EOF closes the helper when the launcher dies.
+        if (args.length == 4 && "gesture".equals(args[0])) {
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(System.in, java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if ("end".equals(line)) break;
+                    String[] parts = line.split(" ");
+                    if (parts.length != 5 || !("live".equals(parts[0]) || "resize".equals(parts[0]))) break;
+                    run(new String[]{parts[0], args[1], args[2], args[3],
+                            parts[1], parts[2], parts[3], parts[4]});
+                }
+            } catch (Exception ignored) { }
+        } else run(args);
+        System.exit(0);
+    }
+
+    private static void run(String[] args) {
         try {
             if (Process.myUid() != 0) throw new SecurityException("Root required");
             if (args.length < 2) throw new IllegalArgumentException("Missing action or profile");
@@ -44,9 +63,13 @@ public final class NativeTaskBridge {
             List<?> tasks = tasks(atm, service);
             if ("list".equals(action)) {
                 JSONArray rows = new JSONArray();
+                List<?> windows = visibleWindows();
                 for (Object item : tasks) {
                     JSONObject info = describe(item);
-                    if (info != null && info.getInt("user") == user) rows.put(info);
+                    if (info != null && info.getInt("user") == user) {
+                        addFrame(info, item, tasks, windows);
+                        rows.put(info);
+                    }
                 }
                 emit(new JSONObject().put("ok", true).put("tasks", rows));
                 return;
@@ -87,6 +110,14 @@ public final class NativeTaskBridge {
             Method setBounds = transactionType.getMethod("setBounds", tokenType, Rect.class);
             boolean focus = false;
             switch (action) {
+                case "live":
+                    if (mode != 5 || bounds.isEmpty()) throw new IllegalArgumentException("Not a resizable popup");
+                    // Transition-aware resize path updates actual task surfaces, not just the
+                    // requested override configuration. SystemUI retains its organizer.
+                    atm.getMethod("resizeTask", int.class, Rect.class, int.class)
+                            .invoke(service, id, bounds, 1 /* RESIZE_MODE_USER */);
+                    emit(new JSONObject().put("ok", true));
+                    return;
                 case "minimize":
                     hidden.invoke(transaction, token, true);
                     reorder.invoke(transaction, token, false);
@@ -119,11 +150,19 @@ public final class NativeTaskBridge {
                 default: throw new IllegalArgumentException("Unknown task operation");
             }
             Object organizer = atm.getMethod("getWindowOrganizerController").invoke(service);
-            Class.forName("android.window.IWindowOrganizerController")
-                    .getMethod("applyTransaction", transactionType).invoke(organizer, transaction);
+            Class<?> organizerType = Class.forName("android.window.IWindowOrganizerController");
+            // Shell transitions update crop/position of organized task surfaces as well as
+            // configuration. AOSP falls back to legacy apply when no transition player exists.
+            if ("restore".equals(action) || "maximize".equals(action) || "resize".equals(action)) {
+                organizerType.getMethod("startNewTransition", int.class, transactionType)
+                        .invoke(organizer, 6 /* TRANSIT_CHANGE */, transaction);
+            } else {
+                organizerType.getMethod("applyTransaction", transactionType).invoke(organizer, transaction);
+            }
             if (focus) {
                 // The transaction itself succeeded; focus is advisory on ROMs with desktop policy.
-                try { atm.getMethod("setFocusedTask", int.class).invoke(service, id); }
+                try { if (!"restore".equals(action) && !"maximize".equals(action) && !"resize".equals(action))
+                    atm.getMethod("setFocusedTask", int.class).invoke(service, id); }
                 catch (ReflectiveOperationException ignored) { }
             }
             emit(new JSONObject().put("ok", true));
@@ -157,9 +196,58 @@ public final class NativeTaskBridge {
                 .put("l", bounds.left).put("t", bounds.top).put("r", bounds.right).put("b", bounds.bottom);
     }
 
+    /** SurfaceFlinger input-window frames in logical display coordinates, independent of TaskInfo. */
+    private static List<?> visibleWindows() {
+        try {
+            Class<?> type = Class.forName("android.window.WindowInfosListenerForTest");
+            Object listener = type.getConstructor().newInstance();
+            java.util.concurrent.atomic.AtomicReference<List<?>> rows = new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.function.Consumer<List<?>> callback = rows::set;
+            Method add = type.getMethod("addWindowInfosListener", java.util.function.Consumer.class);
+            Method remove = type.getMethod("removeWindowInfosListener", java.util.function.Consumer.class);
+            try {
+                add.invoke(listener, callback);
+                return rows.get();
+            } finally { remove.invoke(listener, callback); }
+        } catch (Throwable unavailable) { return null; }
+    }
+
+    private static boolean matchesWindow(String name, ComponentName component) {
+        if (component == null || name == null) return false;
+        for (String candidate : new String[]{component.flattenToString(), component.flattenToShortString()}) {
+            if (name.equals(candidate) || name.endsWith(" " + candidate)
+                    || name.endsWith(":" + candidate)) return true;
+        }
+        return false;
+    }
+
+    private static void addFrame(JSONObject info, Object task, List<?> tasks, List<?> windows) throws Exception {
+        if (windows == null || !info.getBoolean("visible")) return;
+        ComponentName top = (ComponentName) task.getClass().getField("topActivity").get(task);
+        if (top == null) return;
+        // A matching visible component must belong to only one task. Never attach a caption
+        // to a guessed window when two tasks share an indistinguishable activity.
+        int matches = 0;
+        for (Object candidate : tasks) {
+            if (candidate.getClass().getField("isVisible").getBoolean(candidate)
+                    && top.equals(candidate.getClass().getField("topActivity").get(candidate))) matches++;
+        }
+        if (matches != 1) return;
+        for (Object window : windows) {
+            Class<?> type = window.getClass();
+            if (type.getField("displayId").getInt(window) != 0
+                    || !type.getField("isVisible").getBoolean(window)
+                    || !matchesWindow((String) type.getField("name").get(window), top)) continue;
+            Rect frame = (Rect) type.getField("bounds").get(window);
+            if (frame != null && !frame.isEmpty()) {
+                info.put("vl", frame.left).put("vt", frame.top).put("vr", frame.right).put("vb", frame.bottom);
+                return;
+            }
+        }
+    }
+
     private static void emit(JSONObject result) {
         System.out.println(PREFIX + result);
         System.out.flush();
-        System.exit(0);
     }
 }

@@ -24,13 +24,15 @@ final class NativeTaskClient {
         final int id, user, mode, type;
         final String component, pkg;
         final boolean visible, focused;
-        final Rect bounds;
+        final Rect bounds, frame;
         Task(JSONObject row) throws org.json.JSONException {
             id = row.getInt("id"); user = row.getInt("user"); mode = row.getInt("mode");
             type = row.getInt("type"); component = row.getString("component");
             pkg = row.getString("pkg"); visible = row.getBoolean("visible");
             focused = row.getBoolean("focused");
             bounds = new Rect(row.getInt("l"), row.getInt("t"), row.getInt("r"), row.getInt("b"));
+            frame = row.has("vl") ? new Rect(row.getInt("vl"), row.getInt("vt"),
+                    row.getInt("vr"), row.getInt("vb")) : new Rect();
         }
     }
 
@@ -55,15 +57,66 @@ final class NativeTaskClient {
         return result != null && result.optBoolean("ok");
     }
 
+    /** One root process per gesture, with bounded replies and no background idle daemon. */
+    final class Gesture implements AutoCloseable {
+        private final java.lang.Process process;
+        private final java.io.OutputStream input;
+        private final java.io.InputStream output;
+        private final java.io.ByteArrayOutputStream line = new java.io.ByteArrayOutputStream();
+        Gesture(Task task) throws java.io.IOException {
+            if (!task.component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+")
+                    || task.user != USER || task.type != 1 || task.mode != 5
+                    || !KissApplication.getApplication(app).getRootHandler().isRootActivated()) {
+                throw new java.io.IOException("Invalid gesture task");
+            }
+            process = new ProcessBuilder("su", "-c", command("gesture", " " + task.id + " "
+                    + quote(task.component))).redirectErrorStream(true).start();
+            input = process.getOutputStream(); output = process.getInputStream();
+        }
+        boolean send(Rect bounds, boolean finish) {
+            try {
+                if (!KissApplication.getApplication(app).getRootHandler().isRootActivated()) return false;
+                String message = (finish ? "resize" : "live") + " " + bounds.left + " "
+                        + bounds.top + " " + bounds.right + " " + bounds.bottom + "\n";
+                input.write(message.getBytes(java.nio.charset.StandardCharsets.UTF_8)); input.flush();
+                long deadline = android.os.SystemClock.elapsedRealtime() + 2500;
+                while (android.os.SystemClock.elapsedRealtime() < deadline) {
+                    while (output.available() > 0) {
+                        int ch = output.read();
+                        if (ch < 0) return false;
+                        if (ch == '\n') {
+                            String response = line.toString("UTF-8").trim(); line.reset();
+                            if (response.startsWith(NativeTaskBridge.PREFIX)) {
+                                return new JSONObject(response.substring(NativeTaskBridge.PREFIX.length())).optBoolean("ok");
+                            }
+                        } else if (line.size() < 65536) line.write(ch);
+                        else line.reset();
+                    }
+                    if (!process.isAlive()) return false;
+                    android.os.SystemClock.sleep(8);
+                }
+            } catch (Exception failure) { return false; }
+            return false;
+        }
+        @Override public void close() {
+            try { input.close(); } catch (java.io.IOException ignored) { }
+            process.destroy();
+        }
+    }
+
+    private String command(String action, String extra) {
+        return "/system/bin/env " + quote("CLASSPATH=" + app.getApplicationInfo().sourceDir)
+                + " /system/bin/app_process /system/bin " + NativeTaskBridge.class.getName()
+                + " " + action + " " + USER + extra;
+    }
+
     private static String quote(String text) { return "'" + text.replace("'", "'\\''") + "'"; }
 
     @Nullable private JSONObject invoke(String action, String extra) {
         if (Build.VERSION.SDK_INT < 35) return null;
         RootHandler root = KissApplication.getApplication(app).getRootHandler();
         if (!root.isRootActivated()) return null;
-        String command = "/system/bin/env " + quote("CLASSPATH=" + app.getApplicationInfo().sourceDir)
-                + " /system/bin/app_process /system/bin " + NativeTaskBridge.class.getName()
-                + " " + action + " " + USER + extra + " 2>&1";
+        String command = command(action, extra) + " 2>&1";
         String output = root.readPrivilegedOutput(command);
         for (String line : output.split("\\r?\\n")) {
             if (!line.startsWith(NativeTaskBridge.PREFIX)) continue;
