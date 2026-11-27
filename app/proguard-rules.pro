@@ -12,3 +12,6 @@
 # Invoked by the existing authorized root shell through app_process.
 -keep class fr.neamar.kiss.shortcut.ShortcutRouteBridge { *; }
 -keep class fr.neamar.kiss.shortcut.ShortcutRouteCodec { *; }
+
+# Root-authorized native task bridge; app_process resolves the main entry point by name.
+-keep class fr.neamar.kiss.freeform.NativeTaskBridge { *; }
