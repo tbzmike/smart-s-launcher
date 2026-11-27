@@ -11,6 +11,8 @@ public final class FixtureFreeformActivity extends Activity {
         TextView label = new TextView(this);
         label.setText("Native freeform fixture: " + getPackageName());
         label.setTextSize(20);
+        label.setBackgroundColor(getPackageName().endsWith(".target") ? 0xffbd24d6 : 0xff11b8d5);
+        label.setTextColor(android.graphics.Color.WHITE);
         setContentView(label);
     }
 }
