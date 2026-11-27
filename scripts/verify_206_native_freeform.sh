@@ -5,7 +5,9 @@ set -euo pipefail
 git restore app/build.gradle
 gradle_ok=0
 for attempt in 1 2 3; do
-  if bash ./gradlew --no-configuration-cache :app:assembleDebug :shortcut-fixture:assembleTargetDebug :shortcut-fixture:assembleIceboxDebug --stacktrace; then
+  refresh=()
+  if [ "$attempt" -gt 1 ]; then refresh=(--refresh-dependencies); fi
+  if bash ./gradlew "${refresh[@]}" --no-configuration-cache -PshortcutFixtures :app:assembleDebug :shortcut-fixture:assembleTargetDebug :shortcut-fixture:assembleIceboxDebug --stacktrace; then
     gradle_ok=1
     break
   fi

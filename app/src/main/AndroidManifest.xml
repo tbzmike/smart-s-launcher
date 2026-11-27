@@ -52,6 +52,8 @@
 
         <service
             android:name=".freeform.FreeformOverlayService"
+            android:enabled="@bool/native_freeform_service_supported"
+            tools:targetApi="35"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

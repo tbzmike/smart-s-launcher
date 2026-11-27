@@ -70,7 +70,8 @@ public final class FreeformOverlayService extends Service {
     private static final int NOTIFICATION_ID = 20615;
     private static final String STOP = "fr.neamar.kiss.freeform.RESTORE_AND_STOP";
     private static final AtomicInteger PENDING_OPEN = new AtomicInteger();
-    private static volatile FreeformOverlayService active;
+    private static volatile java.lang.ref.WeakReference<FreeformOverlayService> active =
+            new java.lang.ref.WeakReference<>(null);
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<View> overlays = new ArrayList<>();
@@ -135,7 +136,7 @@ public final class FreeformOverlayService extends Service {
             return OPEN_FAILED;
         } finally {
             PENDING_OPEN.decrementAndGet();
-            FreeformOverlayService service = active;
+            FreeformOverlayService service = active.get();
             if (service != null) service.main.post(() -> {
                 service.lastOpen = SystemClock.elapsedRealtime();
                 service.requestRefresh();
@@ -158,7 +159,7 @@ public final class FreeformOverlayService extends Service {
 
     /** Recover a same-boot journal after process death. Nothing starts on a clean install/boot. */
     public static void resumeIfNeeded(Context context) {
-        FreeformOverlayService service = active;
+        FreeformOverlayService service = active.get();
         if (service != null) {
             service.queryFailures = 0;
             service.requestRefresh();
@@ -195,7 +196,7 @@ public final class FreeformOverlayService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
-        active = this;
+        active = new java.lang.ref.WeakReference<>(this);
         lastOpen = SystemClock.elapsedRealtime();
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CHANNEL,
@@ -249,7 +250,7 @@ public final class FreeformOverlayService extends Service {
         removeOverlays();
         if (receiverRegistered) unregisterReceiver(screen);
         worker.shutdown();
-        if (active == this) active = null;
+        if (active.get() == this) active.clear();
         super.onDestroy();
     }
 

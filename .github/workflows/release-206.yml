@@ -24,6 +24,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          cache: gradle
       - name: Confirm exact update version, unchanged minification and compile results
         run: |
           grep -q 'versionCode 635' app/build.gradle
@@ -64,6 +65,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          cache: gradle
       - name: Enable hardware acceleration
         run: |
           test -c /dev/kvm

@@ -3,7 +3,9 @@ set -euo pipefail
 sed -i 's/minifyEnabled true/minifyEnabled false/g; s/shrinkResources = true/shrinkResources = false/g' app/build.gradle
 gradle_ok=0
 for attempt in 1 2 3; do
-  if bash ./gradlew --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace; then
+  refresh=()
+  if [ "$attempt" -gt 1 ]; then refresh=(--refresh-dependencies); fi
+  if bash ./gradlew "${refresh[@]}" --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace; then
     gradle_ok=1
     break
   fi
