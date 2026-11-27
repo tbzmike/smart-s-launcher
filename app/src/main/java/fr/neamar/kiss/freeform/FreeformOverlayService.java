@@ -82,7 +82,7 @@ public final class FreeformOverlayService extends Service {
     private final Runnable poll = this::refresh;
     private Context windowContext;
     private WindowManager wm;
-    private boolean destroyed, busy, stopping, receiverRegistered, screenReady;
+    private boolean destroyed, busy, refreshing, stopping, receiverRegistered, screenReady;
     private int dragging;
     private long lastOpen;
     private String signature = "";
@@ -280,7 +280,7 @@ public final class FreeformOverlayService extends Service {
         if (destroyed || stopping) return;
         screenReady = isScreenReady();
         if (!screenReady) { removeOverlays(); return; }
-        if (PENDING_OPEN.get() > 0 || busy || dragging > 0) { later(650); return; }
+        if (PENDING_OPEN.get() > 0 || busy || refreshing || dragging > 0) { later(650); return; }
         if (!KissApplication.getApplication(this).getRootHandler().isRootActivated()) {
             removeOverlays();
             return;
@@ -296,12 +296,22 @@ public final class FreeformOverlayService extends Service {
         Rect area = displayAreaFor(wm);
         boolean normalize = normalizeOnRefresh;
         normalizeOnRefresh = false;
-        busy = true;
+        refreshing = true;
         worker.execute(() -> {
-            FreeformSession.Snapshot state = FreeformSession.snapshot(this, area, normalize);
+            FreeformSession.Snapshot snapshot;
+            try { snapshot = FreeformSession.snapshot(this, area, normalize); }
+            catch (RuntimeException failure) { snapshot = null; }
+            final FreeformSession.Snapshot state = snapshot;
             main.post(() -> {
                 if (destroyed) return;
-                busy = false;
+                refreshing = false;
+                // A touch or command can start during a background read. Its worker is queued
+                // after this read; never replace controls or clear command ownership mid-gesture.
+                if (busy || dragging > 0 || stopping || PENDING_OPEN.get() > 0) {
+                    if (normalize) normalizeOnRefresh = true;
+                    later(650);
+                    return;
+                }
                 if (state == null) {
                     // No stale control may operate after a failed identity query.
                     removeOverlays();
@@ -323,7 +333,7 @@ public final class FreeformOverlayService extends Service {
 
     private void stopAndRestore() {
         if (destroyed || stopping) return;
-        if (busy || PENDING_OPEN.get() > 0 || dragging > 0) {
+        if (busy || refreshing || PENDING_OPEN.get() > 0 || dragging > 0) {
             main.postDelayed(this::stopAndRestore, 500);
             return;
         }
@@ -661,7 +671,7 @@ public final class FreeformOverlayService extends Service {
                     Rect next; boolean end;
                     synchronized (this) {
                         // Prevent an orphan process/worker if Android never sends ACTION_UP.
-                        long deadline = SystemClock.elapsedRealtime() + 4000;
+                        long deadline = SystemClock.elapsedRealtime() + 15000;
                         while (wanted == null && !cancelled) {
                             long left = deadline - SystemClock.elapsedRealtime();
                             if (left <= 0) { cancelled = true; break; }

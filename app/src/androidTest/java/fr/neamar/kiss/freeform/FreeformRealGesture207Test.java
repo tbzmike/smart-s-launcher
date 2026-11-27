@@ -312,7 +312,25 @@ public final class FreeformRealGesture207Test {
                     attached(doc) && decoration(doc, "bubble") == null
                             && FreeformGeometry.near(frame(task(doc)), saved, dp(8)));
             evidence("restored.png", saved, true);
+
+            // A real display rotation changes the coordinate space. Re-read usable bounds
+            // from the rotated display and verify that the same task's title/corner follow it.
+            assertTrue("Rotate the actual emulator display", ui.setRotation(UiAutomation.ROTATION_FREEZE_90));
+            long rotationDeadline = SystemClock.elapsedRealtime() + 10000L;
+            do {
+                usable = area();
+                if (usable.width() > usable.height()) break;
+                SystemClock.sleep(150);
+            } while (SystemClock.elapsedRealtime() < rotationDeadline);
+            assertTrue("Display must actually rotate to landscape", usable.width() > usable.height());
+            JSONObject rotated = await("rotation reattaches controls to same task in usable display", doc ->
+                    attached(doc) && usable.contains(frame(task(doc)))
+                            && usable.contains(decoration(doc, "title"))
+                            && usable.contains(decoration(doc, "corner")));
+            evidence("rotated.png", frame(task(rotated)), true);
         } finally {
+            ui.setRotation(UiAutomation.ROTATION_FREEZE_0);
+            ui.setRotation(UiAutomation.ROTATION_UNFREEZE);
             try { shell("am force-stop " + PKG); } catch (IOException ignored) { }
             // Stop the actual service while test transport is still installed.
             app.stopService(new android.content.Intent(app, FreeformOverlayService.class));
