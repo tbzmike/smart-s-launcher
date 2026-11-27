@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
+    <!-- Smart S-specific strings use the English fallback until translations are added. -->
     <string name="menu_app_freeform">Open in floating window</string>
     <string name="freeform_root_required">Enable Root mode in Smart S settings and grant root permission.</string>
     <string name="freeform_frozen">App is frozen. Enable auto-enable frozen apps first.</string>
