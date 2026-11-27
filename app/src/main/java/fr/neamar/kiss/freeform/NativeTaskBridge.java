@@ -261,7 +261,7 @@ public final class NativeTaskBridge {
     private static List<WindowFrameLookup.Window> windowLayouts() {
         java.lang.Process process = null;
         try {
-            process = new ProcessBuilder("/system/bin/dumpsys", "-t", "1", "window", "windows")
+            process = new ProcessBuilder("/system/bin/dumpsys", "-t", "1", "window", "-a", "windows")
                     .redirectErrorStream(true).start();
             java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
             java.io.InputStream input = process.getInputStream();
