@@ -790,6 +790,33 @@ public final class FreeformOverlayService extends Service {
         });
     }
 
+    private void animateExpansion(Rect from, Rect area, int duration, android.view.animation.Interpolator curve) {
+        if (from.isEmpty() || Settings.Global.getFloat(getContentResolver(),
+                Settings.Global.TRANSITION_ANIMATION_SCALE, 1f) == 0f) return;
+        FrameLayout layer = new FrameLayout(windowContext);
+        View outline = new View(windowContext);
+        GradientDrawable border = new GradientDrawable();
+        border.setColor(Color.TRANSPARENT);
+        border.setStroke(dp(2), 0xff8ca9df);
+        outline.setBackground(border);
+        layer.addView(outline, new FrameLayout.LayoutParams(-1, -1));
+        WindowManager.LayoutParams lp = params(area.width(), area.height(), area.left, area.top);
+        lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+        lp.alpha = 0.5f;
+        lp.setTitle("Smart S maximize animation");
+        if (!add(layer, lp)) return;
+        outline.setPivotX(0);
+        outline.setPivotY(0);
+        outline.setTranslationX(from.left - area.left);
+        outline.setTranslationY(from.top - area.top);
+        outline.setScaleX((float) from.width() / area.width());
+        outline.setScaleY((float) from.height() / area.height());
+        outline.animate().translationX(0).translationY(0).scaleX(1).scaleY(1).alpha(0)
+                .setDuration(duration).setInterpolator(curve).withEndAction(() -> {
+                    if (overlays.remove(layer)) wm.removeViewImmediate(layer);
+                }).start();
+    }
+
     private void operate(NativeTaskClient.Task task, String action, @Nullable Rect bounds) {
         if (busy || stopping || destroyed) return;
         Rect area;
@@ -803,6 +830,7 @@ public final class FreeformOverlayService extends Service {
             int duration = getResources().getInteger(android.R.integer.config_shortAnimTime);
             android.view.animation.Interpolator curve = android.view.animation.AnimationUtils.loadInterpolator(
                     this, android.R.interpolator.fast_out_slow_in);
+            if ("maximize".equals(action)) animateExpansion(task.frame, area, duration, curve);
             for (View control : new View[]{decor.title, decor.corner}) {
                 if (control != null) control.animate().alpha(0.35f).setDuration(duration).setInterpolator(curve).start();
             }
