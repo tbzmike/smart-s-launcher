@@ -22,7 +22,7 @@ final class BubbleProcessPriority {
     private static final Map<Integer, NativeTaskClient.Task> wanted = new LinkedHashMap<>();
     private static final ExecutorService worker = new ThreadPoolExecutor(0, 1, 5L, TimeUnit.SECONDS,
             new LinkedBlockingQueue<>());
-    private static Context context;
+    private static java.lang.ref.WeakReference<Context> context = new java.lang.ref.WeakReference<>(null);
     // Access only on the worker.
     private static NativeTaskClient.Pipe pipe;
     private static boolean queued;
@@ -30,7 +30,7 @@ final class BubbleProcessPriority {
     private BubbleProcessPriority() {}
 
     static synchronized void hold(Context app, NativeTaskClient.Task task) {
-        context = app.getApplicationContext();
+        context = new java.lang.ref.WeakReference<>(app.getApplicationContext());
         wanted.put(task.id, task);
         schedule();
     }
@@ -48,9 +48,9 @@ final class BubbleProcessPriority {
         synchronized (BubbleProcessPriority.class) {
             queued = false;
             snapshot = new LinkedHashMap<>(wanted);
-            app = context;
+            app = context.get();
         }
-        if (snapshot.isEmpty()) {
+        if (snapshot.isEmpty() || app == null) {
             closePipe();
             return;
         }

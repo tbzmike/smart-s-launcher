@@ -84,7 +84,7 @@ public final class FreeformRealGesture207Test {
                     assertTrue("Bubbled app must remain visible/important rather than cached: " + adj, adj <= 200);
                     // The real ActivityManager token must exist, not merely a naturally visible process.
                     String processes = shell("dumpsys activity processes " + PKG);
-                    if (!processes.contains("Smart S live bubble " + originalPid + " ")) {
+                    if (!processes.contains("Smart S live bubble") || !processes.contains("PID #" + originalPid + ":")) {
                         SystemClock.sleep(100);
                         continue;
                     }
@@ -414,7 +414,7 @@ public final class FreeformRealGesture207Test {
                             log.write(shell("dumpsys " + service));
                         }
                     }
-                    throw error;
+                    throw new AssertionError(filename + ": " + error.getMessage(), error);
                 }
                 verifiedFrames = 0;
             }

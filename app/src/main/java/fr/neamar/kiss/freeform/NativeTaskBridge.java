@@ -144,8 +144,7 @@ public final class NativeTaskBridge {
             if (display!=0 && !action.equals("close") && !action.equals("closeFullscreen")) {
                 if (!(action.startsWith("restore") || action.equals("switchFullscreen") || action.equals("maximize")))
                     throw new IllegalStateException("Unsupported live task operation");
-                // Bring the existing task and its activity surface forward together on the phone display.
-                atm.getMethod("moveRootTaskToDisplay", int.class, int.class).invoke(service, id, 0);
+                // Recents first: a separate move before recents can start competing transitions.
                 android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
                 options.setLaunchDisplayId(0);
                 boolean popup = action.startsWith("restore");
@@ -155,6 +154,24 @@ public final class NativeTaskBridge {
                         Integer.parseInt(args[6]), Integer.parseInt(args[7])));
                 atm.getMethod("startActivityFromRecents", int.class, android.os.Bundle.class)
                         .invoke(service, id, options.toBundle());
+                boolean onPhone = false;
+                for (int attempt = 0; attempt < 12 && !onPhone; attempt++) {
+                    for (Object fresh : tasks(atm, service)) {
+                        JSONObject row = describe(fresh);
+                        if (row != null && row.getInt("id") == id && row.getInt("user") == user
+                                && component.equals(row.getString("component")) && row.getInt("display") == 0) {
+                            onPhone = true;
+                            break;
+                        }
+                    }
+                    if (!onPhone) android.os.SystemClock.sleep(40);
+                }
+                if (!onPhone) {
+                    // Compatibility fallback only when the ROM ignored the launch display.
+                    atm.getMethod("moveRootTaskToDisplay", int.class, int.class).invoke(service, id, 0);
+                    atm.getMethod("startActivityFromRecents", int.class, android.os.Bundle.class)
+                            .invoke(service, id, options.toBundle());
+                }
                 if (popup) {
                     Rect wanted = new Rect(Integer.parseInt(args[4]), Integer.parseInt(args[5]),
                             Integer.parseInt(args[6]), Integer.parseInt(args[7]));
@@ -183,7 +200,8 @@ public final class NativeTaskBridge {
                                 break;
                             }
                         }
-                        emit(result);
+                        // Logical bounds can match even when the task surface remains clipped.
+                        emit(finishRestoredSurface(atm, service, id, component, user, wanted));
                         return;
                     }
                 } else if ("switchFullscreen".equals(action)) {
@@ -338,13 +356,30 @@ public final class NativeTaskBridge {
                     atm.getMethod("setFocusedTask", int.class).invoke(service, id); }
                 catch (ReflectiveOperationException ignored) { }
             }
-            if ("resize".equals(action) || "restore".equals(action)) {
+            if ("restore".equals(action)) {
+                emit(finishRestoredSurface(atm, service, id, component, user, bounds));
+            } else if ("resize".equals(action)) {
                 emit(observe(atm, service, id, component, user, bounds, false));
             } else emit(new JSONObject().put("ok", true));
         } catch (Throwable failure) {
             try { emit(new JSONObject().put("ok", false).put("error", failure.toString())); }
             catch (Exception ignored) { System.exit(1); }
         }
+    }
+
+    private static JSONObject finishRestoredSurface(Class<?> atm, Object service, int id,
+                                                     String component, int user, Rect wanted) throws Exception {
+        JSONObject observed = observe(atm, service, id, component, user, wanted, false);
+        JSONObject row = observed.optJSONObject("task");
+        if (row == null || row.optInt("display", -1) != 0 || row.optInt("mode") != 5)
+            return observed;
+        // RESIZE_MODE_USER_FORCED preserves the window and resizes even when bounds match.
+        atm.getMethod("resizeTask", int.class, Rect.class, int.class).invoke(service, id, wanted, 3);
+        if (!row.optBoolean("focused")) {
+            try { atm.getMethod("setFocusedTask", int.class).invoke(service, id); }
+            catch (ReflectiveOperationException ignored) { }
+        }
+        return observe(atm, service, id, component, user, wanted, false);
     }
 
     private static List<?> tasks(Class<?> atm, Object service) throws Exception {
