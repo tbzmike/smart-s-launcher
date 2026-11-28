@@ -449,10 +449,11 @@ public final class FreeformRealGesture207Test {
             id = task(opened).getInt("id");
             assertEquals("New centered geometry must be verified", FreeformOverlayService.OPEN_VERIFIED,
                     FreeformOverlayService.openManaged(app, ComponentName.unflattenFromString(COMPONENT)));
-            JSONObject ready = await("centered app and attached decorations", this::attached);
+            Rect expected = FreeformGeometry.center(FreeformGeometry.contentArea(usable, dp(40)));
+            JSONObject ready = await("centered app and attached decorations", doc -> attached(doc)
+                    && FreeformGeometry.near(frame(task(doc)), expected, dp(10)));
             Rect initial = frame(task(ready));
             assertTrue("Initial popup must reserve caption space", FreeformGeometry.contentArea(usable, dp(40)).contains(initial));
-            Rect expected = FreeformGeometry.center(FreeformGeometry.contentArea(usable, dp(40)));
             assertTrue("New popup should be centered", FreeformGeometry.near(initial, expected, dp(10)));
             settledEvidence("initial.png", initial);
 

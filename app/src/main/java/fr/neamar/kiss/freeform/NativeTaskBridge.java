@@ -240,6 +240,18 @@ public final class NativeTaskBridge {
                     focus = true;
                     break;
                 case "maximize":
+                    if (mode == 5 && display == 0) {
+                        // Grow the actual organized surface before dropping its freeform bounds.
+                        // Otherwise Shell can retain the last drag crop on the fullscreen buffer.
+                        Configuration config = (Configuration) selected.getClass().getField("configuration").get(selected);
+                        Object wc = Configuration.class.getField("windowConfiguration").get(config);
+                        Rect full = (Rect) wc.getClass().getMethod("getMaxBounds").invoke(wc);
+                        if (full != null && !full.isEmpty()) {
+                            atm.getMethod("resizeTask", int.class, Rect.class, int.class)
+                                    .invoke(service, id, full, 1);
+                            observe(atm, service, id, component, user, full, false);
+                        }
+                    }
                     hidden.invoke(transaction, token, false);
                     windowMode.invoke(transaction, token, 1);
                     setBounds.invoke(transaction, token, new Rect());
