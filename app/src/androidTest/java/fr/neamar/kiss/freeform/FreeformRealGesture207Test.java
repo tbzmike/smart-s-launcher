@@ -111,6 +111,33 @@ public final class FreeformRealGesture207Test {
             shell("am start -W --windowingMode 1 -n " + COMPONENT);
             SystemClock.sleep(900);
             shell("input keyevent KEYCODE_HOME");
+            switchBubble("Smart S fullscreen folder");
+            SharedPreferences layouts=app.getSharedPreferences("switch-folder-layouts",Context.MODE_PRIVATE);
+            assertTrue(layouts.edit().putBoolean("fullscreen",false).commit());
+            switchBubble("Smart S fullscreen switch " + secondId);
+            assertTrue(layouts.edit().putBoolean("fullscreen",true).commit());
+            Rect folder=switchBubble("Smart S fullscreen folder");
+            tap(folder.centerX(),folder.centerY());
+            Rect panel=switchBubble("Smart S fullscreen folder contents");
+            int itemX=panel.left+dp(38), itemY=panel.top+dp(38);
+            motion(MotionEvent.ACTION_DOWN,itemX,itemY);
+            motion(MotionEvent.ACTION_MOVE,itemX+dp(20),itemY+dp(20));
+            Rect itemTarget=switchBubble("Smart S fullscreen folder close target");
+            motion(MotionEvent.ACTION_MOVE,itemTarget.centerX(),itemTarget.centerY());
+            motion(MotionEvent.ACTION_UP,itemTarget.centerX(),itemTarget.centerY());
+            await("only one fullscreen member closed",d -> {
+                JSONArray list=d.getJSONArray("tasks"); int remaining=0;
+                for(int i=0;i<list.length();i++) {
+                    String pkg=list.getJSONObject(i).getString("pkg");
+                    if(PKG.equals(pkg)||second.equals(pkg)) remaining++;
+                }
+                return remaining==1;
+            });
+            boolean firstRemains=task(state())!=null;
+            String relaunch=firstRemains ? second+"/com.tbzmike.shortcutfixture.FixtureFreeformActivity" : COMPONENT;
+            shell("am start -W --windowingMode 1 -n "+relaunch);
+            SystemClock.sleep(900);
+            shell("input keyevent KEYCODE_HOME");
             dropFolder("fullscreen");
             await("bulk close removes both switcher tasks", d -> task(d)==null && !d.getJSONArray("tasks").toString().contains(second));
         } finally {
