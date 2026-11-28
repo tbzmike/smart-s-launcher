@@ -499,7 +499,7 @@ public final class NativeTaskBridge {
         Class<?> type=Class.forName("android.view.IWindowManager");
         try{
             int mode=(Integer)type.getMethod("getWindowingMode",int.class).invoke(wm,display);
-            if(mode!=1)type.getMethod("setWindowingMode",int.class,int.class).invoke(wm,1,display);
+            if(mode!=1)type.getMethod("setWindowingMode",int.class,int.class).invoke(wm,display,1);
         }catch(ReflectiveOperationException unsupported){
             android.util.Log.w("SmartMini","Display mode policy unavailable; verifying exact task mode instead",unsupported);
         }
