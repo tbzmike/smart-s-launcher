@@ -66,6 +66,15 @@ final class LiveBubbleDisplays {
             if(l!=null && l.display.getDisplay().getDisplayId()==e.getValue())release(e.getKey());
         }
     }
+    static synchronized boolean returnToPhone(NativeTaskClient.Task task) {
+        Lease lease = active.get(task.id);
+        if (lease == null || lease.display.getDisplay().getDisplayId() != task.display) return false;
+        active.remove(task.id);
+        try { lease.release(); }
+        finally { stopIdleThread(); }
+        return true;
+    }
+
     static synchronized void release(int id) {
         Lease lease = active.remove(id);
         if (lease != null) {

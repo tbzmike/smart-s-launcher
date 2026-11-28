@@ -66,6 +66,23 @@ final class NativeTaskClient {
         if (task == null || task.user != USER || task.type != 1) return false;
         if (!task.component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+")) return false;
         if (!action.matches("minimize|restore|restorePinned|maximize|resize|resizePinned|focus|focusPinned|unpin|back|close|switchFullscreen|closeFullscreen")) return false;
+        if (task.display != 0 && (action.startsWith("restore") || action.equals("switchFullscreen")
+                || action.equals("maximize")) && LiveBubbleDisplays.returnToPhone(task)) {
+            // Let display removal migrate its resident task and layer together. Wait for that
+            // same task on the phone before changing its bounds, stacking order or focus.
+            Task moved = null;
+            for (int attempt = 0; attempt < 10 && moved == null; attempt++) {
+                List<Task> current = list(false);
+                if (current != null) for (Task candidate : current) {
+                    if (candidate.id == task.id && candidate.user == task.user && candidate.display == 0
+                            && candidate.component.equals(task.component)) { moved = candidate; break; }
+                }
+                if (moved == null) android.os.SystemClock.sleep(40);
+            }
+            if (moved == null) return false;
+            task = moved;
+            if (action.equals("switchFullscreen")) action = "maximize";
+        }
         Rect rect = bounds == null ? new Rect() : bounds;
         JSONObject result = invoke(action, " " + task.id + " " + quote(task.component)
                 + " " + rect.left + " " + rect.top + " " + rect.right + " " + rect.bottom);
