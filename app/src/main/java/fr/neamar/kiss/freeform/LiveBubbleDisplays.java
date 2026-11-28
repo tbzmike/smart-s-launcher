@@ -73,7 +73,20 @@ final class LiveBubbleDisplays {
                     .setFlags(DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC | DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY)
                     .build();
             display=app.getSystemService(DisplayManager.class).createVirtualDisplay(config);
-            if(display==null || !client.moveToBubble(t,display.getDisplay().getDisplayId(),family)) return false;
+            if(display==null)return false;
+            int destination=display.getDisplay().getDisplayId();
+            boolean moved=client.moveToBubble(t,destination,family);
+            if(!moved){
+                // Never destroy a producer while an uncertain transfer still owns it.
+                List<NativeTaskClient.Task> current=client.list(false);
+                if(current==null || current.stream().anyMatch(row->row.id==t.id
+                        && row.component.equals(t.component)&&row.display==destination)){
+                    active.put(t.id,new Lease(display,surface,family,t.component,w,h));
+                    display=null;surface=null;
+                    BubbleProcessPriority.hold(app,t);
+                }
+                return false;
+            }
             active.put(t.id,new Lease(display,surface,family,t.component,w,h)); display=null;surface=null;
             BubbleProcessPriority.hold(app, t);
             return true;

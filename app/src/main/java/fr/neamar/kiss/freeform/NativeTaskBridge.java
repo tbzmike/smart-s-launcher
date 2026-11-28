@@ -121,7 +121,7 @@ public final class NativeTaskBridge {
                     (Object) new String[]{"Landroid/os/ServiceManager;", "Landroid/app/IActivityTaskManager",
                             "Landroid/app/ActivityOptions;", "Landroid/app/TaskInfo;", "Landroid/app/ActivityManager$RunningTaskInfo;",
                             "Landroid/content/res/Configuration;->windowConfiguration",
-                            "Landroid/hardware/display/", "Landroid/view/DisplayInfo;", "Landroid/view/InputEvent;", "Landroid/view/KeyEvent;", "Landroid/view/MotionEvent;", "Landroid/hardware/input/", "Landroid/app/WindowConfiguration;", "Landroid/window/"});
+                            "Landroid/hardware/display/", "Landroid/view/DisplayInfo;", "Landroid/view/IWindowManager", "Landroid/view/InputEvent;", "Landroid/view/KeyEvent;", "Landroid/view/MotionEvent;", "Landroid/hardware/input/", "Landroid/app/WindowConfiguration;", "Landroid/window/"});
             Class<?> atm = Class.forName("android.app.IActivityTaskManager");
             Object binder = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
                     .invoke(null, "activity_task");
@@ -194,24 +194,51 @@ public final class NativeTaskBridge {
                 if (display!=0 || destination<=0 || !liveDisplay(destination,id)
                         || (action.equals("parkFullscreen") && (mode!=1 || info.getBoolean("focused"))))
                     throw new IllegalStateException("Task is not eligible for bubbling");
+                if ("parkLive".equals(action)) {
+                    // The virtual display must host a fullscreen task, not a native
+                    // freeform task nested inside the TextureView. Set its own policy
+                    // only (never the phone display), then collect the exact existing
+                    // task in a single destination-aware Shell transition.
+                    setLiveDisplayFullscreen(destination,id);
+                    Object tx=newFullscreenTransaction(selected,id,destination);
+                    Object organizer=atm.getMethod("getWindowOrganizerController").invoke(service);
+                    Class<?> wt=Class.forName("android.window.WindowContainerTransaction");
+                    Class.forName("android.window.IWindowOrganizerController").getMethod("startNewTransition",int.class,wt)
+                            .invoke(organizer,3,tx);
+                    JSONObject row=awaitFullscreenTask(atm,service,id,component,user,destination,2000);
+                    if(row==null){
+                        // Some ROMs ignore a launch display option on an already
+                        // running task. Move only if it is still on the phone, then
+                        // explicitly normalize the mode of the same task on its new display.
+                        Object current=exactTask(atm,service,id,component,user);
+                        if(current!=null){
+                            JSONObject state=describe(current);
+                            if(state.getInt("display")==0){
+                                atm.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(service,id,destination);
+                                for(int retry=0;retry<25;retry++){
+                                    current=exactTask(atm,service,id,component,user);
+                                    if(current!=null&&describe(current).getInt("display")==destination)break;
+                                    android.os.SystemClock.sleep(40);
+                                }
+                            }
+                            if(current!=null&&describe(current).getInt("display")==destination){
+                                Object normalize=newFullscreenTransaction(current,id,destination);
+                                Class.forName("android.window.IWindowOrganizerController").getMethod("startNewTransition",int.class,wt)
+                                        .invoke(organizer,6,normalize);
+                                row=awaitFullscreenTask(atm,service,id,component,user,destination,2000);
+                            }
+                        }
+                    }
+                    if(row==null)android.util.Log.e("SmartMini","Fullscreen virtual task not verified: "+id+" display "+destination);
+                    emit(new JSONObject().put("ok",row!=null));
+                    return;
+                }
                 atm.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(service,id,destination);
                 for (int attempt = 0; attempt < 10; attempt++) {
                     for (Object item : tasks(atm, service)) {
                         JSONObject moved = describe(item);
                         if (moved != null && moved.getInt("id") == id && moved.getInt("user") == user
                                 && component.equals(moved.getString("component")) && moved.getInt("display") == destination) {
-                            if ("parkLive".equals(action)) {
-                                Class<?> tt = Class.forName("android.window.WindowContainerToken");
-                                Class<?> wt = Class.forName("android.window.WindowContainerTransaction");
-                                Object change = wt.getConstructor().newInstance();
-                                Object movedToken = item.getClass().getField("token").get(item);
-                                wt.getMethod("setWindowingMode",tt,int.class).invoke(change,movedToken,1);
-                                wt.getMethod("setBounds",tt,Rect.class).invoke(change,movedToken,new Rect());
-                                wt.getMethod("setHidden",tt,boolean.class).invoke(change,movedToken,false);
-                                wt.getMethod("reorder",tt,boolean.class).invoke(change,movedToken,true);
-                                try { organizerApply(atm,service,wt,change); }
-                                catch (ReflectiveOperationException unavailable) { android.util.Log.w("SmartMini","Virtual display mode change unavailable",unavailable); }
-                            }
                             emit(new JSONObject().put("ok", true));
                             return;
                         }
@@ -373,12 +400,15 @@ public final class NativeTaskBridge {
                     focus = true;
                     break;
                 case "maximize":
+                    // Fullscreen is a real existing-task launch, not a change of
+                    // logical bounds alone. The launch transition lets Shell update
+                    // the previous freeform surface crop and client configuration.
+                    transaction = newFullscreenTransaction(selected,id,0);
                     hidden.invoke(transaction, token, false);
                     // On the phone's ordinary fullscreen display, inherit its mode
                     // as AOSP DesktopTasksController does. Explicit mode 1 can retain
                     // a freeform organizer override. Clear the requested bounds.
-                    int parentMode = phoneDisplayWindowingMode();
-                    windowMode.invoke(transaction, token, parentMode == 1 ? 0 : 1);
+                    windowMode.invoke(transaction, token, 1);
                     setBounds.invoke(transaction, token, new Rect());
                     reorder.invoke(transaction, token, true);
                     focus = true;
@@ -404,7 +434,7 @@ public final class NativeTaskBridge {
             // configuration. AOSP falls back to legacy apply when no transition player exists.
             if ("minimize".equals(action) || "restore".equals(action) || "maximize".equals(action) || "resize".equals(action)) {
                 int transition = "minimize".equals(action) ? 4 /* TRANSIT_TO_BACK */
-                        : "restore".equals(action) && display == 0 && !info.getBoolean("visible") ? 3 /* TRANSIT_TO_FRONT */
+                        : "maximize".equals(action) || ("restore".equals(action) && display == 0 && !info.getBoolean("visible")) ? 3 /* TRANSIT_TO_FRONT */
                         : 6 /* TRANSIT_CHANGE */;
                 organizerType.getMethod("startNewTransition", int.class, transactionType)
                         .invoke(organizer, transition, transaction);
@@ -434,17 +464,62 @@ public final class NativeTaskBridge {
                 .invoke(organizer, tx);
     }
 
-    private static int phoneDisplayWindowingMode() {
-        // The device's default display configuration is provided by WindowManager.
-        // No task organizer registration or modification of global display policy.
-        try {
-            Object binder = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
-                    .invoke(null, "window");
-            Object wm = Class.forName("android.view.IWindowManager$Stub").getMethod("asInterface", IBinder.class)
-                    .invoke(null, binder);
-            Class<?> type = Class.forName("android.view.IWindowManager");
-            return (Integer) type.getMethod("getWindowingMode", int.class).invoke(wm, 0);
-        } catch (Exception unavailable) { return 1; } // default phone display
+    private static Object exactTask(Class<?> atm,Object service,int id,String component,int user) throws Exception {
+        for(Object item:tasks(atm,service)){
+            JSONObject row=describe(item);
+            if(row!=null&&row.getInt("id")==id&&row.getInt("user")==user&&row.getInt("type")==1
+                    &&component.equals(row.getString("component")))return item;
+        }
+        return null;
+    }
+
+    private static Object newFullscreenTransaction(Object task,int id,int destination) throws Exception {
+        Class<?> tt=Class.forName("android.window.WindowContainerToken");
+        Class<?> wt=Class.forName("android.window.WindowContainerTransaction");
+        Object token=task.getClass().getField("token").get(task);
+        Object tx=wt.getConstructor().newInstance();
+        wt.getMethod("setWindowingMode",tt,int.class).invoke(tx,token,1);
+        // Remove any explicit freeform mode applied to child activities.
+        wt.getMethod("setActivityWindowingMode",tt,int.class).invoke(tx,token,0);
+        wt.getMethod("setBounds",tt,Rect.class).invoke(tx,token,new Rect());
+        wt.getMethod("setAlwaysOnTop",tt,boolean.class).invoke(tx,token,false);
+        wt.getMethod("setHidden",tt,boolean.class).invoke(tx,token,false);
+        wt.getMethod("reorder",tt,boolean.class).invoke(tx,token,true);
+        android.app.ActivityOptions options=android.app.ActivityOptions.makeBasic();
+        options.setLaunchDisplayId(destination);
+        android.app.ActivityOptions.class.getMethod("setLaunchWindowingMode",int.class).invoke(options,1);
+        wt.getMethod("startTask",int.class,android.os.Bundle.class).invoke(tx,id,options.toBundle());
+        return tx;
+    }
+
+    private static void setLiveDisplayFullscreen(int display,int id) throws Exception {
+        if(!liveDisplay(display,id))throw new SecurityException("Not a launcher-owned display");
+        Object binder=Class.forName("android.os.ServiceManager").getMethod("getService",String.class).invoke(null,"window");
+        Object wm=Class.forName("android.view.IWindowManager$Stub").getMethod("asInterface",IBinder.class).invoke(null,binder);
+        Class<?> type=Class.forName("android.view.IWindowManager");
+        try{
+            int mode=(Integer)type.getMethod("getWindowingMode",int.class).invoke(wm,display);
+            if(mode!=1)type.getMethod("setWindowingMode",int.class,int.class).invoke(wm,1,display);
+        }catch(ReflectiveOperationException unsupported){
+            android.util.Log.w("SmartMini","Display mode policy unavailable; verifying exact task mode instead",unsupported);
+        }
+    }
+
+    private static JSONObject awaitFullscreenTask(Class<?> atm,Object service,int id,String component,int user,int display,long timeout) throws Exception {
+        long end=android.os.SystemClock.elapsedRealtime()+timeout;
+        Object di=displayInfo(display);
+        int width=di.getClass().getField("logicalWidth").getInt(di),height=di.getClass().getField("logicalHeight").getInt(di);
+        do{
+            Object current=exactTask(atm,service,id,component,user);
+            if(current!=null){
+                JSONObject row=describe(current);
+                if(row.getInt("display")==display&&row.getInt("mode")==1&&row.getBoolean("visible")
+                        &&Math.abs(row.getInt("l"))<=8&&Math.abs(row.getInt("t"))<=8
+                        &&Math.abs(row.getInt("r")-width)<=8&&Math.abs(row.getInt("b")-height)<=8)return row;
+            }
+            android.os.SystemClock.sleep(50);
+        }while(android.os.SystemClock.elapsedRealtime()<end);
+        return null;
     }
 
     private static List<?> tasks(Class<?> atm, Object service) throws Exception {
@@ -452,11 +527,15 @@ public final class NativeTaskBridge {
                 .invoke(service, 200, false, false, -1);
     }
 
-    static boolean liveDisplay(int display,int task) throws Exception {
-        if (display <= 0) return false;
+    private static Object displayInfo(int display) throws Exception {
         Object binder=Class.forName("android.os.ServiceManager").getMethod("getService",String.class).invoke(null,"display");
         Object dm=Class.forName("android.hardware.display.IDisplayManager$Stub").getMethod("asInterface",IBinder.class).invoke(null,binder);
-        Object info=Class.forName("android.hardware.display.IDisplayManager").getMethod("getDisplayInfo",int.class).invoke(dm,display);
+        return Class.forName("android.hardware.display.IDisplayManager").getMethod("getDisplayInfo",int.class).invoke(dm,display);
+    }
+
+    static boolean liveDisplay(int display,int task) throws Exception {
+        if (display <= 0) return false;
+        Object info=displayInfo(display);
         if(info==null)return false;
         String owner=(String)info.getClass().getField("ownerPackageName").get(info);
         return ("com.tbzmike.smartslauncher".equals(owner)||"com.tbzmike.smartslauncher.debug".equals(owner))

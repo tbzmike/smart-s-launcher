@@ -489,6 +489,14 @@ public final class FreeformRealGesture207Test {
             SystemClock.sleep(100);
         }
         evidence(file,texture,false);
+        File dir=new File(app.getFilesDir(),"freeform207-evidence");
+        for(String service:new String[]{"activity activities","window windows","display","SurfaceFlinger --list"}){
+            try(java.io.FileWriter log=new java.io.FileWriter(new File(dir,"live-"+service.split(" ")[0]+".txt"))){
+                log.write(shell("dumpsys "+service));
+            }
+        }
+        try(java.io.FileWriter log=new java.io.FileWriter(new File(dir,"live-task.json"))){log.write(state().toString(2));}
+        try(java.io.FileWriter log=new java.io.FileWriter(new File(dir,"live-logcat.txt"))){log.write(shell("logcat -d -s SmartMini:V SmartMiniFixture:V"));}
         throw new AssertionError("Real live application pixels missing in "+file);
     }
 
@@ -533,6 +541,7 @@ public final class FreeformRealGesture207Test {
             assertEquals(FreeformOverlayService.OPEN_VERIFIED,FreeformOverlayService.openManaged(app,ComponentName.unflattenFromString(COMPONENT)));
             JSONObject parked=task(await("same task hosted on live display",d->task(d)!=null&&task(d).getInt("id")==id&&task(d).getInt("display")>0));
             int display=parked.getInt("display");
+            assertEquals("Live display must contain a fullscreen app, not nested freeform",1,parked.getInt("mode"));
             NativeTaskClient.Task live=null;
             for(NativeTaskClient.Task row:new NativeTaskClient(app).list(false))if(row.id==id)live=row;
             assertNotNull(live);
