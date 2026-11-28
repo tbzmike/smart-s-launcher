@@ -19,6 +19,7 @@ import java.util.*;
 final class LiveBubbleDisplays {
     private static final Map<Integer, Lease> active=new HashMap<>();
     private static HandlerThread buffers;
+    private static int retiring;
     private static final class Lease {
         final VirtualDisplay display;
         final ImageReader surface;
@@ -69,13 +70,22 @@ final class LiveBubbleDisplays {
         Lease lease = active.remove(id);
         if (lease != null) {
             // Shell may still animate the reparented surface on its former display.
-            new Handler(android.os.Looper.getMainLooper()).postDelayed(lease::release, 1800);
+            retiring++;
+            new Handler(buffers.getLooper()).postDelayed(() -> {
+                try { lease.release(); }
+                finally {
+                    synchronized (LiveBubbleDisplays.class) {
+                        retiring--;
+                        stopIdleThread();
+                    }
+                }
+            }, 1800);
         }
         stopIdleThread();
     }
     static synchronized void releaseFamily(String family){
         for(int id:new ArrayList<>(active.keySet())) if(family.equals(active.get(id).family))release(id);
     }
-    private static void stopIdleThread(){if(active.isEmpty() && buffers!=null){buffers.quitSafely();buffers=null;}}
+    private static void stopIdleThread(){if(active.isEmpty() && retiring == 0 && buffers!=null){buffers.quitSafely();buffers=null;}}
     private LiveBubbleDisplays(){}
 }

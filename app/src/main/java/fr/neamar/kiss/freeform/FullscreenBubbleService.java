@@ -72,6 +72,8 @@ public final class FullscreenBubbleService extends AccessibilityService {
     }
 
     @Override protected void onServiceConnected() {
+        if (stopped) return;
+        if (folder != null) { schedule(); return; }
         connected = new java.lang.ref.WeakReference<>(this);
         saved = getSharedPreferences("fullscreen-switcher-tasks", MODE_PRIVATE);
         wm = getSystemService(WindowManager.class);
@@ -296,9 +298,10 @@ public final class FullscreenBubbleService extends AccessibilityService {
             });
         });
     }
-    private void remove(View v) { if (v!=null && v.isAttachedToWindow()) wm.removeViewImmediate(v); }
+    private void remove(View v) { if (v != null && v.getParent() != null) wm.removeViewImmediate(v); }
     private void hideTarget() { remove(target); target=null; }
     private void shutdown() {
+        if (stopped) return;
         if (folder != null) folder.destroy();
         LiveBubbleDisplays.releaseFamily("fullscreen");
         stopped=true; main.removeCallbacks(refresh); hideTarget();

@@ -117,6 +117,7 @@ public final class BubbleFolder {
         return true;
     }
     private void expand() {
+        if (panel != null || handle == null || members.isEmpty()) return;
         int cols=Math.min(members.size(),Math.max(1,Math.min(3,area.width()/dp(76))));
         int width=Math.min(area.width(),cols*dp(76)+dp(8));
         int height=Math.min(Math.max(dp(78),area.height()-dp(64)),dp(82)*((members.size()+cols-1)/cols)+dp(8));
@@ -132,7 +133,7 @@ public final class BubbleFolder {
         p.flags |= WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
         panel.setOnTouchListener((v,e)->{
             if(e.getActionMasked()==MotionEvent.ACTION_OUTSIDE) {
-                if (!BubbleMenu.showingFor(panel) && !inside(handle,e)) collapse();
+                if (v == panel && !BubbleMenu.showingFor(panel) && !inside(handle,e)) collapse();
                 return true;
             }
             return false;
@@ -228,9 +229,15 @@ public final class BubbleFolder {
         p.x=area.centerX()-size/2;p.y=area.bottom-size-dp(8);p.flags|=WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         wm.addView(target,p);
     }
-    private void remove(View v){ if(v!=null && v.isAttachedToWindow())wm.removeViewImmediate(v); }
+    private void remove(View v){ if (v != null && v.getParent() != null) wm.removeViewImmediate(v); }
     private void hideTarget(){ remove(target);target=null; }
-    private void collapse(){ remove(panel);panel=null; hideTarget(); }
+    private void collapse(){
+        ScrollView previous = panel;
+        panel = null;
+        if (previous != null) previous.animate().cancel();
+        remove(previous);
+        hideTarget();
+    }
     void clear(){ collapse();remove(handle);handle=null;members.clear(); }
     void destroy(){ clear();prefs.unregisterOnSharedPreferenceChangeListener(listener); }
 }

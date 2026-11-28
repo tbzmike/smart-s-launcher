@@ -42,7 +42,7 @@ final class NativeTaskClient {
 
     @Nullable List<Task> list(boolean withFrames) {
         java.util.Map<Integer,Integer> previous = LiveBubbleDisplays.beforeRead();
-        JSONObject result = invoke(withFrames ? "list" : "identities", "");
+        JSONObject result = invoke(withFrames ? "frames" : "identities", "");
         if (result == null || !result.optBoolean("ok")) return null;
         try {
             JSONArray rows = result.getJSONArray("tasks");
@@ -70,7 +70,6 @@ final class NativeTaskClient {
         JSONObject result = invoke(action, " " + task.id + " " + quote(task.component)
                 + " " + rect.left + " " + rect.top + " " + rect.right + " " + rect.bottom);
         boolean ok=result!=null && result.optBoolean("ok");
-        if(ok && task.display!=0)LiveBubbleDisplays.release(task.id);
         return ok;
     }
 

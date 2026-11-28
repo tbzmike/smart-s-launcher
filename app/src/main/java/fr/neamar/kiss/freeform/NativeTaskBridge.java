@@ -70,7 +70,7 @@ public final class NativeTaskBridge {
                 emit(new JSONObject().put("ok", true).put("tasks", rows));
                 return;
             }
-            if ("list".equals(action)) {
+            if ("list".equals(action) || "frames".equals(action)) {
                 JSONArray rows = new JSONArray();
                 List<?> windows = visibleWindows();
                 List<WindowFrameLookup.Window> layout = null;
@@ -86,6 +86,10 @@ public final class NativeTaskBridge {
                         }
                         rows.put(info);
                     }
+                }
+                if ("frames".equals(action)) {
+                    emit(new JSONObject().put("ok", true).put("tasks", rows));
+                    return;
                 }
                 JSONArray decorations = decorationFrames(windows);
                 if (decorations.length() == 0) {
@@ -121,13 +125,25 @@ public final class NativeTaskBridge {
                         || (action.equals("parkFullscreen") && (mode!=1 || info.getBoolean("focused"))))
                     throw new IllegalStateException("Task is not eligible for bubbling");
                 atm.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(service,id,destination);
-                emit(new JSONObject().put("ok",true));
+                for (int attempt = 0; attempt < 10; attempt++) {
+                    for (Object item : tasks(atm, service)) {
+                        JSONObject moved = describe(item);
+                        if (moved != null && moved.getInt("id") == id && moved.getInt("user") == user
+                                && component.equals(moved.getString("component")) && moved.getInt("display") == destination) {
+                            emit(new JSONObject().put("ok", true));
+                            return;
+                        }
+                    }
+                    android.os.SystemClock.sleep(32);
+                }
+                emit(new JSONObject().put("ok", false));
                 return;
             }
             if (display!=0 && !action.equals("close") && !action.equals("closeFullscreen")) {
                 if (!(action.startsWith("restore") || action.equals("switchFullscreen") || action.equals("maximize")))
                     throw new IllegalStateException("Unsupported live task operation");
                 // Bring the existing task and its activity surface forward together on the phone display.
+                atm.getMethod("moveRootTaskToDisplay", int.class, int.class).invoke(service, id, 0);
                 android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
                 options.setLaunchDisplayId(0);
                 boolean popup = action.startsWith("restore");
@@ -137,13 +153,6 @@ public final class NativeTaskBridge {
                         Integer.parseInt(args[6]), Integer.parseInt(args[7])));
                 atm.getMethod("startActivityFromRecents", int.class, android.os.Bundle.class)
                         .invoke(service, id, options.toBundle());
-                for (Object candidate : tasks(atm, service)) {
-                    JSONObject moved = describe(candidate);
-                    if (moved != null && moved.getInt("id") == id && moved.getInt("display") != 0) {
-                        atm.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(service,id,0);
-                        break;
-                    }
-                }
                 if(action.equals("switchFullscreen"))action="maximize";
             }
             if ("switchFullscreen".equals(action) || "closeFullscreen".equals(action)) {
@@ -216,7 +225,7 @@ public final class NativeTaskBridge {
                     // requested override configuration. SystemUI retains its organizer.
                     atm.getMethod("resizeTask", int.class, Rect.class, int.class)
                             .invoke(service, id, bounds, 1 /* RESIZE_MODE_USER */);
-                    emit(observe(atm, service, id, component, user, bounds));
+                    emit(observe(atm, service, id, component, user, bounds, true));
                     return;
                 case "minimize":
                     hidden.invoke(transaction, token, true);
@@ -269,7 +278,7 @@ public final class NativeTaskBridge {
                 catch (ReflectiveOperationException ignored) { }
             }
             if ("resize".equals(action) || "restore".equals(action)) {
-                emit(observe(atm, service, id, component, user, bounds));
+                emit(observe(atm, service, id, component, user, bounds, false));
             } else emit(new JSONObject().put("ok", true));
         } catch (Throwable failure) {
             try { emit(new JSONObject().put("ok", false).put("error", failure.toString())); }
@@ -313,11 +322,11 @@ public final class NativeTaskBridge {
     }
 
     private static JSONObject observe(Class<?> atm, Object service, int id, String component,
-                                      int user, Rect expected) throws Exception {
+                                      int user, Rect expected, boolean live) throws Exception {
         JSONObject last = null;
         long deadline = android.os.SystemClock.elapsedRealtime() + 1400;
         for (int attempt = 0; attempt < 12 && android.os.SystemClock.elapsedRealtime() < deadline; attempt++) {
-            if (attempt != 0) android.os.SystemClock.sleep(40);
+            if (attempt != 0) android.os.SystemClock.sleep(live ? 16 : 40);
             List<?> rows = tasks(atm, service);
             for (Object item : rows) {
                 JSONObject row = describe(item);
@@ -457,7 +466,7 @@ public final class NativeTaskBridge {
     }
 
     private static void addFrame(JSONObject info, Object task, List<?> tasks, List<?> windows) throws Exception {
-        if (windows == null || !info.getBoolean("visible")) return;
+        if (windows == null || info.getInt("display") != 0 || !info.getBoolean("visible")) return;
         ComponentName top = (ComponentName) task.getClass().getField("topActivity").get(task);
         if (top == null) return;
         // A matching visible component must belong to only one task. Never attach a caption

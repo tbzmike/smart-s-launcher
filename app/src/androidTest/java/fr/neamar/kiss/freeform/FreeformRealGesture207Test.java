@@ -120,11 +120,29 @@ public final class FreeformRealGesture207Test {
         switchBubble("Smart S " + family + " folder");
     }
 
+    private void expectFolderPanels(String name, int expected) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 5000;
+        int count;
+        do {
+            count = 0;
+            for (WindowFrameLookup.Window w : WindowFrameLookup.parse(shell("dumpsys window -a windows")))
+                if (name.equals(w.name) && w.valid()) count++;
+            assertTrue("Duplicate visible panels: " + name, count <= 1);
+            if (count == expected) return;
+            SystemClock.sleep(80);
+        } while (SystemClock.elapsedRealtime() < deadline);
+        assertEquals(name, expected, count);
+    }
+
     private void dropFolder(String family) throws Exception {
         Rect folder = switchBubble("Smart S " + family + " folder");
-        tap(folder.centerX(),folder.centerY());
-        assertFalse(switchBubble("Smart S " + family + " folder contents").isEmpty());
-        tap(folder.centerX(),folder.centerY());
+        String contents = "Smart S " + family + " folder contents";
+        for (int cycle = 0; cycle < 3; cycle++) {
+            tap(folder.centerX(), folder.centerY());
+            expectFolderPanels(contents, 1);
+            tap(folder.centerX(), folder.centerY());
+            expectFolderPanels(contents, 0);
+        }
         motion(MotionEvent.ACTION_DOWN,folder.centerX(),folder.centerY());
         motion(MotionEvent.ACTION_MOVE,folder.centerX()+dp(25),folder.centerY()+dp(25));
         Rect x = switchBubble("Smart S " + family + " folder close target");

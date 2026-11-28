@@ -113,11 +113,11 @@ final class BubbleMenu {
             public void onViewDetachedFromWindow(View v) {
                 if (menus.get(owner) == button) menus.remove(owner); activeDismiss[0] = null;
                 anchor.removeOnAttachStateChangeListener(this);
-                if(button.isAttachedToWindow()) wm.removeViewImmediate(button);
+                if (button.getParent() != null) wm.removeViewImmediate(button);
             }
         };
         Runnable dismiss=()->{if (menus.get(owner) == button) menus.remove(owner); activeDismiss[0] = null;anchor.removeOnAttachStateChangeListener(lifetime);
-            if(button.isAttachedToWindow()) wm.removeViewImmediate(button);};
+            if (button.getParent() != null) wm.removeViewImmediate(button);};
         button.setOnClickListener(v->{dismiss.run();action.run();});
         button.setOnTouchListener((v,e)->{
             if(e.getActionMasked()==MotionEvent.ACTION_OUTSIDE){dismiss.run();return true;}

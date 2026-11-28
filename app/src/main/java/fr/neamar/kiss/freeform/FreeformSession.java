@@ -229,7 +229,7 @@ final class FreeformSession {
             if (attempt > 0) SystemClock.sleep(180L * attempt);
             NativeTaskClient.Task task = find(client.list(visible), id);
             if (task != null && task.component.equals(component) && task.mode == mode
-                    && task.visible == visible) return task;
+                    && task.visible == visible && (!visible || (task.display == 0 && !task.frame.isEmpty()))) return task;
         }
         return null;
     }
@@ -239,7 +239,7 @@ final class FreeformSession {
         for (int i = 0; i < 6; i++) {
             if (i != 0) SystemClock.sleep(150);
             NativeTaskClient.Task task = find(client.list(), id);
-            if (task == null || !component.equals(task.component) || task.mode != mode || !task.visible) continue;
+            if (task == null || task.display != 0 || !component.equals(task.component) || task.mode != mode || !task.visible) continue;
             if (fullscreen ? FreeformGeometry.fullscreen(task.frame, wanted, tolerance)
                     : wanted.equals(task.bounds) && FreeformGeometry.near(task.frame, wanted, tolerance)) return task;
         }
@@ -376,9 +376,16 @@ final class FreeformSession {
                     && await(client, id, component, task.mode, false) != null) return true;
             // A failed/uncertain minimize must not strand a hidden task. Retain the recovery
             // record unless the same task is observed restored and visible.
-            if (client.action("restorePinned", task, fit(entry.popup, popupArea(context, area), 1))
-                    && await(client, id, component, 5, true) != null) {
-                entry.minimized = false; save(context, entries);
+            Rect popup = fit(entry.popup, popupArea(context, area), 1);
+            NativeTaskClient.Task current = find(client.list(), id);
+            if (current != null && component.equals(current.component) && current.display == 0
+                    && current.mode == 5 && current.visible && !current.frame.isEmpty()) {
+                entry.minimized = false;
+                save(context, entries);
+            } else if (client.action("restorePinned", task, popup)
+                    && awaitGeometry(client, id, component, 5, popup, tolerance(context), false) != null) {
+                entry.minimized = false;
+                save(context, entries);
             }
             return false;
         }
@@ -386,17 +393,13 @@ final class FreeformSession {
             Rect popup = fit(entry.popup, popupArea(context, area), 1);
             if (!client.action("restorePinned", task, popup)) return false;
             NativeTaskClient.Task after = await(client, id, component, 5, true);
-            if (after == null) return false;
-            // Some ROMs apply default bounds during a mode transition. Correct the same task
-            // once, then compare the observed rectangle rather than trusting binder success.
-            if (!popup.equals(after.bounds) && client.action("resize", after, popup)) {
-                NativeTaskClient.Task resized = await(client, id, component, 5, true);
-                if (resized != null) after = resized;
-            }
-            entry.minimized = false; entry.popup.set(after.bounds);
-            boolean saved = save(context, entries);
-            return saved && popup.equals(after.bounds)
-                    && FreeformGeometry.near(after.frame, popup, tolerance(context));
+            if (after != null && !popup.equals(after.bounds))
+                client.action("resize", after, popup);
+            if (awaitGeometry(client, id, component, 5, popup, tolerance(context), false) == null)
+                return false;
+            entry.minimized = false;
+            entry.popup.set(popup);
+            return save(context, entries);
         }
         if ("maximize".equals(action)) {
             if (entry.minimized || task.mode != 5) return false;
