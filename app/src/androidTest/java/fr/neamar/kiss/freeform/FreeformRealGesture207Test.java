@@ -482,7 +482,7 @@ public final class FreeformRealGesture207Test {
             try {
                 moving = await("app and both controls must move BEFORE ACTION_UP", doc ->
                         attached(doc) && Math.abs(frame(task(doc)).left - initial.left) >= Math.abs(dragX)/2);
-                evidence("mid-drag.png", frame(task(moving)), true);
+                settledEvidence("mid-drag.png", frame(task(moving)));
             } finally { motion(MotionEvent.ACTION_UP, x + dragX, y); }
             JSONObject moved = await("final aligned drag", doc ->
                     attached(doc) && Math.abs(frame(task(doc)).left - initial.left) >= Math.abs(dragX)/2);
@@ -494,7 +494,7 @@ public final class FreeformRealGesture207Test {
             try {
                 JSONObject resized = await("app and corner must resize BEFORE ACTION_UP", doc ->
                         attached(doc) && frame(task(doc)).width() < preResize.width() - dp(15));
-                evidence("mid-resize.png", frame(task(resized)), true);
+                settledEvidence("mid-resize.png", frame(task(resized)));
             } finally { motion(MotionEvent.ACTION_UP, rx - shrink, ry - shrink); }
             JSONObject resized = await("final aligned resize", doc ->
                     attached(doc) && frame(task(doc)).width() < preResize.width() - dp(15));

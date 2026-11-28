@@ -144,37 +144,54 @@ public final class NativeTaskBridge {
             if (display!=0 && !action.equals("close") && !action.equals("closeFullscreen")) {
                 if (!(action.startsWith("restore") || action.equals("switchFullscreen") || action.equals("maximize")))
                     throw new IllegalStateException("Unsupported live task operation");
-                // A single display reparent followed by a single window-mode transaction
-                // keeps the existing activity and avoids recents animation leashes.
+                // Collect the existing task BEFORE changing displays. A raw ATM
+                // move followed by WCT changes left its SurfaceFlinger parent on
+                // the virtual display even though TaskInfo reported display zero.
                 boolean popup = action.startsWith("restore");
-                atm.getMethod("moveRootTaskToDisplay", int.class, int.class).invoke(service, id, 0);
-                boolean onPhone = false;
-                for (int attempt = 0; attempt < 15 && !onPhone; attempt++) {
-                    for (Object fresh : tasks(atm, service)) {
-                        JSONObject row = describe(fresh);
-                        if (row != null && row.getInt("id") == id && row.getInt("user") == user
-                                && component.equals(row.getString("component")) && row.getInt("display") == 0) {
-                            onPhone = true;
-                            break;
+                Rect wanted = new Rect(Integer.parseInt(args[4]), Integer.parseInt(args[5]),
+                        Integer.parseInt(args[6]), Integer.parseInt(args[7]));
+                if (popup && wanted.isEmpty()) throw new IllegalArgumentException("Missing restore bounds");
+                Class<?> tokenClass = Class.forName("android.window.WindowContainerToken");
+                Class<?> txClass = Class.forName("android.window.WindowContainerTransaction");
+                Object tx = txClass.getConstructor().newInstance();
+                Object token = selected.getClass().getField("token").get(selected);
+                if (token == null) throw new IllegalStateException("Missing task token");
+                txClass.getMethod("setHidden", tokenClass, boolean.class).invoke(tx, token, false);
+                txClass.getMethod("setWindowingMode", tokenClass, int.class).invoke(tx, token, popup ? 5 : 1);
+                txClass.getMethod("setBounds", tokenClass, Rect.class).invoke(tx, token, popup ? wanted : new Rect());
+                txClass.getMethod("setAlwaysOnTop", tokenClass, boolean.class).invoke(tx, token, action.endsWith("Pinned"));
+                android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+                options.setLaunchDisplayId(0);
+                android.app.ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class)
+                        .invoke(options, popup ? 5 : 1);
+                if (popup) options.setLaunchBounds(wanted);
+                // WCT startTask is an existing-task launch, not a new activity.
+                // It is performed inside the same Shell transition as these changes.
+                txClass.getMethod("startTask", int.class, android.os.Bundle.class)
+                        .invoke(tx, id, options.toBundle());
+                Object organizer = atm.getMethod("getWindowOrganizerController").invoke(service);
+                Class.forName("android.window.IWindowOrganizerController")
+                        .getMethod("startNewTransition", int.class, txClass).invoke(organizer, 3, tx);
+                if (popup) {
+                    emit(observe(atm, service, id, component, user, wanted, false));
+                } else {
+                    boolean restored = false;
+                    for (int attempt = 0; attempt < 25 && !restored; attempt++) {
+                        for (Object fresh : tasks(atm, service)) {
+                            JSONObject row = describe(fresh);
+                            if (row != null && row.getInt("id") == id && row.getInt("user") == user
+                                    && component.equals(row.getString("component")) && row.getInt("display") == 0
+                                    && row.getInt("mode") == 1 && row.getBoolean("visible")
+                                    && row.getBoolean("focused")) {
+                                restored = true;
+                                break;
+                            }
                         }
+                        if (!restored) android.os.SystemClock.sleep(40);
                     }
-                    if (!onPhone) android.os.SystemClock.sleep(32);
+                    emit(new JSONObject().put("ok", restored));
                 }
-                if (!onPhone) throw new IllegalStateException("Task did not reparent to phone");
-                if (!popup) action = "maximize";
-                // Reacquire the container on display zero; the old display token can be stale.
-                selected = null;
-                for (Object fresh : tasks(atm, service)) {
-                    JSONObject row = describe(fresh);
-                    if (row != null && row.getInt("id") == id && row.getInt("user") == user
-                            && component.equals(row.getString("component")) && row.getInt("display") == 0) {
-                        selected = fresh;
-                        info = row;
-                        mode = row.getInt("mode");
-                        break;
-                    }
-                }
-                if (selected == null) throw new IllegalStateException("Restored task not on phone display");
+                return;
             }
             if ("switchFullscreen".equals(action) || "closeFullscreen".equals(action)) {
                 if (display == 0 && (mode != 1 || ("closeFullscreen".equals(action) && info.getBoolean("focused")))) throw new IllegalStateException("Task no longer eligible");
@@ -287,14 +304,8 @@ public final class NativeTaskBridge {
                 int transition = "minimize".equals(action) ? 4 /* TRANSIT_TO_BACK */
                         : "restore".equals(action) && display == 0 && !info.getBoolean("visible") ? 3 /* TRANSIT_TO_FRONT */
                         : 6 /* TRANSIT_CHANGE */;
-                if (display != 0 && ("restore".equals(action) || "maximize".equals(action))) {
-                    // The display move is itself a shell transition. Apply the final
-                    // mode/bounds without a second independent transition.
-                    organizerType.getMethod("applyTransaction", transactionType).invoke(organizer, transaction);
-                } else {
-                    organizerType.getMethod("startNewTransition", int.class, transactionType)
-                            .invoke(organizer, transition, transaction);
-                }
+                organizerType.getMethod("startNewTransition", int.class, transactionType)
+                        .invoke(organizer, transition, transaction);
             } else {
                 organizerType.getMethod("applyTransaction", transactionType).invoke(organizer, transaction);
             }
