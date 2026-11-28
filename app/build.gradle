@@ -19,8 +19,8 @@ android {
             version = release(36)
         }
         // Smart S Launcher 3.30.214 - retain verified native freeform controls and release identity
-        versionCode 646
-        versionName "3.30.217"
+        versionCode 647
+        versionName "3.30.218"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
