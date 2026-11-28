@@ -27,6 +27,8 @@ public final class NativeTaskBridge {
         // SystemUI task leash is stolen. EOF closes the helper when the launcher dies.
         if (args.length == 2 && "priority".equals(args[0])) {
             BubbleProcessPriority.runRoot(Integer.parseInt(args[1]));
+        } else if (args.length == 5 && "liveInput".equals(args[0])) {
+            runLiveInput(args);
         } else if (args.length == 4 && "gesture".equals(args[0])) {
             try (java.io.BufferedReader reader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(System.in, java.nio.charset.StandardCharsets.UTF_8))) {
@@ -41,6 +43,72 @@ public final class NativeTaskBridge {
             } catch (Exception ignored) { }
         } else run(args);
         System.exit(0);
+    }
+
+    // A bounded, per-touch stream scoped to one exact launcher-owned virtual display.
+    // Preserve the complete pointer data, including multi-touch, without polling or restarting the app.
+    private static void runLiveInput(String[] args) {
+        android.view.MotionEvent last=null;
+        Object input=null;
+        Method inject=null;
+        int uid=-1;
+        try {
+            if (Process.myUid()!=0) throw new SecurityException("Root required");
+            Class<?> runtime=Class.forName("dalvik.system.VMRuntime");
+            Object vm=runtime.getDeclaredMethod("getRuntime").invoke(null);
+            runtime.getDeclaredMethod("setHiddenApiExemptions",String[].class).invoke(vm,(Object)new String[]{
+                    "Landroid/os/ServiceManager;", "Landroid/app/IActivityTaskManager", "Landroid/app/TaskInfo;",
+                    "Landroid/app/ActivityManager$RunningTaskInfo;", "Landroid/content/res/Configuration;->windowConfiguration",
+                    "Landroid/app/WindowConfiguration;", "Landroid/hardware/display/", "Landroid/view/DisplayInfo;",
+                    "Landroid/hardware/input/", "Landroid/view/InputEvent;", "Landroid/view/MotionEvent;"});
+            int user=Integer.parseInt(args[1]), id=Integer.parseInt(args[2]), display=Integer.parseInt(args[4]);
+            if (display<=0 || !liveDisplay(display,id)) throw new SecurityException("Invalid target display");
+            Class<?> sm=Class.forName("android.os.ServiceManager");
+            Class<?> atm=Class.forName("android.app.IActivityTaskManager");
+            Object binder=sm.getMethod("getService",String.class).invoke(null,"activity_task");
+            Object service=Class.forName("android.app.IActivityTaskManager$Stub").getMethod("asInterface",IBinder.class).invoke(null,binder);
+            for (Object item:tasks(atm,service)) {
+                JSONObject row=describe(item);
+                if (row==null || row.getInt("id")!=id || row.getInt("user")!=user || row.getInt("display")!=display
+                        || !args[3].equals(row.getString("component")) || row.getInt("type")!=1) continue;
+                android.content.pm.ActivityInfo info=(android.content.pm.ActivityInfo)item.getClass().getField("topActivityInfo").get(item);
+                if(info!=null && info.applicationInfo!=null)uid=info.applicationInfo.uid;
+                break;
+            }
+            if(uid<0)throw new SecurityException("Task identity changed");
+            Object ib=sm.getMethod("getService",String.class).invoke(null,"input");
+            input=Class.forName("android.hardware.input.IInputManager$Stub").getMethod("asInterface",IBinder.class).invoke(null,ib);
+            inject=Class.forName("android.hardware.input.IInputManager").getMethod("injectInputEventToTarget",android.view.InputEvent.class,int.class,int.class);
+            Method setDisplay=android.view.InputEvent.class.getMethod("setDisplayId",int.class);
+            try(java.io.BufferedReader reader=new java.io.BufferedReader(new java.io.InputStreamReader(System.in,java.nio.charset.StandardCharsets.UTF_8))){
+                String line;
+                while((line=reader.readLine())!=null && !line.equals("end")){
+                    if(line.length()>65536)break;
+                    byte[] bytes=android.util.Base64.decode(line,android.util.Base64.NO_WRAP);
+                    android.os.Parcel parcel=android.os.Parcel.obtain();
+                    android.view.MotionEvent event=null;
+                    try{
+                        parcel.unmarshall(bytes,0,bytes.length);parcel.setDataPosition(0);
+                        event=android.view.MotionEvent.CREATOR.createFromParcel(parcel);
+                        int action=event.getActionMasked();
+                        if((last==null && action!=android.view.MotionEvent.ACTION_DOWN) || event.getPointerCount()>10)break;
+                        if(!liveDisplay(display,id))break;
+                        setDisplay.invoke(event,display);
+                        event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                        if(!(Boolean)inject.invoke(input,event,0,uid))break;
+                        if(last!=null){last.recycle();last=null;}
+                        if(action==android.view.MotionEvent.ACTION_UP || action==android.view.MotionEvent.ACTION_CANCEL)break;
+                        last=android.view.MotionEvent.obtainNoHistory(event);
+                    }finally{if(event!=null)event.recycle();parcel.recycle();}
+                }
+            }
+        } catch(Exception failure){android.util.Log.w("SmartMini","Live input unavailable",failure);}
+        finally{
+            if(last!=null){
+                try{last.setAction(android.view.MotionEvent.ACTION_CANCEL);if(inject!=null && input!=null)inject.invoke(input,last,0,uid);}
+                catch(Exception ignored){}finally{last.recycle();}
+            }
+        }
     }
 
     private static void run(String[] args) {

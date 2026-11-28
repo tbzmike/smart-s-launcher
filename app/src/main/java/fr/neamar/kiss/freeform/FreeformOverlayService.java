@@ -75,6 +75,7 @@ public final class FreeformOverlayService extends Service {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final List<View> overlays = new ArrayList<>();
+    private final java.util.Map<Integer, LiveMiniWindow> miniatures = new java.util.LinkedHashMap<>();
     private final java.util.Map<Integer, Decoration> decorations = new java.util.HashMap<>();
     private final java.util.Map<View, android.graphics.Point> overlayOrigins = new java.util.IdentityHashMap<>();
     @Nullable private GestureRun activeGesture;
@@ -394,17 +395,19 @@ public final class FreeformOverlayService extends Service {
 
     private void removeOverlays() {
         if (folder != null) folder.clear();
+        for (int id : new ArrayList<>(miniatures.keySet())) removeMiniature(id);
         removeWindowControls();
     }
 
     private void removeWindowControls() {
-        for (View view : overlays) {
+        for (View view : new ArrayList<>(overlays)) {
+            if (miniatures.values().stream().anyMatch(mini -> mini.view == view)) continue;
             try { if (wm != null) wm.removeViewImmediate(view); }
             catch (RuntimeException ignored) { }
         }
-        overlays.clear();
+        overlays.removeIf(view -> miniatures.values().stream().noneMatch(mini -> mini.view == view));
         decorations.clear();
-        overlayOrigins.clear();
+        overlayOrigins.keySet().retainAll(overlays);
         if (activeGesture != null) activeGesture.cancel();
         signature = "";
         dragging = 0;
@@ -485,6 +488,7 @@ public final class FreeformOverlayService extends Service {
         try { area = displayAreaFor(wm); }
         catch (RuntimeException unavailable) { return; }
         if (area.isEmpty()) return;
+        syncMiniatures(state,area);
         StringBuilder key = new StringBuilder(area.toString());
         int freeformCount = 0;
         for (NativeTaskClient.Task task : state.tasks) if (task.display == 0 && task.mode == 5 && task.visible) freeformCount++;
@@ -498,7 +502,7 @@ public final class FreeformOverlayService extends Service {
         }
         for (FreeformSession.Entry e : state.entries.values()) {
             key.append('|').append(e.id).append(':').append(e.component).append(':')
-                    .append(e.minimized).append(':').append(e.bubbleX).append(':').append(e.bubbleY);
+                    .append(e.minimized).append(':').append(e.liveWindow).append(':').append(e.bubbleX).append(':').append(e.bubbleY);
         }
         String next = key.toString();
         if (next.equals(signature)) return;
@@ -510,7 +514,7 @@ public final class FreeformOverlayService extends Service {
         for (int i = state.tasks.size() - 1; i >= 0; i--) {
             NativeTaskClient.Task task = state.tasks.get(i);
             FreeformSession.Entry entry = state.entries.get(task.id);
-            if (entry == null || !entry.component.equals(task.component) || entry.minimized
+            if (entry == null || !entry.component.equals(task.component) || entry.minimized || entry.liveWindow
                     || task.display != 0 || !task.visible || (task.mode != 5 && task.mode != 1)) continue;
             // Never put a caption at a guessed task/configuration rectangle. Use the actual
             // visible application frame, including compositor position, in display coordinates.
@@ -540,13 +544,13 @@ public final class FreeformOverlayService extends Service {
         java.util.List<NativeTaskClient.Task> minimized = new java.util.ArrayList<>();
         for (NativeTaskClient.Task task : state.tasks) {
             FreeformSession.Entry e = state.entries.get(task.id);
-            if (e != null && e.minimized && e.component.equals(task.component)) minimized.add(task);
+            if (e != null && e.minimized && !e.liveWindow && e.component.equals(task.component)) minimized.add(task);
         }
         boolean grouped = folder != null && folder.show(minimized,area);
         // Individual controls keep their existing behavior in separate mode.
         for (NativeTaskClient.Task task : state.tasks) {
             FreeformSession.Entry entry = state.entries.get(task.id);
-            if (grouped || entry == null || !entry.component.equals(task.component) || !entry.minimized) continue;
+            if (grouped || entry == null || !entry.component.equals(task.component) || !entry.minimized || entry.liveWindow) continue;
             int sameApp = 0;
             for (NativeTaskClient.Task other : state.tasks) {
                 if (task.pkg.equals(other.pkg) && state.entries.containsKey(other.id)) sameApp++;
@@ -558,6 +562,188 @@ public final class FreeformOverlayService extends Service {
             Toast.makeText(this, R.string.freeform_control_failed, Toast.LENGTH_LONG).show();
             stopAndRestore();
         }
+    }
+
+    private void removeMiniature(int id) {
+        LiveMiniWindow mini=miniatures.remove(id);
+        if(mini==null)return;
+        mini.destroy();
+        overlays.remove(mini.view);overlayOrigins.remove(mini.view);
+        try{wm.removeViewImmediate(mini.view);}catch(RuntimeException ignored){}
+    }
+
+    private void syncMiniatures(FreeformSession.Snapshot state,Rect area) {
+        java.util.Set<Integer> wanted=new java.util.HashSet<>();
+        for(NativeTaskClient.Task task:state.tasks){
+            FreeformSession.Entry entry=state.entries.get(task.id);
+            if(entry==null || !entry.liveWindow || task.display<=0 || !entry.component.equals(task.component))continue;
+            android.util.Size size=LiveBubbleDisplays.previewSize(task);
+            if(size==null)continue;
+            wanted.add(task.id);
+            LiveMiniWindow mini=miniatures.get(task.id);
+            if(mini!=null && (mini.task.display!=task.display || !mini.task.component.equals(task.component))){
+                removeMiniature(task.id);mini=null;
+            }
+            if(mini==null){
+                mini=new LiveMiniWindow(task,size);
+                miniatures.put(task.id,mini);
+                if(!add(mini.view,mini.lp)){
+                    removeMiniature(task.id);
+                    Toast.makeText(this,R.string.freeform_live_unavailable,Toast.LENGTH_LONG).show();
+                    continue;
+                }
+            }
+            mini.update(entry,area);
+        }
+        for(int id:new ArrayList<>(miniatures.keySet()))if(!wanted.contains(id))removeMiniature(id);
+    }
+
+    /** One view, one texture and one exact virtual display. Hang-up is a layout-only operation. */
+    private final class LiveMiniWindow {
+        final NativeTaskClient.Task task;
+        final android.util.Size size;
+        final LinearLayout view, bar;
+        final android.widget.FrameLayout content;
+        final android.view.TextureView texture;
+        final TextView grip;
+        final WindowManager.LayoutParams lp;
+        final LiveWindowInput input;
+        final Rect screen=new Rect(), bounds=new Rect();
+        android.view.Surface surface;
+        boolean miniature, initialized, dead;
+        LiveMiniWindow(NativeTaskClient.Task task,android.util.Size size){
+            this.task=task;this.size=size;
+            input=new LiveWindowInput(FreeformOverlayService.this,task,size);
+            view=new LinearLayout(windowContext);
+            view.setOrientation(LinearLayout.VERTICAL);
+            view.setBackground(background(false));
+            view.setPadding(dp(2),dp(2),dp(2),dp(2));
+            bar=new LinearLayout(windowContext);bar.setGravity(Gravity.CENTER_VERTICAL);
+            bar.setOrientation(LinearLayout.HORIZONTAL);
+            bar.setBackgroundColor(0xff20252e);
+            ImageView icon=new ImageView(windowContext);icon.setImageDrawable(nativeIcon(task));
+            bar.addView(icon,new LinearLayout.LayoutParams(dp(28),dp(36)));
+            TextView label=new TextView(windowContext);label.setText(nativeLabel(task));label.setTextColor(Color.WHITE);
+            label.setSingleLine(true);label.setEllipsize(TextUtils.TruncateAt.END);
+            bar.addView(label,new LinearLayout.LayoutParams(0,dp(36),1f));
+            for(TextView button:new TextView[]{control("‹",R.string.freeform_back,()->operate(task,"back",null)),
+                    control("−",R.string.freeform_miniaturize,()->operate(task,"minimize",null)),
+                    control("□",R.string.freeform_maximize,()->operate(task,"maximize",null)),
+                    control("×",R.string.freeform_close,()->operate(task,"close",null))})
+                bar.addView(button,new LinearLayout.LayoutParams(dp(34),dp(36)));
+            view.addView(bar,new LinearLayout.LayoutParams(-1,dp(36)));
+            content=new FrameLayout(windowContext);content.setBackgroundColor(Color.BLACK);
+            texture=new android.view.TextureView(windowContext);texture.setOpaque(true);
+            texture.setSurfaceTextureListener(new android.view.TextureView.SurfaceTextureListener(){
+                public void onSurfaceTextureAvailable(android.graphics.SurfaceTexture t,int w,int h){
+                    if(dead)return;
+                    t.setDefaultBufferSize(size.getWidth(),size.getHeight());
+                    surface=new android.view.Surface(t);
+                    if(!LiveBubbleDisplays.attachPreview(task,surface)){
+                        surface.release();surface=null;
+                        Toast.makeText(FreeformOverlayService.this,R.string.freeform_live_unavailable,Toast.LENGTH_LONG).show();
+                    }
+                }
+                public void onSurfaceTextureSizeChanged(android.graphics.SurfaceTexture t,int w,int h){
+                    t.setDefaultBufferSize(size.getWidth(),size.getHeight());
+                }
+                public boolean onSurfaceTextureDestroyed(android.graphics.SurfaceTexture t){detach();return true;}
+                public void onSurfaceTextureUpdated(android.graphics.SurfaceTexture t){}
+            });
+            content.addView(texture,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+            content.addOnLayoutChangeListener((v,left,top,right,bottom,ol,ot,or,ob)->{
+                int w=right-left,h=bottom-top;if(w<=0||h<=0)return;
+                float ratio=Math.min((float)w/size.getWidth(),(float)h/size.getHeight());
+                int tw=Math.max(1,Math.round(size.getWidth()*ratio)),th=Math.max(1,Math.round(size.getHeight()*ratio));
+                FrameLayout.LayoutParams p=(FrameLayout.LayoutParams)texture.getLayoutParams();
+                if(p.width!=tw||p.height!=th){p.width=tw;p.height=th;texture.setLayoutParams(p);}
+            });
+            grip=control("◢",R.string.freeform_resize,()->{});
+            grip.setBackground(background(false));
+            content.addView(grip,new FrameLayout.LayoutParams(dp(28),dp(28),Gravity.BOTTOM|Gravity.END));
+            view.addView(content,new LinearLayout.LayoutParams(-1,0,1f));
+            lp=params(dp(180),dp(300),0,0);
+            lp.flags|=WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
+            lp.setTitle("Smart S live window "+task.id);
+            View.OnTouchListener move=localGesture(false,false);
+            icon.setOnTouchListener(move);label.setOnTouchListener(move);
+            grip.setOnTouchListener(localGesture(true,false));
+            texture.setOnTouchListener((v,e)->{
+                if(dead||busy||stopping)return true;
+                if(miniature)return miniTouch.onTouch(v,e);
+                input.offer(e,texture.getWidth(),texture.getHeight());return true;
+            });
+        }
+        private final View.OnTouchListener miniTouch=localGesture(false,true);
+        void update(FreeformSession.Entry entry,Rect area){
+            if(dead)return;
+            screen.set(area);
+            if(dragging>0)return;
+            boolean small=entry.minimized;
+            if(initialized && miniature!=small)input.cancel();
+            miniature=small;
+            bar.setVisibility(small?View.GONE:View.VISIBLE);
+            grip.setVisibility(small?View.GONE:View.VISIBLE);
+            Rect target;
+            if(small){
+                int w=Math.min(dp(120),Math.max(1,area.width()/3));
+                int h=Math.max(1,Math.round(w*(float)size.getHeight()/size.getWidth()));
+                if(h>area.height()/3){h=Math.max(1,area.height()/3);w=Math.max(1,Math.round(h*(float)size.getWidth()/size.getHeight()));}
+                int x=entry.bubbleX<0?area.right-w-dp(4):entry.bubbleX;
+                int y=entry.bubbleY<0?area.top+dp(4):entry.bubbleY;
+                target=FreeformGeometry.fit(new Rect(x,y,x+w,y+h),area,1);
+            }else{
+                target=FreeformGeometry.fit(new Rect(entry.popup.left,entry.popup.top-dp(36),
+                        entry.popup.right,entry.popup.bottom),area,1);
+            }
+            if(!initialized){
+                initialized=true;bounds.set(target);
+                lp.width=target.width();lp.height=target.height();lp.x=target.left;lp.y=target.top;
+                try{wm.updateViewLayout(view,lp);}catch(RuntimeException ignored){}
+                alignAfterLayout(view,lp,target);
+            }else if(!bounds.equals(target)){bounds.set(target);align(view,lp,target);}
+        }
+        private View.OnTouchListener localGesture(boolean resize,boolean tapRestore){
+            return new View.OnTouchListener(){
+                float x,y;Rect start=new Rect();boolean moved,down;
+                @Override public boolean onTouch(View v,MotionEvent e){
+                    if(dead)return true;
+                    switch(e.getActionMasked()){
+                        case MotionEvent.ACTION_DOWN:
+                            if(busy||stopping||dragging>0)return true;
+                            x=e.getRawX();y=e.getRawY();start.set(bounds);moved=false;down=true;dragging++;return true;
+                        case MotionEvent.ACTION_MOVE:
+                        case MotionEvent.ACTION_UP:
+                            if(!down)return true;
+                            int dx=Math.round(e.getRawX()-x),dy=Math.round(e.getRawY()-y);
+                            int slop=ViewConfiguration.get(windowContext).getScaledTouchSlop();
+                            moved|=Math.abs(dx)>slop||Math.abs(dy)>slop;
+                            if(moved){
+                                Rect target=new Rect(start);
+                                if(resize){target.right=Math.max(target.left+dp(180),target.right+dx);target.bottom=Math.max(target.top+dp(200),target.bottom+dy);}
+                                else target.offset(dx,dy);
+                                bounds.set(FreeformGeometry.fit(target,screen,1));align(view,lp,bounds);
+                            }
+                            if(e.getActionMasked()==MotionEvent.ACTION_UP){
+                                down=false;dragging=0;
+                                if(!moved&&tapRestore){v.performClick();operate(task,"restore",null);}
+                                else if(moved&&miniature)moveBubble(task,bounds.left,bounds.top);
+                                else if(moved)operate(task,"resize",new Rect(bounds.left,bounds.top+dp(36),bounds.right,bounds.bottom));
+                                else requestRefresh();
+                            }
+                            return true;
+                        case MotionEvent.ACTION_CANCEL:
+                            if(down){down=false;dragging=0;bounds.set(start);align(view,lp,bounds);requestRefresh();}
+                            return true;
+                        default:return true;
+                    }
+                }
+            };
+        }
+        private void detach(){
+            if(surface!=null){LiveBubbleDisplays.detachPreview(task.id,surface);surface.release();surface=null;}
+        }
+        void destroy(){dead=true;input.close();detach();}
     }
 
     private static final class Decoration {
@@ -924,6 +1110,8 @@ public final class FreeformOverlayService extends Service {
         catch (RuntimeException unavailable) { return; }
         if (area.isEmpty()) return;
         busy = true;
+        LiveMiniWindow live=miniatures.get(task.id);
+        if(live!=null)live.input.cancel();
         main.removeCallbacks(poll);
         // Do not leave standalone border strips on the old surface while Android reparents it.
         if ("minimize".equals(action) || "maximize".equals(action) || "close".equals(action)) {

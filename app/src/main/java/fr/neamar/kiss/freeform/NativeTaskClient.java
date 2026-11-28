@@ -96,6 +96,11 @@ final class NativeTaskClient {
         String read(String command);
         Pipe open(String command) throws java.io.IOException;
     }
+    Pipe liveInputPipe(Task task) throws java.io.IOException {
+        if (task.display<=0 || task.user!=USER || task.type!=1 || !task.component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+")
+                || !KissApplication.getApplication(app).getRootHandler().isRootActivated()) throw new java.io.IOException("Invalid live window");
+        return rootPipe(command("liveInput"," "+task.id+" "+quote(task.component)+" "+task.display));
+    }
     Pipe priorityPipe() throws java.io.IOException {
         return rootPipe(command("priority", ""));
     }

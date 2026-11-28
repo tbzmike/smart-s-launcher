@@ -39,7 +39,7 @@ final class LiveBubbleDisplays {
                 release(t.id);
             } else {
                 int destination = existing.display.getDisplay().getDisplayId();
-                if (t.display == destination) { existing.family=family; return true; }
+                if (t.display == destination) { existing.family=family; BubbleProcessPriority.hold(app,t); return true; }
                 if (t.display != 0) return false;
                 // Keep the same display container for this task's lifetime.
                 // Destroying its old display after reparent can detach the task
@@ -156,7 +156,7 @@ final class LiveBubbleDisplays {
         stopIdleThread();
     }
     static synchronized void releaseFamily(String family){
-        for(int id:new ArrayList<>(active.keySet())) if(family.equals(active.get(id).family))release(id);
+        for(int id:new ArrayList<>(active.keySet())) if(family.equals(active.get(id).family) || ("windows".equals(family) && "live".equals(active.get(id).family)))release(id);
     }
     private static void stopIdleThread(){if(active.isEmpty() && retiring == 0 && buffers!=null){buffers.quitSafely();buffers=null;}}
     private LiveBubbleDisplays(){}

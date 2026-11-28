@@ -210,7 +210,7 @@ final class FreeformSession {
             entry.minimized = false;
             return save(context, entries) ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
         }
-        if (register && FreeformMinimizeStyle.live(context)) return startLive(context, client, task, entries, popup);
+        if (register && entry == null && FreeformMinimizeStyle.live(context)) return startLive(context, client, task, entries, popup);
         boolean restoring = task.mode != 5 || (entry != null && entry.minimized) || !task.visible
                 || (register && (entry == null || !safe.contains(task.bounds)));
         if (!restoring) {
