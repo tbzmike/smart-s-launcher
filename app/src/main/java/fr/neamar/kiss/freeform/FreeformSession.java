@@ -326,6 +326,13 @@ final class FreeformSession {
         return entries == null ? null : new java.util.HashSet<>(entries.keySet());
     }
 
+    static synchronized boolean closeMinimized(Context context, NativeTaskClient.Task t, Rect area) {
+        Map<Integer, Entry> entries = load(context);
+        Entry e = entries == null ? null : entries.get(t.id);
+        return e != null && e.minimized && e.component.equals(t.component)
+                && operate(context,t.id,t.component,"close",null,area);
+    }
+
     static synchronized boolean operate(Context context, int id, String component, String action,
                                          @Nullable Rect requested, Rect area) {
         Map<Integer, Entry> entries = load(context);

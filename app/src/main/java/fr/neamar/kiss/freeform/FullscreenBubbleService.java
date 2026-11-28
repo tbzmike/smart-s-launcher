@@ -39,6 +39,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Map<Integer, View> views = new LinkedHashMap<>();
     private final Map<Integer, NativeTaskClient.Task> live = new HashMap<>();
+    private BubbleFolder folder;
     private WindowManager wm;
     private SharedPreferences saved;
     private String lastPackage = "";
@@ -73,6 +74,12 @@ public final class FullscreenBubbleService extends AccessibilityService {
         connected = new java.lang.ref.WeakReference<>(this);
         saved = getSharedPreferences("fullscreen-switcher-tasks", MODE_PRIVATE);
         wm = getSystemService(WindowManager.class);
+        folder = new BubbleFolder(this,wm,false,new BubbleFolder.Actions() {
+            public void open(NativeTaskClient.Task t) { act(t,false); }
+            public void close(List<NativeTaskClient.Task> selected) {
+                for (NativeTaskClient.Task t : selected) act(t,true);
+            }
+        }, this::schedule);
         schedule();
     }
 
@@ -109,7 +116,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
         live.clear();
         Set<String> tracked = new HashSet<>(saved.getStringSet("tracked", Collections.emptySet()));
         Set<String> valid = new HashSet<>();
-        Set<Integer> wanted = new HashSet<>();
+        Set<Integer> wanted = new LinkedHashSet<>();
         boolean locked = getSystemService(KeyguardManager.class).isKeyguardLocked();
         for (NativeTaskClient.Task t : tasks) {
             if (t.mode != 1 || t.type != 1 || managed.contains(t.id) || t.pkg.equals(getPackageName())
@@ -123,6 +130,9 @@ public final class FullscreenBubbleService extends AccessibilityService {
         }
         if (!valid.equals(saved.getStringSet("tracked", Collections.emptySet())))
             saved.edit().putStringSet("tracked", valid).apply();
+        List<NativeTaskClient.Task> members = new ArrayList<>();
+        for (int id : wanted) members.add(live.get(id));
+        if (folder.show(members,area())) wanted.clear();
         for (int id : new ArrayList<>(views.keySet())) if (!wanted.contains(id)) remove(views.remove(id));
         for (int id : wanted) if (!views.containsKey(id)) addBubble(live.get(id));
     }
@@ -253,6 +263,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
     private void remove(View v) { if (v!=null && v.isAttachedToWindow()) wm.removeViewImmediate(v); }
     private void hideTarget() { remove(target); target=null; }
     private void shutdown() {
+        if (folder != null) folder.destroy();
         stopped=true; main.removeCallbacks(refresh); hideTarget();
         for (View v:views.values()) remove(v);
         views.clear(); worker.shutdownNow();

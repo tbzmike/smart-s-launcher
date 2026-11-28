@@ -64,6 +64,18 @@ public final class FreeformRealGesture207Test {
         throw new AssertionError("Missing switcher overlay: " + name);
     }
 
+    private void dropFolder(String family) throws Exception {
+        Rect folder = switchBubble("Smart S " + family + " folder");
+        tap(folder.centerX(),folder.centerY());
+        assertFalse(switchBubble("Smart S " + family + " folder contents").isEmpty());
+        tap(folder.centerX(),folder.centerY());
+        motion(MotionEvent.ACTION_DOWN,folder.centerX(),folder.centerY());
+        motion(MotionEvent.ACTION_MOVE,folder.centerX()+dp(25),folder.centerY()+dp(25));
+        Rect x = switchBubble("Smart S " + family + " folder close target");
+        motion(MotionEvent.ACTION_MOVE,x.centerX(),x.centerY());
+        motion(MotionEvent.ACTION_UP,x.centerX(),x.centerY());
+    }
+
     private void checkFullscreenSwitching() throws Exception {
         String previous = shell("settings get secure enabled_accessibility_services").trim();
         String service = app.getPackageName() + "/fr.neamar.kiss.freeform.FullscreenBubbleService";
@@ -96,6 +108,11 @@ public final class FreeformRealGesture207Test {
             motion(MotionEvent.ACTION_MOVE,x.centerX(),x.centerY());
             motion(MotionEvent.ACTION_UP,x.centerX(),x.centerY());
             await("drag to X closes only first fullscreen task", d -> task(d)==null);
+            shell("am start -W --windowingMode 1 -n " + COMPONENT);
+            SystemClock.sleep(900);
+            shell("input keyevent KEYCODE_HOME");
+            dropFolder("fullscreen");
+            await("bulk close removes both switcher tasks", d -> task(d)==null && !d.getJSONArray("tasks").toString().contains(second));
         } finally {
             if ("null".equals(previous) || previous.isEmpty()) shell("settings delete secure enabled_accessibility_services");
             else shell("settings put secure enabled_accessibility_services " + previous);
@@ -414,6 +431,17 @@ public final class FreeformRealGesture207Test {
             closeTitle = decoration(await("controls still attached after Back", this::attached), "title");
             tap(closeTitle.right - dp(20), closeTitle.centerY());
             await("explicit X closes the task", doc -> task(doc) == null);
+            for (String pkg : new String[]{PKG,"com.tbzmike.shortcutfixture.icebox"}) {
+                ComponentName comp=new ComponentName(pkg,"com.tbzmike.shortcutfixture.FixtureFreeformActivity");
+                shell("am start -W --windowingMode 5 -n " + comp.flattenToString());
+                assertEquals(FreeformOverlayService.OPEN_VERIFIED,FreeformOverlayService.openManaged(app,comp));
+                NativeTaskClient.Task target=null;
+                for (NativeTaskClient.Task item:new NativeTaskClient(app).list()) if (item.pkg.equals(pkg)) target=item;
+                assertNotNull(target);
+                assertTrue(FreeformSession.operate(app,target.id,target.component,"minimize",null,usable));
+            }
+            dropFolder("windows");
+            await("both minimized windows closed", doc -> task(doc)==null && !doc.getJSONArray("tasks").toString().contains("com.tbzmike.shortcutfixture.icebox"));
             checkFullscreenSwitching();
         } finally {
             ui.setRotation(UiAutomation.ROTATION_FREEZE_0);

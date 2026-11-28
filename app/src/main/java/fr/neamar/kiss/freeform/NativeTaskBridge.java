@@ -114,7 +114,7 @@ public final class NativeTaskBridge {
             int mode = info.getInt("mode");
             if (mode != 1 && mode != 5) throw new IllegalStateException("Task is not fullscreen/freeform");
             if ("switchFullscreen".equals(action) || "closeFullscreen".equals(action)) {
-                if (mode != 1) throw new IllegalStateException("Task is no longer fullscreen");
+                if (mode != 1 || ("closeFullscreen".equals(action) && info.getBoolean("focused"))) throw new IllegalStateException("Task no longer eligible");
                 action = "switchFullscreen".equals(action) ? "focus" : "close";
             }
             if ("back".equals(action)) {

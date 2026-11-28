@@ -81,6 +81,7 @@ public final class FreeformOverlayService extends Service {
     private boolean normalizeOnRefresh = true;
     private final Runnable poll = this::refresh;
     private Context windowContext;
+    private BubbleFolder folder;
     private WindowManager wm;
     private boolean destroyed, busy, refreshing, stopping, receiverRegistered, screenReady;
     private int dragging;
@@ -221,6 +222,24 @@ public final class FreeformOverlayService extends Service {
         try {
             windowContext = overlayContext(this);
             wm = windowContext.getSystemService(WindowManager.class);
+            folder = new BubbleFolder(windowContext, wm, true, new BubbleFolder.Actions() {
+                public void open(NativeTaskClient.Task t) { operate(t,"restore",null); }
+                public void close(java.util.List<NativeTaskClient.Task> selected) {
+                    if (busy || stopping || destroyed) return;
+                    Rect area = displayAreaFor(wm);
+                    busy = true;
+                    worker.execute(() -> {
+                        boolean all = true;
+                        try {
+                            for (NativeTaskClient.Task t : selected)
+                                all &= FreeformSession.closeMinimized(FreeformOverlayService.this,t,area);
+                        } finally {
+                            final boolean result = all;
+                            main.post(() -> complete(result));
+                        }
+                    });
+                }
+            }, () -> { signature = ""; requestRefresh(); });
         } catch (RuntimeException unavailable) {
             // Keep recovery available through the notification even if overlay setup fails.
         }
@@ -252,6 +271,7 @@ public final class FreeformOverlayService extends Service {
 
     @Override public void onDestroy() {
         destroyed = true;
+        if (folder != null) folder.destroy();
         main.removeCallbacksAndMessages(null);
         removeOverlays();
         if (receiverRegistered) unregisterReceiver(screen);
@@ -364,6 +384,11 @@ public final class FreeformOverlayService extends Service {
     }
 
     private void removeOverlays() {
+        if (folder != null) folder.clear();
+        removeWindowControls();
+    }
+
+    private void removeWindowControls() {
         for (View view : overlays) {
             try { if (wm != null) wm.removeViewImmediate(view); }
             catch (RuntimeException ignored) { }
@@ -466,7 +491,7 @@ public final class FreeformOverlayService extends Service {
         }
         String next = key.toString();
         if (next.equals(signature)) return;
-        removeOverlays();
+        removeWindowControls();
         signature = next;
         boolean ok = true;
         int bubbleIndex = 0;
@@ -497,10 +522,16 @@ public final class FreeformOverlayService extends Service {
                 ok &= addResize(task, handle, area, decor);
             }
         }
-        // Bubbles retain their own native identity, independent position and task number.
+        java.util.List<NativeTaskClient.Task> minimized = new java.util.ArrayList<>();
+        for (NativeTaskClient.Task task : state.tasks) {
+            FreeformSession.Entry e = state.entries.get(task.id);
+            if (e != null && e.minimized && e.component.equals(task.component)) minimized.add(task);
+        }
+        boolean grouped = folder != null && folder.show(minimized,area);
+        // Individual controls keep their existing behavior in separate mode.
         for (NativeTaskClient.Task task : state.tasks) {
             FreeformSession.Entry entry = state.entries.get(task.id);
-            if (entry == null || !entry.component.equals(task.component) || !entry.minimized) continue;
+            if (grouped || entry == null || !entry.component.equals(task.component) || !entry.minimized) continue;
             int sameApp = 0;
             for (NativeTaskClient.Task other : state.tasks) {
                 if (task.pkg.equals(other.pkg) && state.entries.containsKey(other.id)) sameApp++;
