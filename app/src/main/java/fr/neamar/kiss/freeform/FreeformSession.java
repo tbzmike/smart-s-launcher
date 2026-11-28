@@ -391,12 +391,16 @@ final class FreeformSession {
         }
         if ("restore".equals(action)) {
             Rect popup = fit(entry.popup, popupArea(context, area), 1);
-            if (!client.action("restorePinned", task, popup)) return false;
-            NativeTaskClient.Task after = await(client, id, component, 5, true);
-            if (after != null && !popup.equals(after.bounds))
-                client.action("resize", after, popup);
-            if (awaitGeometry(client, id, component, 5, popup, tolerance(context), false) == null)
-                return false;
+            NativeTaskClient.Task after = client.restoreObserved(task, popup);
+            // The bridge already observes the exact task after its transition. Reuse that
+            // result instead of issuing another root command and speculative resize.
+            if (after == null || after.id != id || !component.equals(after.component)
+                    || after.display != 0 || after.mode != 5 || !after.visible
+                    || !popup.equals(after.bounds)
+                    || !FreeformGeometry.near(after.frame, popup, tolerance(context))) {
+                after = awaitGeometry(client, id, component, 5, popup, tolerance(context), false);
+            }
+            if (after == null) return false;
             entry.minimized = false;
             entry.popup.set(popup);
             return save(context, entries);

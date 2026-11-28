@@ -63,14 +63,26 @@ final class NativeTaskClient {
     }
 
     boolean action(String action, Task task, @Nullable Rect bounds) {
-        if (task == null || task.user != USER || task.type != 1) return false;
-        if (!task.component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+")) return false;
-        if (!action.matches("minimize|restore|restorePinned|maximize|resize|resizePinned|focus|focusPinned|unpin|back|close|switchFullscreen|closeFullscreen")) return false;
+        JSONObject result = actionResult(action, task, bounds);
+        return result != null && result.optBoolean("ok");
+    }
+
+    @Nullable Task restoreObserved(Task task, Rect bounds) {
+        JSONObject result = actionResult("restorePinned", task, bounds);
+        if (result == null || !result.optBoolean("ok")) return null;
+        try {
+            JSONObject row = result.optJSONObject("task");
+            return row == null ? null : new Task(row);
+        } catch (org.json.JSONException failure) { return null; }
+    }
+
+    @Nullable private JSONObject actionResult(String action, Task task, @Nullable Rect bounds) {
+        if (task == null || task.user != USER || task.type != 1) return null;
+        if (!task.component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+")) return null;
+        if (!action.matches("minimize|restore|restorePinned|maximize|resize|resizePinned|focus|focusPinned|unpin|back|close|switchFullscreen|closeFullscreen")) return null;
         Rect rect = bounds == null ? new Rect() : bounds;
-        JSONObject result = invoke(action, " " + task.id + " " + quote(task.component)
+        return invoke(action, " " + task.id + " " + quote(task.component)
                 + " " + rect.left + " " + rect.top + " " + rect.right + " " + rect.bottom);
-        boolean ok=result!=null && result.optBoolean("ok");
-        return ok;
     }
 
     /** Private transport abstraction; only the debug source set permits instrumentation injection. */

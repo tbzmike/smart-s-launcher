@@ -501,6 +501,7 @@ public final class FreeformRealGesture207Test {
             tap(restore.centerX(), restore.centerY());
             JSONObject restored = await("same task restored with previous geometry", doc ->
                     attached(doc) && FreeformGeometry.near(frame(task(doc)), saved, dp(8)));
+            settledEvidence("restored-from-fullscreen.png", saved);
             title = decoration(restored, "title");
             SystemClock.sleep(900);
             title = decoration(await("current title at minimize tap", this::attached), "title");
@@ -536,6 +537,19 @@ public final class FreeformRealGesture207Test {
                     attached(doc) && decoration(doc, "bubble") == null
                             && FreeformGeometry.near(frame(task(doc)), saved, dp(8)));
             settledEvidence("restored.png", saved);
+
+            // Exercise a second immediate cycle without an arbitrary settling sleep.
+            Rect quickTitle = decoration(await("current title for repeated cycle", this::attached), "title");
+            tap(quickTitle.right - dp(100), quickTitle.centerY());
+            JSONObject quickBubble = await("same task minimized again without stale controls", doc ->
+                    task(doc) != null && task(doc).getInt("id") == id && task(doc).getInt("display") > 0
+                            && decoration(doc, "bubble") != null && decoration(doc, "title") == null
+                            && decoration(doc, "corner") == null);
+            Rect quick = decoration(quickBubble, "bubble");
+            tap(quick.centerX(), quick.centerY());
+            await("same task returns without duplicate bubble", doc -> attached(doc)
+                    && task(doc).getInt("id") == id && decoration(doc, "bubble") == null);
+            settledEvidence("restored-repeated.png", saved);
 
             // A real display rotation changes the coordinate space. Re-read usable bounds
             // from the rotated display and verify that the same task's title/corner follow it.

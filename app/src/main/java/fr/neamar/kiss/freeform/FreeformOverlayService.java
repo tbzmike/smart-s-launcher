@@ -489,8 +489,10 @@ public final class FreeformOverlayService extends Service {
         int freeformCount = 0;
         for (NativeTaskClient.Task task : state.tasks) if (task.display == 0 && task.mode == 5 && task.visible) freeformCount++;
         for (NativeTaskClient.Task task : state.tasks) {
-            if (task.mode == 1 && !state.entries.containsKey(task.id)) continue;
-            key.append('|').append(task.id).append(':').append(task.mode).append(':')
+            if (!state.entries.containsKey(task.id)
+                    && (task.display != 0 || !task.visible || task.mode != 5)) continue;
+            key.append('|').append(task.id).append(':').append(task.component)
+                    .append(':').append(task.display).append(':').append(task.mode).append(':')
                     .append(task.visible).append(':').append(freeformCount > 1 && task.focused).append(':').append(task.bounds)
                     .append(':').append(task.frame);
         }
@@ -922,12 +924,28 @@ public final class FreeformOverlayService extends Service {
         catch (RuntimeException unavailable) { return; }
         if (area.isEmpty()) return;
         busy = true;
+        main.removeCallbacks(poll);
+        // Do not leave standalone border strips on the old surface while Android reparents it.
+        if ("minimize".equals(action) || "maximize".equals(action) || "close".equals(action)) {
+            Decoration decor = decorations.remove(task.id);
+            if (decor != null) {
+                java.util.ArrayList<View> old = new java.util.ArrayList<>(decor.borders);
+                if (decor.title != null) old.add(decor.title);
+                if (decor.corner != null) old.add(decor.corner);
+                for (View view : old) {
+                    overlays.remove(view);
+                    overlayOrigins.remove(view);
+                    try { wm.removeViewImmediate(view); } catch (RuntimeException ignored) { }
+                }
+                signature = "";
+            }
+        }
         worker.execute(() -> {
             boolean ok;
             try { ok = FreeformSession.operate(this, task.id, task.component, action, bounds, area); }
             catch (RuntimeException failure) { ok = false; }
             final boolean result = ok;
-            main.post(() -> complete(result, !"back".equals(action)));
+            main.post(() -> complete(result, false));
         });
     }
 

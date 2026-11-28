@@ -153,7 +153,56 @@ public final class NativeTaskBridge {
                         Integer.parseInt(args[6]), Integer.parseInt(args[7])));
                 atm.getMethod("startActivityFromRecents", int.class, android.os.Bundle.class)
                         .invoke(service, id, options.toBundle());
-                if(action.equals("switchFullscreen"))action="maximize";
+                if (popup) {
+                    Rect wanted = new Rect(Integer.parseInt(args[4]), Integer.parseInt(args[5]),
+                            Integer.parseInt(args[6]), Integer.parseInt(args[7]));
+                    JSONObject result = observe(atm, service, id, component, user, wanted, false);
+                    JSONObject observed = result.optJSONObject("task");
+                    // Recents already requested the display, mode and bounds. Never start
+                    // another shell transition over the same correctly configured surface.
+                    if (observed != null && observed.optInt("display", -1) == 0
+                            && observed.optInt("mode") == 5
+                            && observed.optInt("l") == wanted.left && observed.optInt("t") == wanted.top
+                            && observed.optInt("r") == wanted.right && observed.optInt("b") == wanted.bottom) {
+                        if (action.endsWith("Pinned")) {
+                            for (Object fresh : tasks(atm, service)) {
+                                JSONObject row = describe(fresh);
+                                if (row == null || row.getInt("id") != id || row.getInt("user") != user
+                                        || !component.equals(row.getString("component")) || row.getInt("display") != 0) continue;
+                                Class<?> tokenClass = Class.forName("android.window.WindowContainerToken");
+                                Class<?> txClass = Class.forName("android.window.WindowContainerTransaction");
+                                Object pin = txClass.getConstructor().newInstance();
+                                Object freshToken = fresh.getClass().getField("token").get(fresh);
+                                txClass.getMethod("setAlwaysOnTop", tokenClass, boolean.class)
+                                        .invoke(pin, freshToken, true);
+                                Object controller = atm.getMethod("getWindowOrganizerController").invoke(service);
+                                Class.forName("android.window.IWindowOrganizerController")
+                                        .getMethod("applyTransaction", txClass).invoke(controller, pin);
+                                break;
+                            }
+                        }
+                        emit(result);
+                        return;
+                    }
+                } else if ("switchFullscreen".equals(action)) {
+                    // Recents performs the fullscreen switch itself.
+                    emit(new JSONObject().put("ok", true));
+                    return;
+                }
+                // Only repair a mode/bounds mismatch after observing the recents request.
+                // Reacquire the task/container on display zero; the old display token can be stale.
+                selected = null;
+                for (Object fresh : tasks(atm, service)) {
+                    JSONObject row = describe(fresh);
+                    if (row != null && row.getInt("id") == id && row.getInt("user") == user
+                            && component.equals(row.getString("component")) && row.getInt("display") == 0) {
+                        selected = fresh;
+                        info = row;
+                        mode = row.getInt("mode");
+                        break;
+                    }
+                }
+                if (selected == null) throw new IllegalStateException("Restored task not on phone display");
             }
             if ("switchFullscreen".equals(action) || "closeFullscreen".equals(action)) {
                 if (display == 0 && (mode != 1 || ("closeFullscreen".equals(action) && info.getBoolean("focused")))) throw new IllegalStateException("Task no longer eligible");
@@ -332,12 +381,14 @@ public final class NativeTaskBridge {
                 JSONObject row = describe(item);
                 if (row == null || row.getInt("id") != id || row.getInt("user") != user
                         || !component.equals(row.getString("component"))) continue;
-                List<?> windows = visibleWindows();
-                addFrame(row, item, rows, windows);
-                if (!row.has("vl") && row.getBoolean("visible"))
-                    addLayoutFrame(row, windowLayouts(), windows);
+                if (row.getInt("display") == 0 && row.getBoolean("visible") && row.getInt("mode") == 5) {
+                    List<?> windows = visibleWindows();
+                    addFrame(row, item, rows, windows);
+                    if (!row.has("vl")) addLayoutFrame(row, windowLayouts(), windows);
+                }
                 last = row;
-                if (row.getInt("mode") == 5 && row.has("vl") && row.getInt("l") == expected.left
+                if (row.getInt("display") == 0 && row.getBoolean("visible")
+                        && row.getInt("mode") == 5 && row.has("vl") && row.getInt("l") == expected.left
                         && row.getInt("t") == expected.top && row.getInt("r") == expected.right
                         && row.getInt("b") == expected.bottom
                         && Math.abs(row.getInt("vl") - expected.left) <= 12

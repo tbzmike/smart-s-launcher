@@ -28,7 +28,12 @@ final class LiveBubbleDisplays {
         void release(){try { display.release(); } finally {surface.close();}}
     }
     static synchronized boolean park(Context app,NativeTaskClient client,NativeTaskClient.Task t,String family) {
-        if(active.containsKey(t.id)) return t.display!=0;
+        if (active.containsKey(t.id)) {
+            if (t.display != 0) return true;
+            // A second minimize can arrive before the next frame refresh. The old
+            // lease is no longer the task's display; retire it before making a new one.
+            release(t.id);
+        }
         android.util.DisplayMetrics metrics=app.getResources().getDisplayMetrics();
         int w=Math.max(160,metrics.widthPixels/2),h=Math.max(240,metrics.heightPixels/2);
         ImageReader surface=null; VirtualDisplay display=null;
@@ -60,7 +65,12 @@ final class LiveBubbleDisplays {
         return ids;
     }
     static synchronized void reconcile(Map<Integer,Integer> before,List<NativeTaskClient.Task> tasks){
-        for(NativeTaskClient.Task t:tasks) if(t.display!=0 && before.getOrDefault(t.id,-1)==t.display)before.remove(t.id);
+        for (NativeTaskClient.Task t : tasks) {
+            if (!before.containsKey(t.id)) continue;
+            // Identity-only reads can observe the display move before its surface is ready.
+            // Retain the producer until a visible phone-display app frame is observed.
+            if (t.display != 0 || !t.visible || t.frame.isEmpty()) before.remove(t.id);
+        }
         for(Map.Entry<Integer,Integer> e:before.entrySet()){
             Lease l=active.get(e.getKey());
             if(l!=null && l.display.getDisplay().getDisplayId()==e.getValue())release(e.getKey());
