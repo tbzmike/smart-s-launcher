@@ -258,7 +258,8 @@ public final class NativeTaskBridge {
                     break;
                 default: throw new IllegalArgumentException("Unknown task operation");
             }
-            if (action.equals("restore") || action.equals("maximize") || action.equals("resize")) {
+            if (android.os.Build.VERSION.SDK_INT == 35 && (action.equals("restore")
+                    || action.equals("maximize") || action.equals("resize"))) {
                 Rect surfaceBounds = action.equals("maximize") ? new Rect() : bounds;
                 transactionType.getMethod("setBoundsChangeTransaction", tokenType, Rect.class)
                         .invoke(transaction, token, surfaceBounds);
