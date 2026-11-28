@@ -477,7 +477,7 @@ public final class FreeformOverlayService extends Service {
             Rect frame = other.frame.isEmpty() ? other.bounds : other.frame;
             // A visible always-on-top popup is above normal fullscreen apps even
             // when getTasks() lists their more recently focused task first.
-            if (other.visible && other.mode != 1 && other.type != 2 && Rect.intersects(frame, target)) return true;
+            if (other.display == 0 && other.visible && other.mode != 1 && other.type != 2 && Rect.intersects(frame, target)) return true;
         }
         return false;
     }
@@ -490,7 +490,7 @@ public final class FreeformOverlayService extends Service {
         if (area.isEmpty()) return;
         StringBuilder key = new StringBuilder(area.toString());
         int freeformCount = 0;
-        for (NativeTaskClient.Task task : state.tasks) if (task.mode == 5 && task.visible) freeformCount++;
+        for (NativeTaskClient.Task task : state.tasks) if (task.display == 0 && task.mode == 5 && task.visible) freeformCount++;
         for (NativeTaskClient.Task task : state.tasks) {
             if (task.mode == 1 && !state.entries.containsKey(task.id)) continue;
             key.append('|').append(task.id).append(':').append(task.mode).append(':')
@@ -512,7 +512,7 @@ public final class FreeformOverlayService extends Service {
             NativeTaskClient.Task task = state.tasks.get(i);
             FreeformSession.Entry entry = state.entries.get(task.id);
             if (entry == null || !entry.component.equals(task.component) || entry.minimized
-                    || !task.visible || (task.mode != 5 && task.mode != 1)) continue;
+                    || task.display != 0 || !task.visible || (task.mode != 5 && task.mode != 1)) continue;
             // Never put a caption at a guessed task/configuration rectangle. Use the actual
             // visible application frame, including compositor position, in display coordinates.
             Rect frame = new Rect(task.frame);
@@ -525,6 +525,9 @@ public final class FreeformOverlayService extends Service {
             Rect handle = FreeformGeometry.corner(frame, dp(30));
             Decoration decor = new Decoration();
             decorations.put(task.id, decor);
+            decor.frame.set(frame);
+            decor.focused = task.focused;
+            decor.order = i;
             // Keep the controls as a pair; never leave an orphan title or resize handle.
             // The focused task is in front even when a ROM reports stale task ordering.
             boolean covered = !task.focused && (coveredByHigherTask(state.tasks, i, title)
@@ -534,6 +537,7 @@ public final class FreeformOverlayService extends Service {
                 ok &= addResize(task, handle, area, decor);
             }
         }
+        ok &= updateBorders();
         java.util.List<NativeTaskClient.Task> minimized = new java.util.ArrayList<>();
         for (NativeTaskClient.Task task : state.tasks) {
             FreeformSession.Entry e = state.entries.get(task.id);
@@ -558,8 +562,71 @@ public final class FreeformOverlayService extends Service {
     }
 
     private static final class Decoration {
+        final Rect frame = new Rect();
+        final java.util.List<View> borders = new java.util.ArrayList<>();
+        int order;
+        boolean focused;
         View title, corner;
         WindowManager.LayoutParams titleParams, cornerParams;
+    }
+
+    // Draw only exposed edges. Separate thin, non-touchable strips keep the app interior clear.
+    private boolean updateBorders() {
+        for (java.util.Map.Entry<Integer, Decoration> item : decorations.entrySet()) {
+            Decoration current = item.getValue();
+            Rect frame = current.frame;
+            int width = Math.min(dp(3), Math.min(frame.width(), frame.height()) / 2);
+            Rect[] edges = {
+                    new Rect(frame.left, frame.top, frame.right, frame.top + width),
+                    new Rect(frame.left, frame.bottom - width, frame.right, frame.bottom),
+                    new Rect(frame.left, frame.top + width, frame.left + width, frame.bottom - width),
+                    new Rect(frame.right - width, frame.top + width, frame.right, frame.bottom - width)
+            };
+            int used = 0;
+            for (int edge = 0; edge < edges.length; edge++) {
+                android.graphics.Region visible = new android.graphics.Region(edges[edge]);
+                for (Decoration other : decorations.values()) {
+                    if (other != current && !current.focused && (other.focused || other.order < current.order))
+                        visible.op(other.frame, android.graphics.Region.Op.DIFFERENCE);
+                }
+                android.graphics.RegionIterator pieces = new android.graphics.RegionIterator(visible);
+                Rect part = new Rect();
+                while (pieces.next(part)) {
+                    View strip;
+                    if (used < current.borders.size()) {
+                        strip = current.borders.get(used);
+                        align(strip, (WindowManager.LayoutParams) strip.getLayoutParams(), part);
+                    } else {
+                        strip = new View(windowContext);
+                        strip.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                        WindowManager.LayoutParams lp = params(part.width(), part.height(), part.left, part.top);
+                        lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                        lp.alpha = Math.min(0.8f, getSystemService(android.hardware.input.InputManager.class)
+                                .getMaximumObscuringOpacityForTouch());
+                        lp.setTitle("Smart S freeform border " + item.getKey());
+                        if (!add(strip, lp)) return false;
+                        current.borders.add(strip);
+                        alignAfterLayout(strip, lp, new Rect(part));
+                    }
+                    if (!Integer.valueOf(edge).equals(strip.getTag())) {
+                        GradientDrawable.Orientation[] directions = {GradientDrawable.Orientation.TOP_BOTTOM,
+                                GradientDrawable.Orientation.BOTTOM_TOP, GradientDrawable.Orientation.LEFT_RIGHT,
+                                GradientDrawable.Orientation.RIGHT_LEFT};
+                        strip.setBackground(new GradientDrawable(directions[edge], new int[]{
+                                0xff101824, 0xff101824, current.focused ? 0xff59e8ff : 0xffedf3ff, 0xffffffff}));
+                        strip.setTag(edge);
+                    }
+                    used++;
+                }
+            }
+            while (current.borders.size() > used) {
+                View extra = current.borders.remove(current.borders.size() - 1);
+                overlays.remove(extra);
+                overlayOrigins.remove(extra);
+                wm.removeViewImmediate(extra);
+            }
+        }
+        return true;
     }
 
     private void align(View view, WindowManager.LayoutParams lp, Rect target) {
@@ -601,6 +668,8 @@ public final class FreeformOverlayService extends Service {
         if (decor == null || frame.isEmpty()) return;
         Rect shown = new Rect(frame);
         if (!shown.intersect(area)) return;
+        decor.frame.set(shown);
+        updateBorders();
         align(decor.title, decor.titleParams, FreeformGeometry.caption(shown, area, dp(40)));
         align(decor.corner, decor.cornerParams, FreeformGeometry.corner(shown, dp(30)));
     }
