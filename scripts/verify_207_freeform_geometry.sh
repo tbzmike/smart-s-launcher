@@ -98,4 +98,7 @@ test -s verification-results/freeform207-evidence/mid-drag.png
 test -s verification-results/freeform207-evidence/mid-resize.png
 test -s verification-results/freeform207-evidence/bubble.png
 test -s verification-results/freeform207-evidence/rotated.png
+test -s verification-results/freeform207-evidence/restored-from-fullscreen.png
+test -s verification-results/freeform207-evidence/restored-repeated.png
+adb logcat -d -s SmartSFreeform220:I > verification-results/restore-latency.log
 git restore app/build.gradle

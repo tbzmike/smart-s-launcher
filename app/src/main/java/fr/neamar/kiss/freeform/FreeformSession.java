@@ -401,6 +401,7 @@ final class FreeformSession {
                 after = awaitGeometry(client, id, component, 5, popup, tolerance(context), false);
             }
             if (after == null) return false;
+            LiveBubbleDisplays.release(id);
             entry.minimized = false;
             entry.popup.set(popup);
             return save(context, entries);

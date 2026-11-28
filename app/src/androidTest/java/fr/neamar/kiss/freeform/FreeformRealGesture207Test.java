@@ -546,10 +546,16 @@ public final class FreeformRealGesture207Test {
                             && decoration(doc, "bubble") != null && decoration(doc, "title") == null
                             && decoration(doc, "corner") == null);
             Rect quick = decoration(quickBubble, "bubble");
+            long restoreStarted = SystemClock.elapsedRealtime();
             tap(quick.centerX(), quick.centerY());
             await("same task returns without duplicate bubble", doc -> attached(doc)
                     && task(doc).getInt("id") == id && decoration(doc, "bubble") == null);
             settledEvidence("restored-repeated.png", saved);
+            long restoreElapsed = SystemClock.elapsedRealtime() - restoreStarted;
+            android.util.Log.i("SmartSFreeform220", "Repeated bubble restore including pixel verification: "
+                    + restoreElapsed + "ms");
+            assertTrue("Repeated restore must complete before the 10-second draw timeout",
+                    restoreElapsed < 10000L);
 
             // A real display rotation changes the coordinate space. Re-read usable bounds
             // from the rotated display and verify that the same task's title/corner follow it.

@@ -50,6 +50,10 @@ final class WindowFrameLookup {
                 current.base = line.matches(".*\\bty=(BASE_APPLICATION|1)(\\s|\\}|$).*");
             }
             if (line.contains("mHasSurface=true")) current.surface = true;
+            // Some ROMs expose a WindowState before its first buffer is drawn.
+            // Explicit pending/no-surface draw states must never anchor a border.
+            if (line.matches(".*\\bmDrawState=(NO_SURFACE|DRAW_PENDING|COMMIT_DRAW_PENDING|READY_TO_SHOW)(\\s|\\}|$).*"))
+                current.exiting = true;
             if (line.trim().equals("isVisible=true")) current.visible = true;
             if (line.contains("mAnimatingExit=true") || line.contains("mDestroying=true")
                     || line.contains("mRemoved=true")) current.exiting = true;

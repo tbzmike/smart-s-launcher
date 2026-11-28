@@ -24,6 +24,7 @@ final class LiveBubbleDisplays {
         final VirtualDisplay display;
         final ImageReader surface;
         final String family;
+        int missingReads;
         Lease(VirtualDisplay d,ImageReader s,String f){display=d;surface=s;family=f;}
         void release(){try { display.release(); } finally {surface.close();}}
     }
@@ -64,16 +65,24 @@ final class LiveBubbleDisplays {
         for(Map.Entry<Integer,Lease> e:active.entrySet())ids.put(e.getKey(),e.getValue().display.getDisplay().getDisplayId());
         return ids;
     }
-    static synchronized void reconcile(Map<Integer,Integer> before,List<NativeTaskClient.Task> tasks){
+    static synchronized void reconcile(Map<Integer,Integer> before, List<NativeTaskClient.Task> tasks, boolean withFrames) {
+        if (!withFrames) return; // Identity-only reads cannot confirm a drawable surface.
+        Set<Integer> seen = new HashSet<>();
         for (NativeTaskClient.Task t : tasks) {
             if (!before.containsKey(t.id)) continue;
-            // Identity-only reads can observe the display move before its surface is ready.
-            // Retain the producer until a visible phone-display app frame is observed.
-            if (t.display != 0 || !t.visible || t.frame.isEmpty()) before.remove(t.id);
+            seen.add(t.id);
+            Lease lease = active.get(t.id);
+            if (lease == null || lease.display.getDisplay().getDisplayId() != before.get(t.id)) continue;
+            lease.missingReads = 0;
+            if (t.display == 0 && t.visible && !t.frame.isEmpty()) release(t.id);
         }
-        for(Map.Entry<Integer,Integer> e:before.entrySet()){
-            Lease l=active.get(e.getKey());
-            if(l!=null && l.display.getDisplay().getDisplayId()==e.getValue())release(e.getKey());
+        // A task can disappear briefly from the task list during display reparenting.
+        // Two complete frame reads, not a single identity query, are needed to retire it.
+        for (Map.Entry<Integer,Integer> e : before.entrySet()) {
+            if (seen.contains(e.getKey())) continue;
+            Lease lease = active.get(e.getKey());
+            if (lease != null && lease.display.getDisplay().getDisplayId() == e.getValue()
+                    && ++lease.missingReads >= 2) release(e.getKey());
         }
     }
     static synchronized void release(int id) {

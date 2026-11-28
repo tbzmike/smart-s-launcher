@@ -20,6 +20,14 @@ class WindowFrameLookupTest {
         assertArrayEquals(new int[]{0,0,500,600}, WindowFrameLookup.find(WindowFrameLookup.parse(dump),18,0).frame);
         assertNull(WindowFrameLookup.find(WindowFrameLookup.parse(dump),17,10));
     }
+    @Test void explicitlyUndrawnWindowDoesNotBecomeDecorationAnchor() {
+        String pending = row(0, "a123", 0, "App", 17, "BASE_APPLICATION", true, "[120,240][900,1600]")
+                + "    mDrawState=DRAW_PENDING\n";
+        assertNull(WindowFrameLookup.find(WindowFrameLookup.parse(pending), 17, 0));
+        String drawn = row(0, "a123", 0, "App", 17, "BASE_APPLICATION", true, "[120,240][900,1600]")
+                + "    mDrawState=HAS_DRAWN\n";
+        assertNotNull(WindowFrameLookup.find(WindowFrameLookup.parse(drawn), 17, 0));
+    }
     @Test void dialogHiddenAndStaleWindowsDoNotBecomeDecorationAnchors() {
         String dump = row(0,"a123",0,"Dialog",17,"APPLICATION_ATTACHED_DIALOG",true,"[300,400][700,800]")
                 + row(1,"b123",0,"Invisible",17,"BASE_APPLICATION",false,"[0,0][1080,1920]")

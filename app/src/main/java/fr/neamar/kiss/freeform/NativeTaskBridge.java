@@ -185,9 +185,19 @@ public final class NativeTaskBridge {
                         return;
                     }
                 } else if ("switchFullscreen".equals(action)) {
-                    // Recents performs the fullscreen switch itself.
-                    emit(new JSONObject().put("ok", true));
-                    return;
+                    // Recents normally performs the fullscreen switch itself. If desktop
+                    // policy overrides it, retain the previous explicit maximize fallback.
+                    for (Object fresh : tasks(atm, service)) {
+                        JSONObject row = describe(fresh);
+                        if (row != null && row.getInt("id") == id && row.getInt("user") == user
+                                && component.equals(row.getString("component"))
+                                && row.getInt("display") == 0 && row.getInt("mode") == 1
+                                && row.getBoolean("focused") && row.getBoolean("visible")) {
+                            emit(new JSONObject().put("ok", true));
+                            return;
+                        }
+                    }
+                    action = "maximize";
                 }
                 // Only repair a mode/bounds mismatch after observing the recents request.
                 // Reacquire the task/container on display zero; the old display token can be stale.

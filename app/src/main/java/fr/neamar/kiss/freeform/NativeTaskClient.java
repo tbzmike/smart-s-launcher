@@ -48,7 +48,7 @@ final class NativeTaskClient {
             JSONArray rows = result.getJSONArray("tasks");
             List<Task> tasks = new ArrayList<>();
             for (int i = 0; i < rows.length(); i++) tasks.add(new Task(rows.getJSONObject(i)));
-            LiveBubbleDisplays.reconcile(previous,tasks);
+            LiveBubbleDisplays.reconcile(previous, tasks, withFrames);
             return tasks;
         } catch (org.json.JSONException failure) { return null; }
     }
