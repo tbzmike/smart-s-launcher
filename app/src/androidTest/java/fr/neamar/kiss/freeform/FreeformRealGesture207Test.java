@@ -126,6 +126,7 @@ public final class FreeformRealGesture207Test {
             for (int i=0;i<rows.length();i++) if (second.equals(rows.getJSONObject(i).getString("pkg")))
                 secondId=rows.getJSONObject(i).getInt("id");
             assertTrue(secondId >= 0);
+            longPressMenu(firstBubble);
             tap(firstBubble.centerX(),firstBubble.centerY());
             await("same first task restored fullscreen", d -> task(d).getInt("id")==firstId && task(d).getBoolean("focused") && task(d).getInt("mode")==1);
             Rect other = switchBubble("Smart S fullscreen switch " + secondId);
@@ -471,7 +472,15 @@ public final class FreeformRealGesture207Test {
             evidence("bubble.png", usable, false);
             Rect movedBubble = decoration(bubbleMoved, "bubble");
             SystemClock.sleep(900);
-            Rect action=longPressMenu(movedBubble);
+            longPressMenu(movedBubble);
+            tap(movedBubble.centerX(),movedBubble.centerY());
+            await("single tap after long press restores the same task", d -> attached(d) && decoration(d,"bubble") == null);
+            settledEvidence("restored-after-tap.png",saved);
+            Rect titleAgain = decoration(state(),"title");
+            assertNotNull(titleAgain);
+            tap(titleAgain.right - dp(100),titleAgain.centerY());
+            JSONObject minimizedAgain = await("minimized again", d -> decoration(d,"bubble") != null);
+            Rect action=longPressMenu(decoration(minimizedAgain,"bubble"));
             tap(action.centerX(),action.centerY());
             await("bubble restores the same popup, not a duplicate", doc ->
                     attached(doc) && decoration(doc, "bubble") == null

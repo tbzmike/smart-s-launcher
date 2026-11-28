@@ -11,42 +11,70 @@ import androidx.annotation.RequiresApi;
 @RequiresApi(35)
 final class BubbleMenu {
     private BubbleMenu() {}
-    static void install(View anchor, int type, Runnable open, View.OnTouchListener ordinary) {
-        anchor.setOnLongClickListener(v -> { show(v,type,open); return true; });
+    static void install(View anchor, int type, Runnable open, View.OnTouchListener drag) {
+        final Runnable[] dismiss = {null};
+        anchor.setOnLongClickListener(view -> {
+            if (dismiss[0] != null) dismiss[0].run();
+            show(view, type, open, dismiss);
+            return true;
+        });
         anchor.setOnTouchListener(new View.OnTouchListener() {
-            boolean held, tracking;
-            float x,y;
-            final int slop=ViewConfiguration.get(anchor.getContext()).getScaledTouchSlop();
-            final Runnable hold=()->{
-                if (!tracking || !anchor.isAttachedToWindow()) return;
-                held=true;
-                long now=android.os.SystemClock.uptimeMillis();
-                MotionEvent cancel=MotionEvent.obtain(now,now,MotionEvent.ACTION_CANCEL,0,0,0);
-                ordinary.onTouch(anchor,cancel);
-                anchor.onTouchEvent(cancel);
-                cancel.recycle();
+            boolean tracking, moved, held;
+            float startX, startY;
+            final int slop = ViewConfiguration.get(anchor.getContext()).getScaledTouchSlop();
+            void cancelDrag() {
+                long now = android.os.SystemClock.uptimeMillis();
+                MotionEvent cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0, 0, 0);
+                try { drag.onTouch(anchor, cancel); } finally { cancel.recycle(); }
+                anchor.setPressed(false);
+            }
+            final Runnable hold = () -> {
+                if (!tracking || moved || !anchor.isAttachedToWindow()) return;
+                held = true;
+                cancelDrag();
                 anchor.performLongClick();
             };
-            public boolean onTouch(View v, MotionEvent e) {
-                int a=e.getActionMasked();
-                if(a==MotionEvent.ACTION_DOWN) {
-                    held=false; tracking=true; x=e.getRawX(); y=e.getRawY();
-                    v.postDelayed(hold,ViewConfiguration.getLongPressTimeout());
-                } else if(a==MotionEvent.ACTION_UP || a==MotionEvent.ACTION_CANCEL ||
-                        Math.hypot(e.getRawX()-x,e.getRawY()-y)>slop) {
-                    tracking=false; v.removeCallbacks(hold);
+            public boolean onTouch(View view, MotionEvent event) {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    view.removeCallbacks(hold);
+                    if (dismiss[0] != null) dismiss[0].run();
+                    tracking = true;
+                    moved = held = false;
+                    startX = event.getRawX();
+                    startY = event.getRawY();
+                    drag.onTouch(view, event);
+                    view.setPressed(true);
+                    view.postDelayed(hold, ViewConfiguration.getLongPressTimeout());
+                    return true;
                 }
-                if(held) return true;
-                boolean consumed=ordinary.onTouch(v,e);
-                if(!consumed) v.onTouchEvent(e);
-                // The timer above owns long presses; suppress View's duplicate timeout.
-                if(a==MotionEvent.ACTION_DOWN) v.cancelLongPress();
+                if (!tracking) return true;
+                if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_POINTER_DOWN) {
+                    view.removeCallbacks(hold);
+                    tracking = false;
+                    if (!held) cancelDrag();
+                    return true;
+                }
+                if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_MOVE) return true;
+                if (Math.hypot(event.getRawX() - startX, event.getRawY() - startY) > slop) {
+                    moved = true;
+                    view.removeCallbacks(hold);
+                }
+                if (action == MotionEvent.ACTION_UP) {
+                    view.removeCallbacks(hold);
+                    tracking = false;
+                    view.setPressed(false);
+                    if (!held && !moved) {
+                        cancelDrag();
+                        view.performClick();
+                    } else if (!held) drag.onTouch(view, event);
+                } else if (moved && !held) drag.onTouch(view, event);
                 return true;
             }
         });
     }
 
-    private static void show(View anchor,int type,Runnable action) {
+    private static void show(View anchor,int type,Runnable action,Runnable[] activeDismiss) {
         WindowManager wm=anchor.getContext().getSystemService(WindowManager.class);
         if(wm==null || !anchor.isAttachedToWindow()) return;
         float d=anchor.getResources().getDisplayMetrics().density;
@@ -70,18 +98,19 @@ final class BubbleMenu {
         View.OnAttachStateChangeListener lifetime=new View.OnAttachStateChangeListener() {
             public void onViewAttachedToWindow(View v) {}
             public void onViewDetachedFromWindow(View v) {
+                activeDismiss[0] = null;
                 anchor.removeOnAttachStateChangeListener(this);
                 if(button.isAttachedToWindow()) wm.removeViewImmediate(button);
             }
         };
-        Runnable dismiss=()->{anchor.removeOnAttachStateChangeListener(lifetime);
+        Runnable dismiss=()->{activeDismiss[0] = null;anchor.removeOnAttachStateChangeListener(lifetime);
             if(button.isAttachedToWindow()) wm.removeViewImmediate(button);};
         button.setOnClickListener(v->{dismiss.run();action.run();});
         button.setOnTouchListener((v,e)->{
             if(e.getActionMasked()==MotionEvent.ACTION_OUTSIDE){dismiss.run();return true;}
             return false;
         });
-        try { wm.addView(button,lp);anchor.addOnAttachStateChangeListener(lifetime); }
+        try { wm.addView(button,lp);activeDismiss[0] = dismiss;anchor.addOnAttachStateChangeListener(lifetime); }
         catch(WindowManager.BadTokenException ignored) { }
     }
 }
