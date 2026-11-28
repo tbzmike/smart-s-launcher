@@ -514,7 +514,7 @@ public final class FreeformOverlayService extends Service {
         for (int i = state.tasks.size() - 1; i >= 0; i--) {
             NativeTaskClient.Task task = state.tasks.get(i);
             FreeformSession.Entry entry = state.entries.get(task.id);
-            if (entry == null || !entry.component.equals(task.component) || entry.minimized || entry.liveWindow
+            if (entry == null || !entry.component.equals(task.component) || entry.minimized
                     || task.display != 0 || !task.visible || (task.mode != 5 && task.mode != 1)) continue;
             // Never put a caption at a guessed task/configuration rectangle. Use the actual
             // visible application frame, including compositor position, in display coordinates.

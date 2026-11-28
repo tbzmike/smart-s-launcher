@@ -566,6 +566,17 @@ public final class FreeformRealGesture207Test {
                 assertEquals("Minimize/restore never changes PID",pid,shell("pidof "+PKG).trim().split("\\s+")[0]);
             }
             livePixels("live-repeated.png",liveTexture(restored,false,size));
+            // Maximize and return to the selected presentation, without a duplicate task.
+            tap(restored.right-dp(53),restored.top+dp(20));
+            await("same task becomes fullscreen on phone",d->task(d)!=null&&task(d).getInt("id")==id
+                    &&task(d).getInt("display")==0&&task(d).getInt("mode")==1&&task(d).getBoolean("visible"));
+            livePixels("live-maximized.png",usable);
+            Rect fullscreenRestore=decoration(await("restore control on fullscreen live session",d->decoration(d,"restore")!=null),"restore");
+            tap(fullscreenRestore.centerX(),fullscreenRestore.centerY());
+            restored=liveOverlay(false);
+            assertTrue("Live presentation retained after maximizing",FreeformGeometry.near(expanded,restored,dp(5)));
+            assertEquals("Same PID after maximize and restore",pid,shell("pidof "+PKG).trim().split("\\s+")[0]);
+            livePixels("live-after-maximize.png",liveTexture(restored,false,size));
             // The close button is in the same integrated window container.
             tap(restored.right-dp(19),restored.top+dp(20));
             await("close removes only selected live task",d->task(d)==null);

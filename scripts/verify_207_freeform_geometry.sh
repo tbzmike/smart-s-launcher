@@ -111,7 +111,7 @@ test -s verification-results/freeform207-evidence/bubble.png
 test -s verification-results/freeform207-evidence/rotated.png
 test -s verification-results/freeform207-evidence/restored-from-fullscreen.png
 test -s verification-results/freeform207-evidence/restored-repeated.png
-for live in live-expanded live-miniature live-restored live-repeated; do
+for live in live-expanded live-miniature live-restored live-repeated live-maximized live-after-maximize; do
   test -s "verification-results/freeform207-evidence/$live.png"
 done
 adb logcat -d -s SmartSFreeform220:I > verification-results/restore-latency.log

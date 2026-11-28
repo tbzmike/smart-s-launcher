@@ -210,7 +210,9 @@ final class FreeformSession {
             entry.minimized = false;
             return save(context, entries) ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
         }
-        if (register && entry == null && FreeformMinimizeStyle.live(context)) return startLive(context, client, task, entries, popup);
+        if (register && ((entry == null && FreeformMinimizeStyle.live(context))
+                || (entry != null && entry.liveWindow && task.display == 0)))
+            return startLive(context, client, task, entries, popup);
         boolean restoring = task.mode != 5 || (entry != null && entry.minimized) || !task.visible
                 || (register && (entry == null || !safe.contains(task.bounds)));
         if (!restoring) {
@@ -347,8 +349,8 @@ final class FreeformSession {
                 changed = true;
             } else {
                 if (entry.missingReads != 0) { entry.missingReads = 0; changed = true; }
-                if (entry.liveWindow && task.display == 0) {
-                    entry.liveWindow = false; entry.minimized = false; changed = true;
+                if (entry.liveWindow && task.display == 0 && entry.minimized) {
+                    entry.minimized = false; changed = true;
                 }
                 if (!entry.liveWindow && !entry.minimized && task.mode == 5 && !task.bounds.isEmpty()
                         && !entry.popup.equals(task.bounds)) {
@@ -398,6 +400,9 @@ final class FreeformSession {
         if (tasks == null) return false;
         NativeTaskClient.Task task = exact(tasks, entry);
         if (task == null) { entries.remove(id); save(context, entries); return false; }
+        if (entry.liveWindow && task.display == 0 && "restore".equals(action)) {
+            return startLive(context,client,task,entries,fit(entry.popup,popupArea(context,area),1))==OpenResult.VERIFIED;
+        }
         if (entry.liveWindow && task.display > 0 && !"close".equals(action)) {
             if ("minimize".equals(action)) {
                 if (entry.minimized) return false;
@@ -420,7 +425,9 @@ final class FreeformSession {
                 if (!client.action("maximize", task, null)) return false;
                 NativeTaskClient.Task restored = await(client, id, component, 1, true);
                 if (restored == null) return false;
-                entry.liveWindow=false; entry.minimized=false;
+                // Keep the chosen presentation style after maximizing. The native
+                // fullscreen restore control can return this same task to live mode.
+                entry.minimized=false;
                 return save(context,entries);
             }
             return false;
