@@ -23,11 +23,13 @@ final class LiveBubbleDisplays {
     private static final class Lease {
         final VirtualDisplay display;
         final ImageReader surface;
+        final int width, height;
+        android.view.Surface preview;
         String family;
         final String component;
         boolean parked = true;
         int missingReads;
-        Lease(VirtualDisplay d,ImageReader s,String f,String c){display=d;surface=s;family=f;component=c;}
+        Lease(VirtualDisplay d,ImageReader s,String f,String c,int w,int h){display=d;surface=s;family=f;component=c;width=w;height=h;}
         void release(){try { display.release(); } finally {surface.close();}}
     }
     static synchronized boolean park(Context app,NativeTaskClient client,NativeTaskClient.Task t,String family) {
@@ -37,7 +39,7 @@ final class LiveBubbleDisplays {
                 release(t.id);
             } else {
                 int destination = existing.display.getDisplay().getDisplayId();
-                if (t.display == destination) return true;
+                if (t.display == destination) { existing.family=family; return true; }
                 if (t.display != 0) return false;
                 // Keep the same display container for this task's lifetime.
                 // Destroying its old display after reparent can detach the task
@@ -67,12 +69,12 @@ final class LiveBubbleDisplays {
                 catch(IllegalStateException closed){ /* Display was released. */ }
             },new Handler(buffers.getLooper()));
             VirtualDisplayConfig config=new VirtualDisplayConfig.Builder("Smart S live task "+t.id,w,h,metrics.densityDpi)
-                    .setRequestedRefreshRate(15f).setSurface(surface.getSurface())
+                    .setRequestedRefreshRate("live".equals(family) ? 60f : 15f).setSurface(surface.getSurface())
                     .setFlags(DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC | DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY)
                     .build();
             display=app.getSystemService(DisplayManager.class).createVirtualDisplay(config);
             if(display==null || !client.moveToBubble(t,display.getDisplay().getDisplayId(),family)) return false;
-            active.put(t.id,new Lease(display,surface,family,t.component)); display=null;surface=null;
+            active.put(t.id,new Lease(display,surface,family,t.component,w,h)); display=null;surface=null;
             BubbleProcessPriority.hold(app, t);
             return true;
         } catch(RuntimeException unavailable){return false;}
@@ -81,6 +83,29 @@ final class LiveBubbleDisplays {
             if(surface!=null)surface.close();
             stopIdleThread();
         }
+    }
+    // Render only the selected task's own virtual display, never the phone's screen.
+    static synchronized android.util.Size previewSize(NativeTaskClient.Task task) {
+        Lease lease=active.get(task.id);
+        if (lease==null || !lease.component.equals(task.component) || !lease.parked
+                || task.display!=lease.display.getDisplay().getDisplayId()) return null;
+        return new android.util.Size(lease.width,lease.height);
+    }
+    static synchronized boolean attachPreview(NativeTaskClient.Task task, android.view.Surface surface) {
+        Lease lease=active.get(task.id);
+        if (previewSize(task)==null || lease==null || !surface.isValid()) return false;
+        try {
+            lease.display.setSurface(surface);
+            lease.preview=surface;
+            return true;
+        } catch (RuntimeException unavailable) { return false; }
+    }
+    static synchronized void detachPreview(int id, android.view.Surface surface) {
+        Lease lease=active.get(id);
+        if (lease==null || lease.preview!=surface) return;
+        try { lease.display.setSurface(lease.surface.getSurface()); }
+        catch (RuntimeException unavailable) { android.util.Log.w("SmartMini", "Display output unavailable", unavailable); }
+        finally { lease.preview=null; }
     }
     static synchronized Map<Integer,Integer> beforeRead(){
         Map<Integer,Integer> ids=new HashMap<>();

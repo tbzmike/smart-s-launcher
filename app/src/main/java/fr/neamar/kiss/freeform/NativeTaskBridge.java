@@ -53,7 +53,7 @@ public final class NativeTaskBridge {
                     (Object) new String[]{"Landroid/os/ServiceManager;", "Landroid/app/IActivityTaskManager",
                             "Landroid/app/ActivityOptions;", "Landroid/app/TaskInfo;", "Landroid/app/ActivityManager$RunningTaskInfo;",
                             "Landroid/content/res/Configuration;->windowConfiguration",
-                            "Landroid/hardware/display/", "Landroid/view/DisplayInfo;", "Landroid/hardware/input/", "Landroid/app/WindowConfiguration;", "Landroid/window/"});
+                            "Landroid/hardware/display/", "Landroid/view/DisplayInfo;", "Landroid/view/InputEvent;", "Landroid/view/KeyEvent;", "Landroid/view/MotionEvent;", "Landroid/hardware/input/", "Landroid/app/WindowConfiguration;", "Landroid/window/"});
             Class<?> atm = Class.forName("android.app.IActivityTaskManager");
             Object binder = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
                     .invoke(null, "activity_task");
@@ -121,7 +121,7 @@ public final class NativeTaskBridge {
             int mode = info.getInt("mode");
             if (mode != 1 && mode != 5) throw new IllegalStateException("Task is not fullscreen/freeform");
             int display = info.getInt("display");
-            if (action.equals("parkFullscreen") || action.equals("parkPopup")) {
+            if (action.equals("parkFullscreen") || action.equals("parkPopup") || action.equals("parkLive")) {
                 int destination=Integer.parseInt(args[4]);
                 if (display!=0 || destination<=0 || !liveDisplay(destination,id)
                         || (action.equals("parkFullscreen") && (mode!=1 || info.getBoolean("focused"))))
@@ -132,6 +132,17 @@ public final class NativeTaskBridge {
                         JSONObject moved = describe(item);
                         if (moved != null && moved.getInt("id") == id && moved.getInt("user") == user
                                 && component.equals(moved.getString("component")) && moved.getInt("display") == destination) {
+                            if ("parkLive".equals(action)) {
+                                Class<?> tt = Class.forName("android.window.WindowContainerToken");
+                                Class<?> wt = Class.forName("android.window.WindowContainerTransaction");
+                                Object change = wt.getConstructor().newInstance();
+                                Object movedToken = item.getClass().getField("token").get(item);
+                                wt.getMethod("setWindowingMode",tt,int.class).invoke(change,movedToken,1);
+                                wt.getMethod("setBounds",tt,Rect.class).invoke(change,movedToken,new Rect());
+                                wt.getMethod("setHidden",tt,boolean.class).invoke(change,movedToken,false);
+                                wt.getMethod("reorder",tt,boolean.class).invoke(change,movedToken,true);
+                                organizerApply(atm,service,wt,change);
+                            }
                             emit(new JSONObject().put("ok", true));
                             return;
                         }
@@ -139,6 +150,21 @@ public final class NativeTaskBridge {
                     android.os.SystemClock.sleep(32);
                 }
                 emit(new JSONObject().put("ok", false));
+                return;
+            }
+            if ("liveBack".equals(action)) {
+                if (display<=0 || !liveDisplay(display,id)) throw new SecurityException("Invalid live display");
+                Object inputBinder=Class.forName("android.os.ServiceManager").getMethod("getService",String.class).invoke(null,"input");
+                Object input=Class.forName("android.hardware.input.IInputManager$Stub").getMethod("asInterface",IBinder.class).invoke(null,inputBinder);
+                Method inject=Class.forName("android.hardware.input.IInputManager").getMethod("injectInputEvent",android.view.InputEvent.class,int.class);
+                Method setDisplay=android.view.InputEvent.class.getMethod("setDisplayId",int.class);
+                long time=android.os.SystemClock.uptimeMillis();
+                for (int keyAction : new int[]{android.view.KeyEvent.ACTION_DOWN,android.view.KeyEvent.ACTION_UP}) {
+                    android.view.KeyEvent key=new android.view.KeyEvent(time,time,keyAction,android.view.KeyEvent.KEYCODE_BACK,0);
+                    setDisplay.invoke(key,display);
+                    if (!(Boolean)inject.invoke(input,key,2)) throw new IllegalStateException("Back delivery failed");
+                }
+                emit(new JSONObject().put("ok",true));
                 return;
             }
             if (display!=0 && !action.equals("close") && !action.equals("closeFullscreen")) {

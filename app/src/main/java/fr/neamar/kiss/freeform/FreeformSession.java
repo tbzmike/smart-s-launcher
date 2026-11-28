@@ -35,7 +35,8 @@ final class FreeformSession {
         final int id;
         final String component;
         final Rect popup;
-        boolean minimized;
+        boolean minimized, liveWindow;
+        int missingReads;
         int bubbleX = -1, bubbleY = -1;
         Entry(int id, String component, Rect popup) {
             this.id = id; this.component = component; this.popup = new Rect(popup);
@@ -44,12 +45,14 @@ final class FreeformSession {
             this(row.getInt("id"), row.getString("component"),
                     new Rect(row.getInt("l"), row.getInt("t"), row.getInt("r"), row.getInt("b")));
             minimized = row.getBoolean("minimized");
+            liveWindow = row.optBoolean("liveWindow", false);
+            missingReads = row.optInt("missingReads", 0);
             bubbleX = row.optInt("x", -1); bubbleY = row.optInt("y", -1);
         }
         JSONObject json() throws org.json.JSONException {
             return new JSONObject().put("id", id).put("component", component)
                     .put("l", popup.left).put("t", popup.top).put("r", popup.right).put("b", popup.bottom)
-                    .put("minimized", minimized).put("x", bubbleX).put("y", bubbleY);
+                    .put("minimized", minimized).put("liveWindow", liveWindow).put("missingReads", missingReads).put("x", bubbleX).put("y", bubbleY);
         }
     }
 
@@ -179,8 +182,10 @@ final class FreeformSession {
                         && !candidate.bounds.isEmpty()) {
                     if (!register) return OpenResult.VERIFIED;
                     Rect wanted = defaultPopup(popupArea(context, area));
+                    if (FreeformMinimizeStyle.live(context))
+                        return startLive(context, client, candidate, entries, wanted);
                     NativeTaskClient.Task placed = null;
-                    for (int attempt = 0; attempt < 2 && placed == null; attempt++) {
+                    for (int placementAttempt = 0; placementAttempt < 2 && placed == null; placementAttempt++) {
                         if (client.action("resizePinned", candidate, wanted))
                             placed = awaitGeometry(client, candidate.id, candidate.component,
                                     5, wanted, tolerance(context), false);
@@ -201,6 +206,11 @@ final class FreeformSession {
         if (entry != null && !FreeformTaskPolicy.same(entry.id, entry.component, task.id, task.component)) entry = null;
         Rect safe = popupArea(context, area);
         Rect popup = entry != null ? fit(entry.popup, safe, 1) : defaultPopup(safe);
+        if (register && entry != null && entry.liveWindow && LiveBubbleDisplays.previewSize(task) != null) {
+            entry.minimized = false;
+            return save(context, entries) ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
+        }
+        if (register && FreeformMinimizeStyle.live(context)) return startLive(context, client, task, entries, popup);
         boolean restoring = task.mode != 5 || (entry != null && entry.minimized) || !task.visible
                 || (register && (entry == null || !safe.contains(task.bounds)));
         if (!restoring) {
@@ -224,6 +234,25 @@ final class FreeformSession {
         if (!register && entry == null) return exactBounds ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
         entries.put(id, updated);
         return save(context, entries) && exactBounds ? OpenResult.VERIFIED : OpenResult.REQUESTED_UNVERIFIED;
+    }
+
+    private static OpenResult startLive(Context context, NativeTaskClient client, NativeTaskClient.Task task,
+                                        Map<Integer, Entry> entries, Rect popup) {
+        Entry prior = entries.get(task.id);
+        Entry entry = new Entry(task.id, task.component, popup);
+        entry.liveWindow = true;
+        entries.put(task.id, entry);
+        if (!save(context, entries)) return OpenResult.FAILED;
+        // The task is transferred only when entering this presentation mode, not
+        // during miniature/expanded changes. Recovery is journaled before moving.
+        if (LiveBubbleDisplays.park(context, client, task, "live"))
+            return OpenResult.VERIFIED;
+        NativeTaskClient.Task current = find(client.list(false), task.id);
+        if (current != null && current.display == 0 && current.component.equals(task.component)) {
+            if (prior == null) entries.remove(task.id); else entries.put(task.id, prior);
+            save(context, entries);
+        }
+        return OpenResult.REQUESTED_UNVERIFIED;
     }
 
     @Nullable private static NativeTaskClient.Task await(NativeTaskClient client, int id,
@@ -300,7 +329,7 @@ final class FreeformSession {
             boolean requested = false;
             for (Entry entry : entries.values()) {
                 NativeTaskClient.Task task = exact(tasks, entry);
-                if (task == null || entry.minimized || task.mode != 5 || !task.visible) continue;
+                if (task == null || entry.liveWindow || entry.minimized || task.mode != 5 || !task.visible) continue;
                 if (!safe.contains(task.bounds)) {
                     Rect next = fit(task.bounds, safe, 1);
                     if (client.action("resize", task, next)) requested = true;
@@ -314,10 +343,17 @@ final class FreeformSession {
         for (Entry entry : new ArrayList<>(entries.values())) {
             NativeTaskClient.Task task = exact(tasks, entry);
             if (task == null) {
-                entries.remove(entry.id); changed = true;
-            } else if (!entry.minimized && task.mode == 5 && !task.bounds.isEmpty()
-                    && !entry.popup.equals(task.bounds)) {
-                entry.popup.set(task.bounds); changed = true;
+                if (++entry.missingReads >= 3) entries.remove(entry.id);
+                changed = true;
+            } else {
+                if (entry.missingReads != 0) { entry.missingReads = 0; changed = true; }
+                if (entry.liveWindow && task.display == 0) {
+                    entry.liveWindow = false; entry.minimized = false; changed = true;
+                }
+                if (!entry.liveWindow && !entry.minimized && task.mode == 5 && !task.bounds.isEmpty()
+                        && !entry.popup.equals(task.bounds)) {
+                    entry.popup.set(task.bounds); changed = true;
+                }
             }
         }
         if (changed && !save(context, entries)) return null;
@@ -336,6 +372,7 @@ final class FreeformSession {
         NativeTaskClient.Task t=find(client.list(false),original.id);
         if(t==null || !original.component.equals(t.component) || (t.display==0 && t.mode!=1))return false;
         Rect popup=defaultPopup(popupArea(c,area));
+        if (FreeformMinimizeStyle.live(c)) return startLive(c,client,t,entries,popup)==OpenResult.VERIFIED;
         entries.put(t.id,new Entry(t.id,t.component,popup));
         if(!save(c,entries))return false;
         if(client.action("restorePinned",t,popup) && awaitGeometry(client,t.id,t.component,5,popup,tolerance(c),false)!=null)return true;
@@ -361,6 +398,33 @@ final class FreeformSession {
         if (tasks == null) return false;
         NativeTaskClient.Task task = exact(tasks, entry);
         if (task == null) { entries.remove(id); save(context, entries); return false; }
+        if (entry.liveWindow && task.display > 0 && !"close".equals(action)) {
+            if ("minimize".equals(action)) {
+                if (entry.minimized) return false;
+                entry.minimized = true;
+                // New hang-up starts at the upper-right, as in Evolution X.
+                entry.bubbleX = -1; entry.bubbleY = -1;
+                return save(context, entries);
+            }
+            if ("restore".equals(action)) {
+                if (!entry.minimized) return true;
+                entry.minimized = false;
+                return save(context, entries);
+            }
+            if ("resize".equals(action) && requested != null && !entry.minimized) {
+                entry.popup.set(fit(requested, popupArea(context, area), 1));
+                return save(context, entries);
+            }
+            if ("back".equals(action)) return !entry.minimized && client.action("liveBack", task, null);
+            if ("maximize".equals(action)) {
+                if (!client.action("maximize", task, null)) return false;
+                NativeTaskClient.Task restored = await(client, id, component, 1, true);
+                if (restored == null) return false;
+                entry.liveWindow=false; entry.minimized=false;
+                return save(context,entries);
+            }
+            return false;
+        }
         if ("back".equals(action)) return !entry.minimized && task.mode == 5 && client.action("back", task, null);
         if ("close".equals(action)) {
             if (!client.action("close", task, null)) return false;
@@ -463,6 +527,11 @@ final class FreeformSession {
         for (Entry entry : new ArrayList<>(entries.values())) {
             NativeTaskClient.Task task = exact(tasks, entry);
             if (task == null) { entries.remove(entry.id); continue; }
+            if (entry.liveWindow && task.display > 0) {
+                if (client.action("maximize",task,null) && await(client,entry.id,entry.component,1,true)!=null)
+                    entries.remove(entry.id);
+                continue;
+            }
             if (!entry.minimized) {
                 if (client.action("unpin", task, null)) entries.remove(entry.id);
                 continue;

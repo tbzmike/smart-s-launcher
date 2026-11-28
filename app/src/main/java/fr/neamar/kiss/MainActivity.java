@@ -526,6 +526,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.menu_main, menu);
         menu.findItem(R.id.bubble_layouts).setVisible(android.os.Build.VERSION.SDK_INT >= 35);
+        menu.findItem(R.id.floating_minimize_style).setVisible(android.os.Build.VERSION.SDK_INT >= 35);
         MenuItem bubbles = menu.findItem(R.id.fullscreen_bubbles);
         bubbles.setVisible(android.os.Build.VERSION.SDK_INT >= 35);
         if (android.os.Build.VERSION.SDK_INT >= 35)
@@ -892,6 +893,10 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == R.id.floating_minimize_style && android.os.Build.VERSION.SDK_INT >= 35) {
+            fr.neamar.kiss.freeform.FreeformMinimizeStyle.choose(this);
+            return true;
+        }
         if (item.getItemId() == R.id.bubble_layouts && android.os.Build.VERSION.SDK_INT >= 35) {
             fr.neamar.kiss.freeform.BubbleFolder.choose(this);
             return true;
@@ -1093,6 +1098,7 @@ public class MainActivity extends AppCompatActivity implements QueryInterface, K
         MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.menu_main, menu);
         menu.findItem(R.id.bubble_layouts).setVisible(android.os.Build.VERSION.SDK_INT >= 35);
+        menu.findItem(R.id.floating_minimize_style).setVisible(android.os.Build.VERSION.SDK_INT >= 35);
         MenuItem bubbles = menu.findItem(R.id.fullscreen_bubbles);
         bubbles.setVisible(android.os.Build.VERSION.SDK_INT >= 35);
         if (android.os.Build.VERSION.SDK_INT >= 35)

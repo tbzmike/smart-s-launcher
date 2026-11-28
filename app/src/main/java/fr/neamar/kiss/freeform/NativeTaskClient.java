@@ -57,7 +57,7 @@ final class NativeTaskClient {
 
     boolean moveToBubble(Task t,int display,String family) {
         if (!t.component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+") || t.user!=USER || t.type!=1) return false;
-        JSONObject r=invoke(family.equals("fullscreen")?"parkFullscreen":"parkPopup",
+        JSONObject r=invoke(family.equals("fullscreen")?"parkFullscreen":family.equals("live")?"parkLive":"parkPopup",
                 " "+t.id+" "+quote(t.component)+" "+display+" 0 0 0");
         return r!=null && r.optBoolean("ok");
     }
@@ -79,7 +79,7 @@ final class NativeTaskClient {
     @Nullable private JSONObject actionResult(String action, Task task, @Nullable Rect bounds) {
         if (task == null || task.user != USER || task.type != 1) return null;
         if (!task.component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+")) return null;
-        if (!action.matches("minimize|restore|restorePinned|maximize|resize|resizePinned|focus|focusPinned|unpin|back|close|switchFullscreen|closeFullscreen")) return null;
+        if (!action.matches("minimize|restore|restorePinned|maximize|resize|resizePinned|focus|focusPinned|unpin|back|close|switchFullscreen|closeFullscreen|liveBack")) return null;
         Rect rect = bounds == null ? new Rect() : bounds;
         return invoke(action, " " + task.id + " " + quote(task.component)
                 + " " + rect.left + " " + rect.top + " " + rect.right + " " + rect.bottom);

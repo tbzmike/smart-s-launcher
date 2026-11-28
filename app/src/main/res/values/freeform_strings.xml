@@ -19,6 +19,12 @@
     <string name="freeform_recovery_pending">Window recovery could not be verified. Re-enable root and use Restore all and stop to retry.</string>
     <string name="freeform_operation_unverified">Window operation could not be verified. No replacement app was launched.</string>
     <string name="freeform_minimize">Minimize to app icon</string>
+    <string name="floating_minimize_style">Floating window style</string>
+    <string name="floating_style_icon">App-icon bubbles (native floating windows)</string>
+    <string name="floating_style_live">Live miniature windows</string>
+    <string name="floating_style_next">Applies to newly opened floating windows; existing windows keep their current style.</string>
+    <string name="freeform_miniaturize">Minimize to live miniature</string>
+    <string name="freeform_live_unavailable">Live window unavailable. Restore all and stop to recover the task.</string>
     <string name="freeform_maximize">Maximize window</string>
     <string name="freeform_restore">Restore popup</string>
     <string name="freeform_close">Close this window</string>
