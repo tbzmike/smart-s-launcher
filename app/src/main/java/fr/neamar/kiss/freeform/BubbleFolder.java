@@ -86,6 +86,8 @@ public final class BubbleFolder {
     }
     boolean show(List<NativeTaskClient.Task> tasks, Rect bounds) {
         if (!prefs.getBoolean(key, true) || tasks.size() < 2) { clear(); return false; }
+        tasks = new ArrayList<>(tasks);
+        java.util.Collections.sort(tasks, (first, second) -> Integer.compare(first.id, second.id));
         boolean different = members.size() != tasks.size() || !area.equals(bounds);
         if (!different) for (int i=0; i<tasks.size(); i++) {
             NativeTaskClient.Task a=members.get(i), b=tasks.get(i);
@@ -130,7 +132,7 @@ public final class BubbleFolder {
         p.flags |= WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
         panel.setOnTouchListener((v,e)->{
             if(e.getActionMasked()==MotionEvent.ACTION_OUTSIDE) {
-                if(!inside(handle,e)) collapse();
+                if (!BubbleMenu.showingFor(panel) && !inside(handle,e)) collapse();
                 return true;
             }
             return false;

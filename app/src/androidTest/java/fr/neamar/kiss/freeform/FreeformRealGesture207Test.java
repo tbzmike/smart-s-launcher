@@ -89,6 +89,37 @@ public final class FreeformRealGesture207Test {
         return switchBubble("Smart S bubble menu");
     }
 
+    private void verifyExpandedMemberTap(String family) throws Exception {
+        boolean windows = family.equals("windows");
+        int expected = Integer.MAX_VALUE;
+        for (NativeTaskClient.Task task : new NativeTaskClient(app).list(false))
+            if (task.display > 0 && (task.pkg.equals(PKG) || task.pkg.equals("com.tbzmike.shortcutfixture.icebox")))
+                expected = Math.min(expected, task.id);
+        assertTrue("Two bubbled fixtures must include the first grid member", expected < Integer.MAX_VALUE);
+        final int selected = expected;
+        Rect folder = switchBubble("Smart S " + family + " folder");
+        tap(folder.centerX(), folder.centerY());
+        Rect panel = switchBubble("Smart S " + family + " folder contents");
+        SystemClock.sleep(400);
+        int x = panel.left + dp(38), y = panel.top + dp(38);
+        longPressMenu(new Rect(x-1,y-1,x+1,y+1));
+        tap(x,y);
+        await("one tap on held " + family + " folder member restores its exact task", doc -> {
+            JSONArray tasks = doc.getJSONArray("tasks");
+            for (int i=0; i<tasks.length(); i++) {
+                JSONObject task = tasks.getJSONObject(i);
+                if (task.getInt("id")==selected && task.getInt("display")==0 && task.getBoolean("visible")
+                        && task.getInt("mode")==(windows ? 5 : 1)) return true;
+            }
+            return false;
+        });
+        if (windows) {
+            for (NativeTaskClient.Task task : new NativeTaskClient(app).list(false))
+                if (task.id == selected) assertTrue(FreeformSession.operate(app,task.id,task.component,"minimize",null,usable));
+        } else shell("input keyevent KEYCODE_HOME");
+        switchBubble("Smart S " + family + " folder");
+    }
+
     private void dropFolder(String family) throws Exception {
         Rect folder = switchBubble("Smart S " + family + " folder");
         tap(folder.centerX(),folder.centerY());
@@ -146,6 +177,7 @@ public final class FreeformRealGesture207Test {
             assertTrue(layouts.edit().putBoolean("fullscreen",false).commit());
             switchBubble("Smart S fullscreen switch " + secondId);
             assertTrue(layouts.edit().putBoolean("fullscreen",true).commit());
+            verifyExpandedMemberTap("fullscreen");
             Rect folder=switchBubble("Smart S fullscreen folder");
             tap(folder.centerX(),folder.centerY());
             Rect panel=switchBubble("Smart S fullscreen folder contents");
@@ -528,6 +560,7 @@ public final class FreeformRealGesture207Test {
                 assertNotNull(target);
                 assertTrue(FreeformSession.operate(app,target.id,target.component,"minimize",null,usable));
             }
+            verifyExpandedMemberTap("windows");
             dropFolder("windows");
             await("both minimized windows closed", doc -> task(doc)==null && !doc.getJSONArray("tasks").toString().contains("com.tbzmike.shortcutfixture.icebox"));
             checkFullscreenSwitching();
