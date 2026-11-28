@@ -279,17 +279,24 @@ public final class NativeTaskBridge {
                     break;
                 case "maximize":
                     hidden.invoke(transaction, token, false);
-                    windowMode.invoke(transaction, token, 1);
+                    // On the phone's ordinary fullscreen display, inherit its mode
+                    // as AOSP DesktopTasksController does. Explicit mode 1 can retain
+                    // a freeform organizer override. Clear the requested bounds.
+                    int parentMode = phoneDisplayWindowingMode();
+                    windowMode.invoke(transaction, token, parentMode == 1 ? 0 : 1);
                     setBounds.invoke(transaction, token, new Rect());
                     reorder.invoke(transaction, token, true);
                     focus = true;
                     break;
                 case "resize":
                     if (mode != 5 || bounds.isEmpty()) throw new IllegalArgumentException("Not a resizable popup");
-                    setBounds.invoke(transaction, token, bounds);
-                    reorder.invoke(transaction, token, true);
-                    focus = true;
-                    break;
+                    // Match the already working live-resize operation. A mode-change
+                    // transition for ordinary resizing can leave the organizer's crop stale.
+                    atm.getMethod("resizeTask", int.class, Rect.class, int.class)
+                            .invoke(service, id, bounds, 3 /* RESIZE_MODE_USER_FORCED */);
+                    if (keepAbove) organizerApply(atm, service, transactionType, transaction);
+                    emit(observe(atm, service, id, component, user, bounds, false));
+                    return;
                 case "focus":
                     reorder.invoke(transaction, token, true);
                     focus = true;
@@ -316,7 +323,7 @@ public final class NativeTaskBridge {
                 catch (ReflectiveOperationException ignored) { }
             }
             if ("restore".equals(action)) {
-                emit(finishRestoredSurface(atm, service, id, component, user, bounds));
+                emit(observe(atm, service, id, component, user, bounds, false));
             } else if ("resize".equals(action)) {
                 emit(observe(atm, service, id, component, user, bounds, false));
             } else emit(new JSONObject().put("ok", true));
@@ -326,19 +333,23 @@ public final class NativeTaskBridge {
         }
     }
 
-    private static JSONObject finishRestoredSurface(Class<?> atm, Object service, int id,
-                                                     String component, int user, Rect wanted) throws Exception {
-        JSONObject observed = observe(atm, service, id, component, user, wanted, false);
-        JSONObject row = observed.optJSONObject("task");
-        if (row == null || row.optInt("display", -1) != 0 || row.optInt("mode") != 5)
-            return observed;
-        // RESIZE_MODE_USER_FORCED preserves the window and resizes even when bounds match.
-        atm.getMethod("resizeTask", int.class, Rect.class, int.class).invoke(service, id, wanted, 3);
-        if (!row.optBoolean("focused")) {
-            try { atm.getMethod("setFocusedTask", int.class).invoke(service, id); }
-            catch (ReflectiveOperationException ignored) { }
-        }
-        return observe(atm, service, id, component, user, wanted, false);
+    private static void organizerApply(Class<?> atm, Object service, Class<?> txClass, Object tx) throws Exception {
+        Object organizer = atm.getMethod("getWindowOrganizerController").invoke(service);
+        Class.forName("android.window.IWindowOrganizerController").getMethod("applyTransaction", txClass)
+                .invoke(organizer, tx);
+    }
+
+    private static int phoneDisplayWindowingMode() {
+        // The device's default display configuration is provided by WindowManager.
+        // No task organizer registration or modification of global display policy.
+        try {
+            Object binder = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
+                    .invoke(null, "window");
+            Object wm = Class.forName("android.view.IWindowManager$Stub").getMethod("asInterface", IBinder.class)
+                    .invoke(null, binder);
+            Class<?> type = Class.forName("android.view.IWindowManager");
+            return (Integer) type.getMethod("getWindowingMode", int.class).invoke(wm, 0);
+        } catch (Exception unavailable) { return 1; } // default phone display
     }
 
     private static List<?> tasks(Class<?> atm, Object service) throws Exception {

@@ -179,11 +179,14 @@ final class FreeformSession {
                         && !candidate.bounds.isEmpty()) {
                     if (!register) return OpenResult.VERIFIED;
                     Rect wanted = defaultPopup(popupArea(context, area));
-                    if (client.action("resizePinned", candidate, wanted)) {
-                        NativeTaskClient.Task placed = awaitGeometry(client, candidate.id, candidate.component,
-                                5, wanted, tolerance(context), false);
-                        if (placed != null) candidate = placed;
+                    NativeTaskClient.Task placed = null;
+                    for (int attempt = 0; attempt < 2 && placed == null; attempt++) {
+                        if (client.action("resizePinned", candidate, wanted))
+                            placed = awaitGeometry(client, candidate.id, candidate.component,
+                                    5, wanted, tolerance(context), false);
                     }
+                    if (placed == null) return OpenResult.REQUESTED_UNVERIFIED;
+                    candidate = placed;
                     entries.put(candidate.id, new Entry(candidate.id, candidate.component, candidate.bounds));
                     boolean saved = save(context, entries);
                     return saved && FreeformGeometry.near(candidate.frame, wanted, tolerance(context))
