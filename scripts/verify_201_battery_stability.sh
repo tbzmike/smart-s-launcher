@@ -14,6 +14,9 @@ done
 test "$gradle_ok" = 1
 adb install -r -g app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell svc power stayon true
+adb shell input keyevent KEYCODE_WAKEUP
+adb shell wm dismiss-keyguard
 mkdir -p verification-results
 for test in \
   fr.neamar.kiss.result.ExactHistoryPopup200Test \

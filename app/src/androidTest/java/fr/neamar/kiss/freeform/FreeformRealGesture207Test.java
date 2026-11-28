@@ -300,6 +300,19 @@ public final class FreeformRealGesture207Test {
             try (FileOutputStream out = new FileOutputStream(new File(dir, filename))) {
                 assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out));
             }
+            if (checkColor && !filename.equals("fullscreen.png")) {
+                int seen = 0;
+                for (int side = 0; side < 4; side++) {
+                    for (int d = -dp(2); d <= dp(5); d++) {
+                        int x = side == 0 ? colorArea.left + d : side == 1 ? colorArea.right - 1 - d : colorArea.centerX();
+                        int y = side == 2 ? colorArea.top + d : side == 3 ? colorArea.bottom - 1 - d : colorArea.centerY();
+                        if (x < 0 || y < 0 || x >= bitmap.getWidth() || y >= bitmap.getHeight()) continue;
+                        int pixel = bitmap.getPixel(x, y);
+                        if (Color.green(pixel) > 140 && Color.blue(pixel) > 155) { seen++; break; }
+                    }
+                }
+                assertEquals("Actual app content border missing on " + filename, 4, seen);
+            }
             if (checkColor) {
                 // Check rendered app pixels across the interior, not a reported windowing mode.
                 int pass = 0, total = 0;

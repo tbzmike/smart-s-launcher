@@ -49,7 +49,7 @@ public final class NativeTaskBridge {
             Object vm = runtime.getDeclaredMethod("getRuntime").invoke(null);
             runtime.getDeclaredMethod("setHiddenApiExemptions", String[].class).invoke(vm,
                     (Object) new String[]{"Landroid/os/ServiceManager;", "Landroid/app/IActivityTaskManager",
-                            "Landroid/app/TaskInfo;", "Landroid/app/ActivityManager$RunningTaskInfo;",
+                            "Landroid/app/ActivityOptions;", "Landroid/app/TaskInfo;", "Landroid/app/ActivityManager$RunningTaskInfo;",
                             "Landroid/content/res/Configuration;->windowConfiguration",
                             "Landroid/hardware/display/", "Landroid/view/DisplayInfo;", "Landroid/hardware/input/", "Landroid/app/WindowConfiguration;", "Landroid/window/"});
             Class<?> atm = Class.forName("android.app.IActivityTaskManager");
