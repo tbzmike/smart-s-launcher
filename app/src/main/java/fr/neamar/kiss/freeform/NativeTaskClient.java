@@ -96,6 +96,10 @@ final class NativeTaskClient {
         String read(String command);
         Pipe open(String command) throws java.io.IOException;
     }
+    Pipe priorityPipe() throws java.io.IOException {
+        return rootPipe(command("priority", ""));
+    }
+
     private Pipe rootPipe(String command) throws java.io.IOException {
         Transport test = FreeformTestTransport.get();
         if (test != null) return test.open(command);

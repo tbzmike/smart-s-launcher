@@ -166,7 +166,7 @@ jobs:
           else
             gh release create "$TAG" --latest --target "$GITHUB_SHA" \
               --title "Smart S Launcher v3.30.220" \
-              --notes "Serialize restored task surface transitions, retain live display until a real frame, remove stale borders, and verify repeated restores. Update with your existing signing edition." \
+              --notes "Serialize restored task surface transitions, retain live display until a real frame, remove stale borders, protect live bubble processes, and verify repeated restores. Update with your existing signing edition." \
               SmartSLauncher.apk SmartSLauncher-debug.apk smart-s-launcher-3.30.220.apk app-debug.apk latest-green.json source.zip
           fi
           gh release edit "$TAG" --latest --target "$GITHUB_SHA"

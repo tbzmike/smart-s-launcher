@@ -65,6 +65,8 @@ public final class FreeformRealGesture207Test {
     }
 
     private void playingWhileBubbled(int taskId) throws Exception {
+        String originalPid = shell("pidof " + PKG).trim().split("\\s+")[0];
+        assertTrue("Live bubble must have an existing app process", originalPid.matches("[0-9]+"));
         long end=SystemClock.elapsedRealtime()+14000;
         int initial=-1,display=-1;
         while(SystemClock.elapsedRealtime()<end) {
@@ -75,7 +77,13 @@ public final class FreeformRealGesture207Test {
                 int d=Integer.parseInt(sample.group(1)), pos=Integer.parseInt(sample.group(2));
                 if(d==0)continue;
                 if(initial<0 || display!=d) { initial=pos; display=d; }
-                else if(pos>=initial+500)return;
+                else if(pos>=initial+500) {
+                    assertEquals("Bubble playback must retain its original PID", originalPid,
+                            shell("pidof " + PKG).trim().split("\\s+")[0]);
+                    int adj = Integer.parseInt(shell("cat /proc/" + originalPid + "/oom_score_adj").trim());
+                    assertTrue("Bubbled app must remain visible/important rather than cached: " + adj, adj <= 200);
+                    return;
+                }
             }
             SystemClock.sleep(160);
         }

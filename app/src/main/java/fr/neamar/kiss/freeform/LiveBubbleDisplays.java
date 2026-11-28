@@ -52,6 +52,7 @@ final class LiveBubbleDisplays {
             display=app.getSystemService(DisplayManager.class).createVirtualDisplay(config);
             if(display==null || !client.moveToBubble(t,display.getDisplay().getDisplayId(),family)) return false;
             active.put(t.id,new Lease(display,surface,family)); display=null;surface=null;
+            BubbleProcessPriority.hold(app, t);
             return true;
         } catch(RuntimeException unavailable){return false;}
         finally {
@@ -88,6 +89,7 @@ final class LiveBubbleDisplays {
     static synchronized void release(int id) {
         Lease lease = active.remove(id);
         if (lease != null) {
+            BubbleProcessPriority.drop(id);
             // Shell may still animate the reparented surface on its former display.
             retiring++;
             new Handler(buffers.getLooper()).postDelayed(() -> {

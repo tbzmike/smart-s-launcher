@@ -291,6 +291,8 @@ public final class FullscreenBubbleService extends AccessibilityService {
                 }
             }
             boolean ok=managed!=null && !managed.contains(t.id) && client.action(close?"closeFullscreen":"switchFullscreen",t,null);
+            if (ok && close) LiveBubbleDisplays.release(t.id);
+            else if (ok) client.list(); // Confirm the phone-display frame before releasing the live lease.
             main.post(() -> {
                 if (stopped) return;
                 if (!ok) Toast.makeText(this,"Fullscreen task is no longer available",Toast.LENGTH_SHORT).show();

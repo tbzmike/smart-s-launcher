@@ -363,6 +363,7 @@ final class FreeformSession {
             if (!client.action("close", task, null)) return false;
             List<NativeTaskClient.Task> after = client.list();
             if (after == null || exact(after, entry) != null) return false;
+            LiveBubbleDisplays.release(id);
             entries.remove(id); return save(context, entries);
         }
         if ("minimize".equals(action)) {
@@ -372,8 +373,8 @@ final class FreeformSession {
             entry.minimized = true;
             if (!save(context, entries)) return false; // Never hide an unjournaled task.
             if (client.park(task,"windows")) return true;
-            if (client.action("minimize", task, null)
-                    && await(client, id, component, task.mode, false) != null) return true;
+            // Never silently turn a live bubble into an ordinary hidden/cached task.
+            // If the ROM cannot park the task on a live display, restore the window instead.
             // A failed/uncertain minimize must not strand a hidden task. Retain the recovery
             // record unless the same task is observed restored and visible.
             Rect popup = fit(entry.popup, popupArea(context, area), 1);

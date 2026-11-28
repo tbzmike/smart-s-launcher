@@ -25,7 +25,9 @@ public final class NativeTaskBridge {
     public static void main(String[] args) {
         // The helper stays alive only for the active gesture. No organizer is registered and no
         // SystemUI task leash is stolen. EOF closes the helper when the launcher dies.
-        if (args.length == 4 && "gesture".equals(args[0])) {
+        if (args.length == 2 && "priority".equals(args[0])) {
+            BubbleProcessPriority.runRoot(Integer.parseInt(args[1]));
+        } else if (args.length == 4 && "gesture".equals(args[0])) {
             try (java.io.BufferedReader reader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(System.in, java.nio.charset.StandardCharsets.UTF_8))) {
                 String line;
