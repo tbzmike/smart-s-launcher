@@ -342,7 +342,15 @@ public final class FreeformRealGesture207Test {
                 verifiedFrames++;
             } catch (AssertionError error) {
                 if (error.getMessage() == null || !error.getMessage().startsWith("Actual app content")
-                        || SystemClock.elapsedRealtime() >= drawDeadline) throw error;
+                        || SystemClock.elapsedRealtime() >= drawDeadline) {
+                    File dir = new File(app.getFilesDir(), "freeform207-evidence");
+                    for (String service : new String[]{"activity activities", "window windows", "SurfaceFlinger --list"}) {
+                        try (java.io.FileWriter log = new java.io.FileWriter(new File(dir, service.split(" ")[0] + ".txt"))) {
+                            log.write(shell("dumpsys " + service));
+                        }
+                    }
+                    throw error;
+                }
                 verifiedFrames = 0;
             }
             if (verifiedFrames < 2) SystemClock.sleep(120);

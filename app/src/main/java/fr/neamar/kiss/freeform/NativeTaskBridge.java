@@ -127,7 +127,6 @@ public final class NativeTaskBridge {
             if (display!=0 && !action.equals("close") && !action.equals("closeFullscreen")) {
                 if (!(action.startsWith("restore") || action.equals("switchFullscreen") || action.equals("maximize")))
                     throw new IllegalStateException("Unsupported live task operation");
-                atm.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(service,id,0);
                 // Bring the existing task and its activity surface forward together on the phone display.
                 android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
                 options.setLaunchDisplayId(0);
@@ -138,6 +137,13 @@ public final class NativeTaskBridge {
                         Integer.parseInt(args[6]), Integer.parseInt(args[7])));
                 atm.getMethod("startActivityFromRecents", int.class, android.os.Bundle.class)
                         .invoke(service, id, options.toBundle());
+                for (Object candidate : tasks(atm, service)) {
+                    JSONObject moved = describe(candidate);
+                    if (moved != null && moved.getInt("id") == id && moved.getInt("display") != 0) {
+                        atm.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(service,id,0);
+                        break;
+                    }
+                }
                 if(action.equals("switchFullscreen"))action="maximize";
             }
             if ("switchFullscreen".equals(action) || "closeFullscreen".equals(action)) {

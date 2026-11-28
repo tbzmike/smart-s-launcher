@@ -65,7 +65,14 @@ final class LiveBubbleDisplays {
             if(l!=null && l.display.getDisplay().getDisplayId()==e.getValue())release(e.getKey());
         }
     }
-    static synchronized void release(int id){Lease l=active.remove(id);if(l!=null)l.release();stopIdleThread();}
+    static synchronized void release(int id) {
+        Lease lease = active.remove(id);
+        if (lease != null) {
+            // Shell may still animate the reparented surface on its former display.
+            new Handler(android.os.Looper.getMainLooper()).postDelayed(lease::release, 1800);
+        }
+        stopIdleThread();
+    }
     static synchronized void releaseFamily(String family){
         for(int id:new ArrayList<>(active.keySet())) if(family.equals(active.get(id).family))release(id);
     }
