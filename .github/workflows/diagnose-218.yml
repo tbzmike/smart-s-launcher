@@ -1,0 +1,23 @@
+name: Inspect restored window evidence
+on:
+  push:
+    branches: [diagnostics/218-restored-window]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: 46132050004
+          name: verified-218-android-36
+          path: evidence
+      - run: |
+          cd evidence/freeform207-evidence
+          ls
+          grep -iE 'fixture|mCurrentFocus|mFocusedApp|topResumedActivity|sleeping=' activity.txt | head -100
+          grep -iE 'fixture|mCurrentFocus|mFocusedApp' window.txt | head -80
+          grep -i fixture SurfaceFlinger.txt | head -70
