@@ -352,7 +352,8 @@ public final class NativeTaskBridge {
                 .invoke(service, 200, false, false, -1);
     }
 
-    private static boolean liveDisplay(int display,int task) throws Exception {
+    static boolean liveDisplay(int display,int task) throws Exception {
+        if (display <= 0) return false;
         Object binder=Class.forName("android.os.ServiceManager").getMethod("getService",String.class).invoke(null,"display");
         Object dm=Class.forName("android.hardware.display.IDisplayManager$Stub").getMethod("asInterface",IBinder.class).invoke(null,binder);
         Object info=Class.forName("android.hardware.display.IDisplayManager").getMethod("getDisplayInfo",int.class).invoke(dm,display);

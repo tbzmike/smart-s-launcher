@@ -292,7 +292,15 @@ public final class FullscreenBubbleService extends AccessibilityService {
             }
             boolean ok=managed!=null && !managed.contains(t.id) && client.action(close?"closeFullscreen":"switchFullscreen",t,null);
             if (ok && close) LiveBubbleDisplays.release(t.id);
-            else if (ok) client.list(); // Confirm the phone-display frame before releasing the live lease.
+            else if (ok) {
+                // Reconcile on the worker, with a bounded retry for the asynchronous surface.
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    if (attempt != 0) android.os.SystemClock.sleep(100L);
+                    List<NativeTaskClient.Task> observed = client.list();
+                    if (observed != null && observed.stream().anyMatch(row -> row.id == t.id
+                            && row.display == 0 && row.visible && !row.frame.isEmpty())) break;
+                }
+            }
             main.post(() -> {
                 if (stopped) return;
                 if (!ok) Toast.makeText(this,"Fullscreen task is no longer available",Toast.LENGTH_SHORT).show();

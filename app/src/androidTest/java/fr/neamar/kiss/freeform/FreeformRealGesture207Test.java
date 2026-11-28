@@ -80,8 +80,14 @@ public final class FreeformRealGesture207Test {
                 else if(pos>=initial+500) {
                     assertEquals("Bubble playback must retain its original PID", originalPid,
                             shell("pidof " + PKG).trim().split("\\s+")[0]);
-                    int adj = Integer.parseInt(shell("cat /proc/" + originalPid + "/oom_score_adj").trim());
+                    int adj = Integer.parseInt(shell("su 0 cat /proc/" + originalPid + "/oom_score_adj").trim());
                     assertTrue("Bubbled app must remain visible/important rather than cached: " + adj, adj <= 200);
+                    // The real ActivityManager token must exist, not merely a naturally visible process.
+                    String processes = shell("dumpsys activity processes " + PKG);
+                    if (!processes.contains("Smart S live bubble " + originalPid + " ")) {
+                        SystemClock.sleep(100);
+                        continue;
+                    }
                     return;
                 }
             }

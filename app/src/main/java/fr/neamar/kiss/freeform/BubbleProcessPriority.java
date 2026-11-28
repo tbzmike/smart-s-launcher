@@ -101,7 +101,8 @@ final class BubbleProcessPriority {
             runtime.getDeclaredMethod("setHiddenApiExemptions", String[].class).invoke(vm,
                     (Object) new String[]{"Landroid/os/ServiceManager;", "Landroid/app/IActivityManager;",
                             "Landroid/app/IActivityTaskManager;", "Landroid/app/TaskInfo;",
-                            "Landroid/app/ActivityManager$RunningTaskInfo;"});
+                            "Landroid/app/ActivityManager$RunningTaskInfo;", "Landroid/hardware/display/",
+                            "Landroid/view/DisplayInfo;"});
             Class<?> sm = Class.forName("android.os.ServiceManager");
             Class<?> am = Class.forName("android.app.IActivityManager");
             Class<?> atm = Class.forName("android.app.IActivityTaskManager");
@@ -125,7 +126,7 @@ final class BubbleProcessPriority {
                         Map<Integer, String> requested = new HashMap<>();
                         for (int i = 1; i < parts.length; i += 2) requested.put(Integer.parseInt(parts[i]), parts[i+1]);
                         List<?> running = (List<?>) processes.invoke(service);
-                        List<?> rows = (List<?>) tasks.invoke(taskService, 100, false, false, -1);
+                        List<?> rows = (List<?>) tasks.invoke(taskService, 200, false, false, -1);
                         if (running == null || rows == null) throw new IllegalStateException("No process/task snapshot");
                         Map<Integer, ActivityManager.RunningAppProcessInfo> desired = new HashMap<>();
                         for (Object row : rows) {
@@ -134,7 +135,7 @@ final class BubbleProcessPriority {
                             String component = requested.get(id);
                             if (component == null || cls.getField("userId").getInt(row) != user
                                     || (Integer) cls.getMethod("getActivityType").invoke(row) != 1
-                                    || cls.getField("displayId").getInt(row) <= 0) continue;
+                                    || !NativeTaskBridge.liveDisplay(cls.getField("displayId").getInt(row), id)) continue;
                             ComponentName base = (ComponentName) cls.getField("baseActivity").get(row);
                             ActivityInfo top = (ActivityInfo) cls.getField("topActivityInfo").get(row);
                             if (base == null || !component.equals(base.flattenToString()) || top == null
@@ -142,7 +143,7 @@ final class BubbleProcessPriority {
                             for (Object object : running) {
                                 ActivityManager.RunningAppProcessInfo proc = (ActivityManager.RunningAppProcessInfo) object;
                                 if (proc.pid > 0 && proc.uid == top.applicationInfo.uid
-                                        && top.processName.equals(proc.processName) && proc.pkgList != null
+                                        && java.util.Objects.equals(top.processName, proc.processName) && proc.pkgList != null
                                         && Arrays.asList(proc.pkgList).contains(top.packageName)) desired.put(proc.pid, proc);
                             }
                         }
@@ -162,6 +163,8 @@ final class BubbleProcessPriority {
                             important.invoke(service, token, entry.getKey(), true, "Smart S live bubble");
                             held.put(entry.getKey(), entry.getValue());
                         }
+                        if (desired.isEmpty() && !requested.isEmpty())
+                            throw new IllegalStateException("No live bubble activity process found");
                         System.out.println("SMART_S_PRIORITY:OK");
                         System.out.flush();
                     } catch (Exception failure) {
