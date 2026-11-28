@@ -23,17 +23,32 @@ final class LiveBubbleDisplays {
     private static final class Lease {
         final VirtualDisplay display;
         final ImageReader surface;
-        final String family;
+        String family;
+        final String component;
+        boolean parked = true;
         int missingReads;
-        Lease(VirtualDisplay d,ImageReader s,String f){display=d;surface=s;family=f;}
+        Lease(VirtualDisplay d,ImageReader s,String f,String c){display=d;surface=s;family=f;component=c;}
         void release(){try { display.release(); } finally {surface.close();}}
     }
     static synchronized boolean park(Context app,NativeTaskClient client,NativeTaskClient.Task t,String family) {
-        if (active.containsKey(t.id)) {
-            if (t.display != 0) return true;
-            // A second minimize can arrive before the next frame refresh. The old
-            // lease is no longer the task's display; retire it before making a new one.
-            release(t.id);
+        Lease existing = active.get(t.id);
+        if (existing != null) {
+            if (!existing.component.equals(t.component)) {
+                release(t.id);
+            } else {
+                int destination = existing.display.getDisplay().getDisplayId();
+                if (t.display == destination) return true;
+                if (t.display != 0) return false;
+                // Keep the same display container for this task's lifetime.
+                // Destroying its old display after reparent can detach the task
+                // leash on Android 16, even while WindowManager reports HAS_DRAWN.
+                if (!client.moveToBubble(t,destination,family)) return false;
+                existing.family=family;
+                existing.parked=true;
+                existing.missingReads=0;
+                BubbleProcessPriority.hold(app,t);
+                return true;
+            }
         }
         android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
         android.view.Display phone = app.getSystemService(DisplayManager.class).getDisplay(0);
@@ -57,7 +72,7 @@ final class LiveBubbleDisplays {
                     .build();
             display=app.getSystemService(DisplayManager.class).createVirtualDisplay(config);
             if(display==null || !client.moveToBubble(t,display.getDisplay().getDisplayId(),family)) return false;
-            active.put(t.id,new Lease(display,surface,family)); display=null;surface=null;
+            active.put(t.id,new Lease(display,surface,family,t.component)); display=null;surface=null;
             BubbleProcessPriority.hold(app, t);
             return true;
         } catch(RuntimeException unavailable){return false;}
@@ -73,7 +88,9 @@ final class LiveBubbleDisplays {
         return ids;
     }
     static synchronized void reconcile(Map<Integer,Integer> before, List<NativeTaskClient.Task> tasks, boolean withFrames) {
-        if (!withFrames) return; // Identity-only reads cannot confirm a drawable surface.
+        // Identity snapshots can identify a closed task, but cannot confirm restoration.
+        // Keep the display container while the task exists; no destruction based on
+        // logical frame visibility alone (it did not prove the surface was attached).
         Set<Integer> seen = new HashSet<>();
         for (NativeTaskClient.Task t : tasks) {
             if (!before.containsKey(t.id)) continue;
@@ -81,15 +98,18 @@ final class LiveBubbleDisplays {
             Lease lease = active.get(t.id);
             if (lease == null || lease.display.getDisplay().getDisplayId() != before.get(t.id)) continue;
             lease.missingReads = 0;
-            if (t.display == 0 && t.visible && !t.frame.isEmpty()) release(t.id);
+            if (withFrames && t.display == 0 && t.visible && !t.frame.isEmpty() && lease.parked) {
+                lease.parked=false;
+                BubbleProcessPriority.drop(t.id);
+            }
         }
-        // A task can disappear briefly from the task list during display reparenting.
-        // Two complete frame reads, not a single identity query, are needed to retire it.
+        // Retire only after complete frame reads no longer contain the task.
+        if (!withFrames) return;
         for (Map.Entry<Integer,Integer> e : before.entrySet()) {
             if (seen.contains(e.getKey())) continue;
             Lease lease = active.get(e.getKey());
             if (lease != null && lease.display.getDisplay().getDisplayId() == e.getValue()
-                    && ++lease.missingReads >= 2) release(e.getKey());
+                    && ++lease.missingReads >= 3) release(e.getKey());
         }
     }
     static synchronized void release(int id) {

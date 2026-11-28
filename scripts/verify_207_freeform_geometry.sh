@@ -97,7 +97,7 @@ fi
 adb pull /data/user/0/com.tbzmike.smartslauncher.debug/files/freeform207-evidence verification-results/ || true
 if ! grep -qE 'OK \([0-9]+ tests?\)' "$file"; then
   for file_dump in verification-results/freeform207-evidence/{activity,window,SurfaceFlinger}.txt; do
-    if test -f "$file_dump"; then rg -i 'tbzmike.shortcutfixture|mCurrentFocus|mFocusedApp|mResumedActivity' "$file_dump" | tail -80 || true; fi
+    if test -f "$file_dump"; then grep -Ei 'tbzmike.shortcutfixture|mCurrentFocus|mFocusedApp|mResumedActivity|RequestedLayerState\{Task=' "$file_dump" | tail -80 || true; fi
   done
 fi
 set -e

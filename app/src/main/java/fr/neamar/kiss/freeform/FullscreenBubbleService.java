@@ -45,6 +45,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
     private String lastPackage = "";
     private boolean reading, dirty, stopped;
     private final Set<String> attempted = new HashSet<>();
+    private final Set<String> pendingForeground = new LinkedHashSet<>();
     private TextView target;
     private final Runnable refresh = this::readTasks;
 
@@ -92,6 +93,13 @@ public final class FullscreenBubbleService extends AccessibilityService {
         String pkg = event.getPackageName().toString();
         if (pkg.equals(lastPackage)) return;
         lastPackage = pkg;
+        // A fast app -> Home switch can finish before the asynchronous task read.
+        // Keep the observed foreground package until a task snapshot consumes it.
+        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                && !pkg.equals(getPackageName()) && !pkg.equals("com.android.systemui")) {
+            if (pendingForeground.size() >= 16) pendingForeground.clear();
+            pendingForeground.add(pkg);
+        }
         schedule();
     }
 
@@ -122,11 +130,20 @@ public final class FullscreenBubbleService extends AccessibilityService {
         Set<String> valid = new HashSet<>();
         Set<Integer> wanted = new LinkedHashSet<>();
         boolean locked = getSystemService(KeyguardManager.class).isKeyguardLocked();
+        Map<String,Integer> counts = new HashMap<>();
+        for (NativeTaskClient.Task t : tasks)
+            if (t.type==1 && t.user==NativeTaskClient.USER && !managed.contains(t.id))
+                counts.merge(t.pkg,1,Integer::sum);
         for (NativeTaskClient.Task t : tasks) {
             if ((t.display==0 && t.mode != 1) || t.type != 1 || managed.contains(t.id) || t.pkg.equals(getPackageName())
                     || t.pkg.equals("com.android.systemui") || t.user != NativeTaskClient.USER) continue;
             String key = t.id + "|" + t.component;
-            if (t.display==0 && t.focused && t.visible && !locked) {tracked.add(key);attempted.remove(key);}
+            if (t.display==0 && t.focused && t.visible && !locked) {
+                tracked.add(key);attempted.remove(key);pendingForeground.remove(t.pkg);
+            } else if (!locked && t.display==0 && pendingForeground.contains(t.pkg)
+                    && counts.getOrDefault(t.pkg,0)==1) {
+                tracked.add(key);pendingForeground.remove(t.pkg);
+            }
             if (!tracked.contains(key)) continue;
             valid.add(key);
             live.put(t.id, t);
