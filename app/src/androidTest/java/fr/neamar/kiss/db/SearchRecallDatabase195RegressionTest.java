@@ -16,7 +16,7 @@ import java.util.List;
 
 /** Persistent recall must be bounded separately from actual app-launch History. */
 public final class SearchRecallDatabase195RegressionTest {
-    @Test public void recordedSearchesSurviveReopenAndPruneWithoutFakeLaunches() {
+    @Test public void readLimitDoesNotDeleteEarlierSearchesOrCreateFakeLaunches() {
         Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
         DBHelper.clearHistory(app);
         try {
@@ -34,10 +34,13 @@ public final class SearchRecallDatabase195RegressionTest {
             DBHelper.replaceSearchRecall(app, "whatsapp", Arrays.asList(
                     "app://second195", "app://new195", "app://new195"), 3);
             saved = DBHelper.getRecentSearchRecall(app, 50);
-            assertEquals(3, saved.size());
-            assertEquals("app://fourth195", saved.get(0).record);
-            assertEquals("app://second195", saved.get(1).record);
-            assertEquals("app://new195", saved.get(2).record);
+            assertEquals(4, saved.size());
+            assertEquals("app://third195", saved.get(0).record);
+            assertEquals("app://fourth195", saved.get(1).record);
+            assertEquals("app://second195", saved.get(2).record);
+            assertEquals("app://new195", saved.get(3).record);
+            assertEquals(4,DBHelper.getResetHistoryCount(app));
+            assertEquals(2,DBHelper.getRecallWindow(app,2).size());
             assertEquals(0, DBHelper.getHistoryLength(app));
         } finally {
             DBHelper.clearHistory(app);

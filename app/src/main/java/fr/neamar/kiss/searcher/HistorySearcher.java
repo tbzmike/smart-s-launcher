@@ -267,7 +267,7 @@ public class HistorySearcher extends Searcher {
      * Resolve one persisted history identity without changing what was launched. The DB id remains
      * the authority; provider state is only one possible representation of that exact target.
      */
-    private Pojo resolveHistoryTarget(MainActivity activity, DataHandler dataHandler,
+    Pojo resolveHistoryTarget(MainActivity activity, DataHandler dataHandler,
                                       String historyId) {
         Pojo pojo = dataHandler.getItemById(historyId);
         if (pojo == null) pojo = RecentLaunchTracker.resolve(historyId);

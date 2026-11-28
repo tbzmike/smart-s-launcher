@@ -24,6 +24,8 @@ for test in \
   fr.neamar.kiss.androidTest.HistoryRestart198VerifyTest \
   fr.neamar.kiss.androidTest.LockedHistoryPopup196IntegrationTest \
   fr.neamar.kiss.androidTest.AutoDataWiring196IntegrationTest \
+  fr.neamar.kiss.androidTest.HistoryFirstSearch181RegressionTest \
+  fr.neamar.kiss.androidTest.InstantHistory185RegressionTest \
   fr.neamar.kiss.db.SearchRecallDatabase195RegressionTest \
   fr.neamar.kiss.backup.BackupHistoryMergerTest; do
   echo "RUN $test"

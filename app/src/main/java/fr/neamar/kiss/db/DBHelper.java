@@ -142,10 +142,40 @@ public class DBHelper {
         public final String query;
         public final String record;
 
-        SearchRecallRow(String query, String record) {
+        public final long savedAt;
+        SearchRecallRow(String query, String record) { this(query, record, 0L); }
+        SearchRecallRow(String query, String record, long savedAt) {
+            this.savedAt = savedAt;
             this.query = query;
             this.record = record;
         }
+    }
+
+    public static int getResetHistoryCount(Context context) {
+        return DatabaseRecovery.run(context, db -> {
+            try (Cursor c = db.rawQuery("SELECT (SELECT COUNT(*) FROM history) + (SELECT COUNT(*) FROM search_recall)", null)) {
+                c.moveToFirst();
+                return c.getInt(0);
+            }
+        });
+    }
+
+    /** Select unique result identities before expanding their saved query aliases. */
+    public static List<SearchRecallRow> getRecallWindow(Context context, int limit) {
+        if (limit <= 0) return Collections.emptyList();
+        return DatabaseRecovery.run(context, db -> {
+            List<SearchRecallRow> rows = new ArrayList<>();
+            String sql = "SELECT COALESCE(r.query,''),w.record,w.stamp FROM "
+                    + "(SELECT record,MAX(stamp) AS stamp,MAX(seq) AS seq FROM "
+                    + "(SELECT record,MAX(saved_at) AS stamp,MAX(_id) AS seq FROM search_recall GROUP BY record "
+                    + "UNION ALL SELECT record,MAX(timeStamp),MAX(_id) FROM history GROUP BY record) "
+                    + "GROUP BY record ORDER BY stamp DESC,seq DESC LIMIT ?) w "
+                    + "LEFT JOIN search_recall r ON r.record=w.record ORDER BY w.stamp,w.seq,r._id";
+            try (Cursor c = db.rawQuery(sql, new String[]{String.valueOf(limit)})) {
+                while (c.moveToNext()) rows.add(new SearchRecallRow(c.getString(0),c.getString(1),c.getLong(2)));
+            }
+            return rows;
+        });
     }
 
     /** Read the most recently found query/result associations, oldest to newest. */
@@ -170,28 +200,20 @@ public class DBHelper {
      */
     public static void replaceSearchRecall(Context context, String query,
                                            List<String> ids, int maxItems) {
-        if (TextUtils.isEmpty(query) || maxItems <= 0) return;
+        if (TextUtils.isEmpty(query)) return;
         DatabaseRecovery.runVoid(context, db -> {
             db.beginTransaction();
             try {
                 db.delete("search_recall", "query=?", new String[]{query});
+                long savedAt = System.currentTimeMillis();
                 Set<String> distinct = new LinkedHashSet<>(ids);
                 for (String id : distinct) {
                     if (TextUtils.isEmpty(id)) continue;
                     ContentValues values = new ContentValues();
                     values.put("query", query);
                     values.put("record", id);
+                    values.put("saved_at", savedAt);
                     db.insertOrThrow("search_recall", null, values);
-                }
-                int count;
-                try (Cursor cursor = db.rawQuery("SELECT COUNT(*) FROM search_recall", null)) {
-                    cursor.moveToFirst();
-                    count = cursor.getInt(0);
-                }
-                if (count > maxItems) {
-                    db.execSQL("DELETE FROM search_recall WHERE _id IN "
-                                    + "(SELECT _id FROM search_recall ORDER BY _id ASC LIMIT ?)",
-                            new Object[]{count - maxItems});
                 }
                 db.setTransactionSuccessful();
             } finally {

@@ -63,6 +63,15 @@ public class SearchHandler {
             new ThreadPoolExecutor.DiscardOldestPolicy());
     private final AtomicLong searchGeneration = new AtomicLong();
     private final AtomicLong completedSearchGeneration = new AtomicLong(-1L);
+    private SearchRecallCache.Snapshot preparedRecall;
+    private List<Pojo> preparedHome;
+    private int preparedLimit = -1;
+    private HistoryPreviewMatcher.Snapshot savedPreview;
+    private List<Pojo> immediateMatches = Collections.emptyList();
+    private Set<String> savedIds = Collections.emptySet();
+    private java.util.Map<String,Long> homeTimes = Collections.emptyMap();
+    private Pojo lastLaunch;
+    private long lastLaunchTime;
     private Runnable pendingQuery;
     private Runnable pendingCommunicationRetry;
     private long communicationRetryGeneration = -1L;
@@ -103,8 +112,7 @@ public class SearchHandler {
      * oldest-to-newest. This must follow preferences rather than a fixed 400-item cap.
      */
     private volatile List<Pojo> historyQuerySeed = Collections.emptyList();
-    private HistoryPreviewMatcher.Snapshot historyPreviewSnapshot =
-            HistoryPreviewMatcher.prepare(Collections.emptyList());
+
     private boolean publishingHomePreview;
 
     /** Ready-to-render Home Results retained while QUERY temporarily owns the visible adapter. */
@@ -170,6 +178,19 @@ public class SearchHandler {
                 }
             };
             mainHandler.postDelayed(pendingQuery, QUERY_DEBOUNCE_MS);
+            int savedLimit = getConfiguredHistoryResultCount(PreferenceManager.getDefaultSharedPreferences(activity));
+            if (savedLimit > 0 && !SearchRecallCache.ready(savedLimit)) {
+                historySeedExecutor.execute(() -> {
+                    MainActivity owner = target.get();
+                    if (owner == null || generation != searchGeneration.get()) return;
+                    SearchRecallCache.warm(owner, fr.neamar.kiss.KissApplication.getApplication(owner).getDataHandler(), savedLimit);
+                    mainHandler.post(() -> {
+                        MainActivity current = target.get();
+                        if (current != null && pendingQuery != null && generation == searchGeneration.get())
+                            publishImmediateQueryPreview(current, capturedQuery, generation);
+                    });
+                });
+            }
             queryActionActivity = target;
             activity.setSearchQuickActions(true, query != null && !query.trim().isEmpty());
             return;
@@ -278,6 +299,8 @@ public class SearchHandler {
                     // The adapter has already been published on this UI turn.
                     // Date/Time uses the same exact recorded event IDs as the History
                     // sort, not the potentially merged app/wrapper usage totals.
+                    homeTimes = ((HistorySearcher) searcher).getRecordedEventTimes();
+                    preparedHome = null;
                     fr.neamar.kiss.ui.UniversalHistoryTimestamp.updateRecordedHistoryEventTimes(
                             ((HistorySearcher) searcher).getRecordedEventTimes());
                 }
@@ -307,16 +330,43 @@ public class SearchHandler {
                 startedType == Searcher.Type.QUERY ? Searcher.QUERY_THREAD : Searcher.SEARCH_THREAD);
     }
 
+    /** One distinct input window shared by launches, notifications and remembered search hits. */
+    private void prepareSavedWindow(int limit) {
+        SearchRecallCache.Snapshot recall = SearchRecallCache.current();
+        if (preparedHome == historyQuerySeed && preparedRecall == recall && preparedLimit == limit) return;
+        LinkedHashMap<String,Pojo> items = new LinkedHashMap<>();
+        java.util.Map<String,Long> times = new java.util.HashMap<>();
+        for (SearchRecallCache.Entry entry : recall.recent) {
+            items.put(entry.pojo.id,entry.pojo);
+            times.put(entry.pojo.id,entry.savedAt);
+        }
+        for (Pojo item : historyQuerySeed) {
+            items.put(item.id,item);
+            long stamp = homeTimes.getOrDefault(item.getHistoryId(),0L);
+            if (item == lastLaunch) stamp = Math.max(stamp,lastLaunchTime);
+            times.put(item.id,Math.max(stamp,times.getOrDefault(item.id,0L)));
+        }
+        List<Pojo> ordered = new ArrayList<>(items.values());
+        ordered.sort((a,b) -> Long.compare(times.get(a.id),times.get(b.id)));
+        List<Pojo> window = ordered.subList(Math.max(0,ordered.size()-limit),ordered.size());
+        savedPreview = HistoryPreviewMatcher.prepare(window);
+        savedIds = new HashSet<>();
+        for (Pojo item : window) savedIds.add(item.id);
+        preparedHome = historyQuerySeed;
+        preparedRecall = recall;
+        preparedLimit = limit;
+    }
+
     private void publishImmediateQueryPreview(@NonNull MainActivity activity,
                                               String query, long generation) {
         if (generation != searchGeneration.get() || activity.adapter == null) return;
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(activity);
         int historyLimit = getConfiguredHistoryResultCount(prefs);
-        List<Pojo> matches = HistoryPreviewMatcher.match(activity, prefs, query,
-                historyPreviewSnapshot, historyLimit);
+        prepareSavedWindow(historyLimit);
+        List<Pojo> matches = HistoryPreviewMatcher.match(activity, prefs, query, savedPreview, historyLimit);
         int limit = getConfiguredSearchResultCount(prefs);
         List<Pojo> recalled = SearchRecallCache.match(activity, prefs, query,
-                historyLimit, limit);
+                historyLimit, limit, savedIds);
         if (!recalled.isEmpty()) {
             // Retain History-first ranking but prefer results actually found for this query
             // previously; duplicates never consume the user's displayed-result allowance.
@@ -340,6 +390,7 @@ public class SearchHandler {
         List<Pojo> visible = limit <= 0 ? Collections.emptyList()
                 : new ArrayList<>(matches.subList(from, matches.size()));
         if (generation != searchGeneration.get()) return;
+        immediateMatches = visible;
         // Publishing an empty current match set also removes stale previous-query rows.
         activity.adapter.updateWithPojos(activity, visible, true, query == null ? "" : query);
     }
@@ -399,6 +450,8 @@ public class SearchHandler {
 
     public void rememberLaunchedResult(@NonNull Context context, @NonNull Result<?> result) {
         // The exact successful launch enters the bounded memory window before returning Home.
+        lastLaunch = result.getPojo();
+        lastLaunchTime = System.currentTimeMillis();
         rememberHistoryPojos(context, historyQuerySeed, result.getPojo());
         if (lastSearchType == Searcher.Type.HISTORY || !canRetainWarmResult(result)) return;
         pendingLaunchedResult = result;
@@ -409,7 +462,6 @@ public class SearchHandler {
         List<Pojo> saved = new ArrayList<>(historyQuerySeed);
         saved.removeIf(pojo -> java.util.Objects.equals(pojo.getHistoryId(), removed.getHistoryId()));
         historyQuerySeed = Collections.unmodifiableList(saved);
-        historyPreviewSnapshot = HistoryPreviewMatcher.prepare(saved);
         List<Result<?>> ready = new ArrayList<>(homeResultSnapshot);
         ready.removeIf(result -> java.util.Objects.equals(
                 result.getPojo().getHistoryId(), removed.getHistoryId()));
@@ -424,7 +476,6 @@ public class SearchHandler {
                                       @Nullable Pojo mostRecent) {
         List<Pojo> selected = selectSavedHistory(context, saved, mostRecent);
         historyQuerySeed = Collections.unmodifiableList(new ArrayList<>(selected));
-        historyPreviewSnapshot = HistoryPreviewMatcher.prepare(historyQuerySeed);
     }
 
     private boolean canRetainWarmResult(Result<?> result) {
@@ -791,7 +842,7 @@ public class SearchHandler {
                 return new ApplicationsSearcher(activity, isRefresh);
             case QUERY:
                 return new QuerySearcher(activity, query, isRefresh,
-                        new ArrayList<>(historyQuerySeed));
+                        new ArrayList<>(immediateMatches));
             case NULL:
                 return new NullSearcher(activity);
             case HISTORY:

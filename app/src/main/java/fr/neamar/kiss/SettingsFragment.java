@@ -777,12 +777,9 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
 
     private void fixSummaries() {
         int historyLength = getDataHandler().getHistoryLength();
-        if (historyLength > 5) {
-            Preference resetHistory = findPreference("reset-history");
-            if (resetHistory != null) {
-                resetHistory.setSummary(getString(R.string.items_title, historyLength));
-            }
-        }
+        Preference resetHistory = findPreference("reset-history");
+        if (resetHistory != null) resetHistory.setSummary(getString(R.string.items_title,
+                fr.neamar.kiss.db.DBHelper.getResetHistoryCount(requireContext())));
 
         // Only display "rate the app" preference if the user has been using KISS long enough to enjoy it ;)
         Preference rateApp = findPreference("rate-app");

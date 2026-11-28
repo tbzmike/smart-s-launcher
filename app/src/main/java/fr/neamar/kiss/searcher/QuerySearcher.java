@@ -62,6 +62,7 @@ public class QuerySearcher extends Searcher {
     private final Set<String> lexicalIds = new HashSet<>();
     private final List<Pojo> historySeed;
     private final List<Pojo> historyMatches = new ArrayList<>();
+    private final Map<String, Pojo> found = new java.util.LinkedHashMap<>();
     private boolean semanticPass;
     private boolean semanticEnabled;
     private boolean semanticRerank;
@@ -120,6 +121,7 @@ public class QuerySearcher extends Searcher {
                 }
                 promoteLaunchTarget(pojo);
                 semanticMatches.add(pojo);
+                found.put(pojo.id,pojo);
             }
             return super.addResults(semanticMatches);
         }
@@ -127,6 +129,7 @@ public class QuerySearcher extends Searcher {
         for (Pojo pojo : pojos) {
             if (pojo == null || !isVisibleByFrozenSearchPolicy(pojo)) continue;
             lexicalIds.add(pojo.id);
+            if (!(pojo instanceof SearchPojo)) found.put(pojo.id,pojo);
 
             int originalRelevance = pojo.relevance;
             if (isExactReachabilityMatch(pojo)) {
@@ -180,7 +183,7 @@ public class QuerySearcher extends Searcher {
 
         // First stage: search the already-rendered history rows in memory. This happens before
         // any DB query, provider scan, fuzzy scorer or embedding work.
-        prepareHistoryPreview(activity);
+        historyMatches.addAll(historySeed);
         if (isCancelled()) return null;
 
         List<ValuedHistoryRecord> lastIdsForQuery = DBHelper.getPreviousResultsForQuery(activity, query);
@@ -217,51 +220,9 @@ public class QuerySearcher extends Searcher {
         if (!isCancelled()) {
             int historyLimit = HistorySearcher.configuredMaxHistoryResults(prefs);
             SearchRecallCache.remember(activity, dataHandler, query,
-                    snapshotCurrentCandidates(), historyLimit);
+                    new ArrayList<>(found.values()), historyLimit);
         }
         return null;
-    }
-
-    private void prepareHistoryPreview(MainActivity activity) {
-        historyMatches.clear();
-        String normalizedQuery = normalize(query);
-        if (normalizedQuery.isEmpty() || historySeed.isEmpty()) return;
-
-        Set<String> excludedFavoriteIds = KissApplication.getApplication(activity)
-                .getDataHandler().getExcludedFavorites();
-        boolean keepFrozenSearchable = FrozenAppPreferences.keepSearchable(activity);
-        boolean enableExcludedApps = prefs.getBoolean("enable-excluded-apps", false);
-
-        int checked = 0;
-        for (Pojo pojo : historySeed) {
-            if ((checked++ & 31) == 0 && isCancelled()) return;
-            if (pojo == null || excludedFavoriteIds.contains(pojo.getFavoriteId())) continue;
-            if (pojo instanceof AppPojo) {
-                AppPojo app = (AppPojo) pojo;
-                if (app.isExcluded() && !enableExcludedApps) continue;
-                if (app.isDisabled() && !keepFrozenSearchable) continue;
-            } else if (pojo instanceof ShortcutPojo) {
-                ShortcutPojo shortcut = (ShortcutPojo) pojo;
-                if (shortcut.isDisabled()
-                        && !ShortcutUtil.isIceBoxPublisher(activity, shortcut.packageName)
-                        && !keepFrozenSearchable) continue;
-            }
-
-            String name = normalize(pojo.getName());
-            String candidate = candidateText(pojo);
-            boolean obvious = name.startsWith(normalizedQuery)
-                    || containsTokenPrefix(name, normalizedQuery);
-            if (!obvious && normalizedQuery.length() >= 2) {
-                obvious = candidate.contains(normalizedQuery);
-            }
-            if (obvious) historyMatches.add(pojo);
-        }
-
-        if (!historyMatches.isEmpty() && !isCancelled()) {
-            historyMatches.sort((left, right) ->
-                    Boolean.compare(isLaunchTarget(left), isLaunchTarget(right)));
-            publishPreviewResults(historyMatches);
-        }
     }
 
     /** Keep history-only matches in the final set without duplicating provider matches. */
@@ -395,6 +356,7 @@ public class QuerySearcher extends Searcher {
             }
             promoteLaunchTarget(pojo);
             semanticMatches.add(pojo);
+                found.put(pojo.id,pojo);
         }
 
         if (!semanticMatches.isEmpty()) super.addResults(semanticMatches);
