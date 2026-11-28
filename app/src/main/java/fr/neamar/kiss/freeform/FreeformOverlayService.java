@@ -281,10 +281,10 @@ public final class FreeformOverlayService extends Service {
 
     @Override public void onDestroy() {
         destroyed = true;
-        LiveBubbleDisplays.releaseFamily("windows");
         if (folder != null) folder.destroy();
         main.removeCallbacksAndMessages(null);
         removeOverlays();
+        LiveBubbleDisplays.releaseFamily("windows");
         if (receiverRegistered) unregisterReceiver(screen);
         worker.shutdown();
         if (active.get() == this) active.clear();
@@ -599,6 +599,7 @@ public final class FreeformOverlayService extends Service {
     }
 
     /** One view, one texture and one exact virtual display. Hang-up is a layout-only operation. */
+    @SuppressLint("ClickableViewAccessibility") // Expanded touch is forwarded to the real app; miniature uses performClick.
     private final class LiveMiniWindow {
         final NativeTaskClient.Task task;
         final android.util.Size size;
@@ -668,6 +669,7 @@ public final class FreeformOverlayService extends Service {
             View.OnTouchListener move=localGesture(false,false);
             icon.setOnTouchListener(move);label.setOnTouchListener(move);
             grip.setOnTouchListener(localGesture(true,false));
+            texture.setOnClickListener(v->{if(miniature)operate(task,"restore",null);});
             texture.setOnTouchListener((v,e)->{
                 if(dead||busy||stopping)return true;
                 if(miniature)return miniTouch.onTouch(v,e);
@@ -726,7 +728,7 @@ public final class FreeformOverlayService extends Service {
                             }
                             if(e.getActionMasked()==MotionEvent.ACTION_UP){
                                 down=false;dragging=0;
-                                if(!moved&&tapRestore){v.performClick();operate(task,"restore",null);}
+                                if(!moved&&tapRestore){v.performClick();}
                                 else if(moved&&miniature)moveBubble(task,bounds.left,bounds.top);
                                 else if(moved)operate(task,"resize",new Rect(bounds.left,bounds.top+dp(36),bounds.right,bounds.bottom));
                                 else requestRefresh();

@@ -11,6 +11,7 @@ import java.util.ArrayDeque;
 import java.util.concurrent.*;
 
 /** One root stream per touch gesture, with coalesced move events and no idle polling. */
+@androidx.annotation.RequiresApi(35)
 final class LiveWindowInput implements AutoCloseable {
     private final NativeTaskClient client;
     private final NativeTaskClient.Task task;

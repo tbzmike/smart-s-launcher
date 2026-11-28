@@ -87,7 +87,7 @@ final class LiveBubbleDisplays {
     // Render only the selected task's own virtual display, never the phone's screen.
     static synchronized android.util.Size previewSize(NativeTaskClient.Task task) {
         Lease lease=active.get(task.id);
-        if (lease==null || !lease.component.equals(task.component) || !lease.parked
+        if (lease==null || !"live".equals(lease.family) || !lease.component.equals(task.component) || !lease.parked
                 || task.display!=lease.display.getDisplay().getDisplayId()) return null;
         return new android.util.Size(lease.width,lease.height);
     }

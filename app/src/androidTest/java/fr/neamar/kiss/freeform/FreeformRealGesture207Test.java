@@ -422,12 +422,7 @@ public final class FreeformRealGesture207Test {
         }
     }
 
-    @Test public void actualGestureKeepsAppAndControlsTogetherAndMaximizes() throws Exception {
-        assertEquals("Root test transport is not available", "0", shell("su 0 id -u").trim());
-        assertTrue("Overlay app-op not granted in isolated emulator", Settings.canDrawOverlays(app));
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(app);
-        boolean previousRoot = prefs.getBoolean("root-mode", false);
-        assertTrue(prefs.edit().putBoolean("root-mode", true).commit());
+    private void installRootTransport() {
         FreeformTestTransport.install(new NativeTaskClient.Transport() {
             @Override public String read(String command) {
                 try { return shell(root(command)); }
@@ -448,6 +443,151 @@ public final class FreeformRealGesture207Test {
                 };
             }
         });
+    }
+
+    private Rect liveOverlay(boolean small) throws Exception {
+        long end=SystemClock.elapsedRealtime()+18000;
+        while(SystemClock.elapsedRealtime()<end){
+            Rect found=null;
+            for(WindowFrameLookup.Window w:WindowFrameLookup.parse(shell("dumpsys window -a windows"))){
+                if(!w.name.equals("Smart S live window "+id)||!w.valid())continue;
+                assertNull("Duplicate live window container",found);
+                found=new Rect(w.frame[0],w.frame[1],w.frame[2],w.frame[3]);
+            }
+            if(found!=null && (small?found.width()<=dp(126):found.width()>=dp(170)))return found;
+            SystemClock.sleep(100);
+        }
+        throw new AssertionError("Live overlay did not reach "+(small?"miniature":"expanded")+" state");
+    }
+
+    private Rect liveTexture(Rect window,boolean small,android.util.Size size){
+        Rect content=new Rect(window);content.inset(dp(2),dp(2));
+        if(!small)content.top+=dp(36);
+        float scale=Math.min((float)content.width()/size.getWidth(),(float)content.height()/size.getHeight());
+        int w=Math.round(size.getWidth()*scale),h=Math.round(size.getHeight()*scale);
+        return new Rect(content.centerX()-w/2,content.centerY()-h/2,
+                content.centerX()-w/2+w,content.centerY()-h/2+h);
+    }
+
+    private void livePixels(String file,Rect texture) throws Exception {
+        long end=SystemClock.elapsedRealtime()+10000;
+        int consecutive=0;
+        while(SystemClock.elapsedRealtime()<end){
+            Bitmap image=ui.takeScreenshot();assertNotNull(image);
+            try{
+                int seen=0;
+                for(int x:new int[]{20,50,80})for(int y:new int[]{25,50,75}){
+                    int px=texture.left+texture.width()*x/100,py=texture.top+texture.height()*y/100;
+                    if(px<0||py<0||px>=image.getWidth()||py>=image.getHeight())continue;
+                    int pixel=image.getPixel(px,py);
+                    if(Math.abs(Color.red(pixel)-189)<25&&Math.abs(Color.green(pixel)-36)<25&&Math.abs(Color.blue(pixel)-214)<25)seen++;
+                }
+                if(seen>=8){if(++consecutive>=2){File dir=new File(app.getFilesDir(),"freeform207-evidence");
+                    assertTrue(dir.isDirectory()||dir.mkdirs());try(FileOutputStream out=new FileOutputStream(new File(dir,file))){assertTrue(image.compress(Bitmap.CompressFormat.PNG,100,out));}return;}}
+                else consecutive=0;
+            }finally{image.recycle();}
+            SystemClock.sleep(100);
+        }
+        evidence(file,texture,false);
+        throw new AssertionError("Real live application pixels missing in "+file);
+    }
+
+    @Test public void liveMiniatureRetainsDisplayTaskPlaybackAndInteractiveWindow() throws Exception {
+        assertEquals("0",shell("su 0 id -u").trim());
+        assertTrue(Settings.canDrawOverlays(app));
+        SharedPreferences prefs=PreferenceManager.getDefaultSharedPreferences(app);
+        boolean previousRoot=prefs.getBoolean("root-mode",false), previousLive=FreeformMinimizeStyle.live(app);
+        assertTrue(prefs.edit().putBoolean("root-mode",true).commit());
+        installRootTransport();
+        try(ActivityScenario<MainActivity> scenario=ActivityScenario.launch(MainActivity.class)){
+            usable=area();
+            // Exercise the actual main-menu item and choice rather than only editing its preference.
+            scenario.onActivity(activity->{
+                android.widget.PopupMenu menu=new android.widget.PopupMenu(activity,new android.view.View(activity));
+                menu.inflate(fr.neamar.kiss.R.menu.menu_main);
+                android.view.MenuItem style=menu.getMenu().findItem(fr.neamar.kiss.R.id.floating_minimize_style);
+                assertNotNull("Floating window style is missing in launcher menu",style);
+                assertTrue(activity.onOptionsItemSelected(style));
+            });
+            boolean selected=false;
+            long choiceEnd=SystemClock.elapsedRealtime()+5000;
+            while(!selected&&SystemClock.elapsedRealtime()<choiceEnd){
+                android.view.accessibility.AccessibilityNodeInfo root=ui.getRootInActiveWindow();
+                if(root!=null){
+                    for(android.view.accessibility.AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByText(app.getString(fr.neamar.kiss.R.string.floating_style_live))){
+                        if(node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)){selected=true;break;}
+                        android.view.accessibility.AccessibilityNodeInfo parent=node.getParent();
+                        if(parent!=null&&parent.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)){selected=true;break;}
+                    }
+                }
+                if(!selected)SystemClock.sleep(100);
+            }
+            assertTrue("Select live miniature using launcher menu",selected);
+            assertTrue(FreeformMinimizeStyle.live(app));
+            scenario.onActivity(activity->assertTrue(FreeformOverlayService.prepare(activity)));
+            shell("am force-stop "+PKG);
+            shell("am start -W --windowingMode 5 -n "+COMPONENT);
+            JSONObject original=task(await("original fixture",d->task(d)!=null));
+            id=original.getInt("id");
+            String pid=shell("pidof "+PKG).trim().split("\\s+")[0];
+            assertEquals(FreeformOverlayService.OPEN_VERIFIED,FreeformOverlayService.openManaged(app,ComponentName.unflattenFromString(COMPONENT)));
+            JSONObject parked=task(await("same task hosted on live display",d->task(d)!=null&&task(d).getInt("id")==id&&task(d).getInt("display")>0));
+            int display=parked.getInt("display");
+            NativeTaskClient.Task live=null;
+            for(NativeTaskClient.Task row:new NativeTaskClient(app).list(false))if(row.id==id)live=row;
+            assertNotNull(live);
+            android.util.Size size=LiveBubbleDisplays.previewSize(live);assertNotNull(size);
+            Rect expanded=liveOverlay(false);
+            livePixels("live-expanded.png",liveTexture(expanded,false,size));
+            shell("logcat -c");
+            Rect texture=liveTexture(expanded,false,size);
+            tap(texture.centerX(),texture.centerY());
+            await("touch routed to original virtual display",d->shell("logcat -d -s SmartMiniFixture:I").contains("tap "+id+" "+display));
+            tap(expanded.right-dp(87),expanded.top+dp(20));
+            Rect mini=liveOverlay(true);
+            livePixels("live-miniature.png",liveTexture(mini,true,size));
+            playingWhileBubbled(id);
+            assertEquals(display,task(state()).getInt("display"));
+            assertEquals(pid,shell("pidof "+PKG).trim().split("\\s+")[0]);
+            int delta=mini.centerX()>usable.centerX()?-dp(30):dp(30);
+            motion(MotionEvent.ACTION_DOWN,mini.centerX(),mini.centerY());
+            motion(MotionEvent.ACTION_MOVE,mini.centerX()+delta,mini.centerY()+dp(30));
+            motion(MotionEvent.ACTION_UP,mini.centerX()+delta,mini.centerY()+dp(30));
+            Rect moved=liveOverlay(true);
+            assertTrue("Miniature moves without replacing app",Math.abs(moved.left-mini.left)>=dp(15));
+            tap(moved.centerX(),moved.centerY());
+            Rect restored=liveOverlay(false);
+            assertTrue("Previous size and position restored",FreeformGeometry.near(expanded,restored,dp(5)));
+            livePixels("live-restored.png",liveTexture(restored,false,size));
+            for(int cycle=0;cycle<2;cycle++){
+                tap(restored.right-dp(87),restored.top+dp(20));
+                Rect small=liveOverlay(true);tap(small.centerX(),small.centerY());restored=liveOverlay(false);
+                assertEquals("Minimize/restore never changes display",display,task(state()).getInt("display"));
+                assertEquals("Minimize/restore never changes PID",pid,shell("pidof "+PKG).trim().split("\\s+")[0]);
+            }
+            livePixels("live-repeated.png",liveTexture(restored,false,size));
+            // The close button is in the same integrated window container.
+            tap(restored.right-dp(19),restored.top+dp(20));
+            await("close removes only selected live task",d->task(d)==null);
+        }finally{
+            try{shell("am force-stop "+PKG);}catch(IOException ignored){}
+            app.stopService(new android.content.Intent(app,FreeformOverlayService.class));
+            instrumentation.waitForIdleSync();
+            FreeformTestTransport.install(null);
+            prefs.edit().putBoolean("root-mode",previousRoot).commit();
+            FreeformMinimizeStyle.set(app,previousLive);
+        }
+    }
+
+    @Test public void actualGestureKeepsAppAndControlsTogetherAndMaximizes() throws Exception {
+        assertEquals("Root test transport is not available", "0", shell("su 0 id -u").trim());
+        assertTrue("Overlay app-op not granted in isolated emulator", Settings.canDrawOverlays(app));
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(app);
+        boolean previousRoot = prefs.getBoolean("root-mode", false);
+        assertTrue(prefs.edit().putBoolean("root-mode", true).commit());
+        installRootTransport();
+        boolean previousLive=FreeformMinimizeStyle.live(app);
+        FreeformMinimizeStyle.set(app,false);
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             usable = area();
             assertFalse(usable.isEmpty());
@@ -625,6 +765,7 @@ public final class FreeformRealGesture207Test {
             instrumentation.waitForIdleSync();
             FreeformTestTransport.install(null);
             prefs.edit().putBoolean("root-mode", previousRoot).commit();
+            FreeformMinimizeStyle.set(app,previousLive);
         }
     }
 }

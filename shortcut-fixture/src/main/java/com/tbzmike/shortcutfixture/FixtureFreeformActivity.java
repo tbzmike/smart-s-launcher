@@ -34,6 +34,7 @@ public final class FixtureFreeformActivity extends Activity {
         label.setTextSize(20);
         label.setBackgroundColor(getPackageName().endsWith(".target") ? 0xffbd24d6 : 0xff11b8d5);
         label.setTextColor(android.graphics.Color.WHITE);
+        label.setOnClickListener(v -> android.util.Log.i("SmartMiniFixture","tap "+getTaskId()+" "+getDisplay().getDisplayId()));
         android.widget.FrameLayout layout=new android.widget.FrameLayout(this);
         layout.addView(label,new android.widget.FrameLayout.LayoutParams(-1,-1));
         setContentView(layout);

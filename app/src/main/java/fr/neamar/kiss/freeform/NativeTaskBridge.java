@@ -209,7 +209,8 @@ public final class NativeTaskBridge {
                                 wt.getMethod("setBounds",tt,Rect.class).invoke(change,movedToken,new Rect());
                                 wt.getMethod("setHidden",tt,boolean.class).invoke(change,movedToken,false);
                                 wt.getMethod("reorder",tt,boolean.class).invoke(change,movedToken,true);
-                                organizerApply(atm,service,wt,change);
+                                try { organizerApply(atm,service,wt,change); }
+                                catch (ReflectiveOperationException unavailable) { android.util.Log.w("SmartMini","Virtual display mode change unavailable",unavailable); }
                             }
                             emit(new JSONObject().put("ok", true));
                             return;

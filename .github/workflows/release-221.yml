@@ -203,7 +203,7 @@ jobs:
           else
             gh release create "$TAG" --latest --target "$GITHUB_SHA" \
               --title "Smart S Launcher v3.30.221" \
-              --notes "Restore exact native task without competing recents transitions; preserve display density and bubble memory priority. Android 15 and 16 pixel verification required. Update with your existing signing edition." \
+              --notes "Optional live miniature floating-window presentation, selectable in the launcher menu, alongside existing icon bubbles. Integrated live rendering, touch controls and stable display identity across minimize/restore. Android 15 and 16 pixel and playback verification required. Update with your existing signing edition." \
               SmartSLauncher.apk SmartSLauncher-debug.apk smart-s-launcher-3.30.221.apk app-debug.apk latest-green.json source.zip
           fi
           gh release edit "$TAG" --latest --target "$GITHUB_SHA"
