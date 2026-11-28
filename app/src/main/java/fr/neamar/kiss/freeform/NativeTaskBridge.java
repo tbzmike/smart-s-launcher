@@ -239,7 +239,7 @@ public final class NativeTaskBridge {
             // configuration. AOSP falls back to legacy apply when no transition player exists.
             if ("minimize".equals(action) || "restore".equals(action) || "maximize".equals(action) || "resize".equals(action)) {
                 int transition = "minimize".equals(action) ? 4 /* TRANSIT_TO_BACK */
-                        : "restore".equals(action) && !info.getBoolean("visible") ? 3 /* TRANSIT_TO_FRONT */
+                        : "restore".equals(action) && (display != 0 || !info.getBoolean("visible")) ? 3 /* TRANSIT_TO_FRONT */
                         : 6 /* TRANSIT_CHANGE */;
                 organizerType.getMethod("startNewTransition", int.class, transactionType)
                         .invoke(organizer, transition, transaction);
@@ -248,7 +248,7 @@ public final class NativeTaskBridge {
             }
             if (focus) {
                 // The transaction itself succeeded; focus is advisory on ROMs with desktop policy.
-                try { if (!"restore".equals(action) && !"maximize".equals(action) && !"resize".equals(action))
+                try { if (display != 0 || (!"restore".equals(action) && !"maximize".equals(action) && !"resize".equals(action)))
                     atm.getMethod("setFocusedTask", int.class).invoke(service, id); }
                 catch (ReflectiveOperationException ignored) { }
             }

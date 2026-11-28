@@ -271,6 +271,23 @@ public final class FullscreenBubbleService extends AccessibilityService {
         worker.execute(() -> {
             NativeTaskClient client=new NativeTaskClient(this);
             Set<Integer> managed=FreeformSession.managedIds(this);
+            if (!close && managed != null) {
+                List<NativeTaskClient.Task> current = client.list(false);
+                if (current != null) for (NativeTaskClient.Task foreground : current) {
+                    if (foreground.display == 0 && foreground.focused && foreground.visible &&
+                            foreground.mode == 1 && foreground.type == 1 && foreground.user == NativeTaskClient.USER &&
+                            foreground.id != t.id && !managed.contains(foreground.id) &&
+                            !foreground.pkg.equals(getPackageName()) && !foreground.pkg.equals("com.android.systemui")) {
+                        String key = foreground.id + "|" + foreground.component;
+                        main.post(() -> {
+                            if (stopped) return;
+                            Set<String> tracked = new HashSet<>(saved.getStringSet("tracked", Collections.emptySet()));
+                            tracked.add(key);
+                            saved.edit().putStringSet("tracked", tracked).apply();
+                        });
+                    }
+                }
+            }
             boolean ok=managed!=null && !managed.contains(t.id) && client.action(close?"closeFullscreen":"switchFullscreen",t,null);
             main.post(() -> {
                 if (stopped) return;

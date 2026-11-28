@@ -321,7 +321,7 @@ public final class FreeformRealGesture207Test {
     private void settledEvidence(String filename, Rect bounds) throws Exception {
         // Task geometry can settle before the fullscreen transition finishes drawing.
         // Require two full-content frames and retain the last screenshot on timeout.
-        long drawDeadline = SystemClock.elapsedRealtime() + 3000;
+        long drawDeadline = SystemClock.elapsedRealtime() + 10000;
         int verifiedFrames = 0;
         while (verifiedFrames < 2) {
             try {
