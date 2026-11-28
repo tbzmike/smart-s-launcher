@@ -84,6 +84,11 @@ if ! grep -qE 'OK \([0-9]+ tests?\)' "$file"; then
   cat verification-results/window-state.txt | sed -n '/Window #[0-9].*Fixture/,/Window #[0-9]/p'
 fi
 adb pull /data/user/0/com.tbzmike.smartslauncher.debug/files/freeform207-evidence verification-results/ || true
+if ! grep -qE 'OK \([0-9]+ tests?\)' "$file"; then
+  for file_dump in verification-results/freeform207-evidence/{activity,window,SurfaceFlinger}.txt; do
+    if test -f "$file_dump"; then rg -i 'tbzmike.shortcutfixture|mCurrentFocus|mFocusedApp|mResumedActivity' "$file_dump" | tail -80 || true; fi
+  done
+fi
 set -e
 test "$code" = 0
 grep -E 'OK \([0-9]+ tests?\)' "$file"

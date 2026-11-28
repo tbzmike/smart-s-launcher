@@ -203,7 +203,22 @@ public final class BubbleFolder {
                 }
             }
         };
-        if(task==null)v.setOnTouchListener(touch);
+        if(task==null) v.setOnTouchListener(new View.OnTouchListener() {
+            boolean moved;
+            float startX, startY;
+            public boolean onTouch(View view, MotionEvent event) {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    moved = false;
+                    startX = event.getRawX(); startY = event.getRawY();
+                }
+                if (action == MotionEvent.ACTION_MOVE && Math.hypot(event.getRawX()-startX,event.getRawY()-startY)
+                        > ViewConfiguration.get(context).getScaledTouchSlop()) moved = true;
+                touch.onTouch(view,event);
+                if (action == MotionEvent.ACTION_UP && !moved) view.performClick();
+                return true;
+            }
+        });
         else BubbleMenu.install(v,type,()->{collapse();actions.floating(task);},touch);
     }
     private void showTarget(){

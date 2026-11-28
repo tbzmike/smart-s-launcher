@@ -66,6 +66,16 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
+      - name: Examine previous Android 16 restore evidence
+        if: matrix.api == 36
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 46132050004 -n verified-217-android-36 -D "$RUNNER_TEMP/previous" || gh run download 46132050004 -n verified-218-android-36 -D "$RUNNER_TEMP/previous"
+          dir="$RUNNER_TEMP/previous/freeform207-evidence"
+          for file in "$dir"/{activity,window,SurfaceFlinger}.txt; do
+            if test -f "$file"; then rg -i 'tbzmike.shortcutfixture|mFocusedApp|mCurrentFocus|mResumedActivity|displayId=|isSleeping' "$file" | tail -120 || true; fi
+          done
       - name: Enable hardware acceleration
         run: |
           test -c /dev/kvm
