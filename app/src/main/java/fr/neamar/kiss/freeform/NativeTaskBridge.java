@@ -144,18 +144,12 @@ public final class NativeTaskBridge {
             if (display!=0 && !action.equals("close") && !action.equals("closeFullscreen")) {
                 if (!(action.startsWith("restore") || action.equals("switchFullscreen") || action.equals("maximize")))
                     throw new IllegalStateException("Unsupported live task operation");
-                // Recents first: a separate move before recents can start competing transitions.
-                android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
-                options.setLaunchDisplayId(0);
+                // A single display reparent followed by a single window-mode transaction
+                // keeps the existing activity and avoids recents animation leashes.
                 boolean popup = action.startsWith("restore");
-                android.app.ActivityOptions.class.getMethod("setLaunchWindowingMode", int.class)
-                        .invoke(options, popup ? 5 : 1);
-                if (popup) options.setLaunchBounds(new Rect(Integer.parseInt(args[4]), Integer.parseInt(args[5]),
-                        Integer.parseInt(args[6]), Integer.parseInt(args[7])));
-                atm.getMethod("startActivityFromRecents", int.class, android.os.Bundle.class)
-                        .invoke(service, id, options.toBundle());
+                atm.getMethod("moveRootTaskToDisplay", int.class, int.class).invoke(service, id, 0);
                 boolean onPhone = false;
-                for (int attempt = 0; attempt < 12 && !onPhone; attempt++) {
+                for (int attempt = 0; attempt < 15 && !onPhone; attempt++) {
                     for (Object fresh : tasks(atm, service)) {
                         JSONObject row = describe(fresh);
                         if (row != null && row.getInt("id") == id && row.getInt("user") == user
@@ -164,63 +158,11 @@ public final class NativeTaskBridge {
                             break;
                         }
                     }
-                    if (!onPhone) android.os.SystemClock.sleep(40);
+                    if (!onPhone) android.os.SystemClock.sleep(32);
                 }
-                if (!onPhone) {
-                    // Compatibility fallback only when the ROM ignored the launch display.
-                    atm.getMethod("moveRootTaskToDisplay", int.class, int.class).invoke(service, id, 0);
-                    atm.getMethod("startActivityFromRecents", int.class, android.os.Bundle.class)
-                            .invoke(service, id, options.toBundle());
-                }
-                if (popup) {
-                    Rect wanted = new Rect(Integer.parseInt(args[4]), Integer.parseInt(args[5]),
-                            Integer.parseInt(args[6]), Integer.parseInt(args[7]));
-                    JSONObject result = observe(atm, service, id, component, user, wanted, false);
-                    JSONObject observed = result.optJSONObject("task");
-                    // Recents already requested the display, mode and bounds. Never start
-                    // another shell transition over the same correctly configured surface.
-                    if (observed != null && observed.optInt("display", -1) == 0
-                            && observed.optInt("mode") == 5
-                            && observed.optInt("l") == wanted.left && observed.optInt("t") == wanted.top
-                            && observed.optInt("r") == wanted.right && observed.optInt("b") == wanted.bottom) {
-                        if (action.endsWith("Pinned")) {
-                            for (Object fresh : tasks(atm, service)) {
-                                JSONObject row = describe(fresh);
-                                if (row == null || row.getInt("id") != id || row.getInt("user") != user
-                                        || !component.equals(row.getString("component")) || row.getInt("display") != 0) continue;
-                                Class<?> tokenClass = Class.forName("android.window.WindowContainerToken");
-                                Class<?> txClass = Class.forName("android.window.WindowContainerTransaction");
-                                Object pin = txClass.getConstructor().newInstance();
-                                Object freshToken = fresh.getClass().getField("token").get(fresh);
-                                txClass.getMethod("setAlwaysOnTop", tokenClass, boolean.class)
-                                        .invoke(pin, freshToken, true);
-                                Object controller = atm.getMethod("getWindowOrganizerController").invoke(service);
-                                Class.forName("android.window.IWindowOrganizerController")
-                                        .getMethod("applyTransaction", txClass).invoke(controller, pin);
-                                break;
-                            }
-                        }
-                        // Logical bounds can match even when the task surface remains clipped.
-                        emit(finishRestoredSurface(atm, service, id, component, user, wanted));
-                        return;
-                    }
-                } else if ("switchFullscreen".equals(action)) {
-                    // Recents normally performs the fullscreen switch itself. If desktop
-                    // policy overrides it, retain the previous explicit maximize fallback.
-                    for (Object fresh : tasks(atm, service)) {
-                        JSONObject row = describe(fresh);
-                        if (row != null && row.getInt("id") == id && row.getInt("user") == user
-                                && component.equals(row.getString("component"))
-                                && row.getInt("display") == 0 && row.getInt("mode") == 1
-                                && row.getBoolean("focused") && row.getBoolean("visible")) {
-                            emit(new JSONObject().put("ok", true));
-                            return;
-                        }
-                    }
-                    action = "maximize";
-                }
-                // Only repair a mode/bounds mismatch after observing the recents request.
-                // Reacquire the task/container on display zero; the old display token can be stale.
+                if (!onPhone) throw new IllegalStateException("Task did not reparent to phone");
+                if (!popup) action = "maximize";
+                // Reacquire the container on display zero; the old display token can be stale.
                 selected = null;
                 for (Object fresh : tasks(atm, service)) {
                     JSONObject row = describe(fresh);
@@ -343,10 +285,16 @@ public final class NativeTaskBridge {
             // configuration. AOSP falls back to legacy apply when no transition player exists.
             if ("minimize".equals(action) || "restore".equals(action) || "maximize".equals(action) || "resize".equals(action)) {
                 int transition = "minimize".equals(action) ? 4 /* TRANSIT_TO_BACK */
-                        : "restore".equals(action) && (display != 0 || !info.getBoolean("visible")) ? 3 /* TRANSIT_TO_FRONT */
+                        : "restore".equals(action) && display == 0 && !info.getBoolean("visible") ? 3 /* TRANSIT_TO_FRONT */
                         : 6 /* TRANSIT_CHANGE */;
-                organizerType.getMethod("startNewTransition", int.class, transactionType)
-                        .invoke(organizer, transition, transaction);
+                if (display != 0 && ("restore".equals(action) || "maximize".equals(action))) {
+                    // The display move is itself a shell transition. Apply the final
+                    // mode/bounds without a second independent transition.
+                    organizerType.getMethod("applyTransaction", transactionType).invoke(organizer, transaction);
+                } else {
+                    organizerType.getMethod("startNewTransition", int.class, transactionType)
+                            .invoke(organizer, transition, transaction);
+                }
             } else {
                 organizerType.getMethod("applyTransaction", transactionType).invoke(organizer, transaction);
             }

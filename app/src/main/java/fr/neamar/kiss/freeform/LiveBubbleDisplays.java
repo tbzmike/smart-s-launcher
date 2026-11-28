@@ -35,8 +35,14 @@ final class LiveBubbleDisplays {
             // lease is no longer the task's display; retire it before making a new one.
             release(t.id);
         }
-        android.util.DisplayMetrics metrics=app.getResources().getDisplayMetrics();
-        int w=Math.max(160,metrics.widthPixels/2),h=Math.max(240,metrics.heightPixels/2);
+        android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+        android.view.Display phone = app.getSystemService(DisplayManager.class).getDisplay(0);
+        if (phone == null) return false;
+        // Match the phone's pixel size and density. Half-resolution displays
+        // force the app through a second configuration and surface crop change.
+        phone.getRealMetrics(metrics);
+        int w = metrics.widthPixels, h = metrics.heightPixels;
+        if (w <= 0 || h <= 0) return false;
         ImageReader surface=null; VirtualDisplay display=null;
         try {
             if(buffers==null){ buffers=new HandlerThread("Bubble surfaces");buffers.start(); }
@@ -45,7 +51,7 @@ final class LiveBubbleDisplays {
                 try(Image frame=r.acquireLatestImage()){ /* Release to keep the app's surface flowing. */ }
                 catch(IllegalStateException closed){ /* Display was released. */ }
             },new Handler(buffers.getLooper()));
-            VirtualDisplayConfig config=new VirtualDisplayConfig.Builder("Smart S live task "+t.id,w,h,Math.max(72,metrics.densityDpi/2))
+            VirtualDisplayConfig config=new VirtualDisplayConfig.Builder("Smart S live task "+t.id,w,h,metrics.densityDpi)
                     .setRequestedRefreshRate(15f).setSurface(surface.getSurface())
                     .setFlags(DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC | DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY)
                     .build();

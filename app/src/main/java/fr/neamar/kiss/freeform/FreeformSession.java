@@ -402,7 +402,8 @@ final class FreeformSession {
                 after = awaitGeometry(client, id, component, 5, popup, tolerance(context), false);
             }
             if (after == null) return false;
-            LiveBubbleDisplays.release(id);
+            // A fresh service snapshot confirms the visible frame before retiring
+            // the previous display producer. Keep the lease through the reparent.
             entry.minimized = false;
             entry.popup.set(popup);
             return save(context, entries);
