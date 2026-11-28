@@ -3,6 +3,9 @@ set -euo pipefail
 # Existing regression runner intentionally compiles unminified instrumentation APKs.
 # Rebuild the minified app here to prove app_process entry point retention, not merely Java source.
 git restore app/build.gradle
+mkdir -p shortcut-fixture/src/main/res/raw
+if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y ffmpeg >/dev/null; fi
+ffmpeg -nostdin -loglevel error -y -f lavfi -i testsrc2=size=64x48:rate=12 -f lavfi -i sine=frequency=440 -t 18 -c:v libx264 -pix_fmt yuv420p -c:a aac shortcut-fixture/src/main/res/raw/bubble_playback.mp4
 gradle_ok=0
 for attempt in 1 2 3; do
   refresh=()

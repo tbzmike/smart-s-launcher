@@ -51,7 +51,7 @@ public final class NativeTaskBridge {
                     (Object) new String[]{"Landroid/os/ServiceManager;", "Landroid/app/IActivityTaskManager",
                             "Landroid/app/TaskInfo;", "Landroid/app/ActivityManager$RunningTaskInfo;",
                             "Landroid/content/res/Configuration;->windowConfiguration",
-                            "Landroid/hardware/input/", "Landroid/app/WindowConfiguration;", "Landroid/window/"});
+                            "Landroid/hardware/display/", "Landroid/view/DisplayInfo;", "Landroid/hardware/input/", "Landroid/app/WindowConfiguration;", "Landroid/window/"});
             Class<?> atm = Class.forName("android.app.IActivityTaskManager");
             Object binder = Class.forName("android.os.ServiceManager").getMethod("getService", String.class)
                     .invoke(null, "activity_task");
@@ -77,6 +77,7 @@ public final class NativeTaskBridge {
                 for (Object item : tasks) {
                     JSONObject info = describe(item);
                     if (info != null && info.getInt("user") == user) {
+                        if (info.getInt("display") != 0) { rows.put(info); continue; }
                         addFrame(info, item, tasks, windows);
                         if (!info.has("vl") && info.getBoolean("visible")
                                 && info.getInt("type") == 1) {
@@ -113,8 +114,24 @@ public final class NativeTaskBridge {
             if (selected == null || info == null) throw new IllegalStateException("Task identity changed");
             int mode = info.getInt("mode");
             if (mode != 1 && mode != 5) throw new IllegalStateException("Task is not fullscreen/freeform");
+            int display = info.getInt("display");
+            if (action.equals("parkFullscreen") || action.equals("parkPopup")) {
+                int destination=Integer.parseInt(args[4]);
+                if (display!=0 || destination<=0 || !liveDisplay(destination,id)
+                        || (action.equals("parkFullscreen") && (mode!=1 || info.getBoolean("focused"))))
+                    throw new IllegalStateException("Task is not eligible for bubbling");
+                atm.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(service,id,destination);
+                emit(new JSONObject().put("ok",true));
+                return;
+            }
+            if (display!=0 && !action.equals("close") && !action.equals("closeFullscreen")) {
+                if (!(action.startsWith("restore") || action.equals("switchFullscreen") || action.equals("maximize")))
+                    throw new IllegalStateException("Unsupported live task operation");
+                atm.getMethod("moveRootTaskToDisplay",int.class,int.class).invoke(service,id,0);
+                if(action.equals("switchFullscreen"))action="maximize";
+            }
             if ("switchFullscreen".equals(action) || "closeFullscreen".equals(action)) {
-                if (mode != 1 || ("closeFullscreen".equals(action) && info.getBoolean("focused"))) throw new IllegalStateException("Task no longer eligible");
+                if (display == 0 && (mode != 1 || ("closeFullscreen".equals(action) && info.getBoolean("focused")))) throw new IllegalStateException("Task no longer eligible");
                 action = "switchFullscreen".equals(action) ? "focus" : "close";
             }
             if ("back".equals(action)) {
@@ -246,20 +263,31 @@ public final class NativeTaskBridge {
 
     private static List<?> tasks(Class<?> atm, Object service) throws Exception {
         return (List<?>) atm.getMethod("getTasks", int.class, boolean.class, boolean.class, int.class)
-                .invoke(service, 200, false, false, 0);
+                .invoke(service, 200, false, false, -1);
+    }
+
+    private static boolean liveDisplay(int display,int task) throws Exception {
+        Object binder=Class.forName("android.os.ServiceManager").getMethod("getService",String.class).invoke(null,"display");
+        Object dm=Class.forName("android.hardware.display.IDisplayManager$Stub").getMethod("asInterface",IBinder.class).invoke(null,binder);
+        Object info=Class.forName("android.hardware.display.IDisplayManager").getMethod("getDisplayInfo",int.class).invoke(dm,display);
+        if(info==null)return false;
+        String owner=(String)info.getClass().getField("ownerPackageName").get(info);
+        return ("com.tbzmike.smartslauncher".equals(owner)||"com.tbzmike.smartslauncher.debug".equals(owner))
+                && ("Smart S live task "+task).equals(info.getClass().getField("name").get(info));
     }
 
     private static JSONObject describe(Object task) throws Exception {
         Class<?> cls = task.getClass();
         ComponentName component = (ComponentName) cls.getField("baseActivity").get(task);
         if (component == null) return null;
-        if (cls.getField("displayId").getInt(task) != 0) return null;
+        int display = cls.getField("displayId").getInt(task);
+        if (display != 0 && !liveDisplay(display,cls.getField("taskId").getInt(task))) return null;
         Configuration configuration = (Configuration) cls.getField("configuration").get(task);
         Object wc = Configuration.class.getField("windowConfiguration").get(configuration);
         Rect bounds = (Rect) wc.getClass().getMethod("getBounds").invoke(wc);
         int mode = (Integer) cls.getMethod("getWindowingMode").invoke(task);
         int type = (Integer) cls.getMethod("getActivityType").invoke(task);
-        return new JSONObject().put("id", cls.getField("taskId").getInt(task))
+        return new JSONObject().put("display",display).put("id", cls.getField("taskId").getInt(task))
                 .put("user", cls.getField("userId").getInt(task))
                 .put("component", component.flattenToString()).put("pkg", component.getPackageName())
                 .put("mode", mode).put("type", type)

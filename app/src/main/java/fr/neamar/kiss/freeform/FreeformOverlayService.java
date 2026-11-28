@@ -128,6 +128,16 @@ public final class FreeformOverlayService extends Service {
     }
 
     /** Called by the existing app-launch worker; no repeated start on verification failure. */
+    static boolean floatExact(Context c,NativeTaskClient.Task t){
+        if(!prepare(c))return false;
+        try { return FreeformSession.floatExact(c,t,displayArea(c)); }
+        finally {
+            PENDING_OPEN.decrementAndGet();
+            FreeformOverlayService service=active.get();
+            if(service!=null)service.main.post(service::requestRefresh);
+        }
+    }
+
     public static int openManaged(Context context, ComponentName component) {
         try {
             FreeformSession.OpenResult result = FreeformSession.open(context, component, displayArea(context), true);
@@ -224,6 +234,7 @@ public final class FreeformOverlayService extends Service {
             wm = windowContext.getSystemService(WindowManager.class);
             folder = new BubbleFolder(windowContext, wm, true, new BubbleFolder.Actions() {
                 public void open(NativeTaskClient.Task t) { operate(t,"restore",null); }
+                public void floating(NativeTaskClient.Task t) { operate(t,"restore",null); }
                 public void close(java.util.List<NativeTaskClient.Task> selected) {
                     if (busy || stopping || destroyed) return;
                     Rect area = displayAreaFor(wm);
@@ -271,6 +282,7 @@ public final class FreeformOverlayService extends Service {
 
     @Override public void onDestroy() {
         destroyed = true;
+        LiveBubbleDisplays.releaseFamily("windows");
         if (folder != null) folder.destroy();
         main.removeCallbacksAndMessages(null);
         removeOverlays();
@@ -753,7 +765,7 @@ public final class FreeformOverlayService extends Service {
 
     private void drag(View target, View window, WindowManager.LayoutParams lp,
                       NativeTaskClient.Task task, Rect area, int kind) {
-        target.setOnTouchListener(new View.OnTouchListener() {
+        View.OnTouchListener touch = new View.OnTouchListener() {
             float downX, downY;
             int initialX, initialY, dx, dy;
             boolean moved, down;
@@ -811,12 +823,15 @@ public final class FreeformOverlayService extends Service {
                         if (!down) return false;
                         down = false;
                         if (gesture != null) gesture.cancel();
-                        else { dragging = 0; signature = ""; requestRefresh(); }
+                        else { dragging = 0; if(kind!=2)signature = ""; requestRefresh(); }
                         return true;
                     default: return true;
                 }
             }
-        });
+        };
+        if(kind==2)BubbleMenu.install(target,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                ()->operate(task,"restore",null),touch);
+        else target.setOnTouchListener(touch);
     }
 
     private void moveBubble(NativeTaskClient.Task task, int x, int y) {

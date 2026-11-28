@@ -64,6 +64,31 @@ public final class FreeformRealGesture207Test {
         throw new AssertionError("Missing switcher overlay: " + name);
     }
 
+    private void playingWhileBubbled(int taskId) throws Exception {
+        long end=SystemClock.elapsedRealtime()+14000;
+        int initial=-1,display=-1;
+        while(SystemClock.elapsedRealtime()<end) {
+            String lines=shell("logcat -d -s SmartBubbleMedia:I");
+            for(String line:lines.split("\n")) {
+                java.util.regex.Matcher sample=java.util.regex.Pattern.compile("tick "+taskId+" (\\d+) (\\d+)").matcher(line);
+                if(!sample.find())continue;
+                int d=Integer.parseInt(sample.group(1)), pos=Integer.parseInt(sample.group(2));
+                if(d==0)continue;
+                if(initial<0 || display!=d) { initial=pos; display=d; }
+                else if(pos>=initial+500)return;
+            }
+            SystemClock.sleep(160);
+        }
+        throw new AssertionError("Media playback did not advance on the bubbled task's display: "+taskId+" "+shell("logcat -d -s SmartBubbleMedia:I | tail -15"));
+    }
+
+    private Rect longPressMenu(Rect bubble) throws Exception {
+        motion(MotionEvent.ACTION_DOWN,bubble.centerX(),bubble.centerY());
+        SystemClock.sleep(android.view.ViewConfiguration.getLongPressTimeout()+260);
+        motion(MotionEvent.ACTION_UP,bubble.centerX(),bubble.centerY());
+        return switchBubble("Smart S bubble menu");
+    }
+
     private void dropFolder(String family) throws Exception {
         Rect folder = switchBubble("Smart S " + family + " folder");
         tap(folder.centerX(),folder.centerY());
@@ -89,6 +114,10 @@ public final class FreeformRealGesture207Test {
             SystemClock.sleep(850);
             shell("input keyevent KEYCODE_HOME");
             Rect firstBubble = switchBubble("Smart S fullscreen switch " + firstId);
+            playingWhileBubbled(firstId);
+            longPressMenu(firstBubble);
+            assertTrue("Long press alone keeps task bubbled",task(state()).getInt("display")>0);
+            tap(usable.centerX(),usable.bottom-dp(15));
             String second = "com.tbzmike.shortcutfixture.icebox";
             shell("am start -W --windowingMode 1 -n " + second + "/com.tbzmike.shortcutfixture.FixtureFreeformActivity");
             SystemClock.sleep(850);
@@ -405,9 +434,10 @@ public final class FreeformRealGesture207Test {
             title = decoration(await("current title at minimize tap", this::attached), "title");
             tap(title.right - dp(100), title.centerY());
             JSONObject minimized = await("real minimized bubble and no detached decorations", doc ->
-                    task(doc) != null && task(doc).getInt("id") == id && !task(doc).getBoolean("visible")
+                    task(doc) != null && task(doc).getInt("id") == id && task(doc).getInt("display")>0
                             && decoration(doc, "bubble") != null && decoration(doc, "title") == null
                             && decoration(doc, "corner") == null);
+            playingWhileBubbled(id);
             Rect bubble = decoration(minimized, "bubble");
             int bx = bubble.centerX(), by = bubble.centerY(), mx = bx > usable.centerX() ? -dp(38) : dp(38);
             motion(MotionEvent.ACTION_DOWN, bx, by);
@@ -420,7 +450,8 @@ public final class FreeformRealGesture207Test {
             evidence("bubble.png", usable, false);
             Rect movedBubble = decoration(bubbleMoved, "bubble");
             SystemClock.sleep(900);
-            tap(movedBubble.centerX(), movedBubble.centerY());
+            Rect action=longPressMenu(movedBubble);
+            tap(action.centerX(),action.centerY());
             await("bubble restores the same popup, not a duplicate", doc ->
                     attached(doc) && decoration(doc, "bubble") == null
                             && FreeformGeometry.near(frame(task(doc)), saved, dp(8)));

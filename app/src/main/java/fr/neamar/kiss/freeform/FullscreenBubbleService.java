@@ -44,6 +44,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
     private SharedPreferences saved;
     private String lastPackage = "";
     private boolean reading, dirty, stopped;
+    private final Set<String> attempted = new HashSet<>();
     private TextView target;
     private final Runnable refresh = this::readTasks;
 
@@ -76,6 +77,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
         wm = getSystemService(WindowManager.class);
         folder = new BubbleFolder(this,wm,false,new BubbleFolder.Actions() {
             public void open(NativeTaskClient.Task t) { act(t,false); }
+            public void floating(NativeTaskClient.Task t) { floatingWindow(t); }
             public void close(List<NativeTaskClient.Task> selected) {
                 for (NativeTaskClient.Task t : selected) act(t,true);
             }
@@ -119,15 +121,22 @@ public final class FullscreenBubbleService extends AccessibilityService {
         Set<Integer> wanted = new LinkedHashSet<>();
         boolean locked = getSystemService(KeyguardManager.class).isKeyguardLocked();
         for (NativeTaskClient.Task t : tasks) {
-            if (t.mode != 1 || t.type != 1 || managed.contains(t.id) || t.pkg.equals(getPackageName())
+            if ((t.display==0 && t.mode != 1) || t.type != 1 || managed.contains(t.id) || t.pkg.equals(getPackageName())
                     || t.pkg.equals("com.android.systemui") || t.user != NativeTaskClient.USER) continue;
             String key = t.id + "|" + t.component;
-            if (t.focused && t.visible && !locked) tracked.add(key);
+            if (t.display==0 && t.focused && t.visible && !locked) {tracked.add(key);attempted.remove(key);}
             if (!tracked.contains(key)) continue;
             valid.add(key);
             live.put(t.id, t);
-            if (!locked && !(t.focused && t.visible)) wanted.add(t.id);
+            if (!locked && (t.display!=0 || !(t.focused && t.visible))) {
+                wanted.add(t.id);
+                if(t.display==0 && attempted.add(key))worker.execute(()->{
+                    new NativeTaskClient(this).park(t,"fullscreen");
+                    main.post(this::schedule);
+                });
+            }
         }
+        attempted.retainAll(valid);
         if (!valid.equals(saved.getStringSet("tracked", Collections.emptySet())))
             saved.edit().putStringSet("tracked", valid).apply();
         List<NativeTaskClient.Task> members = new ArrayList<>();
@@ -200,7 +209,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
         lp.x = clamp(saved.getInt(key+"x",lp.x),a.left,a.right-size);
         lp.y = clamp(saved.getInt(key+"y",lp.y),a.top,a.bottom-size);
         tile.setOnClickListener(v -> act(task,false));
-        tile.setOnTouchListener(new View.OnTouchListener() {
+        BubbleMenu.install(tile,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,()->floatingWindow(task),new View.OnTouchListener() {
             float x,y; int left,top; boolean dragging;
             @Override public boolean onTouch(View v, MotionEvent event) {
                 float dx=event.getRawX()-x, dy=event.getRawY()-y;
@@ -248,6 +257,16 @@ public final class FullscreenBubbleService extends AccessibilityService {
         p.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         p.x=a.centerX()-size/2; p.y=a.bottom-size-dp(8); wm.addView(target,p);
     }
+    private void floatingWindow(NativeTaskClient.Task task) {
+        worker.execute(()->{
+            boolean ok=FreeformOverlayService.floatExact(this,task);
+            main.post(()->{
+                if(stopped)return;
+                if(!ok)Toast.makeText(this,"Could not open this task in a floating window",Toast.LENGTH_SHORT).show();
+                schedule();
+            });
+        });
+    }
     private void act(NativeTaskClient.Task t, boolean close) {
         worker.execute(() -> {
             NativeTaskClient client=new NativeTaskClient(this);
@@ -264,6 +283,7 @@ public final class FullscreenBubbleService extends AccessibilityService {
     private void hideTarget() { remove(target); target=null; }
     private void shutdown() {
         if (folder != null) folder.destroy();
+        LiveBubbleDisplays.releaseFamily("fullscreen");
         stopped=true; main.removeCallbacks(refresh); hideTarget();
         for (View v:views.values()) remove(v);
         views.clear(); worker.shutdownNow();

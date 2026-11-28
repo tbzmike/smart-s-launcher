@@ -21,12 +21,12 @@ final class NativeTaskClient {
     NativeTaskClient(Context context) { app = context.getApplicationContext(); }
 
     static final class Task {
-        final int id, user, mode, type;
+        final int id, user, mode, type, display;
         final String component, pkg;
         final boolean visible, focused;
         final Rect bounds, frame;
         Task(JSONObject row) throws org.json.JSONException {
-            id = row.getInt("id"); user = row.getInt("user"); mode = row.getInt("mode");
+            display = row.optInt("display",0); id = row.getInt("id"); user = row.getInt("user"); mode = row.getInt("mode");
             type = row.getInt("type"); component = row.getString("component");
             pkg = row.getString("pkg"); visible = row.getBoolean("visible");
             focused = row.getBoolean("focused");
@@ -41,14 +41,25 @@ final class NativeTaskClient {
     }
 
     @Nullable List<Task> list(boolean withFrames) {
+        java.util.Map<Integer,Integer> previous = LiveBubbleDisplays.beforeRead();
         JSONObject result = invoke(withFrames ? "list" : "identities", "");
         if (result == null || !result.optBoolean("ok")) return null;
         try {
             JSONArray rows = result.getJSONArray("tasks");
             List<Task> tasks = new ArrayList<>();
             for (int i = 0; i < rows.length(); i++) tasks.add(new Task(rows.getJSONObject(i)));
+            LiveBubbleDisplays.reconcile(previous,tasks);
             return tasks;
         } catch (org.json.JSONException failure) { return null; }
+    }
+
+    boolean park(Task t,String family) { return LiveBubbleDisplays.park(app,this,t,family); }
+
+    boolean moveToBubble(Task t,int display,String family) {
+        if (!t.component.matches("[A-Za-z0-9_.$]+/[A-Za-z0-9_.$]+") || t.user!=USER || t.type!=1) return false;
+        JSONObject r=invoke(family.equals("fullscreen")?"parkFullscreen":"parkPopup",
+                " "+t.id+" "+quote(t.component)+" "+display+" 0 0 0");
+        return r!=null && r.optBoolean("ok");
     }
 
     boolean action(String action, Task task, @Nullable Rect bounds) {
@@ -58,7 +69,9 @@ final class NativeTaskClient {
         Rect rect = bounds == null ? new Rect() : bounds;
         JSONObject result = invoke(action, " " + task.id + " " + quote(task.component)
                 + " " + rect.left + " " + rect.top + " " + rect.right + " " + rect.bottom);
-        return result != null && result.optBoolean("ok");
+        boolean ok=result!=null && result.optBoolean("ok");
+        if(ok && task.display!=0)LiveBubbleDisplays.release(task.id);
+        return ok;
     }
 
     /** Private transport abstraction; only the debug source set permits instrumentation injection. */

@@ -27,6 +27,7 @@ public final class BubbleFolder {
     private static final String PREFS = "switch-folder-layouts";
     interface Actions {
         void open(NativeTaskClient.Task task);
+        void floating(NativeTaskClient.Task task);
         void close(List<NativeTaskClient.Task> tasks);
     }
 
@@ -162,7 +163,7 @@ public final class BubbleFolder {
     }
     private void drag(View v,NativeTaskClient.Task task) {
         v.setOnLongClickListener(item->{ item.getParent().requestDisallowInterceptTouchEvent(true); return false; });
-        v.setOnTouchListener(new View.OnTouchListener(){
+        View.OnTouchListener touch = new View.OnTouchListener(){
             float x,y; int left,top; boolean moved;
             List<NativeTaskClient.Task> selected=Collections.emptyList();
             public boolean onTouch(View view,MotionEvent e){
@@ -199,7 +200,9 @@ public final class BubbleFolder {
                     default:return false;
                 }
             }
-        });
+        };
+        if(task==null)v.setOnTouchListener(touch);
+        else BubbleMenu.install(v,type,()->{collapse();actions.floating(task);},touch);
     }
     private void showTarget(){
         if(target!=null)return;

@@ -326,6 +326,20 @@ final class FreeformSession {
         return entries == null ? null : new java.util.HashSet<>(entries.keySet());
     }
 
+    static synchronized boolean floatExact(Context c, NativeTaskClient.Task original, Rect area) {
+        Map<Integer,Entry> entries=load(c);
+        if(entries==null || entries.containsKey(original.id) || area.isEmpty())return false;
+        NativeTaskClient client=new NativeTaskClient(c);
+        NativeTaskClient.Task t=find(client.list(false),original.id);
+        if(t==null || !original.component.equals(t.component) || (t.display==0 && t.mode!=1))return false;
+        Rect popup=defaultPopup(popupArea(c,area));
+        entries.put(t.id,new Entry(t.id,t.component,popup));
+        if(!save(c,entries))return false;
+        if(client.action("restorePinned",t,popup) && awaitGeometry(client,t.id,t.component,5,popup,tolerance(c),false)!=null)return true;
+        client.action("maximize",t,null);
+        entries.remove(t.id); save(c,entries); return false;
+    }
+
     static synchronized boolean closeMinimized(Context context, NativeTaskClient.Task t, Rect area) {
         Map<Integer, Entry> entries = load(context);
         Entry e = entries == null ? null : entries.get(t.id);
@@ -357,6 +371,7 @@ final class FreeformSession {
             placeBubble(context, entry, entries, area);
             entry.minimized = true;
             if (!save(context, entries)) return false; // Never hide an unjournaled task.
+            if (client.park(task,"windows")) return true;
             if (client.action("minimize", task, null)
                     && await(client, id, component, task.mode, false) != null) return true;
             // A failed/uncertain minimize must not strand a hidden task. Retain the recovery
