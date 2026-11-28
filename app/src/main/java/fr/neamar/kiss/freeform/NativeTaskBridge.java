@@ -258,11 +258,9 @@ public final class NativeTaskBridge {
                     break;
                 default: throw new IllegalArgumentException("Unknown task operation");
             }
-            if (android.os.Build.VERSION.SDK_INT == 35 && (action.equals("restore")
-                    || action.equals("maximize") || action.equals("resize"))) {
-                Rect surfaceBounds = action.equals("maximize") ? new Rect() : bounds;
+            if (android.os.Build.VERSION.SDK_INT == 35 && action.equals("maximize")) {
                 transactionType.getMethod("setBoundsChangeTransaction", tokenType, Rect.class)
-                        .invoke(transaction, token, surfaceBounds);
+                        .invoke(transaction, token, new Rect());
             }
             Object organizer = atm.getMethod("getWindowOrganizerController").invoke(service);
             Class<?> organizerType = Class.forName("android.window.IWindowOrganizerController");

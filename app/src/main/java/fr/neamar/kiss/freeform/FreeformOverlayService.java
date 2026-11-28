@@ -403,6 +403,7 @@ public final class FreeformOverlayService extends Service {
             catch (RuntimeException ignored) { }
         }
         overlays.clear();
+        borderLayer = null;
         decorations.clear();
         overlayOrigins.clear();
         if (activeGesture != null) activeGesture.cancel();
@@ -560,70 +561,62 @@ public final class FreeformOverlayService extends Service {
 
     private static final class Decoration {
         final Rect frame = new Rect();
-        final java.util.List<View> borders = new java.util.ArrayList<>();
         int order;
         boolean focused;
         View title, corner;
         WindowManager.LayoutParams titleParams, cornerParams;
     }
 
-    // Draw only exposed edges. Separate thin, non-touchable strips keep the app interior clear.
+    private BorderLayer borderLayer;
+
     private boolean updateBorders() {
-        for (java.util.Map.Entry<Integer, Decoration> item : decorations.entrySet()) {
-            Decoration current = item.getValue();
-            Rect frame = current.frame;
-            int width = Math.min(dp(3), Math.min(frame.width(), frame.height()) / 2);
-            Rect[] edges = {
-                    new Rect(frame.left, frame.top, frame.right, frame.top + width),
-                    new Rect(frame.left, frame.bottom - width, frame.right, frame.bottom),
-                    new Rect(frame.left, frame.top + width, frame.left + width, frame.bottom - width),
-                    new Rect(frame.right - width, frame.top + width, frame.right, frame.bottom - width)
-            };
-            int used = 0;
-            for (int edge = 0; edge < edges.length; edge++) {
-                android.graphics.Region visible = new android.graphics.Region(edges[edge]);
+        if (decorations.isEmpty()) return true;
+        if (borderLayer == null) {
+            BorderLayer layer = new BorderLayer(windowContext);
+            WindowManager.LayoutParams lp = params(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT, 0, 0);
+            lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+            lp.alpha = Math.min(0.8f, getSystemService(android.hardware.input.InputManager.class)
+                    .getMaximumObscuringOpacityForTouch());
+            lp.setTitle("Smart S freeform borders");
+            layer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            if (!add(layer, lp)) return false;
+            borderLayer = layer;
+        }
+        borderLayer.postInvalidateOnAnimation();
+        return true;
+    }
+
+    /** All borders share one transparent, non-interactive window and one drawing frame. */
+    private final class BorderLayer extends View {
+        private final android.graphics.Paint paint = new android.graphics.Paint();
+        private final int[] origin = new int[2];
+
+        BorderLayer(Context context) { super(context); }
+
+        @Override protected void onDraw(android.graphics.Canvas canvas) {
+            super.onDraw(canvas);
+            getLocationOnScreen(origin);
+            canvas.save();
+            canvas.translate(-origin[0], -origin[1]);
+            for (Decoration current : decorations.values()) {
+                Rect f = current.frame;
+                int width = Math.min(dp(3), Math.min(f.width(), f.height()) / 2);
+                if (width <= 0) continue;
+                canvas.save();
                 for (Decoration other : decorations.values()) {
                     if (other != current && !current.focused && (other.focused || other.order < current.order))
-                        visible.op(other.frame, android.graphics.Region.Op.DIFFERENCE);
+                        canvas.clipOutRect(other.frame);
                 }
-                android.graphics.RegionIterator pieces = new android.graphics.RegionIterator(visible);
-                Rect part = new Rect();
-                while (pieces.next(part)) {
-                    View strip;
-                    if (used < current.borders.size()) {
-                        strip = current.borders.get(used);
-                        align(strip, (WindowManager.LayoutParams) strip.getLayoutParams(), part);
-                    } else {
-                        strip = new View(windowContext);
-                        strip.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-                        WindowManager.LayoutParams lp = params(part.width(), part.height(), part.left, part.top);
-                        lp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
-                        lp.alpha = Math.min(0.8f, getSystemService(android.hardware.input.InputManager.class)
-                                .getMaximumObscuringOpacityForTouch());
-                        lp.setTitle("Smart S freeform border " + item.getKey());
-                        if (!add(strip, lp)) return false;
-                        current.borders.add(strip);
-                        alignAfterLayout(strip, lp, new Rect(part));
-                    }
-                    if (!Integer.valueOf(edge).equals(strip.getTag())) {
-                        GradientDrawable.Orientation[] directions = {GradientDrawable.Orientation.TOP_BOTTOM,
-                                GradientDrawable.Orientation.BOTTOM_TOP, GradientDrawable.Orientation.LEFT_RIGHT,
-                                GradientDrawable.Orientation.RIGHT_LEFT};
-                        strip.setBackground(new GradientDrawable(directions[edge], new int[]{
-                                0xff101824, 0xff101824, current.focused ? 0xff59e8ff : 0xffedf3ff, 0xffffffff}));
-                        strip.setTag(edge);
-                    }
-                    used++;
-                }
+                paint.setColor(current.focused ? 0xff59e8ff : 0xffedf3ff);
+                canvas.drawRect(f.left, f.top, f.right, f.top + width, paint);
+                canvas.drawRect(f.left, f.bottom - width, f.right, f.bottom, paint);
+                canvas.drawRect(f.left, f.top + width, f.left + width, f.bottom - width, paint);
+                canvas.drawRect(f.right - width, f.top + width, f.right, f.bottom - width, paint);
+                canvas.restore();
             }
-            while (current.borders.size() > used) {
-                View extra = current.borders.remove(current.borders.size() - 1);
-                overlays.remove(extra);
-                overlayOrigins.remove(extra);
-                wm.removeViewImmediate(extra);
-            }
+            canvas.restore();
         }
-        return true;
     }
 
     private void align(View view, WindowManager.LayoutParams lp, Rect target) {

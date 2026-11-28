@@ -80,7 +80,7 @@ jobs:
           ram-size: 2048M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: false
-          script: bash scripts/verify_201_battery_stability.sh && bash scripts/verify_207_freeform_geometry.sh
+          script: bash -c 'prior=0; geometry=0; bash scripts/verify_201_battery_stability.sh || prior=$?; bash scripts/verify_207_freeform_geometry.sh || geometry=$?; test "$prior" = 0 && test "$geometry" = 0'
       - name: Save Android verification evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
