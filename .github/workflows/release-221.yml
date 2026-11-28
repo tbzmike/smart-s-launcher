@@ -44,6 +44,37 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk release-input/
           test -s release-input/app-release-unsigned.apk
           test -s release-input/app-debug.apk
+      - name: Compile shared runtime verification APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-input shortcut-fixture/src/main/res/raw
+          cp release-input/app-debug.apk runtime-input/minified-debug.apk
+          if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y ffmpeg >/dev/null; fi
+          ffmpeg -nostdin -loglevel error -y -f lavfi -i testsrc2=size=64x48:rate=12 -f lavfi -i sine=frequency=440 -t 18 -c:v libx264 -pix_fmt yuv420p -c:a aac shortcut-fixture/src/main/res/raw/bubble_playback.mp4
+          build_runtime() {
+            for attempt in 1 2 3; do
+              if bash ./gradlew --no-configuration-cache "$@" --stacktrace; then return 0; fi
+              sleep 6
+            done
+            return 1
+          }
+          build_runtime -PshortcutFixtures :shortcut-fixture:assembleTargetDebug :shortcut-fixture:assembleIceboxDebug
+          cp shortcut-fixture/build/outputs/apk/target/debug/shortcut-fixture-target-debug.apk runtime-input/target.apk
+          cp shortcut-fixture/build/outputs/apk/icebox/debug/shortcut-fixture-icebox-debug.apk runtime-input/icebox.apk
+          trap 'git restore app/build.gradle' EXIT
+          sed -i 's/minifyEnabled true/minifyEnabled false/g; s/shrinkResources = true/shrinkResources = false/g' app/build.gradle
+          build_runtime :app:assembleDebug :app:assembleDebugAndroidTest
+          cp app/build/outputs/apk/debug/app-debug.apk runtime-input/instrumented-debug.apk
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk runtime-input/instrumentation.apk
+          git rev-parse HEAD > runtime-input/source-commit.txt
+          (cd runtime-input && sha256sum *.apk > SHA256SUMS)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runtime-input-221
+          path: runtime-input
+          archive: true
+          if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
           name: release-input-221
@@ -53,6 +84,7 @@ jobs:
 
   android:
     name: Real overlay gestures, fullscreen geometry and retained regressions on Android ${{ matrix.api }}
+    needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     strategy:
@@ -61,11 +93,16 @@ jobs:
         api: [35, 36]
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-java@v5
+      - uses: actions/download-artifact@v8
         with:
-          distribution: temurin
-          java-version: 21
-          cache: gradle
+          name: runtime-input-221
+          path: runtime-input
+      - name: Verify shared APK identity and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat runtime-input/source-commit.txt)" = "$GITHUB_SHA"
+          (cd runtime-input && sha256sum -c SHA256SUMS)
       - name: Enable hardware acceleration
         run: |
           test -c /dev/kvm
@@ -80,7 +117,7 @@ jobs:
           ram-size: 2048M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: false
-          script: bash scripts/verify_201_battery_stability.sh && bash scripts/verify_207_freeform_geometry.sh
+          script: export SMART_S_RUNTIME_INPUT="$GITHUB_WORKSPACE/runtime-input"; bash scripts/verify_201_battery_stability.sh && bash scripts/verify_207_freeform_geometry.sh
       - name: Save Android verification evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

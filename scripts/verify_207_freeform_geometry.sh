@@ -2,24 +2,30 @@
 set -euo pipefail
 # Existing regression runner intentionally compiles unminified instrumentation APKs.
 # Rebuild the minified app here to prove app_process entry point retention, not merely Java source.
-git restore app/build.gradle
-mkdir -p shortcut-fixture/src/main/res/raw
-if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y ffmpeg >/dev/null; fi
-ffmpeg -nostdin -loglevel error -y -f lavfi -i testsrc2=size=64x48:rate=12 -f lavfi -i sine=frequency=440 -t 18 -c:v libx264 -pix_fmt yuv420p -c:a aac shortcut-fixture/src/main/res/raw/bubble_playback.mp4
-gradle_ok=0
-for attempt in 1 2 3; do
-  refresh=()
-  if [ "$attempt" -gt 1 ]; then refresh=(--refresh-dependencies); fi
-  if bash ./gradlew "${refresh[@]}" --no-configuration-cache -PshortcutFixtures :app:assembleDebug :shortcut-fixture:assembleTargetDebug :shortcut-fixture:assembleIceboxDebug --stacktrace; then
-    gradle_ok=1
-    break
-  fi
-  sleep 6
-done
-test "$gradle_ok" = 1
-adb install -r -g app/build/outputs/apk/debug/app-debug.apk
-adb install -r shortcut-fixture/build/outputs/apk/target/debug/shortcut-fixture-target-debug.apk
-adb install -r shortcut-fixture/build/outputs/apk/icebox/debug/shortcut-fixture-icebox-debug.apk
+if [ -n "${SMART_S_RUNTIME_INPUT:-}" ]; then
+  adb install -r -g "$SMART_S_RUNTIME_INPUT/minified-debug.apk"
+  adb install -r "$SMART_S_RUNTIME_INPUT/target.apk"
+  adb install -r "$SMART_S_RUNTIME_INPUT/icebox.apk"
+else
+  git restore app/build.gradle
+  mkdir -p shortcut-fixture/src/main/res/raw
+  if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y ffmpeg >/dev/null; fi
+  ffmpeg -nostdin -loglevel error -y -f lavfi -i testsrc2=size=64x48:rate=12 -f lavfi -i sine=frequency=440 -t 18 -c:v libx264 -pix_fmt yuv420p -c:a aac shortcut-fixture/src/main/res/raw/bubble_playback.mp4
+  gradle_ok=0
+  for attempt in 1 2 3; do
+    refresh=()
+    if [ "$attempt" -gt 1 ]; then refresh=(--refresh-dependencies); fi
+    if bash ./gradlew "${refresh[@]}" --no-configuration-cache -PshortcutFixtures :app:assembleDebug :shortcut-fixture:assembleTargetDebug :shortcut-fixture:assembleIceboxDebug --stacktrace; then
+      gradle_ok=1
+      break
+    fi
+    sleep 6
+  done
+  test "$gradle_ok" = 1
+  adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+  adb install -r shortcut-fixture/build/outputs/apk/target/debug/shortcut-fixture-target-debug.apk
+  adb install -r shortcut-fixture/build/outputs/apk/icebox/debug/shortcut-fixture-icebox-debug.apk
+fi
 # Real Android tasks in an isolated CI emulator. No production/device settings are changed.
 ensure_root() {
   for attempt in 1 2 3; do
@@ -52,20 +58,25 @@ python3 scripts/verify_206_task_transitions.py | tee verification-results/native
 
 # Reinstall the unminified instrumentation build only for the real service/touch test.
 # The preceding native transition test ran against the minified app_process helper.
-sed -i 's/minifyEnabled true/minifyEnabled false/g; s/shrinkResources = true/shrinkResources = false/g' app/build.gradle
-gradle_ok=0
-for attempt in 1 2 3; do
-  refresh=()
-  if [ "$attempt" -gt 1 ]; then refresh=(--refresh-dependencies); fi
-  if bash ./gradlew "${refresh[@]}" --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace; then
-    gradle_ok=1
-    break
-  fi
-  sleep 6
-done
-test "$gradle_ok" = 1
-adb install -r -g app/build/outputs/apk/debug/app-debug.apk
-adb install -r -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+if [ -n "${SMART_S_RUNTIME_INPUT:-}" ]; then
+  adb install -r -g "$SMART_S_RUNTIME_INPUT/instrumented-debug.apk"
+  adb install -r "$SMART_S_RUNTIME_INPUT/instrumentation.apk"
+else
+  sed -i 's/minifyEnabled true/minifyEnabled false/g; s/shrinkResources = true/shrinkResources = false/g' app/build.gradle
+  gradle_ok=0
+  for attempt in 1 2 3; do
+    refresh=()
+    if [ "$attempt" -gt 1 ]; then refresh=(--refresh-dependencies); fi
+    if bash ./gradlew "${refresh[@]}" --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace; then
+      gradle_ok=1
+      break
+    fi
+    sleep 6
+  done
+  test "$gradle_ok" = 1
+  adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+  adb install -r -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+fi
 adb shell appops set com.tbzmike.smartslauncher.debug SYSTEM_ALERT_WINDOW allow
 adb shell am force-stop com.tbzmike.smartslauncher.debug
 # Exercise Home with the launcher under test. The stock Pixel launcher in the
@@ -101,4 +112,4 @@ test -s verification-results/freeform207-evidence/rotated.png
 test -s verification-results/freeform207-evidence/restored-from-fullscreen.png
 test -s verification-results/freeform207-evidence/restored-repeated.png
 adb logcat -d -s SmartSFreeform220:I > verification-results/restore-latency.log
-git restore app/build.gradle
+if [ -z "${SMART_S_RUNTIME_INPUT:-}" ]; then git restore app/build.gradle; fi

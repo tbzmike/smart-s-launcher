@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
-sed -i 's/minifyEnabled true/minifyEnabled false/g; s/shrinkResources = true/shrinkResources = false/g' app/build.gradle
-gradle_ok=0
-for attempt in 1 2 3; do
-  refresh=()
-  if [ "$attempt" -gt 1 ]; then refresh=(--refresh-dependencies); fi
-  if bash ./gradlew "${refresh[@]}" --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace; then
-    gradle_ok=1
-    break
-  fi
-  sleep 6
-done
-test "$gradle_ok" = 1
-adb install -r -g app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+if [ -n "${SMART_S_RUNTIME_INPUT:-}" ]; then
+  adb install -r -g "$SMART_S_RUNTIME_INPUT/instrumented-debug.apk"
+  adb install -r "$SMART_S_RUNTIME_INPUT/instrumentation.apk"
+else
+  sed -i 's/minifyEnabled true/minifyEnabled false/g; s/shrinkResources = true/shrinkResources = false/g' app/build.gradle
+  gradle_ok=0
+  for attempt in 1 2 3; do
+    refresh=()
+    if [ "$attempt" -gt 1 ]; then refresh=(--refresh-dependencies); fi
+    if bash ./gradlew "${refresh[@]}" --no-configuration-cache :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace; then
+      gradle_ok=1
+      break
+    fi
+    sleep 6
+  done
+  test "$gradle_ok" = 1
+  adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+  adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+fi
 adb shell svc power stayon true
 adb shell input keyevent KEYCODE_WAKEUP
 adb shell wm dismiss-keyguard
