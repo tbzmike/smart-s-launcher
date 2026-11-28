@@ -175,7 +175,6 @@ public final class FreeformOverlayService extends Service {
     public static void resumeIfNeeded(Context context) {
         FreeformOverlayService service = active.get();
         if (service != null) {
-            service.queryFailures = 0;
             service.requestRefresh();
             return;
         }
